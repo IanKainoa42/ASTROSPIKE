@@ -39,6 +39,8 @@ targets:
       path: ASTROSPIKE/Info.plist
       properties:
         CFBundleDisplayName: ASTROSPIKE
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIRequiresFullScreen: true
