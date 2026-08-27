@@ -79,10 +79,10 @@ public struct SimulationConfiguration: Equatable, Sendable {
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
-        gravity: SIMD2<Double> = SIMD2(0, -1.2),
-        initialThrustAcceleration: Double = 3,
-        maximumThrustAcceleration: Double = 18,
-        thrustRampRate: Double = 24,
+        gravity: SIMD2<Double> = SIMD2(0, -3.2),
+        initialThrustAcceleration: Double = 9,
+        maximumThrustAcceleration: Double = 9,
+        thrustRampRate: Double = 0,
         torqueAcceleration: Double = 5
     ) {
         self.stepDuration = stepDuration

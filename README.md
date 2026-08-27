@@ -14,7 +14,8 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 
 ## Rules
 
-- Left thumb applies rotational torque; right thumb applies unlimited thrust that ramps from a gentle jetpack push to rapid rocket acceleration.
+- The prototype controls are canonical: the left thumb slides across one analog rotational-torque pad, while the right thumb holds an equally sized constant-thrust pad.
+- Prototype flight tuning is canonical: gravity is `-3.2` arena units/s² and main thrust is a constant `9` arena units/s².
 - Linear and angular momentum persist without stabilization.
 - The net rebounds the ball. If any part of a ship enters the opponent’s half, that ship is destroyed.
 - Outer-wall, floor, ceiling, and ship-to-ship impacts never destroy ships.

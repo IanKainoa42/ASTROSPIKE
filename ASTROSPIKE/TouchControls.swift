@@ -8,54 +8,55 @@ struct TouchControls: View {
 
     var body: some View {
         HStack {
-            if leftHanded { thrustButton; Spacer(); steeringControl }
-            else { steeringControl; Spacer(); thrustButton }
+            if leftHanded { thrustButton; Spacer(); torqueControl }
+            else { torqueControl; Spacer(); thrustButton }
         }
-        .padding(.horizontal, largeControls ? 28 : 18)
-        .padding(.bottom, largeControls ? 20 : 14)
+        .padding(.horizontal, largeControls ? 44 : 28)
+        .padding(.bottom, largeControls ? 30 : 20)
         .accessibilityElement(children: .contain)
     }
 
-    private var steeringControl: some View {
-        HStack(spacing: largeControls ? 14 : 10) {
-            steeringButton(direction: -1, symbol: "chevron.left", label: "Rotate left")
-            steeringButton(direction: 1, symbol: "chevron.right", label: "Rotate right")
+    private var torqueControl: some View {
+        ZStack {
+            Circle().fill(.black.opacity(0.32))
+            Circle().stroke(.cyan.opacity(0.65), lineWidth: 2)
+            Capsule().fill(.white.opacity(0.75)).frame(width: 3, height: 24)
+                .rotationEffect(.degrees(torque * 58))
+            HStack {
+                Image(systemName: "rotate.left")
+                Spacer()
+                Image(systemName: "rotate.right")
+            }
+            .padding(15)
+            .foregroundStyle(.cyan)
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("torque-control")
-    }
-
-    private func steeringButton(direction: Double, symbol: String, label: String) -> some View {
-        let isPressed = torque == direction
-        return ZStack {
-            Circle().fill(isPressed ? Color.cyan.opacity(0.30) : .black.opacity(0.28))
-            Circle().stroke(.cyan.opacity(isPressed ? 0.95 : 0.62), lineWidth: isPressed ? 4 : 2)
-            Image(systemName: symbol)
-                .font(.system(size: largeControls ? 30 : 24, weight: .black))
-                .foregroundStyle(.cyan)
-        }
-        .frame(width: steeringSize, height: steeringSize)
+        .frame(width: controlSize, height: controlSize)
         .contentShape(Circle())
         .gesture(
             DragGesture(minimumDistance: 0)
-                .onChanged { _ in torque = direction }
-                .onEnded { _ in if torque == direction { torque = 0 } }
+                .onChanged { value in
+                    let center = controlSize / 2
+                    torque = max(-1, min(1, (value.location.x - center) / (center * 0.72)))
+                }
+                .onEnded { _ in torque = 0 }
         )
-        .accessibilityLabel(label)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Rotational torque")
+        .accessibilityValue(torque.formatted(.number.precision(.fractionLength(1))))
         .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier(direction < 0 ? "rotate-left-control" : "rotate-right-control")
+        .accessibilityIdentifier("torque-control")
     }
 
     private var thrustButton: some View {
         ZStack {
             Circle().fill(thrust ? Color.orange.opacity(0.46) : .black.opacity(0.32))
             Circle().stroke(.orange.opacity(0.8), lineWidth: thrust ? 5 : 2)
-            Image(systemName: "arrow.up")
-                .font(.system(size: largeControls ? 36 : 29, weight: .black))
+            Image(systemName: "flame.fill")
+                .font(.system(size: largeControls ? 38 : 30, weight: .bold))
                 .foregroundStyle(.orange)
                 .symbolEffect(.pulse, isActive: thrust)
         }
-        .frame(width: thrustSize, height: thrustSize)
+        .frame(width: controlSize, height: controlSize)
         .contentShape(Circle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -67,6 +68,5 @@ struct TouchControls: View {
         .accessibilityIdentifier("thrust-control")
     }
 
-    private var steeringSize: CGFloat { largeControls ? 78 : 64 }
-    private var thrustSize: CGFloat { largeControls ? 94 : 80 }
+    private var controlSize: CGFloat { largeControls ? 116 : 92 }
 }

@@ -3,10 +3,10 @@ import Testing
 
 @Suite("Pure lander motion")
 struct SimulationMotionTests {
-    @Test("Gravity stays light enough for deliberate aerial control")
-    func gravityIsLow() {
+    @Test("A free-falling lander matches the prototype gravity")
+    func gravityMatchesPrototype() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.4
+        engine.state.ships[.cyan]!.position.y = 0.6
         engine.state.ships[.cyan]!.velocity = .zero
 
         for tick in 0 ..< 30 {
@@ -16,33 +16,43 @@ struct SimulationMotionTests {
             ])
         }
 
-        #expect(engine.state.ships[.cyan]!.velocity.y > -0.4)
+        #expect(abs(engine.state.ships[.cyan]!.velocity.y - -0.8) < 0.000_001)
     }
 
-    @Test("Sustained thrust ramps well beyond its gentle initial push")
-    func sustainedThrustRampsRapidly() {
+    @Test("Main thrust matches the prototype's constant acceleration")
+    func thrustMatchesPrototype() {
         var thrusting = SimulationEngine.testing()
         var falling = SimulationEngine.testing()
-        thrusting.state.ships[.cyan]!.position.y = 0
-        falling.state.ships[.cyan]!.position.y = 0
+        thrusting.state.ships[.cyan]!.position.y = 0.5
+        falling.state.ships[.cyan]!.position.y = 0.5
         thrusting.state.ships[.cyan]!.angle = .pi / 2
         falling.state.ships[.cyan]!.angle = .pi / 2
 
+        let dt = thrusting.configuration.stepDuration
+        let initialThrustVelocity = thrusting.state.ships[.cyan]!.velocity.y
+        let initialFallingVelocity = falling.state.ships[.cyan]!.velocity.y
         thrusting.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: true)])
         falling.step(inputs: [.cyan: .idle(tick: 0)])
-        let initialThrustDelta = thrusting.state.ships[.cyan]!.velocity.y
-            - falling.state.ships[.cyan]!.velocity.y
+        let initialAcceleration = (
+            thrusting.state.ships[.cyan]!.velocity.y - initialThrustVelocity
+                - (falling.state.ships[.cyan]!.velocity.y - initialFallingVelocity)
+        ) / dt
 
         for tick in 1 ..< 30 {
             thrusting.step(inputs: [.cyan: PlayerInput(tick: UInt64(tick), torque: 0, thrust: true)])
+            falling.step(inputs: [.cyan: .idle(tick: UInt64(tick))])
         }
-        let velocityBeforeFinalStep = thrusting.state.ships[.cyan]!.velocity.y
+        let thrustVelocityBeforeFinalStep = thrusting.state.ships[.cyan]!.velocity.y
+        let fallingVelocityBeforeFinalStep = falling.state.ships[.cyan]!.velocity.y
         thrusting.step(inputs: [.cyan: PlayerInput(tick: 30, torque: 0, thrust: true)])
-        let sustainedThrustDelta = thrusting.state.ships[.cyan]!.velocity.y
-            - velocityBeforeFinalStep
-            - falling.state.ships[.cyan]!.velocity.y
+        falling.step(inputs: [.cyan: .idle(tick: 30)])
+        let sustainedAcceleration = (
+            thrusting.state.ships[.cyan]!.velocity.y - thrustVelocityBeforeFinalStep
+                - (falling.state.ships[.cyan]!.velocity.y - fallingVelocityBeforeFinalStep)
+        ) / dt
 
-        #expect(sustainedThrustDelta > initialThrustDelta * 2)
+        #expect(abs(initialAcceleration - 9) < 0.000_001)
+        #expect(abs(sustainedAcceleration - 9) < 0.000_001)
     }
 
     @Test("Main thrust accelerates only along the ship nose")

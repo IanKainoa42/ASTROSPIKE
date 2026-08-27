@@ -33,9 +33,16 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.buttons["ROOKIE, Patient learner"].waitForExistence(timeout: 3))
         app.buttons["ROOKIE, Patient learner"].tap()
         XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Rotate left"].exists)
-        XCTAssertTrue(app.buttons["Rotate right"].exists)
-        XCTAssertTrue(app.buttons["Thrust"].exists)
+        let torqueControl = app.buttons["Rotational torque"]
+        let thrustControl = app.buttons["Thrust"]
+        XCTAssertTrue(torqueControl.exists)
+        XCTAssertTrue(thrustControl.exists)
+        XCTAssertEqual(torqueControl.frame.width, 92, accuracy: 2)
+        XCTAssertEqual(torqueControl.frame.height, 92, accuracy: 2)
+        XCTAssertEqual(thrustControl.frame.width, 92, accuracy: 2)
+        XCTAssertEqual(thrustControl.frame.height, 92, accuracy: 2)
+        XCTAssertFalse(app.buttons["Rotate left"].exists)
+        XCTAssertFalse(app.buttons["Rotate right"].exists)
         XCTAssertTrue(app.staticTexts["Your side: Cyan"].exists)
 
         app.buttons["Pause match"].tap()

@@ -43,7 +43,7 @@ public struct AIController: InputSource, Sendable {
     public mutating func input(for state: WorldState, team: Team, tick: UInt64) -> PlayerInput {
         guard let ship = state.ships[team] else { return .idle(tick: tick) }
         let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-        let projectedHomeDistance = (ship.position.x + ship.velocity.x * 0.80) * homeSign
+        let projectedHomeDistance = (ship.position.x + ship.velocity.x * 1.20) * homeSign
         let centerDanger = projectedHomeDistance < 0.32
         let nearFloor = ship.position.y < -0.52
         let recovering = nearFloor
@@ -56,7 +56,7 @@ public struct AIController: InputSource, Sendable {
             let lookAhead: Double = difficulty == .rookie ? 0.10 : difficulty == .pilot ? 0.22 : 0.34
             if ballIsHome {
                 let predictedBall = state.ball.position + state.ball.velocity * lookAhead
-                let safeX = homeSign * max(0.34, min(0.84, abs(predictedBall.x)))
+                let safeX = homeSign * max(0.34, min(0.84, abs(predictedBall.x) + 0.10))
                 cachedTargetPosition = SIMD2(
                     safeX,
                     max(-0.55, min(0.55, predictedBall.y - 0.10))
@@ -77,7 +77,7 @@ public struct AIController: InputSource, Sendable {
             max(-1.3, min(1.3, positionError.y * 1.8))
         )
         var desiredAcceleration = (desiredVelocity - ship.velocity) * 2.5
-            + SIMD2(0, 1.2)
+            + SIMD2(0, 3.2)
         if centerDanger {
             desiredAcceleration.x = homeSign * (6 + abs(ship.velocity.x) * 2)
         }
