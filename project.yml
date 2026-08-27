@@ -8,6 +8,8 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: WC46K49VFA
     CODE_SIGN_STYLE: Automatic
 targets:
@@ -37,6 +39,7 @@ targets:
       path: ASTROSPIKE/Info.plist
       properties:
         CFBundleDisplayName: ASTROSPIKE
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations:
