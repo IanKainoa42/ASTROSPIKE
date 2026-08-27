@@ -260,7 +260,17 @@ public struct SimulationEngine: Sendable {
         }
 
         let r = state.ball.radius
-        if let netHit = sweptNetHit(from: previousPosition, to: state.ball.position, radius: r) {
+        if let capHit = sweptNetCapHit(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r
+        ) {
+            state.ball.position = capHit.position
+            let inwardSpeed = simd_dot(state.ball.velocity, capHit.normal)
+            if inwardSpeed < 0 {
+                state.ball.velocity -= capHit.normal * ((1 + 0.94) * inwardSpeed)
+            }
+        } else if let netHit = sweptNetHit(from: previousPosition, to: state.ball.position, radius: r) {
             state.ball.position = netHit.position
             state.ball.velocity.x = netHit.fromLeft
                 ? -abs(state.ball.velocity.x) * 0.94
@@ -288,6 +298,33 @@ public struct SimulationEngine: Sendable {
         }
     }
 
+    private func sweptNetCapHit(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let center = SIMD2(0.0, arena.netTopY)
+        let combinedRadius = radius + arena.netHalfWidth
+        guard let hitTime = sweptCircleTime(
+            from: start,
+            to: end,
+            center: center,
+            radius: combinedRadius
+        ) else { return nil }
+
+        let contact = start + (end - start) * hitTime
+        var normal = contact - center
+        let length = simd_length(normal)
+        guard length > 0.000_001 else { return nil }
+        normal /= length
+        if abs(normal.x) < 0.02, normal.y > 0 {
+            let rallyIndex = state.match.score.cyan + state.match.score.orange
+            normal = simd_normalize(SIMD2(rallyIndex.isMultiple(of: 2) ? -0.18 : 0.18, 1))
+        }
+        guard simd_dot(state.ball.velocity, normal) < 0 else { return nil }
+        return (center + normal * combinedRadius, normal)
+    }
+
     private func sweptNetHit(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
@@ -297,7 +334,11 @@ public struct SimulationEngine: Sendable {
         let delta = end - start
         if abs(start.x) <= limit, start.y - radius <= arena.netTopY {
             let fromLeft = start.x <= 0
-            return (SIMD2(fromLeft ? -limit : limit, start.y), fromLeft)
+            let penetration = limit - abs(start.x)
+            let movingTowardNet = fromLeft ? delta.x > 0 : delta.x < 0
+            if penetration > 0.000_000_1 || movingTowardNet {
+                return (SIMD2(fromLeft ? -limit : limit, start.y), fromLeft)
+            }
         }
         guard abs(delta.x) > 0.000_000_1 else {
             if abs(end.x) <= limit, end.y - radius <= arena.netTopY {

@@ -40,6 +40,23 @@ struct AIControllerTests {
         #expect(input.torque != 0)
     }
 
+    @Test("Attitude control counter-steers current spin every simulation tick")
+    func attitudeControlDoesNotReplayStaleTorque() {
+        var state = SimulationEngine.testing().state
+        state.ships[.orange]!.position = SIMD2(0.55, -0.70)
+        state.ships[.orange]!.angle = .pi / 2
+        state.ships[.orange]!.angularVelocity = 1.5
+        state.ball.position = SIMD2(-0.55, 0.25)
+        var controller = AIController(difficulty: .pilot)
+
+        let clockwiseCorrection = controller.input(for: state, team: .orange, tick: 0)
+        state.ships[.orange]!.angularVelocity = -1.5
+        let counterclockwiseCorrection = controller.input(for: state, team: .orange, tick: 1)
+
+        #expect(clockwiseCorrection.torque < 0)
+        #expect(counterclockwiseCorrection.torque > 0)
+    }
+
     @Test("AI begins retreating before it reaches the lethal center line")
     func avoidsThrustingIntoEnemyTerritory() {
         var state = SimulationEngine.testing().state
@@ -56,5 +73,112 @@ struct AIControllerTests {
 
         #expect(!input.thrust)
         #expect(input.torque != 0)
+    }
+
+    @Test("Pilot survives ten seconds while the ball remains across the net")
+    func pilotSurvivesSustainedEnemySideBait() {
+        var engine = SimulationEngine.testing()
+        var controller = AIController(difficulty: .pilot)
+
+        for tick in UInt64(0) ..< 1_200 {
+            engine.state.ball = BallState(
+                position: SIMD2(-0.55, 0.25),
+                velocity: .zero
+            )
+            let input = controller.input(
+                for: engine.state,
+                team: .orange,
+                tick: tick
+            )
+            engine.step(inputs: [
+                .cyan: .idle(tick: tick),
+                .orange: input,
+            ])
+        }
+
+        #expect(!engine.state.ships[.orange]!.isDestroyed)
+    }
+
+    @Test("Pilot returns an incoming ball instead of merely surviving beside it")
+    func pilotReturnsIncomingBall() {
+        let incomingBall = BallState(
+            position: SIMD2(0.58, 0.32),
+            velocity: SIMD2(-0.10, -0.20)
+        )
+        var idleEngine = SimulationEngine.testing()
+        idleEngine.state.ball = incomingBall
+        var idleBallCrossed = false
+        for tick in UInt64(0) ..< 1_200 {
+            let previousX = idleEngine.state.ball.position.x
+            idleEngine.step(inputs: [
+                .cyan: .idle(tick: tick),
+                .orange: .idle(tick: tick),
+            ])
+            if previousX > 0, idleEngine.state.ball.position.x < 0 {
+                idleBallCrossed = true
+                break
+            }
+            if idleEngine.state.match.phase != .playing {
+                break
+            }
+        }
+
+        var engine = SimulationEngine.testing()
+        engine.state.ball = incomingBall
+        var controller = AIController(difficulty: .pilot)
+        var returnedBall = false
+
+        for tick in UInt64(0) ..< 1_200 {
+            let previousX = engine.state.ball.position.x
+            let input = controller.input(for: engine.state, team: .orange, tick: tick)
+            engine.step(inputs: [
+                .cyan: .idle(tick: tick),
+                .orange: input,
+            ])
+            if previousX > 0, engine.state.ball.position.x < 0 {
+                returnedBall = true
+                break
+            }
+            if engine.state.match.phase != .playing {
+                break
+            }
+        }
+
+        #expect(!idleBallCrossed)
+        #expect(returnedBall)
+        #expect(!engine.state.ships[.orange]!.isDestroyed)
+    }
+
+    @Test("Pilot concedes no net deaths during thirty seconds of solo rallies")
+    func pilotAvoidsNetDeathsAcrossRallies() {
+        var engine = SimulationEngine.testing()
+        var controller = AIController(difficulty: .pilot)
+        var rally = 0
+        var netDeaths = 0
+
+        for tick in UInt64(0) ..< 3_600 {
+            if engine.state.match.phase == .pointFreeze {
+                rally += 1
+                engine.prepareNextRally(mirrored: rally.isMultiple(of: 2))
+                engine.beginPlay()
+            }
+
+            let input = controller.input(
+                for: engine.state,
+                team: .orange,
+                tick: tick
+            )
+            engine.step(inputs: [
+                .cyan: .idle(tick: tick),
+                .orange: input,
+            ])
+            if engine.lastEvents.contains(
+                .point(scoringTeam: .cyan, reason: .netContact)
+            ) {
+                netDeaths += 1
+            }
+        }
+
+        #expect(netDeaths == 0)
     }
 }

@@ -133,6 +133,13 @@ private struct GameView: View {
                 MatchHUD(state: session.state, online: mode == .online ? online : nil) {
                     session.togglePause(); showPause = true
                 }
+                HStack {
+                    if localHomeSide == .orange { Spacer() }
+                    TeamSideBadge(team: localTeam)
+                    if localHomeSide == .cyan { Spacer() }
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 4)
                 Spacer()
                 TouchControls(torque: $session.torque, thrust: $session.thrust,
                               largeControls: largeControls, leftHanded: leftHanded)
@@ -158,6 +165,29 @@ private struct GameView: View {
                       exit: { showPause = false; exit() })
                 .presentationDetents([.medium]).interactiveDismissDisabled()
         }
+    }
+
+    private var localTeam: Team { online.localTeam ?? .cyan }
+
+    private var localHomeSide: Team {
+        session.state.ships[localTeam]?.homeSide ?? localTeam
+    }
+}
+
+private struct TeamSideBadge: View {
+    let team: Team
+
+    var body: some View {
+        let color = team == .cyan ? Color.cyan : .orange
+        Text("YOU • \(team.rawValue.uppercased())")
+            .font(.caption2.monospaced().weight(.black))
+            .tracking(1.2)
+            .foregroundStyle(color)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background(.black.opacity(0.42), in: Capsule())
+            .overlay(Capsule().stroke(color.opacity(0.7), lineWidth: 1.5))
+            .accessibilityLabel("Your side: \(team.rawValue.capitalized)")
     }
 }
 
@@ -246,7 +276,7 @@ private struct FlightTutorial: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    TutorialCard(number: "01", icon: "rotate.right", title: "ROTATE", text: "Slide your torque thumb left or right. Your ship keeps spinning until you counter-rotate.")
+                    TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold the left or right arrow to rotate. Release, then counter-steer to stop your spin.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for a gentle jetpack lift that rapidly builds into full rocket acceleration. There is no auto-leveling and no brake.")
                     TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball down into the recessed goal. Three floor bounces on one side also concede a point.")
                     TutorialCard(number: "04", icon: "bolt.trianglebadge.exclamationmark.fill", title: "SURVIVE", text: "Walls and ship impacts are safe. Touch any part of the opponent’s half and the lethal center boundary destroys you.")

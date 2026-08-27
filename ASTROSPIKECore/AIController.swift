@@ -32,51 +32,78 @@ public enum AIDifficulty: String, Codable, CaseIterable, Sendable {
 public struct AIController: InputSource, Sendable {
     public let difficulty: AIDifficulty
     private var lastDecisionTick: UInt64?
-    private var cachedTorque = 0.0
-    private var cachedThrust = false
+    private var cachedTargetPosition: SIMD2<Double>?
+    private var cachedAimError = 0.0
+    private var cachedHomeSide: Team?
 
     public init(difficulty: AIDifficulty) {
         self.difficulty = difficulty
     }
 
     public mutating func input(for state: WorldState, team: Team, tick: UInt64) -> PlayerInput {
-        if let lastDecisionTick,
-           tick - lastDecisionTick < difficulty.reactionIntervalTicks {
-            return PlayerInput(tick: tick, torque: cachedTorque, thrust: cachedThrust)
+        guard let ship = state.ships[team] else { return .idle(tick: tick) }
+        let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
+        let projectedHomeDistance = (ship.position.x + ship.velocity.x * 0.80) * homeSign
+        let centerDanger = projectedHomeDistance < 0.32
+        let nearFloor = ship.position.y < -0.52
+        let recovering = nearFloor
+        let needsDecision = cachedTargetPosition == nil
+            || cachedHomeSide != ship.homeSide
+            || lastDecisionTick.map { tick - $0 >= difficulty.reactionIntervalTicks } != false
+
+        if needsDecision {
+            let ballIsHome = state.ball.position.x * homeSign > 0
+            let lookAhead: Double = difficulty == .rookie ? 0.10 : difficulty == .pilot ? 0.22 : 0.34
+            if ballIsHome {
+                let predictedBall = state.ball.position + state.ball.velocity * lookAhead
+                let safeX = homeSign * max(0.34, min(0.84, abs(predictedBall.x)))
+                cachedTargetPosition = SIMD2(
+                    safeX,
+                    max(-0.55, min(0.55, predictedBall.y - 0.10))
+                )
+            } else {
+                cachedTargetPosition = SIMD2(homeSign * 0.52, -0.18)
+            }
+            cachedAimError = sin(Double(tick &+ (team == .cyan ? 17 : 43)) * 0.17)
+                * difficulty.aimErrorRadians
+            cachedHomeSide = ship.homeSide
+            lastDecisionTick = tick
         }
 
-        guard let ship = state.ships[team] else { return .idle(tick: tick) }
-        let nearFloor = ship.position.y < -0.52
-        let fallingFast = ship.velocity.y < -1.1
-        let recovering = nearFloor && fallingFast
-        let nearCenter = abs(ship.position.x) < 0.38
-        let facingEnemy = ship.homeSide == .cyan
-            ? cos(ship.angle) > 0
-            : cos(ship.angle) < 0
-        let movingTowardEnemy = ship.homeSide == .cyan
-            ? ship.velocity.x > 0.1
-            : ship.velocity.x < -0.1
+        let targetPosition = cachedTargetPosition ?? SIMD2(homeSign * 0.52, -0.18)
+        let positionError = targetPosition - ship.position
+        let desiredVelocity = SIMD2(
+            max(-1.6, min(1.6, positionError.x * 1.8)),
+            max(-1.3, min(1.3, positionError.y * 1.8))
+        )
+        var desiredAcceleration = (desiredVelocity - ship.velocity) * 2.5
+            + SIMD2(0, 1.2)
+        if centerDanger {
+            desiredAcceleration.x = homeSign * (6 + abs(ship.velocity.x) * 2)
+        }
 
         let desiredAngle: Double
-        if recovering {
+        if centerDanger {
+            desiredAngle = atan2(desiredAcceleration.y, desiredAcceleration.x)
+        } else if recovering {
             desiredAngle = .pi / 2
-        } else if nearCenter && (facingEnemy || movingTowardEnemy) {
-            desiredAngle = ship.homeSide == .cyan ? .pi : 0
         } else {
-            let leadTime: Double = difficulty == .rookie ? 0.10 : difficulty == .pilot ? 0.22 : 0.34
-            let predictedBall = state.ball.position + state.ball.velocity * leadTime
-            let target = predictedBall - ship.position
-            let deterministicError = sin(Double(tick &+ (team == .cyan ? 17 : 43)) * 0.17)
-                * difficulty.aimErrorRadians
-            desiredAngle = atan2(target.y, target.x) + deterministicError
+            desiredAngle = atan2(desiredAcceleration.y, desiredAcceleration.x)
+                + cachedAimError
         }
 
-        let delta = normalizedAngle(desiredAngle - ship.angle)
-        cachedTorque = abs(delta) < 0.035 ? 0 : (delta > 0 ? 1 : -1)
-        cachedThrust = abs(delta) < (recovering ? 0.30 : 0.58)
-            && !(nearCenter && facingEnemy)
-        lastDecisionTick = tick
-        return PlayerInput(tick: tick, torque: cachedTorque, thrust: cachedThrust)
+        let angleError = normalizedAngle(desiredAngle - ship.angle)
+        let turnDemand = angleError * 2.4 - ship.angularVelocity * 1.35
+        let torque = abs(turnDemand) < 0.08 ? 0 : max(-1, min(1, turnDemand))
+        let thrust: Bool
+        if centerDanger {
+            thrust = cos(ship.angle) * homeSign > 0.25
+        } else {
+            thrust = simd_length(desiredAcceleration) > 0.8
+                && abs(angleError) < (recovering ? 0.30 : 0.48)
+                && abs(ship.angularVelocity) < 1.1
+        }
+        return PlayerInput(tick: tick, torque: torque, thrust: thrust)
     }
 
     private func normalizedAngle(_ angle: Double) -> Double {

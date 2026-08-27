@@ -17,7 +17,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.launch()
 
         app.buttons["HOW TO FLY"].tap()
-        XCTAssertTrue(app.staticTexts["ROTATE"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["STEER"].waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
 
         app.buttons["SETTINGS"].tap()
@@ -33,7 +33,10 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.buttons["ROOKIE, Patient learner"].waitForExistence(timeout: 3))
         app.buttons["ROOKIE, Patient learner"].tap()
         XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Rotate left"].exists)
+        XCTAssertTrue(app.buttons["Rotate right"].exists)
         XCTAssertTrue(app.buttons["Thrust"].exists)
+        XCTAssertTrue(app.staticTexts["Your side: Cyan"].exists)
 
         app.buttons["Pause match"].tap()
         XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 3))

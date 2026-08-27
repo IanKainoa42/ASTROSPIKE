@@ -7,7 +7,7 @@ struct RallyLifecycleTests {
     func freezeResetCountdown() {
         var engine = SimulationEngine.testing()
         engine.state.ball.position = .init(0.82, -0.62)
-        engine.state.ball.velocity = .init(0, -2)
+        engine.state.ball.velocity = .init(-0.4, -2)
 
         engine.step(inputs: [:])
         let score = engine.state.match.score

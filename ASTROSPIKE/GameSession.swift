@@ -32,7 +32,6 @@ final class GameSession {
     private var previousTimestamp: CFTimeInterval?
     private var countdownAccumulator = 0.0
     private var freezeAccumulator = 0.0
-    private var rallyNumber = 0
 
     init(mode: GameMode, online: OnlineMatchCoordinator? = nil) {
         self.mode = mode
@@ -106,8 +105,7 @@ final class GameSession {
                 freezeAccumulator = 0
                 countdownAccumulator = 0
                 countdown = 3
-                rallyNumber += 1
-                engine.prepareNextRally(mirrored: rallyNumber.isMultiple(of: 2))
+                engine.prepareNextRally(mirrored: false)
                 state = engine.state
             }
         case .playing:
@@ -208,8 +206,7 @@ final class GameSession {
             if online.isAuthoritative {
                 self.countdown = 3
                 self.countdownAccumulator = 0
-                self.rallyNumber += 1
-                self.engine.prepareNextRally(mirrored: self.rallyNumber.isMultiple(of: 2))
+                self.engine.prepareNextRally(mirrored: false)
                 self.state = self.engine.state
                 online.sendFullResync(self.engine.state)
             }

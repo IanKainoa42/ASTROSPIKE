@@ -53,7 +53,9 @@ public struct ArenaGeometry: Equatable, Sendable {
         guard ball.velocity.y < -goalMinimumDownwardSpeed else { return nil }
         let absoluteX = abs(ball.position.x)
         guard absoluteX >= goalInnerX, absoluteX <= goalOuterX else { return nil }
-        let diagonalRoofY = floorY + (absoluteX - goalInnerX)
+        let sideSign = ball.position.x < 0 ? -1.0 : 1.0
+        guard ball.velocity.x * sideSign < -0.05 else { return nil }
+        let diagonalRoofY = floorY + (goalOuterX - absoluteX)
         guard ball.position.y <= diagonalRoofY + ball.radius else { return nil }
         return ball.position.x < 0 ? .cyan : .orange
     }

@@ -25,6 +25,34 @@ struct ArenaPhysicsTests {
         #expect(ArenaGeometry.standard.goalDefender(for: ball) == .orange)
     }
 
+    @Test("The recessed goal only accepts a ball returning from the backboard")
+    func directShotDoesNotScoreWithoutBackboard() {
+        let directShot = BallState(
+            position: SIMD2(0.84, -0.70),
+            velocity: SIMD2(0.4, -1.2),
+            radius: 0.05
+        )
+
+        #expect(ArenaGeometry.standard.goalDefender(for: directShot) == nil)
+    }
+
+    @Test("The goal roof rises inward and closes toward the outer wall")
+    func goalFacesOuterWall() {
+        let insideInwardMouth = BallState(
+            position: SIMD2(0.74, -0.64),
+            velocity: SIMD2(-0.4, -1.2),
+            radius: 0.04
+        )
+        let aboveOuterPoint = BallState(
+            position: SIMD2(0.92, -0.64),
+            velocity: SIMD2(-0.4, -1.2),
+            radius: 0.04
+        )
+
+        #expect(ArenaGeometry.standard.goalDefender(for: insideInwardMouth) == .orange)
+        #expect(ArenaGeometry.standard.goalDefender(for: aboveOuterPoint) == nil)
+    }
+
     @Test("The net rebounds the ball")
     func netReboundsBall() {
         var engine = SimulationEngine.testing()
@@ -37,6 +65,43 @@ struct ArenaPhysicsTests {
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
         #expect(engine.state.ball.velocity.x < 0)
+    }
+
+    @Test("A rebounding ball clears the net instead of sticking to its edge")
+    func reboundingBallClearsNet() {
+        var engine = SimulationEngine.testing()
+        engine.state.ball = BallState(
+            position: SIMD2(-0.051, -0.20),
+            velocity: SIMD2(2, 0),
+            radius: 0.04
+        )
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+        let reboundX = engine.state.ball.position.x
+        for tick in UInt64(1) ... 12 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+        }
+
+        #expect(engine.state.ball.position.x < reboundX - 0.02)
+        #expect(engine.state.ball.velocity.x < 0)
+    }
+
+    @Test("A center drop bounces from the rounded net cap and deflects sideways")
+    func roundedNetCapDeflectsCenterDrop() {
+        var engine = SimulationEngine.testing()
+        engine.state.ball = BallState(
+            position: SIMD2(0, 0.32),
+            velocity: SIMD2(0, -2),
+            radius: 0.04
+        )
+
+        for tick in UInt64(0) ..< 40 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+        }
+
+        #expect(engine.state.ball.velocity.y > 0)
+        #expect(abs(engine.state.ball.velocity.x) > 0.05)
+        #expect(abs(engine.state.ball.position.x) > 0.058)
     }
 
     @Test("A maximum speed ball cannot tunnel through the net")

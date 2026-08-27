@@ -77,6 +77,28 @@ final class ArenaScene: SKScene {
         arenaLayer.removeAllChildren()
         let frame = arenaRect
 
+        let cyanZone = SKShapeNode(rect: CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: frame.width / 2,
+            height: frame.height
+        ))
+        cyanZone.fillColor = .cyan.withAlphaComponent(0.025)
+        cyanZone.strokeColor = .clear
+        arenaLayer.addChild(cyanZone)
+        let orangeZone = SKShapeNode(rect: CGRect(
+            x: frame.midX,
+            y: frame.minY,
+            width: frame.width / 2,
+            height: frame.height
+        ))
+        orangeZone.fillColor = .orange.withAlphaComponent(0.025)
+        orangeZone.strokeColor = .clear
+        arenaLayer.addChild(orangeZone)
+
+        addSideLabel("CYAN SIDE", team: .cyan, at: point(-0.72, 0.68))
+        addSideLabel("ORANGE SIDE", team: .orange, at: point(0.72, 0.68))
+
         for index in 0..<56 {
             let seed = Double(index * 7919 % 101) / 101
             let star = SKShapeNode(circleOfRadius: index.isMultiple(of: 9) ? 1.8 : 0.8)
@@ -113,8 +135,17 @@ final class ArenaScene: SKScene {
 
         addGoal(defender: .cyan)
         addGoal(defender: .orange)
-        let net = SKShapeNode(rectOf: CGSize(width: max(7, frame.width * 0.018), height: frame.height * 0.59))
-        net.position = point(0, -0.31)
+        let netPath = CGMutablePath()
+        let netLeftBottom = point(-0.018, -0.78)
+        let netLeftTop = point(-0.018, 0.16)
+        let netRightTop = point(0.018, 0.16)
+        let netRightBottom = point(0.018, -0.78)
+        netPath.move(to: netLeftBottom)
+        netPath.addLine(to: netLeftTop)
+        netPath.addQuadCurve(to: netRightTop, control: point(0, 0.20))
+        netPath.addLine(to: netRightBottom)
+        netPath.closeSubpath()
+        let net = SKShapeNode(path: netPath)
         net.strokeColor = SKColor(red: 0.75, green: 0.35, blue: 1, alpha: 1)
         net.fillColor = SKColor(red: 0.18, green: 0.02, blue: 0.35, alpha: 0.75)
         net.lineWidth = 2
@@ -125,9 +156,9 @@ final class ArenaScene: SKScene {
     private func addGoal(defender: Team) {
         let sign = defender == .cyan ? -1.0 : 1.0
         let path = CGMutablePath()
-        path.move(to: point(0.72 * sign, -0.78))
-        path.addLine(to: point(0.94 * sign, -0.56))
-        path.addLine(to: point(0.96 * sign, -0.78))
+        path.move(to: point(0.96 * sign, -0.78))
+        path.addLine(to: point(0.72 * sign, -0.56))
+        path.addLine(to: point(0.72 * sign, -0.78))
         let goal = SKShapeNode(path: path)
         goal.strokeColor = defender == .cyan ? .cyan : .orange
         goal.lineWidth = 5
@@ -139,6 +170,18 @@ final class ArenaScene: SKScene {
         lip.fillColor = defender == .cyan ? .cyan : .orange
         lip.strokeColor = .white
         arenaLayer.addChild(lip)
+    }
+
+    private func addSideLabel(_ text: String, team: Team, at position: CGPoint) {
+        let label = SKLabelNode(text: text)
+        label.fontName = "AvenirNextCondensed-Bold"
+        label.fontSize = 11
+        label.fontColor = (team == .cyan ? SKColor.cyan : .orange).withAlphaComponent(0.35)
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = position
+        label.zPosition = 1
+        arenaLayer.addChild(label)
     }
 
     private func renderSnapshot() {
