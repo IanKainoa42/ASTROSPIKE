@@ -28,19 +28,25 @@ public struct ShipState: Codable, Equatable, Sendable {
     public var angle: Double
     public var angularVelocity: Double
     public var isDestroyed: Bool
+    public var thrustLevel: Double
+    public var homeSide: Team
 
     public init(
         position: SIMD2<Double>,
         velocity: SIMD2<Double> = .zero,
         angle: Double,
         angularVelocity: Double = 0,
-        isDestroyed: Bool = false
+        isDestroyed: Bool = false,
+        thrustLevel: Double = 0,
+        homeSide: Team? = nil
     ) {
         self.position = position
         self.velocity = velocity
         self.angle = angle
         self.angularVelocity = angularVelocity
         self.isDestroyed = isDestroyed
+        self.thrustLevel = thrustLevel
+        self.homeSide = homeSide ?? (position.x < 0 ? .cyan : .orange)
     }
 }
 
@@ -66,18 +72,24 @@ public struct WorldState: Codable, Equatable, Sendable {
 public struct SimulationConfiguration: Equatable, Sendable {
     public var stepDuration: Double
     public var gravity: SIMD2<Double>
-    public var thrustAcceleration: Double
+    public var initialThrustAcceleration: Double
+    public var maximumThrustAcceleration: Double
+    public var thrustRampRate: Double
     public var torqueAcceleration: Double
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
-        gravity: SIMD2<Double> = SIMD2(0, -3.2),
-        thrustAcceleration: Double = 9,
+        gravity: SIMD2<Double> = SIMD2(0, -1.2),
+        initialThrustAcceleration: Double = 3,
+        maximumThrustAcceleration: Double = 18,
+        thrustRampRate: Double = 24,
         torqueAcceleration: Double = 5
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
-        self.thrustAcceleration = thrustAcceleration
+        self.initialThrustAcceleration = initialThrustAcceleration
+        self.maximumThrustAcceleration = maximumThrustAcceleration
+        self.thrustRampRate = thrustRampRate
         self.torqueAcceleration = torqueAcceleration
     }
 }
@@ -142,7 +154,15 @@ public struct SimulationEngine: Sendable {
             ship.angle += ship.angularVelocity * dt
             var acceleration = configuration.gravity
             if input.thrust {
-                acceleration += SIMD2(cos(ship.angle), sin(ship.angle)) * configuration.thrustAcceleration
+                ship.thrustLevel = ship.thrustLevel > 0
+                    ? min(
+                        configuration.maximumThrustAcceleration,
+                        ship.thrustLevel + configuration.thrustRampRate * dt
+                    )
+                    : configuration.initialThrustAcceleration
+                acceleration += SIMD2(cos(ship.angle), sin(ship.angle)) * ship.thrustLevel
+            } else {
+                ship.thrustLevel = 0
             }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
@@ -154,7 +174,10 @@ public struct SimulationEngine: Sendable {
         let previousBallPosition = state.ball.position
         state.ball.velocity += configuration.gravity * 0.72 * dt
         state.ball.position += state.ball.velocity * dt
-        resolveBallShipCollisions(previousPosition: previousBallPosition)
+        resolveBallShipCollisions(
+            previousBallPosition: previousBallPosition,
+            previousShipPositions: previousShipPositions
+        )
         resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
 
         lastEvents = rules.resolve(contacts)
@@ -184,12 +207,7 @@ public struct SimulationEngine: Sendable {
         let length = simd_length(normal)
         normal = length > 0.000_001 ? normal / length : SIMD2(-1, 0)
         let closingSpeed = max(0, -simd_dot(cyan.velocity - orange.velocity, normal))
-        if closingSpeed >= 5.0 {
-            cyan.isDestroyed = true
-            orange.isDestroyed = true
-            contacts.append(.shipDestroyed(team: .cyan, reason: .crash))
-            contacts.append(.shipDestroyed(team: .orange, reason: .crash))
-        } else if closingSpeed > 0 {
+        if closingSpeed > 0 {
             let impulse = normal * (closingSpeed * 0.82)
             cyan.velocity += impulse
             orange.velocity -= impulse
@@ -204,37 +222,31 @@ public struct SimulationEngine: Sendable {
         contacts: inout [RuleContact]
     ) {
         let radius = 0.065
-        if abs(ship.position.x) <= arena.netHalfWidth + radius,
-           ship.position.y - radius <= arena.netTopY {
+        let enteredEnemyTerritory = ship.homeSide == .cyan
+            ? ship.position.x + radius > 0
+            : ship.position.x - radius < 0
+        if enteredEnemyTerritory {
             ship.isDestroyed = true
+            ship.thrustLevel = 0
             contacts.append(.shipDestroyed(team: team, reason: .netContact))
             return
         }
 
-        var impactSpeed = 0.0
         if ship.position.y - radius <= arena.floorY {
-            impactSpeed = max(impactSpeed, -ship.velocity.y)
             ship.position.y = arena.floorY + radius
             ship.velocity.y = max(0, -ship.velocity.y * 0.12)
         }
         if ship.position.y + radius >= arena.ceilingY {
-            impactSpeed = max(impactSpeed, ship.velocity.y)
             ship.position.y = arena.ceilingY - radius
             ship.velocity.y = min(0, -ship.velocity.y * 0.3)
         }
         if ship.position.x - radius <= -arena.halfWidth {
-            impactSpeed = max(impactSpeed, -ship.velocity.x)
             ship.position.x = -arena.halfWidth + radius
             ship.velocity.x = max(0, -ship.velocity.x * 0.3)
         }
         if ship.position.x + radius >= arena.halfWidth {
-            impactSpeed = max(impactSpeed, ship.velocity.x)
             ship.position.x = arena.halfWidth - radius
             ship.velocity.x = min(0, -ship.velocity.x * 0.3)
-        }
-        if impactSpeed >= 4.5 {
-            ship.isDestroyed = true
-            contacts.append(.shipDestroyed(team: team, reason: .crash))
         }
     }
 
@@ -251,28 +263,28 @@ public struct SimulationEngine: Sendable {
         if let netHit = sweptNetHit(from: previousPosition, to: state.ball.position, radius: r) {
             state.ball.position = netHit.position
             state.ball.velocity.x = netHit.fromLeft
-                ? -abs(state.ball.velocity.x) * 0.86
-                : abs(state.ball.velocity.x) * 0.86
+                ? -abs(state.ball.velocity.x) * 0.94
+                : abs(state.ball.velocity.x) * 0.94
         } else if previousPosition.x.sign != state.ball.position.x.sign {
             contacts.append(.ballCrossedCenter(into: state.ball.position.x < 0 ? .cyan : .orange))
         }
 
         if state.ball.position.y - r <= arena.floorY {
             state.ball.position.y = arena.floorY + r
-            state.ball.velocity.y = abs(state.ball.velocity.y) * 0.78
+            state.ball.velocity.y = abs(state.ball.velocity.y) * 0.90
             contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
         }
         if state.ball.position.y + r >= arena.ceilingY {
             state.ball.position.y = arena.ceilingY - r
-            state.ball.velocity.y = -abs(state.ball.velocity.y) * 0.86
+            state.ball.velocity.y = -abs(state.ball.velocity.y) * 0.94
         }
         if state.ball.position.x - r <= -arena.halfWidth {
             state.ball.position.x = -arena.halfWidth + r
-            state.ball.velocity.x = abs(state.ball.velocity.x) * 0.86
+            state.ball.velocity.x = abs(state.ball.velocity.x) * 0.94
         }
         if state.ball.position.x + r >= arena.halfWidth {
             state.ball.position.x = arena.halfWidth - r
-            state.ball.velocity.x = -abs(state.ball.velocity.x) * 0.86
+            state.ball.velocity.x = -abs(state.ball.velocity.x) * 0.94
         }
     }
 
@@ -305,8 +317,12 @@ public struct SimulationEngine: Sendable {
         return (SIMD2(boundary, hitY), fromLeft)
     }
 
-    private mutating func resolveBallShipCollisions(previousPosition: SIMD2<Double>) {
+    private mutating func resolveBallShipCollisions(
+        previousBallPosition: SIMD2<Double>,
+        previousShipPositions: [Team: SIMD2<Double>]
+    ) {
         struct Fixture {
+            var previousCenter: SIMD2<Double>
             var center: SIMD2<Double>
             var radius: Double
         }
@@ -314,18 +330,31 @@ public struct SimulationEngine: Sendable {
         let ballEnd = state.ball.position
         var earliest: (team: Team, fixture: Fixture, t: Double)?
         for team in Team.allCases {
-            guard let ship = state.ships[team], !ship.isDestroyed else { continue }
+            guard let ship = state.ships[team], !ship.isDestroyed,
+                  let previousShipPosition = previousShipPositions[team] else { continue }
             let axis = SIMD2(cos(ship.angle), sin(ship.angle))
             let fixtures = [
-                Fixture(center: ship.position - axis * 0.045, radius: 0.048),
-                Fixture(center: ship.position, radius: 0.055),
-                Fixture(center: ship.position + axis * 0.060, radius: 0.035),
+                Fixture(
+                    previousCenter: previousShipPosition - axis * 0.045,
+                    center: ship.position - axis * 0.045,
+                    radius: 0.048
+                ),
+                Fixture(
+                    previousCenter: previousShipPosition,
+                    center: ship.position,
+                    radius: 0.055
+                ),
+                Fixture(
+                    previousCenter: previousShipPosition + axis * 0.060,
+                    center: ship.position + axis * 0.060,
+                    radius: 0.035
+                ),
             ]
             for fixture in fixtures {
                 guard let t = sweptCircleTime(
-                    from: previousPosition,
-                    to: ballEnd,
-                    center: fixture.center,
+                    from: previousBallPosition - fixture.previousCenter,
+                    to: ballEnd - fixture.center,
+                    center: .zero,
                     radius: state.ball.radius + fixture.radius
                 ) else { continue }
                 if earliest == nil || t < earliest!.t {
@@ -335,8 +364,10 @@ public struct SimulationEngine: Sendable {
         }
 
         guard let hit = earliest, var ship = state.ships[hit.team] else { return }
-        let contactPoint = previousPosition + (ballEnd - previousPosition) * hit.t
-        var normal = contactPoint - hit.fixture.center
+        let ballContact = previousBallPosition + (ballEnd - previousBallPosition) * hit.t
+        let fixtureContact = hit.fixture.previousCenter
+            + (hit.fixture.center - hit.fixture.previousCenter) * hit.t
+        var normal = ballContact - fixtureContact
         let normalLength = simd_length(normal)
         normal = normalLength > 0.000_001 ? normal / normalLength : SIMD2(-1, 0)
         state.ball.position = hit.fixture.center + normal * (state.ball.radius + hit.fixture.radius)
@@ -344,9 +375,9 @@ public struct SimulationEngine: Sendable {
         let relativeVelocity = state.ball.velocity - ship.velocity
         let inwardSpeed = simd_dot(relativeVelocity, normal)
         guard inwardSpeed < 0 else { return }
-        let inverseBallMass = 1.0 / 0.70
+        let inverseBallMass = 1.0 / 0.45
         let inverseShipMass = 1.0 / 1.60
-        let impulse = -(1 + 0.66) * inwardSpeed / (inverseBallMass + inverseShipMass)
+        let impulse = -(1 + 0.95) * inwardSpeed / (inverseBallMass + inverseShipMass)
         state.ball.velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
         state.ships[hit.team] = ship

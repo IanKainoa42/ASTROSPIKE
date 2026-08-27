@@ -49,10 +49,19 @@ public struct AIController: InputSource, Sendable {
         let nearFloor = ship.position.y < -0.52
         let fallingFast = ship.velocity.y < -1.1
         let recovering = nearFloor && fallingFast
+        let nearCenter = abs(ship.position.x) < 0.38
+        let facingEnemy = ship.homeSide == .cyan
+            ? cos(ship.angle) > 0
+            : cos(ship.angle) < 0
+        let movingTowardEnemy = ship.homeSide == .cyan
+            ? ship.velocity.x > 0.1
+            : ship.velocity.x < -0.1
 
         let desiredAngle: Double
         if recovering {
             desiredAngle = .pi / 2
+        } else if nearCenter && (facingEnemy || movingTowardEnemy) {
+            desiredAngle = ship.homeSide == .cyan ? .pi : 0
         } else {
             let leadTime: Double = difficulty == .rookie ? 0.10 : difficulty == .pilot ? 0.22 : 0.34
             let predictedBall = state.ball.position + state.ball.velocity * leadTime
@@ -65,6 +74,7 @@ public struct AIController: InputSource, Sendable {
         let delta = normalizedAngle(desiredAngle - ship.angle)
         cachedTorque = abs(delta) < 0.035 ? 0 : (delta > 0 ? 1 : -1)
         cachedThrust = abs(delta) < (recovering ? 0.30 : 0.58)
+            && !(nearCenter && facingEnemy)
         lastDecisionTick = tick
         return PlayerInput(tick: tick, torque: cachedTorque, thrust: cachedThrust)
     }

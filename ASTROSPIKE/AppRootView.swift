@@ -247,9 +247,9 @@ private struct FlightTutorial: View {
             ScrollView {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "rotate.right", title: "ROTATE", text: "Slide your torque thumb left or right. Your ship keeps spinning until you counter-rotate.")
-                    TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold thrust to fire endlessly along the ship’s nose. There is no auto-leveling and no brake.")
+                    TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for a gentle jetpack lift that rapidly builds into full rocket acceleration. There is no auto-leveling and no brake.")
                     TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball down into the recessed goal. Three floor bounces on one side also concede a point.")
-                    TutorialCard(number: "04", icon: "bolt.trianglebadge.exclamationmark.fill", title: "SURVIVE", text: "Land gently. The center net and high-speed crashes destroy ships; simultaneous deaths replay the rally.")
+                    TutorialCard(number: "04", icon: "bolt.trianglebadge.exclamationmark.fill", title: "SURVIVE", text: "Walls and ship impacts are safe. Touch any part of the opponent’s half and the lethal center boundary destroys you.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }

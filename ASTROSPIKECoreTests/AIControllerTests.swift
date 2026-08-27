@@ -39,4 +39,22 @@ struct AIControllerTests {
         #expect(!input.thrust)
         #expect(input.torque != 0)
     }
+
+    @Test("AI begins retreating before it reaches the lethal center line")
+    func avoidsThrustingIntoEnemyTerritory() {
+        var state = SimulationEngine.testing().state
+        state.ships[.orange] = ShipState(
+            position: SIMD2(0.30, 0.20),
+            velocity: .zero,
+            angle: .pi,
+            homeSide: .orange
+        )
+        state.ball.position = SIMD2(-0.40, 0.20)
+        var controller = AIController(difficulty: .ace)
+
+        let input = controller.input(for: state, team: .orange, tick: 0)
+
+        #expect(!input.thrust)
+        #expect(input.torque != 0)
+    }
 }

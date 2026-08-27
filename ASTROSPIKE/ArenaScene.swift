@@ -11,9 +11,12 @@ final class ArenaScene: SKScene {
     private let actorLayer = SKNode()
     private let cyanShip = SKShapeNode()
     private let orangeShip = SKShapeNode()
+    private let cyanExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
+    private let orangeExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
     private let ball = SKShapeNode(circleOfRadius: 12)
     private var cyanTrail: [CGPoint] = []
     private var orangeTrail: [CGPoint] = []
+    private var ballTrail: [CGPoint] = []
     private var didBuild = false
 
     override init(size: CGSize = CGSize(width: 960, height: 540)) {
@@ -49,6 +52,19 @@ final class ArenaScene: SKScene {
         orangeShip.strokeColor = .white
         orangeShip.lineWidth = 1.5
         orangeShip.glowWidth = 8
+        for (ship, exhaust, color) in [
+            (cyanShip, cyanExhaust, SKColor.cyan),
+            (orangeShip, orangeExhaust, SKColor.orange),
+        ] {
+            exhaust.position = CGPoint(x: 0, y: -29)
+            exhaust.fillColor = .white
+            exhaust.strokeColor = color
+            exhaust.lineWidth = 3
+            exhaust.glowWidth = 10
+            exhaust.zPosition = -1
+            exhaust.isHidden = true
+            ship.addChild(exhaust)
+        }
         ball.fillColor = .white
         ball.strokeColor = SKColor(red: 0.65, green: 0.95, blue: 1, alpha: 1)
         ball.lineWidth = 3
@@ -133,6 +149,7 @@ final class ArenaScene: SKScene {
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
         let ballScale = CGFloat(snapshot.ball.radius / 0.045)
         ball.setScale(ballScale)
+        ball.glowWidth = 12 + min(20, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y))
         updateTrails(snapshot)
     }
 
@@ -194,6 +211,11 @@ final class ArenaScene: SKScene {
         shipNode.zRotation = state.angle - .pi / 2
         let unit = min(arenaRect.width / 2, arenaRect.height) / 1.7
         shipNode.setScale(unit / 350)
+        shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)
+        let exhaust = team == .cyan ? cyanExhaust : orangeExhaust
+        exhaust.isHidden = state.thrustLevel <= 0 || state.isDestroyed
+        exhaust.yScale = 0.35 + CGFloat(state.thrustLevel / 18) * 1.65
+        exhaust.alpha = 0.55 + CGFloat(state.thrustLevel / 18) * 0.45
     }
 
     private func updateTrails(_ snapshot: WorldState) {
@@ -201,15 +223,22 @@ final class ArenaScene: SKScene {
             trailLayer.removeAllChildren()
             cyanTrail.removeAll()
             orangeTrail.removeAll()
+            ballTrail.removeAll()
             return
         }
         if let cyan = snapshot.ships[.cyan], !cyan.isDestroyed { cyanTrail.append(point(cyan.position.x, cyan.position.y)) }
         if let orange = snapshot.ships[.orange], !orange.isDestroyed { orangeTrail.append(point(orange.position.x, orange.position.y)) }
+        ballTrail.append(point(snapshot.ball.position.x, snapshot.ball.position.y))
         cyanTrail = Array(cyanTrail.suffix(22))
         orangeTrail = Array(orangeTrail.suffix(22))
+        ballTrail = Array(ballTrail.suffix(16))
         trailLayer.removeAllChildren()
         trailLayer.addChild(trail(points: cyanTrail, color: .cyan))
         trailLayer.addChild(trail(points: orangeTrail, color: .orange))
+        let ballTrailNode = trail(points: ballTrail, color: .white)
+        ballTrailNode.lineWidth = 2 + min(6, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y) * 0.25)
+        ballTrailNode.glowWidth = 8
+        trailLayer.addChild(ballTrailNode)
     }
 
     private func trail(points: [CGPoint], color: SKColor) -> SKShapeNode {

@@ -11,7 +11,7 @@ public enum WirePayload: Codable, Equatable, Sendable {
 }
 
 public struct WireEnvelope: Codable, Equatable, Sendable {
-    public static let currentVersion: UInt16 = 1
+    public static let currentVersion: UInt16 = 2
 
     public var version: UInt16
     public var sequence: UInt64
@@ -89,7 +89,9 @@ public struct StateReconciler: Sendable {
             angle: predicted.angle * retained + authoritative.angle * blendFraction,
             angularVelocity: predicted.angularVelocity * retained
                 + authoritative.angularVelocity * blendFraction,
-            isDestroyed: authoritative.isDestroyed
+            isDestroyed: authoritative.isDestroyed,
+            thrustLevel: authoritative.thrustLevel,
+            homeSide: authoritative.homeSide
         )
     }
 }
