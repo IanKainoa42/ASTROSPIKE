@@ -40,8 +40,8 @@ struct AIControllerTests {
         #expect(input.torque != 0)
     }
 
-    @Test("Attitude control counter-steers current spin every simulation tick")
-    func attitudeControlDoesNotReplayStaleTorque() {
+    @Test("Attitude control ignores the previous held rotation direction")
+    func attitudeControlDoesNotCounterSteerReleasedInput() {
         var state = SimulationEngine.testing().state
         state.ships[.orange]!.position = SIMD2(0.55, -0.70)
         state.ships[.orange]!.angle = .pi / 2
@@ -49,12 +49,12 @@ struct AIControllerTests {
         state.ball.position = SIMD2(-0.55, 0.25)
         var controller = AIController(difficulty: .pilot)
 
-        let clockwiseCorrection = controller.input(for: state, team: .orange, tick: 0)
+        let afterLeftRelease = controller.input(for: state, team: .orange, tick: 0)
         state.ships[.orange]!.angularVelocity = -1.5
-        let counterclockwiseCorrection = controller.input(for: state, team: .orange, tick: 1)
+        let afterRightRelease = controller.input(for: state, team: .orange, tick: 1)
 
-        #expect(clockwiseCorrection.torque < 0)
-        #expect(counterclockwiseCorrection.torque > 0)
+        #expect(afterLeftRelease.torque == 0)
+        #expect(afterRightRelease.torque == 0)
     }
 
     @Test("AI begins retreating before it reaches the lethal center line")

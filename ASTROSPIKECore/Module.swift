@@ -231,7 +231,7 @@ public struct SimulationEngine: Sendable {
         for team in Team.allCases {
             guard var ship = state.ships[team], !ship.isDestroyed else { continue }
             let input = inputs[team] ?? .idle(tick: state.tick)
-            ship.angularVelocity += input.torque * configuration.torqueAcceleration * dt
+            ship.angularVelocity = input.torque * configuration.torqueAcceleration
             ship.angle += ship.angularVelocity * dt
             var acceleration = configuration.gravity
             if input.thrust {

@@ -343,7 +343,7 @@ private struct FlightTutorial: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Press and slide across the rotation pad for analog torque. Release, then counter-steer to stop your spin.")
+                    TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
                     TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball off the center net and down into the opponent’s compact goal. Each ship hit refreshes your floor-bounce allowance.")
                     TutorialCard(number: "04", icon: "arrow.uturn.backward.circle.fill", title: "REBOUND", text: "Walls, ship impacts, and the center barrier bounce you back safely.")

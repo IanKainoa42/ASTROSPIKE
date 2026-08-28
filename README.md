@@ -14,9 +14,9 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 
 ## Rules
 
-- The prototype controls are canonical: the left thumb slides across one analog rotational-torque pad, while the right thumb holds an equally sized constant-thrust pad.
-- Lunar-style flight tuning is canonical: gravity is `-2` arena units/s², main thrust is a constant `5.5` arena units/s², and rotational torque acceleration is `3` rad/s².
-- Linear and angular momentum persist without stabilization.
+- The prototype controls are canonical: the left thumb holds either directional rotation control, while the right thumb holds the constant-thrust control.
+- Lunar-style flight tuning is canonical: gravity is `-2` arena units/s², main thrust is a constant `5.5` arena units/s², and the full-input rotation rate is `3` rad/s.
+- Linear momentum persists without stabilization. Rotation applies only while a direction is held and stops immediately on release, leaving the ship at its current angle.
 - Each goal opens toward its defender's side with its back against the center net; a downward return from the net into the pocket scores.
 - The net rebounds the ball. If any part of a ship enters the opponent’s half, that ship is destroyed.
 - Outer-wall, floor, ceiling, and ship-to-ship impacts never destroy ships.

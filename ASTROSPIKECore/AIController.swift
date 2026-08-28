@@ -93,7 +93,7 @@ public struct AIController: InputSource, Sendable {
         }
 
         let angleError = normalizedAngle(desiredAngle - ship.angle)
-        let turnDemand = angleError * 2.4 - ship.angularVelocity * 1.35
+        let turnDemand = angleError * 2.4
         let torque = abs(turnDemand) < 0.08 ? 0 : max(-1, min(1, turnDemand))
         let thrust: Bool
         if centerDanger {
@@ -101,7 +101,6 @@ public struct AIController: InputSource, Sendable {
         } else {
             thrust = simd_length(desiredAcceleration) > 0.8
                 && abs(angleError) < (recovering ? 0.30 : 0.48)
-                && abs(ship.angularVelocity) < 1.1
         }
         return PlayerInput(tick: tick, torque: torque, thrust: thrust)
     }

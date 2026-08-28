@@ -31,14 +31,14 @@ struct RallyLifecycleTests {
             position: .init(-0.42, 0.31),
             velocity: .init(0.7, -0.2),
             angle: 0.8,
-            angularVelocity: 0.4,
+            angularVelocity: 0,
             thrustLevel: 2.5
         )
         engine.state.ships[.orange] = ShipState(
             position: .init(0.61, 0.22),
             velocity: .init(-0.3, 0.5),
             angle: 1.9,
-            angularVelocity: -0.2,
+            angularVelocity: 0,
             thrustLevel: 1.5
         )
         engine.state.ball.position = .init(0.08, -0.72)
@@ -50,9 +50,9 @@ struct RallyLifecycleTests {
         #expect(engine.state.match.phase == .serve)
         #expect(engine.state.ball.position == .init(0.48, 0.60))
         #expect(engine.state.ball.velocity == .zero)
-        #expect(engine.state.ships[.cyan]!.angle > 0.8)
+        #expect(engine.state.ships[.cyan]!.angle == 0.8)
         #expect(engine.state.ships[.cyan]!.position.x < 0)
-        #expect(engine.state.ships[.orange]!.angle < 1.9)
+        #expect(engine.state.ships[.orange]!.angle == 1.9)
         #expect(engine.state.ships[.orange]!.position.x > 0)
     }
 

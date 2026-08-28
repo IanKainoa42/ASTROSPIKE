@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ASTROSPIKECore
 
@@ -70,29 +71,32 @@ struct SimulationMotionTests {
         #expect(velocity.y > 0)
     }
 
-    @Test("Releasing torque preserves angular momentum")
-    func torqueReleaseDoesNotStabilizeShip() {
+    @Test("Releasing rotation input stops the ship immediately")
+    func rotationStopsOnRelease() {
         var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.angle = 0.4
         engine.step(inputs: [
             .cyan: PlayerInput(tick: 0, torque: 1, thrust: false),
             .orange: .idle(tick: 0),
         ])
-        let angularVelocityAfterTorque = engine.state.ships[.cyan]!.angularVelocity
-        let angleAfterTorque = engine.state.ships[.cyan]!.angle
+        let angleAfterInput = engine.state.ships[.cyan]!.angle
+
+        #expect(abs(engine.state.ships[.cyan]!.angularVelocity - 3) < 0.000_001)
+        #expect(angleAfterInput > 0.4)
 
         engine.step(inputs: [
             .cyan: .idle(tick: 1),
             .orange: .idle(tick: 1),
         ])
 
-        #expect(angularVelocityAfterTorque > 0)
-        #expect(engine.state.ships[.cyan]!.angularVelocity == angularVelocityAfterTorque)
-        #expect(engine.state.ships[.cyan]!.angle > angleAfterTorque)
+        #expect(engine.state.ships[.cyan]!.angularVelocity == 0)
+        #expect(engine.state.ships[.cyan]!.angle == angleAfterInput)
     }
 
-    @Test("Full torque adds three radians per second over one second")
-    func torqueUsesReducedLunarTuning() {
+    @Test("Holding full rotation turns at the configured rate")
+    func rotationUsesReducedLunarTuning() {
         var engine = SimulationEngine.testing()
+        let initialAngle = engine.state.ships[.cyan]!.angle
 
         for tick in 0 ..< 120 {
             engine.step(inputs: [
@@ -102,6 +106,7 @@ struct SimulationMotionTests {
         }
 
         #expect(abs(engine.state.ships[.cyan]!.angularVelocity - 3) < 0.000_001)
+        #expect(abs((engine.state.ships[.cyan]!.angle - initialAngle) - 3) < 0.000_001)
     }
 
     @Test("Torque input is clamped to its legal range")
@@ -131,8 +136,10 @@ struct SimulationMotionTests {
         ])
 
         let dt = 1.0 / 120.0
-        #expect(abs(engine.state.ships[.cyan]!.velocity.y - 3 * dt) < 0.000_001)
-        #expect(abs(engine.state.ships[.cyan]!.angularVelocity - 2 * dt) < 0.000_001)
+        let expectedShipAngle = .pi / 2 + 2 * dt
+        let expectedVerticalVelocity = (-1 + 4 * sin(expectedShipAngle)) * dt
+        #expect(abs(engine.state.ships[.cyan]!.velocity.y - expectedVerticalVelocity) < 0.000_001)
+        #expect(abs(engine.state.ships[.cyan]!.angularVelocity - 2) < 0.000_001)
         #expect(abs(engine.state.ball.velocity.y - -0.5 * dt) < 0.000_001)
     }
 }
