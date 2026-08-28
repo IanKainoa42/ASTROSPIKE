@@ -3,8 +3,8 @@ import Testing
 
 @Suite("Pure lander motion")
 struct SimulationMotionTests {
-    @Test("A free-falling lander matches the prototype gravity")
-    func gravityMatchesPrototype() {
+    @Test("A free-falling lander uses the reduced lunar gravity")
+    func gravityUsesReducedLunarTuning() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position.y = 0.6
         engine.state.ships[.cyan]!.velocity = .zero
@@ -16,11 +16,11 @@ struct SimulationMotionTests {
             ])
         }
 
-        #expect(abs(engine.state.ships[.cyan]!.velocity.y - -0.8) < 0.000_001)
+        #expect(abs(engine.state.ships[.cyan]!.velocity.y - -0.5) < 0.000_001)
     }
 
-    @Test("Main thrust matches the prototype's constant acceleration")
-    func thrustMatchesPrototype() {
+    @Test("Main thrust uses the reduced lunar acceleration")
+    func thrustUsesReducedLunarTuning() {
         var thrusting = SimulationEngine.testing()
         var falling = SimulationEngine.testing()
         thrusting.state.ships[.cyan]!.position.y = 0.5
@@ -51,8 +51,8 @@ struct SimulationMotionTests {
                 - (falling.state.ships[.cyan]!.velocity.y - fallingVelocityBeforeFinalStep)
         ) / dt
 
-        #expect(abs(initialAcceleration - 9) < 0.000_001)
-        #expect(abs(sustainedAcceleration - 9) < 0.000_001)
+        #expect(abs(initialAcceleration - 5.5) < 0.000_001)
+        #expect(abs(sustainedAcceleration - 5.5) < 0.000_001)
     }
 
     @Test("Main thrust accelerates only along the ship nose")
@@ -88,6 +88,20 @@ struct SimulationMotionTests {
         #expect(angularVelocityAfterTorque > 0)
         #expect(engine.state.ships[.cyan]!.angularVelocity == angularVelocityAfterTorque)
         #expect(engine.state.ships[.cyan]!.angle > angleAfterTorque)
+    }
+
+    @Test("Full torque adds three radians per second over one second")
+    func torqueUsesReducedLunarTuning() {
+        var engine = SimulationEngine.testing()
+
+        for tick in 0 ..< 120 {
+            engine.step(inputs: [
+                .cyan: PlayerInput(tick: UInt64(tick), torque: 1, thrust: false),
+                .orange: .idle(tick: UInt64(tick)),
+            ])
+        }
+
+        #expect(abs(engine.state.ships[.cyan]!.angularVelocity - 3) < 0.000_001)
     }
 
     @Test("Torque input is clamped to its legal range")

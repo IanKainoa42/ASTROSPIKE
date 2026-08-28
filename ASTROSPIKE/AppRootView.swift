@@ -278,7 +278,7 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Press and slide across the rotation pad for analog torque. Release, then counter-steer to stop your spin.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
-                    TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball down into the recessed goal. Three floor bounces on one side also concede a point.")
+                    TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball off the center net and down into the opponent’s compact goal. Three floor bounces on one side also concede a point.")
                     TutorialCard(number: "04", icon: "bolt.trianglebadge.exclamationmark.fill", title: "SURVIVE", text: "Walls and ship impacts are safe. Touch any part of the opponent’s half and the lethal center boundary destroys you.")
                 }.padding(28)
             }

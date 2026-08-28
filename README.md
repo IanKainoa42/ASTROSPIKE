@@ -1,6 +1,6 @@
 # ASTROSPIKE
 
-ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and later. Two momentum-driven landers volley a fast, highly elastic luminous ball across a lethal center boundary toward recessed 45-degree goals.
+ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and later. Two momentum-driven landers volley a fast, highly elastic luminous ball across a lethal center boundary toward compact back-to-back goals beside the center net.
 
 ## Project layout
 
@@ -15,8 +15,9 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 ## Rules
 
 - The prototype controls are canonical: the left thumb slides across one analog rotational-torque pad, while the right thumb holds an equally sized constant-thrust pad.
-- Prototype flight tuning is canonical: gravity is `-3.2` arena units/s² and main thrust is a constant `9` arena units/s².
+- Lunar-style flight tuning is canonical: gravity is `-2` arena units/s², main thrust is a constant `5.5` arena units/s², and rotational torque acceleration is `3` rad/s².
 - Linear and angular momentum persist without stabilization.
+- Each goal opens toward its defender's side with its back against the center net; a downward return from the net into the pocket scores.
 - The net rebounds the ball. If any part of a ship enters the opponent’s half, that ship is destroyed.
 - Outer-wall, floor, ceiling, and ship-to-ship impacts never destroy ships.
 - A goal, third floor bounce on one side, or center-boundary death awards one point.

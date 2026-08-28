@@ -6,51 +6,51 @@ struct ArenaPhysicsTests {
     @Test("A straight ground roll is rejected by the goal lip")
     func straightRollDoesNotScore() {
         let ball = BallState(
-            position: SIMD2(0.84, -0.70),
+            position: SIMD2(0.10, -0.72),
             velocity: SIMD2(2, 0),
-            radius: 0.05
+            radius: 0.045
         )
 
         #expect(ArenaGeometry.standard.goalDefender(for: ball) == nil)
     }
 
-    @Test("A downward backboard return enters the recessed goal")
-    func downwardBankScores() {
+    @Test("A downward return from the center net enters the adjacent goal")
+    func downwardNetReturnScores() {
         let ball = BallState(
-            position: SIMD2(0.84, -0.70),
-            velocity: SIMD2(-0.4, -1.2),
-            radius: 0.05
+            position: SIMD2(0.08, -0.72),
+            velocity: SIMD2(0.4, -1.2),
+            radius: 0.045
         )
 
         #expect(ArenaGeometry.standard.goalDefender(for: ball) == .orange)
     }
 
-    @Test("The recessed goal only accepts a ball returning from the backboard")
-    func directShotDoesNotScoreWithoutBackboard() {
+    @Test("A ball approaching the center net does not score before returning")
+    func inwardApproachDoesNotScoreBeforeNetReturn() {
         let directShot = BallState(
-            position: SIMD2(0.84, -0.70),
-            velocity: SIMD2(0.4, -1.2),
-            radius: 0.05
+            position: SIMD2(0.08, -0.72),
+            velocity: SIMD2(-0.4, -1.2),
+            radius: 0.045
         )
 
         #expect(ArenaGeometry.standard.goalDefender(for: directShot) == nil)
     }
 
-    @Test("The goal roof rises inward and closes toward the outer wall")
-    func goalFacesOuterWall() {
-        let insideInwardMouth = BallState(
-            position: SIMD2(0.74, -0.64),
-            velocity: SIMD2(-0.4, -1.2),
-            radius: 0.04
+    @Test("The compact goal opens outward and narrows toward the center net")
+    func compactGoalFacesAwayFromCenterNet() {
+        let insideMouth = BallState(
+            position: SIMD2(0.12, -0.65),
+            velocity: SIMD2(0.4, -1.2),
+            radius: 0.045
         )
-        let aboveOuterPoint = BallState(
-            position: SIMD2(0.92, -0.64),
-            velocity: SIMD2(-0.4, -1.2),
-            radius: 0.04
+        let aboveNarrowBack = BallState(
+            position: SIMD2(0.03, -0.70),
+            velocity: SIMD2(0.4, -1.2),
+            radius: 0.045
         )
 
-        #expect(ArenaGeometry.standard.goalDefender(for: insideInwardMouth) == .orange)
-        #expect(ArenaGeometry.standard.goalDefender(for: aboveOuterPoint) == nil)
+        #expect(ArenaGeometry.standard.goalDefender(for: insideMouth) == .orange)
+        #expect(ArenaGeometry.standard.goalDefender(for: aboveNarrowBack) == nil)
     }
 
     @Test("The net rebounds the ball")

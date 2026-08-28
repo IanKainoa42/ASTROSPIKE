@@ -9,6 +9,7 @@ final class ArenaScene: SKScene {
     private let arenaLayer = SKNode()
     private let trailLayer = SKNode()
     private let actorLayer = SKNode()
+    private let arena = ArenaGeometry.standard
     private let cyanShip = SKShapeNode()
     private let orangeShip = SKShapeNode()
     private let cyanExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
@@ -112,10 +113,10 @@ final class ArenaScene: SKScene {
         }
 
         let bounds = CGMutablePath()
-        bounds.move(to: point(-0.96, -0.78))
-        bounds.addLine(to: point(-0.96, 0.78))
-        bounds.addLine(to: point(0.96, 0.78))
-        bounds.addLine(to: point(0.96, -0.78))
+        bounds.move(to: point(-arena.halfWidth, arena.floorY))
+        bounds.addLine(to: point(-arena.halfWidth, arena.ceilingY))
+        bounds.addLine(to: point(arena.halfWidth, arena.ceilingY))
+        bounds.addLine(to: point(arena.halfWidth, arena.floorY))
         let wall = SKShapeNode(path: bounds)
         wall.strokeColor = SKColor(white: 0.8, alpha: 0.45)
         wall.lineWidth = 3
@@ -123,10 +124,10 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(wall)
 
         let floor = CGMutablePath()
-        floor.move(to: point(-0.72, -0.78))
-        floor.addLine(to: point(-0.09, -0.78))
-        floor.move(to: point(0.09, -0.78))
-        floor.addLine(to: point(0.72, -0.78))
+        floor.move(to: point(-arena.halfWidth, arena.floorY))
+        floor.addLine(to: point(-arena.goalOuterX, arena.floorY))
+        floor.move(to: point(arena.goalOuterX, arena.floorY))
+        floor.addLine(to: point(arena.halfWidth, arena.floorY))
         let floorNode = SKShapeNode(path: floor)
         floorNode.strokeColor = .white.withAlphaComponent(0.55)
         floorNode.lineWidth = 4
@@ -136,13 +137,13 @@ final class ArenaScene: SKScene {
         addGoal(defender: .cyan)
         addGoal(defender: .orange)
         let netPath = CGMutablePath()
-        let netLeftBottom = point(-0.018, -0.78)
-        let netLeftTop = point(-0.018, 0.16)
-        let netRightTop = point(0.018, 0.16)
-        let netRightBottom = point(0.018, -0.78)
+        let netLeftBottom = point(-arena.netHalfWidth, arena.floorY)
+        let netLeftTop = point(-arena.netHalfWidth, arena.netTopY)
+        let netRightTop = point(arena.netHalfWidth, arena.netTopY)
+        let netRightBottom = point(arena.netHalfWidth, arena.floorY)
         netPath.move(to: netLeftBottom)
         netPath.addLine(to: netLeftTop)
-        netPath.addQuadCurve(to: netRightTop, control: point(0, 0.20))
+        netPath.addQuadCurve(to: netRightTop, control: point(0, arena.netTopY + 0.04))
         netPath.addLine(to: netRightBottom)
         netPath.closeSubpath()
         let net = SKShapeNode(path: netPath)
@@ -155,10 +156,11 @@ final class ArenaScene: SKScene {
 
     private func addGoal(defender: Team) {
         let sign = defender == .cyan ? -1.0 : 1.0
+        let mouthTopY = arena.floorY + (arena.goalOuterX - arena.goalInnerX)
         let path = CGMutablePath()
-        path.move(to: point(0.96 * sign, -0.78))
-        path.addLine(to: point(0.72 * sign, -0.56))
-        path.addLine(to: point(0.72 * sign, -0.78))
+        path.move(to: point(arena.goalInnerX * sign, arena.floorY))
+        path.addLine(to: point(arena.goalOuterX * sign, mouthTopY))
+        path.addLine(to: point(arena.goalOuterX * sign, arena.floorY))
         let goal = SKShapeNode(path: path)
         goal.strokeColor = defender == .cyan ? .cyan : .orange
         goal.lineWidth = 5
@@ -166,7 +168,7 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(goal)
 
         let lip = SKShapeNode(rectOf: CGSize(width: 8, height: 18), cornerRadius: 3)
-        lip.position = point(0.72 * sign, -0.75)
+        lip.position = point(arena.goalOuterX * sign, arena.floorY + 0.03)
         lip.fillColor = defender == .cyan ? .cyan : .orange
         lip.strokeColor = .white
         arenaLayer.addChild(lip)
@@ -201,7 +203,15 @@ final class ArenaScene: SKScene {
             switch event {
             case let .point(scoringTeam, reason):
                 if reason == .goal {
-                    goalBurst(at: point(scoringTeam == .cyan ? 0.84 : -0.84, -0.67), color: scoringTeam == .cyan ? .cyan : .orange)
+                    let defendingGoalX = scoringTeam == .cyan
+                        ? arena.goalOuterX
+                        : -arena.goalOuterX
+                    let goalCenterY = arena.floorY
+                        + (arena.goalOuterX - arena.goalInnerX) / 2
+                    goalBurst(
+                        at: point(defendingGoalX, goalCenterY),
+                        color: scoringTeam == .cyan ? .cyan : .orange
+                    )
                 } else if let destroyed = snapshot?.ships[scoringTeam.opponent] {
                     sparks(at: point(destroyed.position.x, destroyed.position.y), color: scoringTeam.opponent == .cyan ? .cyan : .orange)
                 }

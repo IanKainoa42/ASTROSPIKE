@@ -59,7 +59,7 @@ public struct WorldState: Codable, Equatable, Sendable {
     public init(
         tick: UInt64 = 0,
         ships: [Team: ShipState],
-        ball: BallState = BallState(position: SIMD2(0, 0.28)),
+        ball: BallState = BallState(position: SIMD2(0, 0.60)),
         match: MatchRuleState = MatchRuleState()
     ) {
         self.tick = tick
@@ -79,11 +79,11 @@ public struct SimulationConfiguration: Equatable, Sendable {
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
-        gravity: SIMD2<Double> = SIMD2(0, -3.2),
-        initialThrustAcceleration: Double = 9,
-        maximumThrustAcceleration: Double = 9,
+        gravity: SIMD2<Double> = SIMD2(0, -2),
+        initialThrustAcceleration: Double = 5.5,
+        maximumThrustAcceleration: Double = 5.5,
         thrustRampRate: Double = 0,
-        torqueAcceleration: Double = 5
+        torqueAcceleration: Double = 3
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
@@ -127,7 +127,7 @@ public struct SimulationEngine: Sendable {
             .cyan: ShipState(position: SIMD2(0.55 * direction, -0.55), angle: .pi / 2),
             .orange: ShipState(position: SIMD2(-0.55 * direction, -0.55), angle: .pi / 2),
         ]
-        state.ball = BallState(position: SIMD2(0, 0.28), velocity: SIMD2(0, -0.18))
+        state.ball = BallState(position: SIMD2(0, 0.60), velocity: SIMD2(0, -0.18))
         rules.prepareNextRally()
         state.match = rules.state
         lastEvents = [.rallyReset]
