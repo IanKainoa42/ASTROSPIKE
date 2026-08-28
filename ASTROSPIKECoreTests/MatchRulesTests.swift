@@ -5,7 +5,7 @@ import Testing
 struct MatchRulesTests {
     @Test("Third floor contact concedes a point")
     func thirdBounceScores() {
-        var rules = MatchRules()
+        var rules = MatchRules(allowedFloorBounces: 2)
 
         #expect(rules.resolve([.ballTouchedFloor(side: .cyan)]).isEmpty)
         #expect(rules.resolve([.ballTouchedFloor(side: .cyan)]).isEmpty)
@@ -14,6 +14,32 @@ struct MatchRulesTests {
         #expect(rules.state.score.orange == 1)
         #expect(events == [.point(scoringTeam: .orange, reason: .thirdBounce)])
         #expect(rules.state.phase == .pointFreeze)
+    }
+
+    @Test("A ship hit refreshes the bounce allowance without a center crossing")
+    func shipHitResetsBounceAllowance() {
+        var rules = MatchRules(allowedFloorBounces: 2)
+        _ = rules.resolve([.ballTouchedFloor(side: .cyan)])
+        _ = rules.resolve([.ballTouchedFloor(side: .cyan)])
+
+        _ = rules.resolve([.ballTouchedShip(team: .cyan)])
+
+        #expect(rules.state.floorContacts == FloorContactCounts())
+        #expect(rules.resolve([.ballTouchedFloor(side: .cyan)]).isEmpty)
+        #expect(rules.resolve([.ballTouchedFloor(side: .cyan)]).isEmpty)
+        #expect(rules.state.score == Score())
+    }
+
+    @Test("The configured allowance scores only after that many bounces")
+    func customBounceAllowance() {
+        var rules = MatchRules(allowedFloorBounces: 4)
+
+        for _ in 0 ..< 4 {
+            #expect(rules.resolve([.ballTouchedFloor(side: .orange)]).isEmpty)
+        }
+        let events = rules.resolve([.ballTouchedFloor(side: .orange)])
+
+        #expect(events == [.point(scoringTeam: .cyan, reason: .thirdBounce)])
     }
 
     @Test("Crossing center starts a fresh possession on the entered side")

@@ -155,6 +155,33 @@ struct ArenaPhysicsTests {
         #expect(engine.state.ball.velocity.x > 12)
     }
 
+    @Test("A ship strike refreshes an existing same-side bounce count")
+    func shipStrikeRefreshesBounceCount() {
+        var engine = SimulationEngine(state: WorldState(
+            ships: [
+                .cyan: ShipState(
+                    position: SIMD2(-0.55, 0.30),
+                    velocity: SIMD2(12, 0),
+                    angle: 0
+                ),
+                .orange: ShipState(position: SIMD2(0.55, -0.55), angle: .pi / 2),
+            ],
+            ball: BallState(
+                position: SIMD2(-0.40, 0.30),
+                velocity: .zero,
+                radius: 0.045
+            ),
+            match: MatchRuleState(
+                floorContacts: FloorContactCounts(cyan: 2, orange: 0)
+            )
+        ))
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(engine.state.match.floorContacts == FloorContactCounts())
+        #expect(engine.state.match.score == Score())
+    }
+
     @Test("Arena rebounds preserve Rocket League style ball speed")
     func wallReboundPreservesBallSpeed() {
         var engine = SimulationEngine.testing()
@@ -169,16 +196,22 @@ struct ArenaPhysicsTests {
         #expect(engine.state.ball.velocity.x < -5.5)
     }
 
-    @Test("Touching the net destroys a ship and awards the opponent")
-    func netDestroysShip() {
+    @Test("Touching the center barrier rebounds the ship without awarding a point")
+    func netReboundsShip() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position = SIMD2(-0.025, -0.45)
         engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.ships[.cyan]!.position.x <= -0.065)
+        #expect(engine.state.ships[.cyan]!.velocity.x < 0)
+        #expect(engine.state.match.score == Score())
+        #expect(engine.lastEvents.contains { event in
+            guard case .collisionEffect = event else { return false }
+            return true
+        })
     }
 
     @Test("Even high speed outer arena impacts never destroy ships")
@@ -220,18 +253,20 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.score == Score())
     }
 
-    @Test("Any part of a ship entering enemy territory destroys it")
-    func enemyTerritoryIsLethalAboveTheNet() {
+    @Test("The center barrier rebounds ships above the visible net")
+    func centerBarrierReboundsShipAboveNet() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan] = ShipState(
             position: SIMD2(-0.06, 0.45),
-            velocity: .zero,
+            velocity: SIMD2(2, 0),
             angle: .pi / 2
         )
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.ships[.cyan]!.position.x <= -0.065)
+        #expect(engine.state.ships[.cyan]!.velocity.x < 0)
+        #expect(engine.state.match.score == Score())
     }
 }

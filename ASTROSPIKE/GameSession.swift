@@ -179,7 +179,9 @@ final class GameSession {
         events = engine.lastEvents
         if !events.isEmpty { scene.present(events) }
         if let point = events.first(where: { if case .point = $0 { true } else { false } }) {
-            lastPointText = point.label
+            lastPointText = point.label(
+                bounceAllowance: engine.configuration.allowedFloorBounces
+            )
             if case let .point(team, _) = point { FeedbackCenter.shared.point(team: team) }
         }
         for event in events {
@@ -265,12 +267,12 @@ private final class FrameDriver: NSObject {
 }
 
 private extension SimulationEvent {
-    var label: String {
+    func label(bounceAllowance: Int) -> String {
         guard case let .point(team, reason) = self else { return "" }
         let scorer = team == .cyan ? "CYAN" : "ORANGE"
         switch reason {
         case .goal: return "\(scorer) GOAL"
-        case .thirdBounce: return "THREE BOUNCES — \(scorer)"
+        case .thirdBounce: return "BOUNCE LIMIT (\(bounceAllowance)) — \(scorer)"
         case .crash: return "CRASH — \(scorer)"
         case .netContact: return "NET DOWN — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"

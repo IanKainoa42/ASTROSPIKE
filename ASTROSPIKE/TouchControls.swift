@@ -157,21 +157,30 @@ private struct PressCapture: UIViewRepresentable {
 
 private final class PressCaptureView: UIView {
     var pressChanged: ((Bool) -> Void)?
+    private var pressTracker = ControlPressTracker<ObjectIdentifier>()
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
-        pressChanged?(true)
+        touches.forEach { pressTracker.began(ObjectIdentifier($0)) }
+        pressChanged?(pressTracker.isPressed)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
-        if event?.allTouches?.allSatisfy({ $0.phase == .ended || $0.phase == .cancelled }) != false {
-            pressChanged?(false)
-        }
+        touches.forEach { pressTracker.ended(ObjectIdentifier($0)) }
+        pressChanged?(pressTracker.isPressed)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
+        touches.forEach { pressTracker.cancelled(ObjectIdentifier($0)) }
+        pressChanged?(pressTracker.isPressed)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window == nil else { return }
+        pressTracker.cancelAll()
         pressChanged?(false)
     }
 }

@@ -72,6 +72,7 @@ public struct MatchRuleState: Codable, Equatable, Sendable {
 
 public enum RuleContact: Codable, Equatable, Sendable {
     case ballTouchedFloor(side: Team)
+    case ballTouchedShip(team: Team)
     case ballCrossedCenter(into: Team)
     case ballEnteredGoal(defending: Team)
     case shipDestroyed(team: Team, reason: PointReason)
@@ -87,9 +88,18 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
 
 public struct MatchRules: Sendable {
     public private(set) var state: MatchRuleState
+    public private(set) var allowedFloorBounces: Int
 
-    public init(state: MatchRuleState = MatchRuleState()) {
+    public init(
+        state: MatchRuleState = MatchRuleState(),
+        allowedFloorBounces: Int = 2
+    ) {
         self.state = state
+        self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
+    }
+
+    public mutating func updateAllowedFloorBounces(_ value: Int) {
+        allowedFloorBounces = min(5, max(1, value))
     }
 
     public mutating func beginNextRally() {
@@ -127,11 +137,13 @@ public struct MatchRules: Sendable {
 
         for contact in contacts {
             switch contact {
+            case .ballTouchedShip:
+                state.floorContacts = FloorContactCounts()
             case let .ballCrossedCenter(team):
                 state.floorContacts[team] = 0
             case let .ballTouchedFloor(side):
                 state.floorContacts[side] += 1
-                if state.floorContacts[side] >= 3 {
+                if state.floorContacts[side] > allowedFloorBounces {
                     return awardPoint(to: side.opponent, reason: .thirdBounce)
                 }
             case .ballEnteredGoal, .shipDestroyed:

@@ -47,6 +47,30 @@ public enum FlightControlMapping {
     }
 }
 
+public struct ControlPressTracker<ID: Hashable & Sendable>: Sendable {
+    private var activeIDs: Set<ID> = []
+
+    public init() {}
+
+    public var isPressed: Bool { !activeIDs.isEmpty }
+
+    public mutating func began(_ id: ID) {
+        activeIDs.insert(id)
+    }
+
+    public mutating func ended(_ id: ID) {
+        activeIDs.remove(id)
+    }
+
+    public mutating func cancelled(_ id: ID) {
+        activeIDs.remove(id)
+    }
+
+    public mutating func cancelAll() {
+        activeIDs.removeAll()
+    }
+}
+
 public struct ShipState: Codable, Equatable, Sendable {
     public var position: SIMD2<Double>
     public var velocity: SIMD2<Double>
@@ -104,6 +128,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var ballGravityMultiplier: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
+    public var allowedFloorBounces: Int
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -114,7 +139,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
         torqueAcceleration: Double = 3,
         ballGravityMultiplier: Double = 0.72,
         ballDropHeight: Double = 0.60,
-        ballDropSpeed: Double = 0.18
+        ballDropSpeed: Double = 0.18,
+        allowedFloorBounces: Int = 2
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
@@ -125,6 +151,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.ballGravityMultiplier = ballGravityMultiplier
         self.ballDropHeight = ballDropHeight
         self.ballDropSpeed = ballDropSpeed
+        self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
     }
 }
 
@@ -144,7 +171,10 @@ public struct SimulationEngine: Sendable {
         self.configuration = configuration
         self.lastEvents = []
         self.arena = arena
-        self.rules = MatchRules(state: state.match)
+        self.rules = MatchRules(
+            state: state.match,
+            allowedFloorBounces: configuration.allowedFloorBounces
+        )
     }
 
     public static func testing() -> SimulationEngine {
@@ -156,6 +186,7 @@ public struct SimulationEngine: Sendable {
 
     public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
         self.configuration = configuration
+        rules.updateAllowedFloorBounces(configuration.allowedFloorBounces)
     }
 
     public mutating func prepareNextRally(mirrored: Bool) {
@@ -187,6 +218,7 @@ public struct SimulationEngine: Sendable {
     public mutating func step(inputs: [Team: PlayerInput]) {
         let dt = configuration.stepDuration
         var contacts: [RuleContact] = []
+        var collisionEffects: [SimulationEvent] = []
         let previousShipPositions = state.ships.mapValues(\.position)
         for team in Team.allCases {
             guard var ship = state.ships[team], !ship.isDestroyed else { continue }
@@ -207,7 +239,7 @@ public struct SimulationEngine: Sendable {
             }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
-            resolveArenaCollision(for: &ship, team: team, contacts: &contacts)
+            resolveArenaCollision(for: &ship, team: team, effects: &collisionEffects)
             state.ships[team] = ship
         }
         resolveShipShipCollision(previousPositions: previousShipPositions, contacts: &contacts)
@@ -217,11 +249,12 @@ public struct SimulationEngine: Sendable {
         state.ball.position += state.ball.velocity * dt
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,
-            previousShipPositions: previousShipPositions
+            previousShipPositions: previousShipPositions,
+            contacts: &contacts
         )
         resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
 
-        lastEvents = rules.resolve(contacts)
+        lastEvents = rules.resolve(contacts) + collisionEffects
         state.match = rules.state
         state.tick += 1
     }
@@ -260,17 +293,22 @@ public struct SimulationEngine: Sendable {
     private mutating func resolveArenaCollision(
         for ship: inout ShipState,
         team: Team,
-        contacts: inout [RuleContact]
+        effects: inout [SimulationEvent]
     ) {
         let radius = 0.065
         let enteredEnemyTerritory = ship.homeSide == .cyan
             ? ship.position.x + radius > 0
             : ship.position.x - radius < 0
         if enteredEnemyTerritory {
-            ship.isDestroyed = true
-            ship.thrustLevel = 0
-            contacts.append(.shipDestroyed(team: team, reason: .netContact))
-            return
+            let impactSpeed = abs(ship.velocity.x)
+            if ship.homeSide == .cyan {
+                ship.position.x = -radius
+                if ship.velocity.x > 0 { ship.velocity.x = -ship.velocity.x * 0.45 }
+            } else {
+                ship.position.x = radius
+                if ship.velocity.x < 0 { ship.velocity.x = -ship.velocity.x * 0.45 }
+            }
+            effects.append(.collisionEffect(position: ship.position, intensity: impactSpeed))
         }
 
         if ship.position.y - radius <= arena.floorY {
@@ -401,7 +439,8 @@ public struct SimulationEngine: Sendable {
 
     private mutating func resolveBallShipCollisions(
         previousBallPosition: SIMD2<Double>,
-        previousShipPositions: [Team: SIMD2<Double>]
+        previousShipPositions: [Team: SIMD2<Double>],
+        contacts: inout [RuleContact]
     ) {
         struct Fixture {
             var previousCenter: SIMD2<Double>
@@ -463,6 +502,7 @@ public struct SimulationEngine: Sendable {
         state.ball.velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
         state.ships[hit.team] = ship
+        contacts.append(.ballTouchedShip(team: hit.team))
     }
 
     private func sweptCircleTime(
