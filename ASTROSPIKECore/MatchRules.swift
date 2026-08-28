@@ -7,7 +7,7 @@ public extension Team {
 public enum MatchPhase: String, Codable, Equatable, Sendable {
     case countdown
     case playing
-    case pointFreeze
+    case serve
     case paused
     case finished
 }
@@ -158,7 +158,7 @@ public struct MatchRules: Sendable {
         let destroyedTeams = Set(destructions.map(\.0))
         if destroyedTeams.count == 2 {
             state.floorContacts = FloorContactCounts()
-            state.phase = .pointFreeze
+            state.phase = .serve
             return [.rallyReset]
         }
         if let destruction = destructions.first {
@@ -175,7 +175,7 @@ public struct MatchRules: Sendable {
             state.phase = .finished
             events.append(.matchEnded(winner: team))
         } else {
-            state.phase = .pointFreeze
+            state.phase = .serve
         }
         return events
     }

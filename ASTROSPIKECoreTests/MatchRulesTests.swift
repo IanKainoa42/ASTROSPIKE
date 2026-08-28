@@ -13,7 +13,7 @@ struct MatchRulesTests {
 
         #expect(rules.state.score.orange == 1)
         #expect(events == [.point(scoringTeam: .orange, reason: .thirdBounce)])
-        #expect(rules.state.phase == .pointFreeze)
+        #expect(rules.state.phase == .serve)
     }
 
     @Test("A ship hit refreshes the bounce allowance without a center crossing")
@@ -85,12 +85,12 @@ struct MatchRulesTests {
     func matchEndingRules() {
         var rules = MatchRules(state: MatchRuleState(score: Score(cyan: 6, orange: 6)))
         _ = rules.resolve([.ballEnteredGoal(defending: .orange)])
-        #expect(rules.state.phase == .pointFreeze)
+        #expect(rules.state.phase == .serve)
         rules.beginNextRally()
         _ = rules.resolve([.ballEnteredGoal(defending: .cyan)])
         rules.beginNextRally()
         _ = rules.resolve([.ballEnteredGoal(defending: .orange)])
-        #expect(rules.state.phase == .pointFreeze)
+        #expect(rules.state.phase == .serve)
         rules.beginNextRally()
         let winningEvents = rules.resolve([.ballEnteredGoal(defending: .orange)])
         #expect(rules.state.score == Score(cyan: 9, orange: 7))

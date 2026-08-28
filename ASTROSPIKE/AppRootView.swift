@@ -195,7 +195,7 @@ private struct GameView: View {
                               largeControls: largeControls, leftHanded: leftHanded)
             }
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
-            if session.state.match.phase == .pointFreeze, let text = session.lastPointText {
+            if session.state.match.phase == .serve, let text = session.lastPointText {
                 Text(text)
                     .font(.system(size: 30, weight: .black, design: .rounded)).tracking(2)
                     .padding(.horizontal, 24).padding(.vertical, 13)

@@ -16,6 +16,25 @@ struct WireProtocolTests {
         #expect(decoded == envelope)
     }
 
+    @Test("Live serve state survives a Game Center snapshot round trip")
+    func serveSnapshotRoundTrip() throws {
+        let state = WorldState(
+            tick: 314,
+            ships: [
+                .cyan: ShipState(position: SIMD2(-0.31, 0.42), angle: 0.8),
+                .orange: ShipState(position: SIMD2(0.57, -0.12), angle: 2.1),
+            ],
+            ball: BallState(position: SIMD2(0.48, 0.60)),
+            match: MatchRuleState(score: Score(cyan: 3, orange: 2), phase: .serve),
+            serveTicksRemaining: 73
+        )
+        let envelope = WireEnvelope(sequence: 18, payload: .snapshot(state))
+
+        let decoded = try WireCodec().decode(WireCodec().encode(envelope))
+
+        #expect(decoded == envelope)
+    }
+
     @Test("Unknown protocol versions are rejected")
     func rejectsUnknownVersion() throws {
         let envelope = WireEnvelope(version: 99, sequence: 1, payload: .ready)

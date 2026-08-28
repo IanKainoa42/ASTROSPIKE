@@ -11,7 +11,7 @@ public enum WirePayload: Codable, Equatable, Sendable {
 }
 
 public struct WireEnvelope: Codable, Equatable, Sendable {
-    public static let currentVersion: UInt16 = 2
+    public static let currentVersion: UInt16 = 3
 
     public var version: UInt16
     public var sequence: UInt64

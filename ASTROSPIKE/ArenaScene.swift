@@ -202,6 +202,7 @@ final class ArenaScene: SKScene {
         for event in events {
             switch event {
             case let .point(scoringTeam, reason):
+                ballTrail.removeAll()
                 if reason == .goal {
                     let defendingGoalX = scoringTeam == .cyan
                         ? arena.goalOuterX
@@ -219,7 +220,9 @@ final class ArenaScene: SKScene {
                 if let ship = snapshot?.ships[team] { sparks(at: point(ship.position.x, ship.position.y), color: team == .cyan ? .cyan : .orange) }
             case let .collisionEffect(position, _):
                 sparks(at: point(position.x, position.y), color: .white)
-            case .rallyReset, .matchEnded:
+            case .rallyReset:
+                ballTrail.removeAll()
+            case .matchEnded:
                 break
             }
         }

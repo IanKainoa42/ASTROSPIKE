@@ -104,17 +104,20 @@ public struct WorldState: Codable, Equatable, Sendable {
     public var ships: [Team: ShipState]
     public var ball: BallState
     public var match: MatchRuleState
+    public var serveTicksRemaining: UInt64
 
     public init(
         tick: UInt64 = 0,
         ships: [Team: ShipState],
         ball: BallState = BallState(position: SIMD2(0, 0.60)),
-        match: MatchRuleState = MatchRuleState()
+        match: MatchRuleState = MatchRuleState(),
+        serveTicksRemaining: UInt64 = 0
     ) {
         self.tick = tick
         self.ships = ships
         self.ball = ball
         self.match = match
+        self.serveTicksRemaining = serveTicksRemaining
     }
 }
 
@@ -128,6 +131,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var ballGravityMultiplier: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
+    public var serveDelay: Double
     public var allowedFloorBounces: Int
 
     public init(
@@ -140,6 +144,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         ballGravityMultiplier: Double = 0.72,
         ballDropHeight: Double = 0.60,
         ballDropSpeed: Double = 0.18,
+        serveDelay: Double = 1.35,
         allowedFloorBounces: Int = 2
     ) {
         self.stepDuration = stepDuration
@@ -151,6 +156,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.ballGravityMultiplier = ballGravityMultiplier
         self.ballDropHeight = ballDropHeight
         self.ballDropSpeed = ballDropSpeed
+        self.serveDelay = max(0, serveDelay)
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
     }
 }
@@ -200,12 +206,14 @@ public struct SimulationEngine: Sendable {
             position: SIMD2(0, configuration.ballDropHeight),
             velocity: SIMD2(0, -configuration.ballDropSpeed)
         )
+        state.serveTicksRemaining = 0
         rules.prepareNextRally()
         state.match = rules.state
         lastEvents = [.rallyReset]
     }
 
     public mutating func beginPlay() {
+        state.serveTicksRemaining = 0
         rules.beginNextRally()
         state.match = rules.state
     }
@@ -244,6 +252,13 @@ public struct SimulationEngine: Sendable {
         }
         resolveShipShipCollision(previousPositions: previousShipPositions, contacts: &contacts)
 
+        if state.match.phase == .serve {
+            advanceServe()
+            lastEvents = collisionEffects
+            state.tick += 1
+            return
+        }
+
         let previousBallPosition = state.ball.position
         state.ball.velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
         state.ball.position += state.ball.velocity * dt
@@ -254,9 +269,46 @@ public struct SimulationEngine: Sendable {
         )
         resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
 
-        lastEvents = rules.resolve(contacts) + collisionEffects
+        let ruleEvents = rules.resolve(contacts)
+        lastEvents = ruleEvents + collisionEffects
         state.match = rules.state
+        if state.match.phase == .serve {
+            let concedingTeam = ruleEvents.compactMap { event -> Team? in
+                guard case let .point(scoringTeam, _) = event else { return nil }
+                return scoringTeam.opponent
+            }.first
+            stageServe(on: concedingTeam)
+        }
         state.tick += 1
+    }
+
+    private mutating func stageServe(on team: Team?) {
+        let x: Double
+        switch team {
+        case .cyan: x = -arena.halfWidth / 2
+        case .orange: x = arena.halfWidth / 2
+        case nil: x = 0
+        }
+        state.ball = BallState(
+            position: SIMD2(x, configuration.ballDropHeight),
+            velocity: .zero,
+            radius: state.ball.radius
+        )
+        state.serveTicksRemaining = max(
+            1,
+            UInt64((configuration.serveDelay / configuration.stepDuration).rounded())
+        )
+    }
+
+    private mutating func advanceServe() {
+        state.ball.velocity = .zero
+        if state.serveTicksRemaining > 0 {
+            state.serveTicksRemaining -= 1
+        }
+        guard state.serveTicksRemaining == 0 else { return }
+        state.ball.velocity = SIMD2(0, -configuration.ballDropSpeed)
+        rules.beginNextRally()
+        state.match = rules.state
     }
 
     private mutating func resolveShipShipCollision(

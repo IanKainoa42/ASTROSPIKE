@@ -24,7 +24,7 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - Crossing the center plane resets only the entered side's bounce count.
 - Simultaneous ship deaths replay the rally. A goal or third bounce outranks a death in the same simulation step.
 - First to 7 wins with a two-point lead; 11 is the hard cap.
-- Every point freezes play, mirrors the reset, and starts a neutral three-count center drop.
+- After every non-winning point, only the ball respawns above the conceding side. Both ships keep flying under live input during the prototype's 1.35-second serve hold, then the ball drops immediately with no reset or countdown.
 
 ## Build and test
 

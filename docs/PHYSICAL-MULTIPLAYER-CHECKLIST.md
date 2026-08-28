@@ -16,8 +16,9 @@ This is the final manual gate. Use two physical iOS 18+ devices signed into sepa
 - [ ] Confirm `PLAYER` shows a different Game Center display name on each device.
 - [ ] In `GC DIAGNOSTICS`, confirm the devices show opposite `SIDE` values, exactly one `ROLE: HOST`, and exactly one `ROLE: GUEST`.
 - [ ] Confirm both panels show `LINK: STABLE`, `MATCH: READY`, a numeric `PING`, and `RETRY: —`.
-- [ ] Play through a goal, a third-bounce point, a ship crash, and a net death.
-- [ ] Confirm score, bounce pips, resets, and match result agree on both devices.
+- [ ] Play through a goal and a third-bounce point, plus ship and ball rebounds from the center barrier.
+- [ ] After a point, confirm only the ball reappears above the conceding side; both ships retain position, momentum, and live controls during the brief serve hold, with no reset or three-count.
+- [ ] Confirm score, bounce pips, serve release, and match result agree on both devices.
 
 ## Friend invitation
 

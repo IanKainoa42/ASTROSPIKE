@@ -31,7 +31,6 @@ final class GameSession {
     private var accumulator = 0.0
     private var previousTimestamp: CFTimeInterval?
     private var countdownAccumulator = 0.0
-    private var freezeAccumulator = 0.0
 
     init(
         mode: GameMode,
@@ -97,7 +96,6 @@ final class GameSession {
         scene.snapshot = state
         countdown = 3
         countdownAccumulator = 0
-        freezeAccumulator = 0
         accumulator = 0
         torque = 0
         thrust = false
@@ -123,16 +121,7 @@ final class GameSession {
                 engine.beginPlay()
                 state = engine.state
             }
-        case .pointFreeze:
-            freezeAccumulator += elapsed
-            if freezeAccumulator >= 0.85 {
-                freezeAccumulator = 0
-                countdownAccumulator = 0
-                countdown = 3
-                engine.prepareNextRally(mirrored: false)
-                state = engine.state
-            }
-        case .playing:
+        case .serve, .playing:
             accumulator += elapsed
             while accumulator >= engine.configuration.stepDuration {
                 accumulator -= engine.configuration.stepDuration
@@ -183,6 +172,8 @@ final class GameSession {
                 bounceAllowance: engine.configuration.allowedFloorBounces
             )
             if case let .point(team, _) = point { FeedbackCenter.shared.point(team: team) }
+        } else if events.contains(.rallyReset) {
+            lastPointText = nil
         }
         for event in events {
             if case .collisionEffect = event { FeedbackCenter.shared.impact() }

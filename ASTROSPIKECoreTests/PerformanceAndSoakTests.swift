@@ -15,10 +15,7 @@ struct PerformanceAndSoakTests {
                 .cyan: PlayerInput(tick: tick, torque: 0.35, thrust: tick.isMultiple(of: 3)),
                 .orange: PlayerInput(tick: tick, torque: -0.25, thrust: tick.isMultiple(of: 4)),
             ])
-            if engine.state.match.phase == .pointFreeze {
-                engine.prepareNextRally(mirrored: tick.isMultiple(of: 2))
-                engine.beginPlay()
-            } else if engine.state.match.phase == .finished {
+            if engine.state.match.phase == .finished {
                 engine = .testing()
             }
         }
@@ -28,17 +25,13 @@ struct PerformanceAndSoakTests {
 
     @Test("Twenty match-equivalents keep finite state and bounded collections")
     func twentyMatchSoak() {
-        for match in 0..<20 {
+        for _ in 0..<20 {
             var engine = SimulationEngine.testing()
             for tick in UInt64(0)..<2_400 {
                 engine.step(inputs: [
                     .cyan: PlayerInput(tick: tick, torque: sin(Double(tick) * 0.03), thrust: tick.isMultiple(of: 2)),
                     .orange: PlayerInput(tick: tick, torque: cos(Double(tick) * 0.04), thrust: tick.isMultiple(of: 3)),
                 ])
-                if engine.state.match.phase == .pointFreeze {
-                    engine.prepareNextRally(mirrored: (match + Int(tick)).isMultiple(of: 2))
-                    engine.beginPlay()
-                }
                 if engine.state.match.phase == .finished { break }
             }
             #expect(engine.state.ships.count == 2)

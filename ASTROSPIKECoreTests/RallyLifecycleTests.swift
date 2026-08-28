@@ -24,23 +24,81 @@ struct RallyLifecycleTests {
         #expect(engine.state.ball.velocity == .init(0, -0.08))
     }
 
-    @Test("A point freezes, then reset enters countdown without changing score")
-    func freezeResetCountdown() {
+    @Test("A point respawns only the ball on the conceding side")
+    func pointRespawnsOnlyBall() {
         var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan] = ShipState(
+            position: .init(-0.42, 0.31),
+            velocity: .init(0.7, -0.2),
+            angle: 0.8,
+            angularVelocity: 0.4,
+            thrustLevel: 2.5
+        )
+        engine.state.ships[.orange] = ShipState(
+            position: .init(0.61, 0.22),
+            velocity: .init(-0.3, 0.5),
+            angle: 1.9,
+            angularVelocity: -0.2,
+            thrustLevel: 1.5
+        )
         engine.state.ball.position = .init(0.08, -0.72)
         engine.state.ball.velocity = .init(0.4, -2)
 
         engine.step(inputs: [:])
-        let score = engine.state.match.score
-        #expect(engine.state.match.phase == .pointFreeze)
 
-        engine.prepareNextRally(mirrored: true)
-        #expect(engine.state.match.phase == .countdown)
-        #expect(engine.state.match.score == score)
-        #expect(engine.state.ball.position == .init(0, 0.60))
-        #expect(engine.state.ships[.cyan]!.position.x > 0)
+        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        #expect(engine.state.match.phase == .serve)
+        #expect(engine.state.ball.position == .init(0.48, 0.60))
+        #expect(engine.state.ball.velocity == .zero)
+        #expect(engine.state.ships[.cyan]!.angle > 0.8)
+        #expect(engine.state.ships[.cyan]!.position.x < 0)
+        #expect(engine.state.ships[.orange]!.angle < 1.9)
+        #expect(engine.state.ships[.orange]!.position.x > 0)
+    }
 
-        engine.beginPlay()
+    @Test("Ships keep flying under live input while the served ball waits")
+    func shipsStayLiveDuringServe() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = .init(-0.55, 0.25)
+        engine.state.ships[.cyan]!.angle = .pi / 2
+        engine.state.ball.position = .init(0.08, -0.72)
+        engine.state.ball.velocity = .init(0.4, -2)
+        engine.step(inputs: [:])
+        let heldBall = engine.state.ball
+        let velocityBeforeInput = engine.state.ships[.cyan]!.velocity
+
+        engine.step(inputs: [
+            .cyan: PlayerInput(tick: engine.state.tick, torque: 1, thrust: true),
+        ])
+
+        #expect(engine.state.ball == heldBall)
+        #expect(engine.state.ships[.cyan]!.velocity != velocityBeforeInput)
+        #expect(engine.state.ships[.cyan]!.angularVelocity > 0)
+        #expect(engine.lastEvents.contains { event in
+            if case .point = event { return true }
+            return false
+        } == false)
+    }
+
+    @Test("The serve releases after the prototype delay without a countdown")
+    func serveDropsAfterPrototypeDelay() {
+        var engine = SimulationEngine.testing()
+        engine.state.ball.position = .init(0.08, -0.72)
+        engine.state.ball.velocity = .init(0.4, -2)
+        engine.step(inputs: [:])
+        let heldPosition = engine.state.ball.position
+
+        for _ in 0 ..< 161 {
+            engine.step(inputs: [:])
+        }
+
+        #expect(engine.state.match.phase != .playing)
+        #expect(engine.state.ball.position == heldPosition)
+
+        engine.step(inputs: [:])
+
         #expect(engine.state.match.phase == .playing)
+        #expect(engine.state.ball.position == heldPosition)
+        #expect(engine.state.ball.velocity == .init(0, -0.18))
     }
 }

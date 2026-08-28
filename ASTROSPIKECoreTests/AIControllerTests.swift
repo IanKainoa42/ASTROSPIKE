@@ -153,16 +153,9 @@ struct AIControllerTests {
     func pilotAvoidsNetDeathsAcrossRallies() {
         var engine = SimulationEngine.testing()
         var controller = AIController(difficulty: .pilot)
-        var rally = 0
         var netDeaths = 0
 
         for tick in UInt64(0) ..< 3_600 {
-            if engine.state.match.phase == .pointFreeze {
-                rally += 1
-                engine.prepareNextRally(mirrored: rally.isMultiple(of: 2))
-                engine.beginPlay()
-            }
-
             let input = controller.input(
                 for: engine.state,
                 team: .orange,
