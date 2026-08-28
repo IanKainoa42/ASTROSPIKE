@@ -23,7 +23,20 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["SETTINGS"].tap()
         XCTAssertTrue(app.switches["Large controls"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["Swap controls for left-handed play"].exists)
-        app.buttons["Flight Tuning"].tap()
+        let bounceIncrement = app.buttons.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@ AND label CONTAINS %@",
+                "Bounces per hit:",
+                "Increment"
+            )
+        ).firstMatch
+        XCTAssertTrue(bounceIncrement.exists)
+        let settingsForm = app.collectionViews.firstMatch
+        XCTAssertTrue(settingsForm.exists)
+        settingsForm.swipeUp()
+        let flightTuning = app.buttons["Flight Tuning"]
+        XCTAssertTrue(flightTuning.waitForExistence(timeout: 3))
+        flightTuning.tap()
         XCTAssertTrue(app.sliders["Gravity"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.sliders["Thrust"].exists)
         XCTAssertTrue(app.sliders["Rotation"].exists)
@@ -63,5 +76,22 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 3))
         app.buttons["Resume"].tap()
         XCTAssertFalse(app.buttons["Resume"].exists)
+    }
+
+    @MainActor
+    func testGameCenterDiagnosticsPanelSurfacesValidationFields() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--online-diagnostics-preview"]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["game-center-diagnostics-toggle"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["diagnostics-player-value"].label, "GC TEST PILOT")
+        XCTAssertEqual(app.staticTexts["diagnostics-side-value"].label, "CYAN")
+        XCTAssertEqual(app.staticTexts["diagnostics-authority-value"].label, "HOST")
+        XCTAssertEqual(app.staticTexts["diagnostics-ping-value"].label, "42 MS")
+        XCTAssertEqual(app.staticTexts["diagnostics-link-value"].label, "RECONNECTING")
+        XCTAssertEqual(app.staticTexts["diagnostics-match-value"].label, "READY")
+        XCTAssertEqual(app.staticTexts["diagnostics-reconnect-value"].label, "7 S")
+        XCTAssertFalse(app.staticTexts["GAME CENTER OFFLINE"].exists)
     }
 }

@@ -35,9 +35,12 @@
 		C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */; };
 		CB4E58A55B21C45474313E95 /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5488DBEBDCDC52A967D49F5A /* AppRootView.swift */; };
+		CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */; };
 		D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AED5437E5592EACB25579F /* ArenaScene.swift */; };
+		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
 		EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9B354B5E4A268F1331755 /* AIController.swift */; };
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
+		F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -90,7 +93,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
+		2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsTests.swift; sourceTree = "<group>"; };
 		213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaPhysicsTests.swift; sourceTree = "<group>"; };
 		26AED5437E5592EACB25579F /* ArenaScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaScene.swift; sourceTree = "<group>"; };
 		2938C10E066FBAEF95E3652B /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
@@ -105,6 +110,7 @@
 		3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionStateMachine.swift; sourceTree = "<group>"; };
 		4033BD3492F8C74CE390EB56 /* FlightTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuning.swift; sourceTree = "<group>"; };
 		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
 		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ASTROSPIKECore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
@@ -153,6 +159,7 @@
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
+				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
 				2CD95C0514B3196435647AEC /* WireProtocol.swift */,
 			);
@@ -187,6 +194,7 @@
 				519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */,
 				91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */,
 				EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */,
+				1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */,
 				2938C10E066FBAEF95E3652B /* GameSession.swift */,
 				394FFF2162051CDBC12CE239 /* Info.plist */,
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
@@ -215,6 +223,7 @@
 				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
 				9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */,
+				2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */,
 				8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */,
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
@@ -374,6 +383,7 @@
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */,
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
+				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
 				189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */,
 			);
@@ -387,6 +397,7 @@
 				CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */,
 				D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */,
 				F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */,
+				F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */,
 				C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */,
 				C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */,
 				3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */,
@@ -403,6 +414,7 @@
 				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
 				0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */,
+				CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */,
 				9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */,
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,

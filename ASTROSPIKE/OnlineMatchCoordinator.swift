@@ -38,6 +38,68 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var remoteInput: PlayerInput?
     private(set) var pingMilliseconds: Int?
 
+    var diagnosticsSnapshot: OnlineDiagnosticsSnapshot {
+        let linkState: OnlineLinkState
+        let reconnectSeconds: Int?
+        switch status {
+        case .signedOut:
+            linkState = .signedOut
+            reconnectSeconds = nil
+        case .authenticating:
+            linkState = .authenticating
+            reconnectSeconds = nil
+        case .ready:
+            linkState = .ready
+            reconnectSeconds = nil
+        case .matching:
+            linkState = .matchmaking
+            reconnectSeconds = nil
+        case .connected:
+            linkState = .connected
+            reconnectSeconds = nil
+        case let .reconnecting(seconds):
+            linkState = .reconnecting
+            reconnectSeconds = seconds
+        case .failed:
+            linkState = .failed
+            reconnectSeconds = nil
+        }
+
+        let matchmakingState: OnlineMatchmakingState
+        if isMatchReady {
+            matchmakingState = .ready
+        } else {
+            matchmakingState = switch status {
+            case .matching: .findingPeer
+            case .connected, .reconnecting: .waitingForPeer
+            default: .notLinked
+            }
+        }
+
+        let authority: OnlineAuthority = if localTeam == nil {
+            .undetermined
+        } else if isAuthoritative {
+            .host
+        } else {
+            .guest
+        }
+
+        let playerName: String? = switch status {
+        case let .ready(name): name
+        default: GKLocalPlayer.local.isAuthenticated ? GKLocalPlayer.local.displayName : nil
+        }
+
+        return OnlineDiagnosticsSnapshot(
+            playerName: playerName,
+            localTeam: localTeam,
+            authority: authority,
+            pingMilliseconds: pingMilliseconds,
+            linkState: linkState,
+            matchmakingState: matchmakingState,
+            reconnectSeconds: reconnectSeconds
+        )
+    }
+
     var onSnapshot: ((WorldState) -> Void)?
     var onResync: ((WorldState) -> Void)?
     var onEvent: ((SimulationEvent) -> Void)?

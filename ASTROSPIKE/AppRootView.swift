@@ -7,17 +7,34 @@ struct AppRootView: View {
     @State private var tuning = FlightTuningStore()
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
+    private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
     init() {
-        let demoMode = ProcessInfo.processInfo.arguments.contains("--demo")
-        _gameMode = State(initialValue: demoMode ? .solo(.pilot) : nil)
+        let arguments = ProcessInfo.processInfo.arguments
+        let demoMode = arguments.contains("--demo")
+        let diagnosticsPreviewMode = arguments.contains("--online-diagnostics-preview")
+        diagnosticsPreview = diagnosticsPreviewMode ? OnlineDiagnosticsSnapshot(
+            playerName: "GC TEST PILOT",
+            localTeam: .cyan,
+            authority: .host,
+            pingMilliseconds: 42,
+            linkState: .reconnecting,
+            matchmakingState: .ready,
+            reconnectSeconds: 7
+        ) : nil
+        _gameMode = State(initialValue: diagnosticsPreviewMode ? .online : (demoMode ? .solo(.pilot) : nil))
     }
 
     var body: some View {
         ZStack {
             CosmicBackground()
             if let gameMode {
-                GameView(mode: gameMode, online: online, tuning: tuning) {
+                GameView(
+                    mode: gameMode,
+                    online: online,
+                    tuning: tuning,
+                    diagnosticsOverride: diagnosticsPreview
+                ) {
                     self.gameMode = nil
                 }
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
@@ -29,7 +46,11 @@ struct AppRootView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { online.authenticate() }
+        .task {
+            if diagnosticsPreview == nil {
+                online.authenticate()
+            }
+        }
         .onChange(of: online.isMatchReady) { _, ready in
             if ready { withAnimation { gameMode = .online } }
         }
@@ -111,6 +132,7 @@ private struct GameView: View {
     let mode: GameMode
     let online: OnlineMatchCoordinator
     let tuning: FlightTuningStore
+    let diagnosticsOverride: OnlineDiagnosticsSnapshot?
     let exit: () -> Void
 
     @State private var session: GameSession
@@ -124,11 +146,13 @@ private struct GameView: View {
         mode: GameMode,
         online: OnlineMatchCoordinator,
         tuning: FlightTuningStore,
+        diagnosticsOverride: OnlineDiagnosticsSnapshot? = nil,
         exit: @escaping () -> Void
     ) {
         self.mode = mode
         self.online = online
         self.tuning = tuning
+        self.diagnosticsOverride = diagnosticsOverride
         self.exit = exit
         let configuration = switch mode {
         case .solo: tuning.configuration
@@ -146,8 +170,18 @@ private struct GameView: View {
             SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
                 .ignoresSafeArea().accessibilityHidden(true)
             VStack(spacing: 0) {
-                MatchHUD(state: session.state, online: mode == .online ? online : nil) {
+                MatchHUD(
+                    state: session.state,
+                    allowedBounces: allowedBounces,
+                    online: mode == .online && diagnosticsOverride == nil ? online : nil
+                ) {
                     session.togglePause(); showPause = true
+                }
+                if mode == .online {
+                    GameCenterDiagnosticsPanel(
+                        diagnostics: diagnosticsOverride ?? online.diagnosticsSnapshot
+                    )
+                    .padding(.top, 4)
                 }
                 HStack {
                     if localHomeSide == .orange { Spacer() }
@@ -193,6 +227,13 @@ private struct GameView: View {
 
     private var localTeam: Team { online.localTeam ?? .cyan }
 
+    private var allowedBounces: Int {
+        switch mode {
+        case .solo: tuning.allowedBouncesPerHit
+        case .online: 2
+        }
+    }
+
     private var localHomeSide: Team {
         session.state.ships[localTeam]?.homeSide ?? localTeam
     }
@@ -217,6 +258,7 @@ private struct TeamSideBadge: View {
 
 private struct MatchHUD: View {
     let state: WorldState
+    let allowedBounces: Int
     let online: OnlineMatchCoordinator?
     let pause: () -> Void
 
@@ -245,12 +287,13 @@ private struct MatchHUD: View {
             Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(team == .cyan ? .cyan : .orange)
             Text(value.formatted()).font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
             HStack(spacing: 4) {
-                ForEach(0..<2, id: \.self) { index in
+                ForEach(0..<allowedBounces, id: \.self) { index in
                     Circle().fill(index < bounces ? (team == .cyan ? Color.cyan : .orange) : .white.opacity(0.16)).frame(width: 8, height: 8)
                 }
             }
         }
-        .accessibilityElement(children: .combine).accessibilityLabel("\(team.rawValue) score \(value), \(bounces) bounces")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(team.rawValue) score \(value), \(bounces) of \(allowedBounces) bounces used")
     }
 
     private var signalIcon: String {
@@ -302,8 +345,8 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Press and slide across the rotation pad for analog torque. Release, then counter-steer to stop your spin.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
-                    TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball off the center net and down into the opponent’s compact goal. Three floor bounces on one side also concede a point.")
-                    TutorialCard(number: "04", icon: "bolt.trianglebadge.exclamationmark.fill", title: "SURVIVE", text: "Walls and ship impacts are safe. Touch any part of the opponent’s half and the lethal center boundary destroys you.")
+                    TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball off the center net and down into the opponent’s compact goal. Each ship hit refreshes your floor-bounce allowance.")
+                    TutorialCard(number: "04", icon: "arrow.uturn.backward.circle.fill", title: "REBOUND", text: "Walls, ship impacts, and the center barrier bounce you back safely.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }
@@ -337,6 +380,16 @@ private struct SettingsView: View {
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
+                Section("Match Rules") {
+                    Stepper(
+                        "Bounces per hit: \(tuning.allowedBouncesPerHit)",
+                        value: $tuning.allowedBouncesPerHit,
+                        in: 1 ... 5
+                    )
+                    Text("Applies to solo matches. Online matches use two bounces per hit for both players.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("Developer") {
                     NavigationLink("Flight Tuning") {
                         FlightTuningView(tuning: tuning)
@@ -370,6 +423,13 @@ private struct FlightTuningView: View {
                             TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: 0.25 ... 0.72, step: 0.01)
                             TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)
                         }
+                    }
+                    GroupBox("Match Rule") {
+                        Stepper(
+                            "Bounces per hit: \(tuning.allowedBouncesPerHit)",
+                            value: $tuning.allowedBouncesPerHit,
+                            in: 1 ... 5
+                        )
                     }
                 }
                 Text("Solo flight only. Ship and gravity changes apply immediately; drop height and speed apply on the next drop.")
