@@ -1,0 +1,121 @@
+import Foundation
+import Observation
+
+public struct FlightTuningSnapshot: Equatable, Sendable {
+    public var gravityMagnitude: Double
+    public var thrustAcceleration: Double
+    public var rotationAcceleration: Double
+    public var ballGravityMultiplier: Double
+    public var ballDropHeight: Double
+    public var ballDropSpeed: Double
+
+    public static let defaults = FlightTuningSnapshot(
+        gravityMagnitude: 2,
+        thrustAcceleration: 5.5,
+        rotationAcceleration: 3,
+        ballGravityMultiplier: 0.72,
+        ballDropHeight: 0.60,
+        ballDropSpeed: 0.18
+    )
+}
+
+@MainActor
+@Observable
+public final class FlightTuningStore {
+    @ObservationIgnored private let defaults: UserDefaults
+
+    public var gravityMagnitude: Double {
+        didSet { persist(gravityMagnitude, key: Keys.gravityMagnitude) }
+    }
+    public var thrustAcceleration: Double {
+        didSet { persist(thrustAcceleration, key: Keys.thrustAcceleration) }
+    }
+    public var rotationAcceleration: Double {
+        didSet { persist(rotationAcceleration, key: Keys.rotationAcceleration) }
+    }
+    public var ballGravityMultiplier: Double {
+        didSet { persist(ballGravityMultiplier, key: Keys.ballGravityMultiplier) }
+    }
+    public var ballDropHeight: Double {
+        didSet { persist(ballDropHeight, key: Keys.ballDropHeight) }
+    }
+    public var ballDropSpeed: Double {
+        didSet { persist(ballDropSpeed, key: Keys.ballDropSpeed) }
+    }
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let baked = FlightTuningSnapshot.defaults
+        gravityMagnitude = Self.load(defaults, key: Keys.gravityMagnitude, fallback: baked.gravityMagnitude, range: 0.5 ... 4)
+        thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 2 ... 10)
+        rotationAcceleration = Self.load(defaults, key: Keys.rotationAcceleration, fallback: baked.rotationAcceleration, range: 0.5 ... 8)
+        ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
+        ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: 0.25 ... 0.72)
+        ballDropSpeed = Self.load(defaults, key: Keys.ballDropSpeed, fallback: baked.ballDropSpeed, range: 0 ... 0.8)
+    }
+
+    public var snapshot: FlightTuningSnapshot {
+        FlightTuningSnapshot(
+            gravityMagnitude: gravityMagnitude,
+            thrustAcceleration: thrustAcceleration,
+            rotationAcceleration: rotationAcceleration,
+            ballGravityMultiplier: ballGravityMultiplier,
+            ballDropHeight: ballDropHeight,
+            ballDropSpeed: ballDropSpeed
+        )
+    }
+
+    public var configuration: SimulationConfiguration {
+        SimulationConfiguration(
+            gravity: .init(0, -gravityMagnitude),
+            initialThrustAcceleration: thrustAcceleration,
+            maximumThrustAcceleration: thrustAcceleration,
+            torqueAcceleration: rotationAcceleration,
+            ballGravityMultiplier: ballGravityMultiplier,
+            ballDropHeight: ballDropHeight,
+            ballDropSpeed: ballDropSpeed
+        )
+    }
+
+    public func reset() {
+        let baked = FlightTuningSnapshot.defaults
+        gravityMagnitude = baked.gravityMagnitude
+        thrustAcceleration = baked.thrustAcceleration
+        rotationAcceleration = baked.rotationAcceleration
+        ballGravityMultiplier = baked.ballGravityMultiplier
+        ballDropHeight = baked.ballDropHeight
+        ballDropSpeed = baked.ballDropSpeed
+        Keys.all.forEach(defaults.removeObject(forKey:))
+    }
+
+    private func persist(_ value: Double, key: String) {
+        defaults.set(value, forKey: key)
+    }
+
+    private static func load(
+        _ defaults: UserDefaults,
+        key: String,
+        fallback: Double,
+        range: ClosedRange<Double>
+    ) -> Double {
+        guard defaults.object(forKey: key) != nil else { return fallback }
+        return min(range.upperBound, max(range.lowerBound, defaults.double(forKey: key)))
+    }
+
+    private enum Keys {
+        static let gravityMagnitude = "tuning.gravityMagnitude"
+        static let thrustAcceleration = "tuning.thrustAcceleration"
+        static let rotationAcceleration = "tuning.rotationAcceleration"
+        static let ballGravityMultiplier = "tuning.ballGravityMultiplier"
+        static let ballDropHeight = "tuning.ballDropHeight"
+        static let ballDropSpeed = "tuning.ballDropSpeed"
+        static let all = [
+            gravityMagnitude,
+            thrustAcceleration,
+            rotationAcceleration,
+            ballGravityMultiplier,
+            ballDropHeight,
+            ballDropSpeed,
+        ]
+    }
+}

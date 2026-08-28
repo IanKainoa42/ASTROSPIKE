@@ -23,6 +23,16 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["SETTINGS"].tap()
         XCTAssertTrue(app.switches["Large controls"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["Swap controls for left-handed play"].exists)
+        app.buttons["Flight Tuning"].tap()
+        XCTAssertTrue(app.sliders["Gravity"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sliders["Thrust"].exists)
+        XCTAssertTrue(app.sliders["Rotation"].exists)
+        app.swipeUp()
+        XCTAssertTrue(app.sliders["Ball gravity"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sliders["Drop height"].exists)
+        XCTAssertTrue(app.sliders["Drop speed"].exists)
+        app.swipeUp()
+        XCTAssertTrue(app.buttons["Reset Defaults"].waitForExistence(timeout: 3))
     }
 
     @MainActor
@@ -35,14 +45,18 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
         let torqueControl = app.buttons["Rotational torque"]
         let thrustControl = app.buttons["Thrust"]
-        XCTAssertTrue(torqueControl.exists)
+        XCTAssertFalse(torqueControl.exists)
         XCTAssertTrue(thrustControl.exists)
-        XCTAssertEqual(torqueControl.frame.width, 92, accuracy: 2)
-        XCTAssertEqual(torqueControl.frame.height, 92, accuracy: 2)
-        XCTAssertEqual(thrustControl.frame.width, 92, accuracy: 2)
-        XCTAssertEqual(thrustControl.frame.height, 92, accuracy: 2)
-        XCTAssertFalse(app.buttons["Rotate left"].exists)
-        XCTAssertFalse(app.buttons["Rotate right"].exists)
+        let rotateLeft = app.buttons["Rotate left"]
+        let rotateRight = app.buttons["Rotate right"]
+        XCTAssertTrue(rotateLeft.exists)
+        XCTAssertTrue(rotateRight.exists)
+        XCTAssertGreaterThanOrEqual(rotateLeft.frame.width, 96)
+        XCTAssertGreaterThanOrEqual(rotateLeft.frame.height, 96)
+        XCTAssertGreaterThanOrEqual(rotateRight.frame.width, 96)
+        XCTAssertGreaterThanOrEqual(rotateRight.frame.height, 96)
+        XCTAssertGreaterThanOrEqual(thrustControl.frame.width, 112)
+        XCTAssertGreaterThanOrEqual(thrustControl.frame.height, 96)
         XCTAssertTrue(app.staticTexts["Your side: Cyan"].exists)
 
         app.buttons["Pause match"].tap()

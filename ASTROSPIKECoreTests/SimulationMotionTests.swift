@@ -109,4 +109,30 @@ struct SimulationMotionTests {
         #expect(PlayerInput(tick: 4, torque: 9, thrust: false).torque == 1)
         #expect(PlayerInput(tick: 4, torque: -9, thrust: false).torque == -1)
     }
+
+    @Test("Updated tuning takes effect on the next simulation tick")
+    func liveTuningAppliesImmediately() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position.y = 0.5
+        engine.state.ships[.cyan]!.angle = .pi / 2
+        engine.state.ball.position = .init(-0.4, 0.5)
+        engine.state.ball.velocity = .zero
+        var tuning = engine.configuration
+        tuning.gravity = .init(0, -1)
+        tuning.initialThrustAcceleration = 4
+        tuning.maximumThrustAcceleration = 4
+        tuning.torqueAcceleration = 2
+        tuning.ballGravityMultiplier = 0.5
+        engine.updateConfiguration(tuning)
+
+        engine.step(inputs: [
+            .cyan: PlayerInput(tick: 0, torque: 1, thrust: true),
+            .orange: .idle(tick: 0),
+        ])
+
+        let dt = 1.0 / 120.0
+        #expect(abs(engine.state.ships[.cyan]!.velocity.y - 3 * dt) < 0.000_001)
+        #expect(abs(engine.state.ships[.cyan]!.angularVelocity - 2 * dt) < 0.000_001)
+        #expect(abs(engine.state.ball.velocity.y - -0.5 * dt) < 0.000_001)
+    }
 }

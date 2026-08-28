@@ -10,6 +10,20 @@ struct RallyLifecycleTests {
         #expect(engine.state.ball.position == .init(0, 0.60))
     }
 
+    @Test("A tuned rally uses its configured ball height and drop speed")
+    func tunedRallyUsesConfiguredDrop() {
+        var engine = SimulationEngine.testing()
+        var tuning = engine.configuration
+        tuning.ballDropHeight = 0.72
+        tuning.ballDropSpeed = 0.08
+        engine.updateConfiguration(tuning)
+
+        engine.prepareNextRally(mirrored: false)
+
+        #expect(engine.state.ball.position == .init(0, 0.72))
+        #expect(engine.state.ball.velocity == .init(0, -0.08))
+    }
+
     @Test("A point freezes, then reset enters countdown without changing score")
     func freezeResetCountdown() {
         var engine = SimulationEngine.testing()

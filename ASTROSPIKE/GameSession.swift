@@ -33,10 +33,15 @@ final class GameSession {
     private var countdownAccumulator = 0.0
     private var freezeAccumulator = 0.0
 
-    init(mode: GameMode, online: OnlineMatchCoordinator? = nil) {
+    init(
+        mode: GameMode,
+        online: OnlineMatchCoordinator? = nil,
+        configuration: SimulationConfiguration = .init()
+    ) {
         self.mode = mode
         self.online = online
         var initialEngine = SimulationEngine.testing()
+        initialEngine.updateConfiguration(configuration)
         initialEngine.prepareNextRally(mirrored: false)
         engine = initialEngine
         state = initialEngine.state
@@ -77,6 +82,25 @@ final class GameSession {
 
     func setApplicationActive(_ active: Bool) {
         isPaused = !active
+    }
+
+    func applyTuning(_ configuration: SimulationConfiguration) {
+        guard case .solo = mode else { return }
+        engine.updateConfiguration(configuration)
+    }
+
+    func restartRally(with configuration: SimulationConfiguration) {
+        guard case .solo = mode, state.match.phase != .finished else { return }
+        engine.updateConfiguration(configuration)
+        engine.prepareNextRally(mirrored: false)
+        state = engine.state
+        scene.snapshot = state
+        countdown = 3
+        countdownAccumulator = 0
+        freezeAccumulator = 0
+        accumulator = 0
+        torque = 0
+        thrust = false
     }
 
     private func frame(timestamp: CFTimeInterval) {

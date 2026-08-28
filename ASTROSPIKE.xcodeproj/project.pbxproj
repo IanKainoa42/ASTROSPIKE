@@ -20,12 +20,15 @@
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		4ABE3DC27EA7E0AA4E79BA2D /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
+		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
 		8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */; };
 		90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */; };
 		92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CD4F97738D5A2F620398EBF /* Assets.xcassets */; };
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
 		AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */; };
+		ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */; };
+		B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */; };
 		B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */; };
 		BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF5E91B39BF78BC48AAE5C2 /* Module.swift */; };
 		C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2938C10E066FBAEF95E3652B /* GameSession.swift */; };
@@ -94,15 +97,18 @@
 		2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaGeometry.swift; sourceTree = "<group>"; };
 		2CD4F97738D5A2F620398EBF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2CD95C0514B3196435647AEC /* WireProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocol.swift; sourceTree = "<group>"; };
+		2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightControlMappingTests.swift; sourceTree = "<group>"; };
 		3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceAndSoakTests.swift; sourceTree = "<group>"; };
 		376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEUITests.swift; sourceTree = "<group>"; };
 		384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulationMotionTests.swift; sourceTree = "<group>"; };
 		394FFF2162051CDBC12CE239 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionStateMachine.swift; sourceTree = "<group>"; };
+		4033BD3492F8C74CE390EB56 /* FlightTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuning.swift; sourceTree = "<group>"; };
 		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ASTROSPIKECore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
+		5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuningTests.swift; sourceTree = "<group>"; };
 		5488DBEBDCDC52A967D49F5A /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
 		6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocolTests.swift; sourceTree = "<group>"; };
 		6E6C209D8015028776DDD2A2 /* MatchRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRules.swift; sourceTree = "<group>"; };
@@ -144,6 +150,7 @@
 			children = (
 				A3A9B354B5E4A268F1331755 /* AIController.swift */,
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
+				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
@@ -205,6 +212,8 @@
 			children = (
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
+				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
+				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
 				9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */,
 				8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */,
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
@@ -362,6 +371,7 @@
 			files = (
 				EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */,
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
+				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */,
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
@@ -390,6 +400,8 @@
 			files = (
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
+				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
+				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
 				0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */,
 				9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */,
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
@@ -555,7 +567,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -615,7 +627,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

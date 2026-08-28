@@ -22,6 +22,31 @@ public struct PlayerInput: Codable, Equatable, Sendable {
     }
 }
 
+public enum FlightControlDirection: Sendable {
+    case left
+    case right
+}
+
+public enum FlightControlMapping {
+    public static func torque(for direction: FlightControlDirection) -> Double {
+        switch direction {
+        case .left: 1
+        case .right: -1
+        }
+    }
+
+    public static func input(
+        tick: UInt64,
+        leftPressed: Bool,
+        rightPressed: Bool,
+        thrustPressed: Bool
+    ) -> PlayerInput {
+        let torque = (leftPressed ? torque(for: .left) : 0)
+            + (rightPressed ? torque(for: .right) : 0)
+        return PlayerInput(tick: tick, torque: torque, thrust: thrustPressed)
+    }
+}
+
 public struct ShipState: Codable, Equatable, Sendable {
     public var position: SIMD2<Double>
     public var velocity: SIMD2<Double>
@@ -76,6 +101,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var maximumThrustAcceleration: Double
     public var thrustRampRate: Double
     public var torqueAcceleration: Double
+    public var ballGravityMultiplier: Double
+    public var ballDropHeight: Double
+    public var ballDropSpeed: Double
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -83,7 +111,10 @@ public struct SimulationConfiguration: Equatable, Sendable {
         initialThrustAcceleration: Double = 5.5,
         maximumThrustAcceleration: Double = 5.5,
         thrustRampRate: Double = 0,
-        torqueAcceleration: Double = 3
+        torqueAcceleration: Double = 3,
+        ballGravityMultiplier: Double = 0.72,
+        ballDropHeight: Double = 0.60,
+        ballDropSpeed: Double = 0.18
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
@@ -91,6 +122,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.maximumThrustAcceleration = maximumThrustAcceleration
         self.thrustRampRate = thrustRampRate
         self.torqueAcceleration = torqueAcceleration
+        self.ballGravityMultiplier = ballGravityMultiplier
+        self.ballDropHeight = ballDropHeight
+        self.ballDropSpeed = ballDropSpeed
     }
 }
 
@@ -120,6 +154,10 @@ public struct SimulationEngine: Sendable {
         ]))
     }
 
+    public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
+        self.configuration = configuration
+    }
+
     public mutating func prepareNextRally(mirrored: Bool) {
         guard state.match.phase != .finished else { return }
         let direction = mirrored ? 1.0 : -1.0
@@ -127,7 +165,10 @@ public struct SimulationEngine: Sendable {
             .cyan: ShipState(position: SIMD2(0.55 * direction, -0.55), angle: .pi / 2),
             .orange: ShipState(position: SIMD2(-0.55 * direction, -0.55), angle: .pi / 2),
         ]
-        state.ball = BallState(position: SIMD2(0, 0.60), velocity: SIMD2(0, -0.18))
+        state.ball = BallState(
+            position: SIMD2(0, configuration.ballDropHeight),
+            velocity: SIMD2(0, -configuration.ballDropSpeed)
+        )
         rules.prepareNextRally()
         state.match = rules.state
         lastEvents = [.rallyReset]
@@ -172,7 +213,7 @@ public struct SimulationEngine: Sendable {
         resolveShipShipCollision(previousPositions: previousShipPositions, contacts: &contacts)
 
         let previousBallPosition = state.ball.position
-        state.ball.velocity += configuration.gravity * 0.72 * dt
+        state.ball.velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
         state.ball.position += state.ball.velocity * dt
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,

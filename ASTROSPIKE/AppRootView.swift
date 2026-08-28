@@ -4,6 +4,7 @@ import SwiftUI
 
 struct AppRootView: View {
     @State private var online = OnlineMatchCoordinator()
+    @State private var tuning = FlightTuningStore()
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
 
@@ -16,7 +17,7 @@ struct AppRootView: View {
         ZStack {
             CosmicBackground()
             if let gameMode {
-                GameView(mode: gameMode, online: online) {
+                GameView(mode: gameMode, online: online, tuning: tuning) {
                     self.gameMode = nil
                 }
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
@@ -43,7 +44,7 @@ struct AppRootView: View {
             case .tutorial:
                 FlightTutorial()
             case .settings:
-                SettingsView().presentationDetents([.medium])
+                SettingsView(tuning: tuning).presentationDetents([.large])
             }
         }
     }
@@ -109,6 +110,7 @@ private struct HomeView: View {
 private struct GameView: View {
     let mode: GameMode
     let online: OnlineMatchCoordinator
+    let tuning: FlightTuningStore
     let exit: () -> Void
 
     @State private var session: GameSession
@@ -118,11 +120,25 @@ private struct GameView: View {
     @AppStorage("haptics") private var haptics = true
     @Environment(\.scenePhase) private var scenePhase
 
-    init(mode: GameMode, online: OnlineMatchCoordinator, exit: @escaping () -> Void) {
+    init(
+        mode: GameMode,
+        online: OnlineMatchCoordinator,
+        tuning: FlightTuningStore,
+        exit: @escaping () -> Void
+    ) {
         self.mode = mode
         self.online = online
+        self.tuning = tuning
         self.exit = exit
-        _session = State(initialValue: GameSession(mode: mode, online: online))
+        let configuration = switch mode {
+        case .solo: tuning.configuration
+        case .online: SimulationConfiguration()
+        }
+        _session = State(initialValue: GameSession(
+            mode: mode,
+            online: online,
+            configuration: configuration
+        ))
     }
 
     var body: some View {
@@ -157,13 +173,21 @@ private struct GameView: View {
         .accessibilityIdentifier("game-screen")
         .onAppear { FeedbackCenter.shared.hapticsEnabled = haptics; session.start() }
         .onDisappear { session.stop() }
+        .onChange(of: tuning.snapshot) { _, _ in
+            session.applyTuning(tuning.configuration)
+        }
         .onChange(of: scenePhase) { _, phase in
             session.setApplicationActive(phase == .active)
         }
         .sheet(isPresented: $showPause, onDismiss: { session.resume() }) {
-            PauseView(resume: { showPause = false; session.resume() },
-                      exit: { showPause = false; exit() })
-                .presentationDetents([.medium]).interactiveDismissDisabled()
+            PauseView(
+                tuning: tuning,
+                restartDrop: { session.restartRally(with: tuning.configuration) },
+                resume: { showPause = false; session.resume() },
+                exit: { showPause = false; exit() }
+            )
+            .presentationDetents([.large])
+            .interactiveDismissDisabled()
         }
     }
 
@@ -302,6 +326,7 @@ private struct TutorialCard: View {
 }
 
 private struct SettingsView: View {
+    @Bindable var tuning: FlightTuningStore
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
@@ -312,6 +337,11 @@ private struct SettingsView: View {
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
+                Section("Developer") {
+                    NavigationLink("Flight Tuning") {
+                        FlightTuningView(tuning: tuning)
+                    }
+                }
                 Section("Team symbols") { Label("Cyan uses a bar", systemImage: "minus"); Label("Orange uses a diamond", systemImage: "diamond.fill") }
             }.navigationTitle("Settings")
         }
@@ -319,15 +349,90 @@ private struct SettingsView: View {
     }
 }
 
+private struct FlightTuningView: View {
+    @Bindable var tuning: FlightTuningStore
+    var restartDrop: (() -> Void)?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
+                    GroupBox("Ship") {
+                        VStack(spacing: 14) {
+                            TuningSlider(title: "Gravity", value: $tuning.gravityMagnitude, range: 0.5 ... 4, step: 0.1)
+                            TuningSlider(title: "Thrust", value: $tuning.thrustAcceleration, range: 2 ... 10, step: 0.25)
+                            TuningSlider(title: "Rotation", value: $tuning.rotationAcceleration, range: 0.5 ... 8, step: 0.25)
+                        }
+                    }
+                    GroupBox("Ball Drop") {
+                        VStack(spacing: 14) {
+                            TuningSlider(title: "Ball gravity", value: $tuning.ballGravityMultiplier, range: 0.1 ... 1.2, step: 0.02)
+                            TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: 0.25 ... 0.72, step: 0.01)
+                            TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)
+                        }
+                    }
+                }
+                Text("Solo flight only. Ship and gravity changes apply immediately; drop height and speed apply on the next drop.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let restartDrop {
+                    Button("Restart Drop", action: restartDrop)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.cyan)
+                }
+                Button("Reset Defaults", role: .destructive) { tuning.reset() }
+                    .buttonStyle(.bordered)
+            }
+            .padding(20)
+        }
+        .navigationTitle("Flight Tuning")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("flight-tuning-screen")
+    }
+}
+
+private struct TuningSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.formatted(.number.precision(.fractionLength(2))))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Slider(value: $value, in: range, step: step)
+                .accessibilityLabel(title)
+                .accessibilityValue(value.formatted(.number.precision(.fractionLength(2))))
+        }
+    }
+}
+
 private struct PauseView: View {
+    @Bindable var tuning: FlightTuningStore
+    let restartDrop: () -> Void
     let resume: () -> Void
     let exit: () -> Void
     var body: some View {
-        VStack(spacing: 18) {
-            Text("PAUSED").font(.largeTitle).fontWeight(.black)
-            Button("Resume", action: resume).buttonStyle(.borderedProminent).tint(.cyan).accessibilityIdentifier("resume-button")
-            Button("Exit Match", role: .destructive, action: exit).buttonStyle(.bordered)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).accessibilityIdentifier("pause-screen")
+        NavigationStack {
+            VStack(spacing: 18) {
+                Text("PAUSED").font(.largeTitle).fontWeight(.black)
+                Button("Resume", action: resume).buttonStyle(.borderedProminent).tint(.cyan).accessibilityIdentifier("resume-button")
+                NavigationLink("Flight Tuning") {
+                    FlightTuningView(tuning: tuning, restartDrop: restartDrop)
+                }
+                .buttonStyle(.bordered)
+                Button("Exit Match", role: .destructive, action: exit).buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("pause-screen")
+        }
     }
 }
 
