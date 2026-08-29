@@ -132,6 +132,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var serveDelay: Double
+    public var minimumBallSeparationSpeed: Double
     public var allowedFloorBounces: Int
 
     public init(
@@ -145,6 +146,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         ballDropHeight: Double = 0.60,
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
+        minimumBallSeparationSpeed: Double = 0.45,
         allowedFloorBounces: Int = 2
     ) {
         self.stepDuration = stepDuration
@@ -157,6 +159,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.ballDropHeight = ballDropHeight
         self.ballDropSpeed = ballDropSpeed
         self.serveDelay = max(0, serveDelay)
+        self.minimumBallSeparationSpeed = max(0, minimumBallSeparationSpeed)
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
     }
 }
@@ -277,7 +280,8 @@ public struct SimulationEngine: Sendable {
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,
             previousShipPositions: previousShipPositions,
-            contacts: &contacts
+            contacts: &contacts,
+            effects: &collisionEffects
         )
         resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
 
@@ -614,7 +618,8 @@ public struct SimulationEngine: Sendable {
     private mutating func resolveBallShipCollisions(
         previousBallPosition: SIMD2<Double>,
         previousShipPositions: [Team: SIMD2<Double>],
-        contacts: inout [RuleContact]
+        contacts: inout [RuleContact],
+        effects: inout [SimulationEvent]
     ) {
         struct Fixture {
             var previousCenter: SIMD2<Double>
@@ -675,8 +680,19 @@ public struct SimulationEngine: Sendable {
         let impulse = -(1 + 0.95) * inwardSpeed / (inverseBallMass + inverseShipMass)
         state.ball.velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
+        // Every contact pops the ball clear of the hull. Without this a ship can
+        // park under a slow ball and ride it, which stalls the rally outright.
+        let separationSpeed = simd_dot(state.ball.velocity - ship.velocity, normal)
+        if separationSpeed < configuration.minimumBallSeparationSpeed {
+            state.ball.velocity += normal
+                * (configuration.minimumBallSeparationSpeed - separationSpeed)
+        }
         state.ships[hit.team] = ship
         contacts.append(.ballTouchedShip(team: hit.team))
+        effects.append(.collisionEffect(
+            position: state.ball.position,
+            intensity: abs(inwardSpeed)
+        ))
     }
 
     private func sweptCircleTime(

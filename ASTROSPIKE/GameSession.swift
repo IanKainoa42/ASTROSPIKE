@@ -45,9 +45,9 @@ final class GameSession {
         engine = initialEngine
         state = initialEngine.state
         if case let .solo(difficulty) = mode {
-            ai = AIController(difficulty: difficulty)
+            ai = AIController(difficulty: difficulty, configuration: configuration)
             if ProcessInfo.processInfo.arguments.contains("--demo") {
-                demoAI = AIController(difficulty: .pilot)
+                demoAI = AIController(difficulty: .pilot, configuration: configuration)
             }
         }
         scene.scaleMode = .resizeFill
@@ -86,11 +86,15 @@ final class GameSession {
     func applyTuning(_ configuration: SimulationConfiguration) {
         guard case .solo = mode else { return }
         engine.updateConfiguration(configuration)
+        ai?.updateConfiguration(configuration)
+        demoAI?.updateConfiguration(configuration)
     }
 
     func restartRally(with configuration: SimulationConfiguration) {
         guard case .solo = mode, state.match.phase != .finished else { return }
         engine.updateConfiguration(configuration)
+        ai?.updateConfiguration(configuration)
+        demoAI?.updateConfiguration(configuration)
         engine.prepareNextRally(mirrored: false)
         state = engine.state
         scene.snapshot = state

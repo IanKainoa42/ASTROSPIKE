@@ -1,16 +1,19 @@
 import Testing
+import simd
 @testable import ASTROSPIKECore
 
 @Suite("Arena physics")
 struct ArenaPhysicsTests {
-    @Test("The standard net occupies only the lower third of the arena")
+    @Test("The standard net is a low hurdle rather than a wall")
     func standardNetIsLowEnoughToFlyOver() {
         let arena = ArenaGeometry.standard
         let netHeight = arena.netTopY - arena.floorY
         let arenaHeight = arena.ceilingY - arena.floorY
 
-        #expect(arena.netTopY == -0.26)
-        #expect(netHeight / arenaHeight < 0.34)
+        #expect(arena.netTopY == -0.46)
+        #expect(netHeight / arenaHeight < 0.22)
+        // The pocket roof still passes under the net cap, so goals stay reachable.
+        #expect(arena.netTopY > arena.floorY + (arena.goalOuterX - arena.goalInnerX))
     }
 
     @Test("A straight ground roll is rejected by the goal lip")
@@ -67,7 +70,7 @@ struct ArenaPhysicsTests {
     func netReboundsBall() {
         var engine = SimulationEngine.testing()
         engine.state.ball = BallState(
-            position: SIMD2(-0.051, -0.40),
+            position: SIMD2(-0.051, -0.60),
             velocity: SIMD2(2, 0),
             radius: 0.04
         )
@@ -81,7 +84,7 @@ struct ArenaPhysicsTests {
     func reboundingBallClearsNet() {
         var engine = SimulationEngine.testing()
         engine.state.ball = BallState(
-            position: SIMD2(-0.051, -0.40),
+            position: SIMD2(-0.051, -0.60),
             velocity: SIMD2(2, 0),
             radius: 0.04
         )
@@ -99,13 +102,15 @@ struct ArenaPhysicsTests {
     @Test("A center drop bounces from the rounded net cap and deflects sideways")
     func roundedNetCapDeflectsCenterDrop() {
         var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position.y = 0.5
+        engine.state.ships[.orange]!.position.y = 0.5
         engine.state.ball = BallState(
             position: SIMD2(0, 0.32),
             velocity: SIMD2(0, -2),
             radius: 0.04
         )
 
-        for tick in UInt64(0) ..< 40 {
+        for tick in UInt64(0) ..< 60 {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
         }
 
@@ -118,7 +123,7 @@ struct ArenaPhysicsTests {
     func fastBallCannotTunnelThroughNet() {
         var engine = SimulationEngine.testing()
         engine.state.ball = BallState(
-            position: SIMD2(-0.40, -0.40),
+            position: SIMD2(-0.40, -0.60),
             velocity: SIMD2(60, 0),
             radius: 0.04
         )
@@ -222,7 +227,7 @@ struct ArenaPhysicsTests {
     @Test("Touching the net from the opponent's side destroys the intruding ship")
     func enemySideNetContactDestroysShip() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(0.04, -0.20)
+        engine.state.ships[.cyan]!.position = SIMD2(0.04, -0.40)
         engine.state.ships[.cyan]!.velocity = SIMD2(-0.5, -0.5)
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
@@ -234,7 +239,7 @@ struct ArenaPhysicsTests {
     @Test("Touching the net from the home side rebounds safely")
     func homeSideNetContactReboundsShip() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(-0.04, -0.20)
+        engine.state.ships[.cyan]!.position = SIMD2(-0.04, -0.40)
         engine.state.ships[.cyan]!.velocity = SIMD2(0.5, -0.5)
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
@@ -297,6 +302,63 @@ struct ArenaPhysicsTests {
         ceiling.state.ships[.cyan]!.velocity = SIMD2(0, 8)
         ceiling.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
         #expect(!ceiling.state.ships[.cyan]!.isDestroyed)
+    }
+
+    @Test("A hull cannot carry the ball: every contact pops it clear")
+    func hullCannotCarryTheBall() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(-0.55, 0.20)
+        engine.state.ships[.orange]!.position = SIMD2(0.55, 0.20)
+        engine.state.ball = BallState(position: SIMD2(-0.55, 0.60), velocity: SIMD2(0, -0.2))
+        var longestContact = 0
+        var contact = 0
+
+        for tick in UInt64(0) ..< 900 {
+            // Both players hold station, which is exactly how a ball gets ridden.
+            let inputs = Dictionary(uniqueKeysWithValues: Team.allCases.map { team -> (Team, PlayerInput) in
+                guard let ship = engine.state.ships[team] else { return (team, .idle(tick: tick)) }
+                let holding = ship.position.y < 0.20 || ship.velocity.y < -0.05
+                return (team, PlayerInput(tick: tick, torque: 0, thrust: holding))
+            })
+            engine.step(inputs: inputs)
+            guard engine.state.match.phase == .playing else { break }
+            let riding = Team.allCases.contains { team in
+                guard let ship = engine.state.ships[team] else { return false }
+                return simd_distance(engine.state.ball.position, ship.position) < 0.17
+            }
+            contact = riding ? contact + 1 : 0
+            longestContact = max(longestContact, contact)
+        }
+
+        // Half a second of unbroken contact is a bounce; four seconds is a stall.
+        #expect(longestContact < 120)
+    }
+
+    @Test("Even a gentle touch pushes the ball clear of the hull")
+    func gentleTouchStillSeparatesTheBall() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan] = ShipState(position: SIMD2(-0.55, 0.30), angle: 0)
+        engine.state.ships[.orange] = ShipState(position: SIMD2(0.55, 0.30), angle: .pi)
+        engine.state.ball = BallState(
+            position: SIMD2(-0.38, 0.30),
+            velocity: SIMD2(-0.25, 0),
+            radius: 0.045
+        )
+        var separation = 0.0
+
+        for tick in UInt64(0) ..< 40 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            if engine.state.ball.velocity.x > 0 {
+                separation = simd_length(
+                    engine.state.ball.velocity - engine.state.ships[.cyan]!.velocity
+                )
+                break
+            }
+        }
+
+        // This nudge only carries 0.25 of closing speed, so an elastic bounce alone
+        // would leave the ball loitering on the hull.
+        #expect(separation >= engine.configuration.minimumBallSeparationSpeed - 0.001)
     }
 
     @Test("Ship-to-ship contact destroys both players")
