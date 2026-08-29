@@ -32,7 +32,7 @@ public struct ArenaGeometry: Equatable, Sendable {
         floorY: Double = -0.78,
         ceilingY: Double = 0.78,
         netHalfWidth: Double = 0.018,
-        netTopY: Double = 0.16,
+        netTopY: Double = -0.26,
         goalInnerX: Double = 0.018,
         goalOuterX: Double = 0.128,
         goalMinimumDownwardSpeed: Double = 0.25
@@ -48,6 +48,8 @@ public struct ArenaGeometry: Equatable, Sendable {
     }
 
     public static let standard = ArenaGeometry()
+
+    public var opponentCrossingLimit: Double { halfWidth / 2 }
 
     public func goalDefender(for ball: BallState) -> Team? {
         guard ball.velocity.y < -goalMinimumDownwardSpeed else { return nil }

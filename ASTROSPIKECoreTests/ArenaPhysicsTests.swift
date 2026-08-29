@@ -3,6 +3,16 @@ import Testing
 
 @Suite("Arena physics")
 struct ArenaPhysicsTests {
+    @Test("The standard net occupies only the lower third of the arena")
+    func standardNetIsLowEnoughToFlyOver() {
+        let arena = ArenaGeometry.standard
+        let netHeight = arena.netTopY - arena.floorY
+        let arenaHeight = arena.ceilingY - arena.floorY
+
+        #expect(arena.netTopY == -0.26)
+        #expect(netHeight / arenaHeight < 0.34)
+    }
+
     @Test("A straight ground roll is rejected by the goal lip")
     func straightRollDoesNotScore() {
         let ball = BallState(
@@ -57,7 +67,7 @@ struct ArenaPhysicsTests {
     func netReboundsBall() {
         var engine = SimulationEngine.testing()
         engine.state.ball = BallState(
-            position: SIMD2(-0.051, -0.20),
+            position: SIMD2(-0.051, -0.40),
             velocity: SIMD2(2, 0),
             radius: 0.04
         )
@@ -71,7 +81,7 @@ struct ArenaPhysicsTests {
     func reboundingBallClearsNet() {
         var engine = SimulationEngine.testing()
         engine.state.ball = BallState(
-            position: SIMD2(-0.051, -0.20),
+            position: SIMD2(-0.051, -0.40),
             velocity: SIMD2(2, 0),
             radius: 0.04
         )
@@ -108,7 +118,7 @@ struct ArenaPhysicsTests {
     func fastBallCannotTunnelThroughNet() {
         var engine = SimulationEngine.testing()
         engine.state.ball = BallState(
-            position: SIMD2(-0.40, -0.20),
+            position: SIMD2(-0.40, -0.40),
             velocity: SIMD2(60, 0),
             radius: 0.04
         )
@@ -196,17 +206,40 @@ struct ArenaPhysicsTests {
         #expect(engine.state.ball.velocity.x < -5.5)
     }
 
-    @Test("Touching the center barrier rebounds the ship without awarding a point")
-    func netReboundsShip() {
+    @Test("A ship can cross above the net and enter the opponent's half")
+    func shipCanEnterOpponentHalfAboveNet() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(-0.025, -0.45)
-        engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
+        engine.state.ships[.cyan]!.position = SIMD2(-0.01, 0.20)
+        engine.state.ships[.cyan]!.velocity = SIMD2(3, 0)
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
         #expect(!engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.state.ships[.cyan]!.position.x <= -0.065)
-        #expect(engine.state.ships[.cyan]!.velocity.x < 0)
+        #expect(engine.state.ships[.cyan]!.position.x > 0)
+        #expect(engine.state.match.score == Score())
+    }
+
+    @Test("Touching the net from the opponent's side destroys the intruding ship")
+    func enemySideNetContactDestroysShip() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(0.04, -0.20)
+        engine.state.ships[.cyan]!.velocity = SIMD2(-0.5, -0.5)
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
+    }
+
+    @Test("Touching the net from the home side rebounds safely")
+    func homeSideNetContactReboundsShip() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(-0.04, -0.20)
+        engine.state.ships[.cyan]!.velocity = SIMD2(0.5, -0.5)
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
         #expect(engine.state.match.score == Score())
         #expect(engine.lastEvents.contains { event in
             guard case .collisionEffect = event else { return false }
@@ -214,24 +247,60 @@ struct ArenaPhysicsTests {
         })
     }
 
-    @Test("Even high speed outer arena impacts never destroy ships")
-    func outerArenaImpactsAreForgiving() {
-        var safe = SimulationEngine.testing()
-        safe.state.ships[.cyan]!.position = SIMD2(-0.5, -0.70)
-        safe.state.ships[.cyan]!.velocity = SIMD2(0, -0.2)
-        safe.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
-        #expect(!safe.state.ships[.cyan]!.isDestroyed)
+    @Test("A ship may reach halfway across the opponent's side")
+    func halfwayOpponentCrossingIsAllowed() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(0.46, 0.35)
+        engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
 
-        var crash = SimulationEngine.testing()
-        crash.state.ships[.cyan]!.position = SIMD2(-0.5, -0.70)
-        crash.state.ships[.cyan]!.velocity = SIMD2(0, -8)
-        crash.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
-        #expect(!crash.state.ships[.cyan]!.isDestroyed)
-        #expect(!crash.lastEvents.contains(.point(scoringTeam: .orange, reason: .crash)))
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.ships[.cyan]!.position.x < engine.arena.opponentCrossingLimit)
+        #expect(engine.state.match.score == Score())
     }
 
-    @Test("Ship-to-ship impacts never destroy either player")
-    func shipImpactsAreForgiving() {
+    @Test("Crossing beyond halfway into the opponent's side destroys the ship")
+    func overCrossingDestroysShip() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(0.475, 0.35)
+        engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
+    }
+
+    @Test("Touching the ground destroys a ship")
+    func groundContactDestroysShip() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(-0.5, -0.72)
+        engine.state.ships[.cyan]!.velocity = SIMD2(0, -1)
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .crash)))
+    }
+
+    @Test("Outer walls and the ceiling remain safe at high speed")
+    func outerWallsAndCeilingAreForgiving() {
+        var sideWall = SimulationEngine.testing()
+        sideWall.state.ships[.cyan]!.position = SIMD2(-0.90, 0.30)
+        sideWall.state.ships[.cyan]!.velocity = SIMD2(-8, 0)
+        sideWall.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+        #expect(!sideWall.state.ships[.cyan]!.isDestroyed)
+
+        var ceiling = SimulationEngine.testing()
+        ceiling.state.ships[.cyan]!.position = SIMD2(-0.5, 0.72)
+        ceiling.state.ships[.cyan]!.velocity = SIMD2(0, 8)
+        ceiling.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+        #expect(!ceiling.state.ships[.cyan]!.isDestroyed)
+    }
+
+    @Test("Ship-to-ship contact destroys both players")
+    func shipContactDestroysBothPlayers() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan] = ShipState(
             position: SIMD2(-0.39, 0.40),
@@ -248,25 +317,9 @@ struct ArenaPhysicsTests {
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
-        #expect(!engine.state.ships[.cyan]!.isDestroyed)
-        #expect(!engine.state.ships[.orange]!.isDestroyed)
+        #expect(engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.ships[.orange]!.isDestroyed)
         #expect(engine.state.match.score == Score())
-    }
-
-    @Test("The center barrier rebounds ships above the visible net")
-    func centerBarrierReboundsShipAboveNet() {
-        var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan] = ShipState(
-            position: SIMD2(-0.06, 0.45),
-            velocity: SIMD2(2, 0),
-            angle: .pi / 2
-        )
-
-        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
-
-        #expect(!engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.state.ships[.cyan]!.position.x <= -0.065)
-        #expect(engine.state.ships[.cyan]!.velocity.x < 0)
-        #expect(engine.state.match.score == Score())
+        #expect(engine.lastEvents.contains(.rallyReset))
     }
 }

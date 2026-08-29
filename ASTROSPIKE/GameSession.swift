@@ -265,7 +265,7 @@ private extension SimulationEvent {
         case .goal: return "\(scorer) GOAL"
         case .thirdBounce: return "BOUNCE LIMIT (\(bounceAllowance)) — \(scorer)"
         case .crash: return "CRASH — \(scorer)"
-        case .netContact: return "NET DOWN — \(scorer)"
+        case .netContact: return "NET / CROSS — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"
         }
     }

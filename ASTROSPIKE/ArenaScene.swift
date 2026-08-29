@@ -99,6 +99,8 @@ final class ArenaScene: SKScene {
 
         addSideLabel("CYAN SIDE", team: .cyan, at: point(-0.72, 0.68))
         addSideLabel("ORANGE SIDE", team: .orange, at: point(0.72, 0.68))
+        addCrossingLimit(for: .cyan)
+        addCrossingLimit(for: .orange)
 
         for index in 0..<56 {
             let seed = Double(index * 7919 % 101) / 101
@@ -183,6 +185,34 @@ final class ArenaScene: SKScene {
         label.verticalAlignmentMode = .center
         label.position = position
         label.zPosition = 1
+        arenaLayer.addChild(label)
+    }
+
+    private func addCrossingLimit(for intrudingTeam: Team) {
+        let x = intrudingTeam == .cyan
+            ? arena.opponentCrossingLimit
+            : -arena.opponentCrossingLimit
+        let color: SKColor = intrudingTeam == .cyan ? .cyan : .orange
+        let path = CGMutablePath()
+        var y = arena.floorY + 0.04
+        while y < arena.ceilingY {
+            path.move(to: point(x, y))
+            path.addLine(to: point(x, min(y + 0.045, arena.ceilingY)))
+            y += 0.09
+        }
+        let marker = SKShapeNode(path: path)
+        marker.strokeColor = color.withAlphaComponent(0.28)
+        marker.lineWidth = 1.5
+        marker.glowWidth = 3
+        arenaLayer.addChild(marker)
+
+        let label = SKLabelNode(text: "MAX CROSS")
+        label.fontName = "AvenirNextCondensed-Bold"
+        label.fontSize = 8
+        label.fontColor = color.withAlphaComponent(0.45)
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = point(x, 0.58)
         arenaLayer.addChild(label)
     }
 

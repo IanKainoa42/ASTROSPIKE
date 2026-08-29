@@ -247,10 +247,22 @@ public struct SimulationEngine: Sendable {
             }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
-            resolveArenaCollision(for: &ship, team: team, effects: &collisionEffects)
+            resolveArenaCollision(
+                for: &ship,
+                from: previousShipPositions[team] ?? ship.position,
+                team: team,
+                hazardsAreLethal: state.match.phase == .playing,
+                contacts: &contacts,
+                effects: &collisionEffects
+            )
             state.ships[team] = ship
         }
-        resolveShipShipCollision(previousPositions: previousShipPositions, contacts: &contacts)
+        resolveShipShipCollision(
+            previousPositions: previousShipPositions,
+            hazardsAreLethal: state.match.phase == .playing,
+            contacts: &contacts,
+            effects: &collisionEffects
+        )
 
         if state.match.phase == .serve {
             advanceServe()
@@ -306,14 +318,29 @@ public struct SimulationEngine: Sendable {
             state.serveTicksRemaining -= 1
         }
         guard state.serveTicksRemaining == 0 else { return }
+        respawnDestroyedShips()
         state.ball.velocity = SIMD2(0, -configuration.ballDropSpeed)
         rules.beginNextRally()
         state.match = rules.state
     }
 
+    private mutating func respawnDestroyedShips() {
+        for team in Team.allCases {
+            guard let destroyedShip = state.ships[team], destroyedShip.isDestroyed else { continue }
+            let homeSide = destroyedShip.homeSide
+            state.ships[team] = ShipState(
+                position: SIMD2(homeSide == .cyan ? -0.55 : 0.55, -0.55),
+                angle: .pi / 2,
+                homeSide: homeSide
+            )
+        }
+    }
+
     private mutating func resolveShipShipCollision(
         previousPositions: [Team: SIMD2<Double>],
-        contacts: inout [RuleContact]
+        hazardsAreLethal: Bool,
+        contacts: inout [RuleContact],
+        effects: inout [SimulationEvent]
     ) {
         guard var cyan = state.ships[.cyan], var orange = state.ships[.orange],
               !cyan.isDestroyed, !orange.isDestroyed,
@@ -329,41 +356,91 @@ public struct SimulationEngine: Sendable {
             radius: 0.13
         ) else { return }
 
-        var normal = relativeStart + (relativeEnd - relativeStart) * hitTime
-        let length = simd_length(normal)
-        normal = length > 0.000_001 ? normal / length : SIMD2(-1, 0)
-        let closingSpeed = max(0, -simd_dot(cyan.velocity - orange.velocity, normal))
-        if closingSpeed > 0 {
-            let impulse = normal * (closingSpeed * 0.82)
-            cyan.velocity += impulse
-            orange.velocity -= impulse
+        let impactSpeed = simd_length(cyan.velocity - orange.velocity)
+        if hazardsAreLethal {
+            cyan.position = previousCyan + (cyan.position - previousCyan) * hitTime
+            orange.position = previousOrange + (orange.position - previousOrange) * hitTime
+            cyan.isDestroyed = true
+            cyan.thrustLevel = 0
+            orange.isDestroyed = true
+            orange.thrustLevel = 0
+            contacts.append(.shipDestroyed(team: .cyan, reason: .crash))
+            contacts.append(.shipDestroyed(team: .orange, reason: .crash))
+        } else {
+            var normal = relativeStart + (relativeEnd - relativeStart) * hitTime
+            let length = simd_length(normal)
+            normal = length > 0.000_001 ? normal / length : SIMD2(-1, 0)
+            let closingSpeed = max(0, -simd_dot(cyan.velocity - orange.velocity, normal))
+            if closingSpeed > 0 {
+                let impulse = normal * (closingSpeed * 0.82)
+                cyan.velocity += impulse
+                orange.velocity -= impulse
+            }
         }
         state.ships[.cyan] = cyan
         state.ships[.orange] = orange
+        effects.append(.collisionEffect(
+            position: (cyan.position + orange.position) / 2,
+            intensity: impactSpeed
+        ))
     }
 
     private mutating func resolveArenaCollision(
         for ship: inout ShipState,
+        from previousPosition: SIMD2<Double>,
         team: Team,
+        hazardsAreLethal: Bool,
+        contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
         let radius = 0.065
-        let enteredEnemyTerritory = ship.homeSide == .cyan
-            ? ship.position.x + radius > 0
-            : ship.position.x - radius < 0
-        if enteredEnemyTerritory {
-            let impactSpeed = abs(ship.velocity.x)
-            if ship.homeSide == .cyan {
-                ship.position.x = -radius
-                if ship.velocity.x > 0 { ship.velocity.x = -ship.velocity.x * 0.45 }
-            } else {
-                ship.position.x = radius
-                if ship.velocity.x < 0 { ship.velocity.x = -ship.velocity.x * 0.45 }
+
+        if let netContact = sweptNetContact(
+            from: previousPosition,
+            to: ship.position,
+            radius: radius
+        ) {
+            let contactIsOnEnemySide = ship.homeSide == .cyan
+                ? netContact.position.x > 0
+                : netContact.position.x < 0
+            if contactIsOnEnemySide, hazardsAreLethal {
+                destroy(&ship, team: team, reason: .netContact, contacts: &contacts)
+                return
             }
-            effects.append(.collisionEffect(position: ship.position, intensity: impactSpeed))
+
+            ship.position = netContact.position
+            let inwardSpeed = simd_dot(ship.velocity, netContact.normal)
+            if inwardSpeed < 0 {
+                ship.velocity -= netContact.normal * ((1 + 0.45) * inwardSpeed)
+            }
+            effects.append(.collisionEffect(
+                position: ship.position,
+                intensity: abs(inwardSpeed)
+            ))
+        }
+
+        let crossedOpponentLimit = ship.homeSide == .cyan
+            ? ship.position.x > arena.opponentCrossingLimit
+            : ship.position.x < -arena.opponentCrossingLimit
+        if crossedOpponentLimit, hazardsAreLethal {
+            destroy(&ship, team: team, reason: .netContact, contacts: &contacts)
+            return
+        } else if crossedOpponentLimit {
+            let limit = arena.opponentCrossingLimit
+            if ship.homeSide == .cyan {
+                ship.position.x = limit
+                ship.velocity.x = min(0, -ship.velocity.x * 0.45)
+            } else {
+                ship.position.x = -limit
+                ship.velocity.x = max(0, -ship.velocity.x * 0.45)
+            }
         }
 
         if ship.position.y - radius <= arena.floorY {
+            if hazardsAreLethal {
+                destroy(&ship, team: team, reason: .crash, contacts: &contacts)
+                return
+            }
             ship.position.y = arena.floorY + radius
             ship.velocity.y = max(0, -ship.velocity.y * 0.12)
         }
@@ -379,6 +456,51 @@ public struct SimulationEngine: Sendable {
             ship.position.x = arena.halfWidth - radius
             ship.velocity.x = min(0, -ship.velocity.x * 0.3)
         }
+    }
+
+    private func destroy(
+        _ ship: inout ShipState,
+        team: Team,
+        reason: PointReason,
+        contacts: inout [RuleContact]
+    ) {
+        guard !ship.isDestroyed else { return }
+        ship.isDestroyed = true
+        ship.thrustLevel = 0
+        contacts.append(.shipDestroyed(team: team, reason: reason))
+    }
+
+    private func sweptNetContact(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let capCenter = SIMD2(0.0, arena.netTopY)
+        let combinedRadius = radius + arena.netHalfWidth
+        let capHitTime = sweptCircleTime(
+            from: start,
+            to: end,
+            center: capCenter,
+            radius: combinedRadius
+        )
+        let endOverlapsCap = simd_distance(end, capCenter) <= combinedRadius
+        if let hitTime = capHitTime ?? (endOverlapsCap ? 1 : nil) {
+            let contactCenter = start + (end - start) * hitTime
+            var normal = contactCenter - capCenter
+            let length = simd_length(normal)
+            if length <= 0.000_001 {
+                normal = SIMD2(start.x <= 0 ? -1 : 1, 0)
+            } else {
+                normal /= length
+            }
+            return (capCenter + normal * combinedRadius, normal)
+        }
+
+        guard let bodyHit = sweptNetHit(from: start, to: end, radius: radius) else {
+            return nil
+        }
+        let normal = SIMD2(bodyHit.fromLeft ? -1.0 : 1.0, 0)
+        return (bodyHit.position, normal)
     }
 
     private mutating func resolveBallCollision(

@@ -57,11 +57,11 @@ struct AIControllerTests {
         #expect(afterRightRelease.torque == 0)
     }
 
-    @Test("AI begins retreating before it reaches the lethal center line")
-    func avoidsThrustingIntoEnemyTerritory() {
+    @Test("AI begins retreating before the opponent-side crossing limit")
+    func avoidsThrustingPastOpponentCrossingLimit() {
         var state = SimulationEngine.testing().state
         state.ships[.orange] = ShipState(
-            position: SIMD2(0.30, 0.20),
+            position: SIMD2(-0.37, 0.20),
             velocity: .zero,
             angle: .pi,
             homeSide: .orange
@@ -73,6 +73,23 @@ struct AIControllerTests {
 
         #expect(!input.thrust)
         #expect(input.torque != 0)
+    }
+
+    @Test("AI does not treat the center line as lethal")
+    func centerLineIsSafeForAI() {
+        var state = SimulationEngine.testing().state
+        state.ships[.orange] = ShipState(
+            position: SIMD2(0.05, 0.30),
+            velocity: .zero,
+            angle: 0.46,
+            homeSide: .orange
+        )
+        state.ball.position = SIMD2(-0.30, 0.30)
+        var controller = AIController(difficulty: .ace)
+
+        let input = controller.input(for: state, team: .orange, tick: 0)
+
+        #expect(input.thrust)
     }
 
     @Test("Pilot survives ten seconds while the ball remains across the net")

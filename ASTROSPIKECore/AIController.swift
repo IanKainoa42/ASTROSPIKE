@@ -44,7 +44,7 @@ public struct AIController: InputSource, Sendable {
         guard let ship = state.ships[team] else { return .idle(tick: tick) }
         let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
         let projectedHomeDistance = (ship.position.x + ship.velocity.x * 1.20) * homeSign
-        let centerDanger = projectedHomeDistance < 0.32
+        let crossingDanger = projectedHomeDistance < -(ArenaGeometry.standard.opponentCrossingLimit - 0.12)
         let nearFloor = ship.position.y < -0.52
         let recovering = nearFloor
         let needsDecision = cachedTargetPosition == nil
@@ -78,12 +78,12 @@ public struct AIController: InputSource, Sendable {
         )
         var desiredAcceleration = (desiredVelocity - ship.velocity) * 2.5
             + SIMD2(0, 3.2)
-        if centerDanger {
+        if crossingDanger {
             desiredAcceleration.x = homeSign * (6 + abs(ship.velocity.x) * 2)
         }
 
         let desiredAngle: Double
-        if centerDanger {
+        if crossingDanger {
             desiredAngle = atan2(desiredAcceleration.y, desiredAcceleration.x)
         } else if recovering {
             desiredAngle = .pi / 2
@@ -96,7 +96,7 @@ public struct AIController: InputSource, Sendable {
         let turnDemand = angleError * 2.4
         let torque = abs(turnDemand) < 0.08 ? 0 : max(-1, min(1, turnDemand))
         let thrust: Bool
-        if centerDanger {
+        if crossingDanger {
             thrust = cos(ship.angle) * homeSign > 0.25
         } else {
             thrust = simd_length(desiredAcceleration) > 0.8

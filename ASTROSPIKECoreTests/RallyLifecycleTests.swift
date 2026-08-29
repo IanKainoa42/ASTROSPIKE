@@ -101,4 +101,26 @@ struct RallyLifecycleTests {
         #expect(engine.state.ball.position == heldPosition)
         #expect(engine.state.ball.velocity == .init(0, -0.18))
     }
+
+    @Test("A destroyed ship respawns when the next serve begins")
+    func destroyedShipRespawnsForNextServe() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = .init(-0.5, -0.72)
+        engine.state.ships[.cyan]!.velocity = .init(0, -1)
+
+        engine.step(inputs: [:])
+
+        #expect(engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.match.phase == .serve)
+
+        for _ in 0 ..< 162 {
+            engine.step(inputs: [:])
+        }
+
+        #expect(engine.state.match.phase == .playing)
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.ships[.cyan]!.homeSide == .cyan)
+        #expect(engine.state.ships[.cyan]!.position.x < 0)
+        #expect(engine.state.ships[.cyan]!.position.y > engine.arena.floorY)
+    }
 }

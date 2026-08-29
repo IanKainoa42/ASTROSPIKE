@@ -96,6 +96,8 @@ struct SimulationMotionTests {
     @Test("Holding full rotation turns at the configured rate")
     func rotationUsesReducedLunarTuning() {
         var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position.y = 0.5
+        engine.state.ships[.orange]!.position.y = 0.5
         let initialAngle = engine.state.ships[.cyan]!.angle
 
         for tick in 0 ..< 120 {

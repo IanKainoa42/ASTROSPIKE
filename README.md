@@ -18,9 +18,10 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - Lunar-style flight tuning is canonical: gravity is `-2` arena units/s², main thrust is a constant `5.5` arena units/s², and the full-input rotation rate is `3` rad/s.
 - Linear momentum persists without stabilization. Rotation applies only while a direction is held and stops immediately on release, leaving the ship at its current angle.
 - Each goal opens toward its defender's side with its back against the center net; a downward return from the net into the pocket scores.
-- The net rebounds the ball. If any part of a ship enters the opponent’s half, that ship is destroyed.
-- Outer-wall, floor, ceiling, and ship-to-ship impacts never destroy ships.
-- A goal, third floor bounce on one side, or center-boundary death awards one point.
+- The low net rebounds the ball. Ships may clear it and fly into the opponent’s side as far as that side’s halfway marker.
+- Touching the net from the opponent’s side or crossing beyond the halfway marker destroys the intruding ship.
+- Ground contact destroys a ship. Ship-to-ship contact destroys both ships; outer walls and the ceiling remain safe rebounds.
+- A goal, third floor bounce on one side, ground crash, net contact, or over-crossing awards one point.
 - Crossing the center plane resets only the entered side's bounce count.
 - Simultaneous ship deaths replay the rally. A goal or third bounce outranks a death in the same simulation step.
 - First to 7 wins with a two-point lead; 11 is the hard cap.

@@ -346,7 +346,8 @@ private struct FlightTutorial: View {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
                     TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball off the center net and down into the opponent’s compact goal. Each ship hit refreshes your floor-bounce allowance.")
-                    TutorialCard(number: "04", icon: "arrow.uturn.backward.circle.fill", title: "REBOUND", text: "Walls, ship impacts, and the center barrier bounce you back safely.")
+                    TutorialCard(number: "04", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Clear the low net to enter the opponent’s side. You can fly as far as the colored MAX CROSS line.")
+                    TutorialCard(number: "05", icon: "burst.fill", title: "DANGER", text: "You explode if you touch the net from their side, cross their MAX CROSS line, hit the ground, or collide with the other ship. Side walls and the ceiling rebound safely.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }
