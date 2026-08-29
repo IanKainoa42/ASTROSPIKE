@@ -12,13 +12,19 @@ ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and l
 
 SpriteKit only renders immutable `WorldState` snapshots. It does not own physics, scoring, AI, or network authority.
 
+## Solo AI
+
+`AIController` flies a lander under exactly the player's constraints: thrust is on or off along the nose, and the nose turns at a fixed rate. Each decision rolls the ball forward through the arena, takes the first arrival on its own half it can set up behind in time, waits a run-up along the line of the shot it wants, then drives through the ball to send it back across the net. Difficulty changes reaction cadence, aim error, and how hard the ship drives through contact — never the physics.
+
 ## Rules
 
 - The prototype controls are canonical: the left thumb holds either directional rotation control, while the right thumb holds the constant-thrust control.
 - Lunar-style flight tuning is canonical: gravity is `-2` arena units/s², main thrust is a constant `5.5` arena units/s², and the full-input rotation rate is `3` rad/s.
 - Linear momentum persists without stabilization. Rotation applies only while a direction is held and stops immediately on release, leaving the ship at its current angle.
 - Each goal opens toward its defender's side with its back against the center net; a downward return from the net into the pocket scores.
-- The low net rebounds the ball. Ships may clear it and fly into the opponent’s side as far as that side’s halfway marker.
+- The low net rebounds the ball. It stands a fifth of the arena height, so volleys and ships both clear it comfortably.
+- A ship contact always pushes the ball clear of the hull, so the ball can never be carried, ridden, or hovered with.
+- Ships may clear the net and fly into the opponent’s side as far as that side’s halfway marker.
 - Touching the net from the opponent’s side or crossing beyond the halfway marker destroys the intruding ship.
 - Ground contact destroys a ship. Ship-to-ship contact destroys both ships; outer walls and the ceiling remain safe rebounds.
 - A goal, third floor bounce on one side, ground crash, net contact, or over-crossing awards one point.

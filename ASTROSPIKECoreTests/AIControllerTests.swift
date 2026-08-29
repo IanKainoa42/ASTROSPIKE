@@ -1,4 +1,5 @@
 import Testing
+import simd
 @testable import ASTROSPIKECore
 
 @Suite("Solo AI")
@@ -190,5 +191,105 @@ struct AIControllerTests {
         }
 
         #expect(netDeaths == 0)
+    }
+
+    @Test("The solo AI puts a served ball back over the net")
+    func soloAIReturnsTheServe() {
+        for difficulty in AIDifficulty.allCases {
+            var engine = SimulationEngine.testing()
+            var controller = AIController(
+                difficulty: difficulty,
+                configuration: engine.configuration
+            )
+            // Staged exactly as a conceded point stages it, above the AI's half.
+            engine.state.ball = BallState(position: SIMD2(0.48, 0.60), velocity: SIMD2(0, -0.18))
+            var returned = false
+
+            for tick in UInt64(0) ..< 1_200 {
+                let previousX = engine.state.ball.position.x
+                engine.step(inputs: [
+                    .cyan: Self.stationKeeping(for: engine.state, team: .cyan, tick: tick),
+                    .orange: controller.input(for: engine.state, team: .orange, tick: tick),
+                ])
+                guard engine.state.match.phase == .playing else { break }
+                if previousX > 0, engine.state.ball.position.x < 0 {
+                    returned = true
+                    break
+                }
+            }
+
+            #expect(returned, "\(difficulty) never returned the serve")
+        }
+    }
+
+    @Test("The solo AI keeps the ball moving instead of hovering with it")
+    func soloAIDoesNotHoverWithTheBall() {
+        var engine = SimulationEngine.testing()
+        var controller = AIController(difficulty: .pilot, configuration: engine.configuration)
+        var longestContact = 0
+        var contact = 0
+
+        for tick in UInt64(0) ..< 3_600 {
+            engine.step(inputs: [
+                .cyan: Self.stationKeeping(for: engine.state, team: .cyan, tick: tick),
+                .orange: controller.input(for: engine.state, team: .orange, tick: tick),
+            ])
+            guard let ship = engine.state.ships[.orange] else { break }
+            let riding = simd_distance(engine.state.ball.position, ship.position) < 0.17
+            contact = riding ? contact + 1 : 0
+            longestContact = max(longestContact, contact)
+            if engine.state.match.phase == .finished { break }
+        }
+
+        // Half a second of unbroken contact is a strike; anything longer is a stall.
+        #expect(longestContact < 60)
+    }
+
+    @Test("Solo rallies are real exchanges rather than a stalled ball")
+    func soloRalliesProduceExchanges() {
+        for difficulty in AIDifficulty.allCases {
+            var engine = SimulationEngine.testing()
+            var cyan = AIController(difficulty: difficulty, configuration: engine.configuration)
+            var orange = AIController(difficulty: difficulty, configuration: engine.configuration)
+            var crossings = 0
+            var crashes = 0
+
+            for tick in UInt64(0) ..< 3_600 {
+                let previousX = engine.state.ball.position.x
+                engine.step(inputs: [
+                    .cyan: cyan.input(for: engine.state, team: .cyan, tick: tick),
+                    .orange: orange.input(for: engine.state, team: .orange, tick: tick),
+                ])
+                if engine.state.match.phase == .playing,
+                   previousX * engine.state.ball.position.x < 0 {
+                    crossings += 1
+                }
+                crashes += engine.lastEvents.filter { event in
+                    guard case let .point(_, reason) = event else { return false }
+                    return reason == .crash
+                }.count
+                if engine.state.match.phase == .finished { break }
+            }
+
+            // The prototype AI never struck the ball at all: it managed one or two
+            // crossings in thirty seconds, and only because the ball drifted over.
+            #expect(crossings >= 4, "\(difficulty) barely put the ball back over")
+            #expect(crashes == 0, "\(difficulty) flew itself into the ground")
+        }
+    }
+
+    /// Opponent stand-in that holds altitude and never chases the ball, so the
+    /// rally only continues if the AI under test actually plays it.
+    private static func stationKeeping(
+        for state: WorldState,
+        team: Team,
+        tick: UInt64
+    ) -> PlayerInput {
+        guard let ship = state.ships[team] else { return .idle(tick: tick) }
+        let upright = Double.pi / 2 - ship.angle
+        let error = atan2(sin(upright), cos(upright))
+        let torque = abs(error) < 0.05 ? 0 : max(-1, min(1, error * 2.4))
+        let thrust = ship.position.y < -0.30 || ship.velocity.y < -0.05
+        return PlayerInput(tick: tick, torque: torque, thrust: thrust)
     }
 }

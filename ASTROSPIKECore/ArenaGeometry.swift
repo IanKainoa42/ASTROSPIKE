@@ -32,7 +32,7 @@ public struct ArenaGeometry: Equatable, Sendable {
         floorY: Double = -0.78,
         ceilingY: Double = 0.78,
         netHalfWidth: Double = 0.018,
-        netTopY: Double = -0.26,
+        netTopY: Double = -0.46,
         goalInnerX: Double = 0.018,
         goalOuterX: Double = 0.128,
         goalMinimumDownwardSpeed: Double = 0.25
