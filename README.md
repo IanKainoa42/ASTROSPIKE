@@ -46,6 +46,23 @@ DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer \
 
 The checked-in project uses automatic signing for team `WC46K49VFA` and bundle ID `com.iankainoa.ASTROSPIKE`.
 
+## TestFlight
+
+Bump `CURRENT_PROJECT_VERSION` in `project.yml` before every upload — App Store Connect rejects a build number it has already seen. Then, on a Mac signed in to the team:
+
+```sh
+xcodegen generate
+xcodebuild -project ASTROSPIKE.xcodeproj -scheme ASTROSPIKE \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -archivePath build/ASTROSPIKE.xcarchive archive
+xcodebuild -exportArchive -archivePath build/ASTROSPIKE.xcarchive \
+  -exportOptionsPlist ExportOptions.plist -exportPath build/export
+xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
+  --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+```
+
+`ExportOptions.plist` holds the distribution settings. Xcode's Product ▸ Archive ▸ Distribute App does the same thing through the GUI.
+
 ## Online architecture
 
 - `GKMatchmakerViewController` provides automatic matching and friend invitations.
