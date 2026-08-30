@@ -26,7 +26,7 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - A ship contact always pushes the ball clear of the hull, so the ball can never be carried, ridden, or hovered with.
 - Ships may clear the net and fly into the opponent’s side as far as that side’s halfway marker.
 - Touching the net from the opponent’s side or crossing beyond the halfway marker destroys the intruding ship.
-- Ground contact destroys a ship. Ship-to-ship contact destroys both ships; outer walls and the ceiling remain safe rebounds.
+- Touching the opponent's ground destroys a ship; a pilot may land on their own. Ship-to-ship contact destroys both ships; outer walls and the ceiling remain safe rebounds.
 - A goal, third floor bounce on one side, ground crash, net contact, or over-crossing awards one point.
 - Crossing the center plane resets only the entered side's bounce count.
 - Simultaneous ship deaths replay the rally. A goal or third bounce outranks a death in the same simulation step.

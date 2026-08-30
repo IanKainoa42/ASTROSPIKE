@@ -441,7 +441,11 @@ public struct SimulationEngine: Sendable {
         }
 
         if ship.position.y - radius <= arena.floorY {
-            if hazardsAreLethal {
+            // Only the opponent's ground is lethal. A pilot may land on their own.
+            let floorIsOnEnemySide = ship.homeSide == .cyan
+                ? ship.position.x > 0
+                : ship.position.x < 0
+            if floorIsOnEnemySide, hazardsAreLethal {
                 destroy(&ship, team: team, reason: .crash, contacts: &contacts)
                 return
             }

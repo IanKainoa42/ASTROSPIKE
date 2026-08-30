@@ -105,7 +105,8 @@ struct RallyLifecycleTests {
     @Test("A destroyed ship respawns when the next serve begins")
     func destroyedShipRespawnsForNextServe() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = .init(-0.5, -0.72)
+        // The opponent's floor, since a pilot's own ground is a safe landing.
+        engine.state.ships[.cyan]!.position = .init(0.30, -0.72)
         engine.state.ships[.cyan]!.velocity = .init(0, -1)
 
         engine.step(inputs: [:])

@@ -277,10 +277,24 @@ struct ArenaPhysicsTests {
         #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
     }
 
-    @Test("Touching the ground destroys a ship")
-    func groundContactDestroysShip() {
+    @Test("Landing on your own ground is safe")
+    func ownGroundIsASafeLanding() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position = SIMD2(-0.5, -0.72)
+        engine.state.ships[.cyan]!.velocity = SIMD2(0, -1)
+
+        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+        #expect(engine.state.match.score == Score())
+        #expect(engine.state.ships[.cyan]!.position.y > engine.arena.floorY)
+    }
+
+    @Test("Touching the opponent's ground destroys a ship")
+    func opponentGroundDestroysShip() {
+        var engine = SimulationEngine.testing()
+        // Inside the crossing limit, so this is the floor rule and not an over-cross.
+        engine.state.ships[.cyan]!.position = SIMD2(0.30, -0.72)
         engine.state.ships[.cyan]!.velocity = SIMD2(0, -1)
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])

@@ -117,53 +117,48 @@ struct AIControllerTests {
         #expect(!engine.state.ships[.orange]!.isDestroyed)
     }
 
-    @Test("Pilot returns an incoming ball instead of merely surviving beside it")
+    @Test("Pilot strikes an incoming ball rather than letting it drift back")
     func pilotReturnsIncomingBall() {
         let incomingBall = BallState(
             position: SIMD2(0.58, 0.32),
             velocity: SIMD2(-0.10, -0.20)
         )
+
+        // Control: nobody plays it. The ball still finds its way over eventually,
+        // off the net cap, but it arrives limp.
         var idleEngine = SimulationEngine.testing()
         idleEngine.state.ball = incomingBall
-        var idleBallCrossed = false
+        var idleCrossingSpeed = 0.0
         for tick in UInt64(0) ..< 1_200 {
             let previousX = idleEngine.state.ball.position.x
-            idleEngine.step(inputs: [
-                .cyan: .idle(tick: tick),
-                .orange: .idle(tick: tick),
-            ])
+            idleEngine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
             if previousX > 0, idleEngine.state.ball.position.x < 0 {
-                idleBallCrossed = true
+                idleCrossingSpeed = simd_length(idleEngine.state.ball.velocity)
                 break
             }
-            if idleEngine.state.match.phase != .playing {
-                break
-            }
+            if idleEngine.state.match.phase != .playing { break }
         }
 
         var engine = SimulationEngine.testing()
         engine.state.ball = incomingBall
-        var controller = AIController(difficulty: .pilot)
-        var returnedBall = false
+        var controller = AIController(difficulty: .pilot, configuration: engine.configuration)
+        var struckCrossingSpeed = 0.0
 
         for tick in UInt64(0) ..< 1_200 {
             let previousX = engine.state.ball.position.x
             let input = controller.input(for: engine.state, team: .orange, tick: tick)
-            engine.step(inputs: [
-                .cyan: .idle(tick: tick),
-                .orange: input,
-            ])
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: input])
             if previousX > 0, engine.state.ball.position.x < 0 {
-                returnedBall = true
+                struckCrossingSpeed = simd_length(engine.state.ball.velocity)
                 break
             }
-            if engine.state.match.phase != .playing {
-                break
-            }
+            if engine.state.match.phase != .playing { break }
         }
 
-        #expect(!idleBallCrossed)
-        #expect(returnedBall)
+        // A struck return carries real pace; a ball nobody touched does not. The
+        // comparison is relative so it survives physics tuning.
+        #expect(idleCrossingSpeed > 0)
+        #expect(struckCrossingSpeed > idleCrossingSpeed * 1.5)
         #expect(!engine.state.ships[.orange]!.isDestroyed)
     }
 
