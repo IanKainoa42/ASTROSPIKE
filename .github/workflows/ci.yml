@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show the toolchain
+        env:
+          # Optional repository variable, e.g. /Applications/Xcode_26.6.app, for
+          # pinning a specific Xcode. Unset means the runner image's default.
+          XCODE_APP: ${{ vars.XCODE_APP }}
+        run: |
+          set -euo pipefail
+          ls -d /Applications/Xcode*.app || true
+          if [ -n "${XCODE_APP:-}" ]; then
+            sudo xcode-select --switch "${XCODE_APP}/Contents/Developer"
+          fi
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | grep -i iphonesimulator
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Resolve an iOS simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl list devices available --json | jq -r '
+            [ .devices
+              | to_entries[]
+              | select(.key | contains("SimRuntime.iOS"))
+              | .key as $runtime
+              | .value[]
+              | select(.isAvailable and (.name | startswith("iPhone")))
+              | { runtime: $runtime, name: .name, udid: .udid }
+            ]
+            | sort_by(.runtime, .name)
+            | last
+            | .udid // empty')"
+          if [ -z "$udid" ]; then
+            echo "::error::No available iPhone simulator on this runner image."
+            xcrun simctl list devices
+            exit 1
+          fi
+          xcrun simctl list devices available | grep -F "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+
+      # Split from the test runs so a compile failure is its own red step.
+      - name: Build for testing
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project ASTROSPIKE.xcodeproj \
+            -scheme ASTROSPIKE \
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath TestResults/build.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild test-without-building \
+            -project ASTROSPIKE.xcodeproj \
+            -scheme ASTROSPIKE \
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath TestResults/unit.xcresult \
+            -only-testing:ASTROSPIKECoreTests
+
+      - name: UI tests
+        run: |
+          set -euo pipefail
+          xcodebuild test-without-building \
+            -project ASTROSPIKE.xcodeproj \
+            -scheme ASTROSPIKE \
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath DerivedData \
+            -resultBundlePath TestResults/ui.xcresult \
+            -only-testing:ASTROSPIKEUITests
+
+      - name: Upload result bundles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresults
+          path: TestResults
+          retention-days: 7
+          if-no-files-found: ignore
