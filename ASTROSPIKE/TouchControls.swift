@@ -80,26 +80,36 @@ struct TouchControls: View {
     }
 
     private func setLeftPressed(_ pressed: Bool) {
-        leftPressed = pressed
-        applyInput(left: pressed, right: rightPressed, thrusting: thrustPressed)
+        setPressed(pressed, for: .left)
     }
 
     private func setRightPressed(_ pressed: Bool) {
-        rightPressed = pressed
-        applyInput(left: leftPressed, right: pressed, thrusting: thrustPressed)
+        setPressed(pressed, for: .right)
     }
 
     private func setThrustPressed(_ pressed: Bool) {
-        thrustPressed = pressed
-        applyInput(left: leftPressed, right: rightPressed, thrusting: pressed)
+        setPressed(pressed, for: .thrust)
     }
 
-    private func applyInput(left: Bool, right: Bool, thrusting: Bool) {
+    private func setPressed(_ pressed: Bool, for control: ControlInput) {
+        switch control {
+        case .left:
+            leftPressed = pressed
+        case .right:
+            rightPressed = pressed
+        case .thrust:
+            thrustPressed = pressed
+        }
+
+        applyInput()
+    }
+
+    private func applyInput() {
         let input = FlightControlMapping.input(
             tick: 0,
-            leftPressed: left,
-            rightPressed: right,
-            thrustPressed: thrusting
+            leftPressed: leftPressed,
+            rightPressed: rightPressed,
+            thrustPressed: thrustPressed
         )
         torque = input.torque
         thrust = input.thrust
@@ -112,6 +122,12 @@ struct TouchControls: View {
         torque = 0
         thrust = false
     }
+}
+
+private enum ControlInput {
+    case left
+    case right
+    case thrust
 }
 
 private struct ControlZone: View {
@@ -178,19 +194,21 @@ private final class PressCaptureView: UIView {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
-        touches.forEach { pressTracker.began(ObjectIdentifier($0)) }
-        pressChanged?(pressTracker.isPressed)
+        updateTrackedTouches(touches) { pressTracker.began($0) }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
-        touches.forEach { pressTracker.ended(ObjectIdentifier($0)) }
-        pressChanged?(pressTracker.isPressed)
+        updateTrackedTouches(touches) { pressTracker.ended($0) }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
-        touches.forEach { pressTracker.cancelled(ObjectIdentifier($0)) }
+        updateTrackedTouches(touches) { pressTracker.cancelled($0) }
+    }
+
+    private func updateTrackedTouches(_ touches: Set<UITouch>, _ update: (ObjectIdentifier) -> Void) {
+        touches.forEach { update(ObjectIdentifier($0)) }
         pressChanged?(pressTracker.isPressed)
     }
 
