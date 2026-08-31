@@ -24,12 +24,10 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - Each goal opens toward its defender's side with its back against the center net; a downward return from the net into the pocket scores.
 - The low net rebounds the ball. It stands a fifth of the arena height, so volleys and ships both clear it comfortably.
 - A ship contact always pushes the ball clear of the hull, so the ball can never be carried, ridden, or hovered with.
-- Ships may clear the net and fly into the opponent’s side as far as that side’s halfway marker.
-- Touching the net from the opponent’s side or crossing beyond the halfway marker destroys the intruding ship.
-- Ground contact destroys a ship. Ship-to-ship contact destroys both ships; outer walls and the ceiling remain safe rebounds.
-- A goal, third floor bounce on one side, ground crash, net contact, or over-crossing awards one point.
+- Nothing in the arena destroys a ship. The ground, the net, the outer walls, the ceiling, and the other ship are all rebounds.
+- Ships may clear the net freely. Past the halfway marker the far half pushes back in proportion to how deep the ship is and bleeds its speed, so crossing is always possible and always costs more the further it goes.
+- A goal or a third floor bounce on one side awards one point. Those are the only two ways to score.
 - Crossing the center plane resets only the entered side's bounce count.
-- Simultaneous ship deaths replay the rally. A goal or third bounce outranks a death in the same simulation step.
 - First to 7 wins with a two-point lead; 11 is the hard cap.
 - After every non-winning point, only the ball respawns above the conceding side. Both ships keep flying under live input during the prototype's 1.35-second serve hold, then the ball drops immediately with no reset or countdown.
 

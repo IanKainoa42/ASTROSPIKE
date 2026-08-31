@@ -12,34 +12,40 @@ struct TouchControls: View {
     @State private var rightPressed = false
     @State private var thrustPressed = false
 
+    // The live area is the whole side of the screen, not the drawn button. A thumb
+    // anywhere on the right thrusts; anywhere on the left steers. The chrome is
+    // only a hint about where the thumb usually rests.
     var body: some View {
-        HStack(alignment: .bottom, spacing: 12) {
+        HStack(spacing: 0) {
             if leftHanded {
                 thrustZone
-                Spacer()
+                neutralGap
                 steeringZones
             } else {
                 steeringZones
-                Spacer()
+                neutralGap
                 thrustZone
             }
         }
-        .padding(.horizontal, largeControls ? 34 : 24)
-        .padding(.bottom, largeControls ? 24 : 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .onDisappear { clearInput() }
     }
 
+    /// A dead strip down the middle so a stray thumb over the arena does nothing.
+    private var neutralGap: some View {
+        Color.clear.frame(width: largeControls ? 24 : 36)
+    }
+
     private var steeringZones: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ControlZone(
                 icon: "rotate.left",
                 label: "Rotate left",
                 identifier: "rotate-left-control",
                 tint: .cyan,
                 active: leftPressed,
-                width: steeringZoneWidth,
-                height: zoneHeight,
+                chrome: steeringChrome,
                 pressChanged: setLeftPressed
             )
             ControlZone(
@@ -48,8 +54,7 @@ struct TouchControls: View {
                 identifier: "rotate-right-control",
                 tint: .cyan,
                 active: rightPressed,
-                width: steeringZoneWidth,
-                height: zoneHeight,
+                chrome: steeringChrome,
                 pressChanged: setRightPressed
             )
         }
@@ -62,15 +67,17 @@ struct TouchControls: View {
             identifier: "thrust-control",
             tint: .orange,
             active: thrustPressed,
-            width: thrustZoneWidth,
-            height: zoneHeight,
+            chrome: thrustChrome,
             pressChanged: setThrustPressed
         )
     }
 
-    private var steeringZoneWidth: CGFloat { largeControls ? 132 : 104 }
-    private var thrustZoneWidth: CGFloat { largeControls ? 170 : 140 }
-    private var zoneHeight: CGFloat { largeControls ? 132 : 108 }
+    private var steeringChrome: CGSize {
+        largeControls ? CGSize(width: 132, height: 132) : CGSize(width: 104, height: 108)
+    }
+    private var thrustChrome: CGSize {
+        largeControls ? CGSize(width: 200, height: 148) : CGSize(width: 168, height: 122)
+    }
 
     private func setLeftPressed(_ pressed: Bool) {
         leftPressed = pressed
@@ -113,24 +120,34 @@ private struct ControlZone: View {
     let identifier: String
     let tint: Color
     let active: Bool
-    let width: CGFloat
-    let height: CGFloat
+    let chrome: CGSize
     let pressChanged: (Bool) -> Void
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
+            // Holding anywhere in the zone tints all of it, so it is obvious that
+            // the whole side is the control and not just the drawn rectangle.
+            Rectangle()
+                .fill(tint.opacity(active ? 0.06 : 0))
             RoundedRectangle(cornerRadius: 20)
                 .fill(active ? tint.opacity(0.13) : .black.opacity(0.08))
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(tint.opacity(active ? 0.34 : 0.10), lineWidth: active ? 2 : 1)
-            Image(systemName: icon)
-                .font(.system(size: active ? 30 : 25, weight: .semibold))
-                .foregroundStyle(tint.opacity(active ? 0.82 : 0.28))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(tint.opacity(active ? 0.34 : 0.10), lineWidth: active ? 2 : 1)
+                )
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: active ? 30 : 25, weight: .semibold))
+                        .foregroundStyle(tint.opacity(active ? 0.82 : 0.28))
+                )
+                .frame(width: chrome.width, height: chrome.height)
+                .padding(.bottom, 14)
+            // Fills the zone, so this is what actually receives the touch.
             PressCapture(pressChanged: pressChanged)
                 .accessibilityHidden(true)
         }
-        .frame(width: width, height: height)
-        .contentShape(RoundedRectangle(cornerRadius: 20))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(active ? "Pressed" : "Released")

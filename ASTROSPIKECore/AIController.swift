@@ -46,8 +46,9 @@ public enum AIDifficulty: String, Codable, CaseIterable, Sendable {
 /// Two constraints shape everything here: thrust is on or off along the nose,
 /// and the nose only turns at a fixed rate. A demand the ship cannot turn to
 /// serve in time is worse than no demand at all, so the guidance caps its own
-/// descent, keeps the nose within a lift cone that tightens near the ground, and
-/// holds a plan steady instead of re-cutting it every reaction tick.
+/// descent, keeps the nose inside a lift cone, and holds a plan steady instead of
+/// re-cutting it every reaction tick. None of that is about survival any more —
+/// nothing in the arena is lethal — it is about arriving at the ball in control.
 public struct AIController: InputSource, Sendable {
     /// Deceleration the approach law assumes it can rely on when braking.
     private static let brakingDeceleration = 2.0
@@ -180,7 +181,7 @@ public struct AIController: InputSource, Sendable {
             closingVelocity = .zero
         }
         if recovering {
-            target = SIMD2(ship.position.x, arena.floorY + 0.50)
+            target = SIMD2(ship.position.x, arena.floorY + 0.32)
             closingVelocity = .zero
         }
 
@@ -195,10 +196,12 @@ public struct AIController: InputSource, Sendable {
             desiredVelocity += positionError / range * approachSpeed
         }
         // Never ask for a descent that cannot be arrested, allowing for the turn.
-        let headroom = max(0, ship.position.y - (arena.floorY + 0.22))
+        // Landing is allowed now, so this only stops the ship arriving so fast it
+        // bounces away from a ball it meant to play.
+        let headroom = max(0, ship.position.y - (arena.floorY + 0.08))
         desiredVelocity.y = max(
             desiredVelocity.y,
-            -(2 * 1.2 * max(0, headroom - 0.16)).squareRoot()
+            -(2 * 2.6 * max(0, headroom - 0.04)).squareRoot()
         )
 
         var need = (desiredVelocity - ship.velocity) * Self.accelerationGain
@@ -209,8 +212,8 @@ public struct AIController: InputSource, Sendable {
         // Keep the nose inside a lift cone that tightens as the ship descends. A
         // lander pointed at the horizon has no vertical support and is half a
         // second of turning away from being able to save itself.
-        let altitudeMargin = min(1, max(0, (ship.position.y - (arena.floorY + 0.18)) / 0.55))
-        let minimumPitch = 0.50 + 0.55 * (1 - altitudeMargin)
+        let altitudeMargin = min(1, max(0, (ship.position.y - (arena.floorY + 0.06)) / 0.40))
+        let minimumPitch = 0.42 + 0.30 * (1 - altitudeMargin)
         need.y = max(need.y, abs(need.x) * tan(minimumPitch))
         if altitudeMargin < 0.35 {
             need.y = max(need.y, 3.0)
@@ -247,7 +250,7 @@ public struct AIController: InputSource, Sendable {
         let brakingDistance = descentAfterTurn > 0
             ? descentAfterTurn * descentAfterTurn / (2 * netLift)
             : 0
-        return ship.position.y - dropWhileTurning - brakingDistance < arena.floorY + 0.16
+        return ship.position.y - dropWhileTurning - brakingDistance < arena.floorY + 0.04
     }
 
     /// Rolls the ball forward through the arena and takes the first strike point
@@ -258,7 +261,7 @@ public struct AIController: InputSource, Sendable {
         homeSign: Double
     ) -> Plan {
         let ceiling = arena.netTopY + 0.75
-        let floor = arena.floorY + 0.42
+        let floor = arena.floorY + 0.26
         let radius = state.ball.radius
         let ballGravity = configuration.gravity.y * configuration.ballGravityMultiplier
         let shipSpeed = simd_length(ship.velocity)
@@ -297,8 +300,9 @@ public struct AIController: InputSource, Sendable {
 
             let shot = shotDirection(from: position, homeSign: homeSign)
             let runup = position - shot * (Self.strikeStandoff + Self.strikeRunup)
-            // Refuse shots whose run-up would sit inside the killing floor.
-            guard runup.y >= arena.floorY + 0.32 else { continue }
+            // The ground is survivable now, so the only thing a low run-up costs
+            // is manoeuvring room. Keep a little, and play the rest of the court.
+            guard runup.y >= arena.floorY + 0.16 else { continue }
 
             let delay = Double(step) * Self.predictionStep
             let candidate = Plan(hasIntercept: true, point: position, delay: delay, shot: shot)
@@ -353,7 +357,7 @@ public struct AIController: InputSource, Sendable {
         if abs(result.x) > arena.halfWidth - 0.10 {
             result.x = homeSign * (arena.halfWidth - 0.10)
         }
-        result.y = max(arena.floorY + 0.34, min(arena.ceilingY - 0.10, result.y))
+        result.y = max(arena.floorY + 0.14, min(arena.ceilingY - 0.10, result.y))
         return result
     }
 
