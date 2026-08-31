@@ -102,25 +102,28 @@ struct RallyLifecycleTests {
         #expect(engine.state.ball.velocity == .init(0, -0.18))
     }
 
-    @Test("A destroyed ship respawns when the next serve begins")
-    func destroyedShipRespawnsForNextServe() {
+    @Test("Play no longer destroys a ship at all")
+    func playNeverDestroysAShip() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = .init(-0.5, -0.72)
-        engine.state.ships[.cyan]!.velocity = .init(0, -1)
+        // Drive both ships into every former hazard at once: the floor, the net,
+        // and deep past the marker.
+        engine.state.ships[.cyan] = ShipState(
+            position: .init(0.62, -0.70),
+            velocity: .init(4, -6),
+            angle: 0,
+            homeSide: .cyan
+        )
+        engine.state.ships[.orange] = ShipState(
+            position: .init(-0.04, -0.60),
+            velocity: .init(-4, -6),
+            angle: .pi,
+            homeSide: .orange
+        )
 
-        engine.step(inputs: [:])
-
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.state.match.phase == .serve)
-
-        for _ in 0 ..< 162 {
-            engine.step(inputs: [:])
+        for tick in UInt64(0) ..< 600 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            #expect(!engine.state.ships[.cyan]!.isDestroyed)
+            #expect(!engine.state.ships[.orange]!.isDestroyed)
         }
-
-        #expect(engine.state.match.phase == .playing)
-        #expect(!engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.state.ships[.cyan]!.homeSide == .cyan)
-        #expect(engine.state.ships[.cyan]!.position.x < 0)
-        #expect(engine.state.ships[.cyan]!.position.y > engine.arena.floorY)
     }
 }

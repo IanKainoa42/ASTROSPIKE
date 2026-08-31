@@ -224,16 +224,22 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.score == Score())
     }
 
-    @Test("Touching the net from the opponent's side destroys the intruding ship")
-    func enemySideNetContactDestroysShip() {
-        var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(0.04, -0.40)
-        engine.state.ships[.cyan]!.velocity = SIMD2(-0.5, -0.5)
+    @Test("The net rebounds a ship from either side")
+    func netContactReboundsFromEitherSide() {
+        for x in [0.04, -0.04] {
+            var engine = SimulationEngine.testing()
+            engine.state.ships[.cyan]!.position = SIMD2(x, -0.40)
+            engine.state.ships[.cyan]!.velocity = SIMD2(x > 0 ? -0.5 : 0.5, -0.5)
 
-        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+            engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
+            #expect(!engine.state.ships[.cyan]!.isDestroyed, "died on the net at x = \(x)")
+            #expect(engine.state.match.score == Score())
+            #expect(engine.lastEvents.contains { event in
+                if case .collisionEffect = event { return true }
+                return false
+            })
+        }
     }
 
     @Test("Touching the net from the home side rebounds safely")
@@ -252,41 +258,59 @@ struct ArenaPhysicsTests {
         })
     }
 
-    @Test("A ship may reach halfway across the opponent's side")
-    func halfwayOpponentCrossingIsAllowed() {
+    @Test("Short of the marker a ship flies free")
+    func insideTheMarkerIsUnresisted() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(0.46, 0.35)
+        engine.state.ships[.cyan]!.position = SIMD2(0.20, 0.35)
         engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
+        let startSpeed = engine.state.ships[.cyan]!.velocity.x
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+
+        // No push-back until the marker, so horizontal speed is untouched.
+        #expect(abs(engine.state.ships[.cyan]!.velocity.x - startSpeed) < 0.000_001)
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+    }
+
+    @Test("Past the marker the far half pushes back instead of killing")
+    func crossingTheMarkerIsResisted() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(0.60, 0.35)
+        engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
+        let limit = engine.arena.opponentCrossingLimit
+
+        var deepest = engine.state.ships[.cyan]!.position.x
+        var wasExpelled = false
+        for tick in UInt64(0) ..< 300 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            let x = engine.state.ships[.cyan]!.position.x
+            deepest = max(deepest, x)
+            if x < limit { wasExpelled = true }
+        }
 
         #expect(!engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.state.ships[.cyan]!.position.x < engine.arena.opponentCrossingLimit)
         #expect(engine.state.match.score == Score())
+        // It gets in, and the far half throws it back out. Latched rather than
+        // sampled at the end, because a loose ship drifts once it is clear.
+        #expect(deepest > limit)
+        #expect(wasExpelled)
     }
 
-    @Test("Crossing beyond halfway into the opponent's side destroys the ship")
-    func overCrossingDestroysShip() {
-        var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(0.475, 0.35)
-        engine.state.ships[.cyan]!.velocity = SIMD2(1, 0)
+    @Test("The ground is a landing on either half, never a crash")
+    func groundContactIsSurvivable() {
+        for x in [-0.5, 0.30] {
+            var engine = SimulationEngine.testing()
+            engine.state.ships[.cyan]!.position = SIMD2(x, -0.72)
+            engine.state.ships[.cyan]!.velocity = SIMD2(0, -4)
 
-        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
+            for tick in UInt64(0) ..< 30 {
+                engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            }
 
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .netContact)))
-    }
-
-    @Test("Touching the ground destroys a ship")
-    func groundContactDestroysShip() {
-        var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(-0.5, -0.72)
-        engine.state.ships[.cyan]!.velocity = SIMD2(0, -1)
-
-        engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
-
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.lastEvents.contains(.point(scoringTeam: .orange, reason: .crash)))
+            #expect(!engine.state.ships[.cyan]!.isDestroyed, "died on the floor at x = \(x)")
+            #expect(engine.state.match.score == Score())
+            #expect(engine.state.ships[.cyan]!.position.y > engine.arena.floorY)
+        }
     }
 
     @Test("Outer walls and the ceiling remain safe at high speed")
@@ -361,8 +385,8 @@ struct ArenaPhysicsTests {
         #expect(separation >= engine.configuration.minimumBallSeparationSpeed - 0.001)
     }
 
-    @Test("Ship-to-ship contact destroys both players")
-    func shipContactDestroysBothPlayers() {
+    @Test("Ship-to-ship contact bounces both players apart")
+    func shipContactBouncesBothPlayers() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan] = ShipState(
             position: SIMD2(-0.39, 0.40),
@@ -379,9 +403,11 @@ struct ArenaPhysicsTests {
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
-        #expect(engine.state.ships[.cyan]!.isDestroyed)
-        #expect(engine.state.ships[.orange]!.isDestroyed)
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+        #expect(!engine.state.ships[.orange]!.isDestroyed)
         #expect(engine.state.match.score == Score())
-        #expect(engine.lastEvents.contains(.rallyReset))
+        // They came together at 8 apiece and must leave going the other way.
+        #expect(engine.state.ships[.cyan]!.velocity.x < 0)
+        #expect(engine.state.ships[.orange]!.velocity.x > 0)
     }
 }

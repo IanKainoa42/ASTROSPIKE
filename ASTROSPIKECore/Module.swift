@@ -133,6 +133,10 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var ballDropSpeed: Double
     public var serveDelay: Double
     public var minimumBallSeparationSpeed: Double
+    /// Spring that pushes a ship back once it is past the halfway marker.
+    public var crossingPushBack: Double
+    /// Drag applied past the marker, ramping in with depth.
+    public var crossingDrag: Double
     public var allowedFloorBounces: Int
 
     public init(
@@ -147,6 +151,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
         minimumBallSeparationSpeed: Double = 0.45,
+        crossingPushBack: Double = 30,
+        crossingDrag: Double = 5.0,
         allowedFloorBounces: Int = 2
     ) {
         self.stepDuration = stepDuration
@@ -160,6 +166,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.ballDropSpeed = ballDropSpeed
         self.serveDelay = max(0, serveDelay)
         self.minimumBallSeparationSpeed = max(0, minimumBallSeparationSpeed)
+        self.crossingPushBack = max(0, crossingPushBack)
+        self.crossingDrag = max(0, crossingDrag)
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
     }
 }
@@ -248,22 +256,27 @@ public struct SimulationEngine: Sendable {
             } else {
                 ship.thrustLevel = 0
             }
+            // The halfway marker is a wall of treacle rather than a tripwire: the
+            // deeper a pilot pushes into the far half, the harder the arena shoves
+            // back and the more speed it steals. Nothing here is lethal.
+            let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
+            let depth = ship.position.x * intrusionSign - arena.opponentCrossingLimit
+            if depth > 0 {
+                acceleration.x -= intrusionSign * configuration.crossingPushBack * depth
+                acceleration -= ship.velocity
+                    * (configuration.crossingDrag * min(1, depth / 0.20))
+            }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
             resolveArenaCollision(
                 for: &ship,
                 from: previousShipPositions[team] ?? ship.position,
-                team: team,
-                hazardsAreLethal: state.match.phase == .playing,
-                contacts: &contacts,
                 effects: &collisionEffects
             )
             state.ships[team] = ship
         }
         resolveShipShipCollision(
             previousPositions: previousShipPositions,
-            hazardsAreLethal: state.match.phase == .playing,
-            contacts: &contacts,
             effects: &collisionEffects
         )
 
@@ -342,8 +355,6 @@ public struct SimulationEngine: Sendable {
 
     private mutating func resolveShipShipCollision(
         previousPositions: [Team: SIMD2<Double>],
-        hazardsAreLethal: Bool,
-        contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
         guard var cyan = state.ships[.cyan], var orange = state.ships[.orange],
@@ -361,25 +372,14 @@ public struct SimulationEngine: Sendable {
         ) else { return }
 
         let impactSpeed = simd_length(cyan.velocity - orange.velocity)
-        if hazardsAreLethal {
-            cyan.position = previousCyan + (cyan.position - previousCyan) * hitTime
-            orange.position = previousOrange + (orange.position - previousOrange) * hitTime
-            cyan.isDestroyed = true
-            cyan.thrustLevel = 0
-            orange.isDestroyed = true
-            orange.thrustLevel = 0
-            contacts.append(.shipDestroyed(team: .cyan, reason: .crash))
-            contacts.append(.shipDestroyed(team: .orange, reason: .crash))
-        } else {
-            var normal = relativeStart + (relativeEnd - relativeStart) * hitTime
-            let length = simd_length(normal)
-            normal = length > 0.000_001 ? normal / length : SIMD2(-1, 0)
-            let closingSpeed = max(0, -simd_dot(cyan.velocity - orange.velocity, normal))
-            if closingSpeed > 0 {
-                let impulse = normal * (closingSpeed * 0.82)
-                cyan.velocity += impulse
-                orange.velocity -= impulse
-            }
+        var normal = relativeStart + (relativeEnd - relativeStart) * hitTime
+        let length = simd_length(normal)
+        normal = length > 0.000_001 ? normal / length : SIMD2(-1, 0)
+        let closingSpeed = max(0, -simd_dot(cyan.velocity - orange.velocity, normal))
+        if closingSpeed > 0 {
+            let impulse = normal * (closingSpeed * 0.82)
+            cyan.velocity += impulse
+            orange.velocity -= impulse
         }
         state.ships[.cyan] = cyan
         state.ships[.orange] = orange
@@ -392,9 +392,6 @@ public struct SimulationEngine: Sendable {
     private mutating func resolveArenaCollision(
         for ship: inout ShipState,
         from previousPosition: SIMD2<Double>,
-        team: Team,
-        hazardsAreLethal: Bool,
-        contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
         let radius = 0.065
@@ -404,14 +401,6 @@ public struct SimulationEngine: Sendable {
             to: ship.position,
             radius: radius
         ) {
-            let contactIsOnEnemySide = ship.homeSide == .cyan
-                ? netContact.position.x > 0
-                : netContact.position.x < 0
-            if contactIsOnEnemySide, hazardsAreLethal {
-                destroy(&ship, team: team, reason: .netContact, contacts: &contacts)
-                return
-            }
-
             ship.position = netContact.position
             let inwardSpeed = simd_dot(ship.velocity, netContact.normal)
             if inwardSpeed < 0 {
@@ -423,28 +412,7 @@ public struct SimulationEngine: Sendable {
             ))
         }
 
-        let crossedOpponentLimit = ship.homeSide == .cyan
-            ? ship.position.x > arena.opponentCrossingLimit
-            : ship.position.x < -arena.opponentCrossingLimit
-        if crossedOpponentLimit, hazardsAreLethal {
-            destroy(&ship, team: team, reason: .netContact, contacts: &contacts)
-            return
-        } else if crossedOpponentLimit {
-            let limit = arena.opponentCrossingLimit
-            if ship.homeSide == .cyan {
-                ship.position.x = limit
-                ship.velocity.x = min(0, -ship.velocity.x * 0.45)
-            } else {
-                ship.position.x = -limit
-                ship.velocity.x = max(0, -ship.velocity.x * 0.45)
-            }
-        }
-
         if ship.position.y - radius <= arena.floorY {
-            if hazardsAreLethal {
-                destroy(&ship, team: team, reason: .crash, contacts: &contacts)
-                return
-            }
             ship.position.y = arena.floorY + radius
             ship.velocity.y = max(0, -ship.velocity.y * 0.12)
         }
@@ -460,18 +428,6 @@ public struct SimulationEngine: Sendable {
             ship.position.x = arena.halfWidth - radius
             ship.velocity.x = min(0, -ship.velocity.x * 0.3)
         }
-    }
-
-    private func destroy(
-        _ ship: inout ShipState,
-        team: Team,
-        reason: PointReason,
-        contacts: inout [RuleContact]
-    ) {
-        guard !ship.isDestroyed else { return }
-        ship.isDestroyed = true
-        ship.thrustLevel = 0
-        contacts.append(.shipDestroyed(team: team, reason: reason))
     }
 
     private func sweptNetContact(
