@@ -190,7 +190,6 @@ private struct GameView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 4)
-                Spacer()
                 TouchControls(torque: $session.torque, thrust: $session.thrust,
                               largeControls: largeControls, leftHanded: leftHanded)
             }
