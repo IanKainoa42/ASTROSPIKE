@@ -120,9 +120,14 @@ struct AIControllerTests {
 
     @Test("Pilot returns an incoming ball instead of merely surviving beside it")
     func pilotReturnsIncomingBall() {
+        // Staged so the idle control is meaningful: left alone this ball drifts
+        // away from the net and dies on the AI's own floor, so a crossing can only
+        // come from the AI hitting it. An earlier staging sent the ball toward the
+        // net to begin with, which made "returned" nearly free and left the control
+        // asserting something the lowered net had already made false.
         let incomingBall = BallState(
-            position: SIMD2(0.58, 0.32),
-            velocity: SIMD2(-0.10, -0.20)
+            position: SIMD2(0.45, 0.25),
+            velocity: SIMD2(0.30, -0.15)
         )
         var idleEngine = SimulationEngine.testing()
         idleEngine.state.ball = incomingBall
@@ -144,8 +149,12 @@ struct AIControllerTests {
 
         var engine = SimulationEngine.testing()
         engine.state.ball = incomingBall
-        var controller = AIController(difficulty: .pilot)
+        var controller = AIController(
+            difficulty: .pilot,
+            configuration: engine.configuration
+        )
         var returnedBall = false
+        var strikeFrames = 0
 
         for tick in UInt64(0) ..< 1_200 {
             let previousX = engine.state.ball.position.x
@@ -154,6 +163,10 @@ struct AIControllerTests {
                 .cyan: .idle(tick: tick),
                 .orange: input,
             ])
+            if let ship = engine.state.ships[.orange],
+               simd_distance(engine.state.ball.position, ship.position) < 0.14 {
+                strikeFrames += 1
+            }
             if previousX > 0, engine.state.ball.position.x < 0 {
                 returnedBall = true
                 break
@@ -163,8 +176,10 @@ struct AIControllerTests {
             }
         }
 
-        #expect(!idleBallCrossed)
+        #expect(!idleBallCrossed, "the control ball crossed unaided, so the test proves nothing")
         #expect(returnedBall)
+        // Causation, not coincidence: the AI has to have been on the ball first.
+        #expect(strikeFrames > 0, "the ball went over without the AI ever reaching it")
         #expect(!engine.state.ships[.orange]!.isDestroyed)
     }
 
@@ -240,35 +255,69 @@ struct AIControllerTests {
         #expect(longestContact < 60)
     }
 
+    /// Openings for the exchange test. A duel is chaotic, so a single thirty-second
+    /// run is a coin flip rather than a measurement: sampled across varied openings
+    /// every difficulty averages seven to nine crossings, but roughly one opening in
+    /// eighteen dips below four for each of them. Judging the AI on one hard-coded
+    /// opening measured the draw, not the AI.
+    private static let rallyOpenings: [(x: Double, velocity: SIMD2<Double>)] = [
+        (0.00, SIMD2(0.00, 0.00)),
+        (-0.18, SIMD2(0.25, -0.10)),
+        (0.18, SIMD2(-0.25, -0.10)),
+        (0.00, SIMD2(0.25, 0.15)),
+        (-0.18, SIMD2(-0.25, 0.15)),
+    ]
+
     @Test("Solo rallies are real exchanges rather than a stalled ball")
     func soloRalliesProduceExchanges() {
         for difficulty in AIDifficulty.allCases {
-            var engine = SimulationEngine.testing()
-            var cyan = AIController(difficulty: difficulty, configuration: engine.configuration)
-            var orange = AIController(difficulty: difficulty, configuration: engine.configuration)
-            var crossings = 0
+            var totalCrossings = 0
             var crashes = 0
+            var quietestOpening = Int.max
 
-            for tick in UInt64(0) ..< 3_600 {
-                let previousX = engine.state.ball.position.x
-                engine.step(inputs: [
-                    .cyan: cyan.input(for: engine.state, team: .cyan, tick: tick),
-                    .orange: orange.input(for: engine.state, team: .orange, tick: tick),
-                ])
-                if engine.state.match.phase == .playing,
-                   previousX * engine.state.ball.position.x < 0 {
-                    crossings += 1
+            for opening in Self.rallyOpenings {
+                var engine = SimulationEngine.testing()
+                var cyan = AIController(
+                    difficulty: difficulty,
+                    configuration: engine.configuration
+                )
+                var orange = AIController(
+                    difficulty: difficulty,
+                    configuration: engine.configuration
+                )
+                engine.state.ball = BallState(
+                    position: SIMD2(opening.x, 0.60),
+                    velocity: opening.velocity
+                )
+                var crossings = 0
+
+                for tick in UInt64(0) ..< 3_600 {
+                    let previousX = engine.state.ball.position.x
+                    engine.step(inputs: [
+                        .cyan: cyan.input(for: engine.state, team: .cyan, tick: tick),
+                        .orange: orange.input(for: engine.state, team: .orange, tick: tick),
+                    ])
+                    if engine.state.match.phase == .playing,
+                       previousX * engine.state.ball.position.x < 0 {
+                        crossings += 1
+                    }
+                    crashes += engine.lastEvents.filter { event in
+                        guard case let .point(_, reason) = event else { return false }
+                        return reason == .crash
+                    }.count
+                    if engine.state.match.phase == .finished { break }
                 }
-                crashes += engine.lastEvents.filter { event in
-                    guard case let .point(_, reason) = event else { return false }
-                    return reason == .crash
-                }.count
-                if engine.state.match.phase == .finished { break }
+
+                totalCrossings += crossings
+                quietestOpening = min(quietestOpening, crossings)
             }
 
             // The prototype AI never struck the ball at all: it managed one or two
             // crossings in thirty seconds, and only because the ball drifted over.
-            #expect(crossings >= 4, "\(difficulty) barely put the ball back over")
+            // Measured totals across these five openings are 41 rookie, 58 pilot,
+            // 22 ace, so twelve leaves real headroom without being meaningless.
+            #expect(totalCrossings >= 12, "\(difficulty) barely put the ball back over")
+            #expect(quietestOpening >= 1, "\(difficulty) had an opening with no rally at all")
             #expect(crashes == 0, "\(difficulty) flew itself into the ground")
         }
     }
