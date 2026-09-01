@@ -115,15 +115,11 @@ final class OnlineMatchCoordinator: NSObject,
     private var lastAuthoritativeState: WorldState?
     private var pendingPing: UInt64?
     private let codec = WireCodec()
-
-    override init() {
-        super.init()
-        GKLocalPlayer.local.register(self)
-    }
+    private var isListenerRegistered = false
 
     func authenticate() {
         guard !GKLocalPlayer.local.isAuthenticated else {
-            status = .ready(playerName: GKLocalPlayer.local.displayName)
+            signedIn()
             return
         }
         status = .authenticating
@@ -133,7 +129,7 @@ final class OnlineMatchCoordinator: NSObject,
                 if let viewController {
                     self.present(viewController)
                 } else if GKLocalPlayer.local.isAuthenticated {
-                    self.status = .ready(playerName: GKLocalPlayer.local.displayName)
+                    self.signedIn()
                 } else if let error {
                     _ = error
                     self.status = .failed(message: "Game Center unavailable")
@@ -142,6 +138,16 @@ final class OnlineMatchCoordinator: NSObject,
                 }
             }
         }
+    }
+
+    /// Invite delivery requires an authenticated local player, so the listener is
+    /// registered here rather than in `init`. `registerListener` must run once only.
+    private func signedIn() {
+        if !isListenerRegistered {
+            isListenerRegistered = true
+            GKLocalPlayer.local.register(self)
+        }
+        status = .ready(playerName: GKLocalPlayer.local.displayName)
     }
 
     func presentQuickMatch() {
