@@ -15,10 +15,12 @@
 		1D659B5B59B22184796127C4 /* ASTROSPIKEUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */; };
 		1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */; };
 		3A4D0B7ACDA79D239BD06DDB /* ASTROSPIKEApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */; };
+		3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859573897DB0229481CD4EC8 /* KeyboardControls.swift */; };
 		3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */; };
 		422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */; };
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		4ABE3DC27EA7E0AA4E79BA2D /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
 		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
 		8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */; };
@@ -32,6 +34,7 @@
 		B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */; };
 		BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF5E91B39BF78BC48AAE5C2 /* Module.swift */; };
 		C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2938C10E066FBAEF95E3652B /* GameSession.swift */; };
+		C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */; };
 		C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */; };
 		CB4E58A55B21C45474313E95 /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5488DBEBDCDC52A967D49F5A /* AppRootView.swift */; };
@@ -93,6 +96,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
 		2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsTests.swift; sourceTree = "<group>"; };
@@ -116,9 +120,11 @@
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
 		5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuningTests.swift; sourceTree = "<group>"; };
 		5488DBEBDCDC52A967D49F5A /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
+		64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControlTests.swift; sourceTree = "<group>"; };
 		6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocolTests.swift; sourceTree = "<group>"; };
 		6E6C209D8015028776DDD2A2 /* MatchRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRules.swift; sourceTree = "<group>"; };
 		83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineMatchCoordinator.swift; sourceTree = "<group>"; };
+		859573897DB0229481CD4EC8 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionTests.swift; sourceTree = "<group>"; };
 		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
@@ -157,6 +163,7 @@
 				A3A9B354B5E4A268F1331755 /* AIController.swift */,
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
+				047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */,
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
@@ -197,6 +204,7 @@
 				1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */,
 				2938C10E066FBAEF95E3652B /* GameSession.swift */,
 				394FFF2162051CDBC12CE239 /* Info.plist */,
+				859573897DB0229481CD4EC8 /* KeyboardControls.swift */,
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
 				B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */,
 				1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */,
@@ -222,6 +230,7 @@
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
 				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
+				64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */,
 				9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */,
 				2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */,
 				8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */,
@@ -381,6 +390,7 @@
 				EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */,
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
+				C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */,
 				76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */,
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
@@ -399,6 +409,7 @@
 				F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */,
 				F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */,
 				C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */,
+				3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */,
 				C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */,
 				3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */,
 				195BC54E2CD59D12BC8DDE90 /* TouchControls.swift in Sources */,
@@ -413,6 +424,7 @@
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
 				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
+				52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */,
 				0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */,
 				CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */,
 				9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */,
