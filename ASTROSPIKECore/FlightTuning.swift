@@ -16,7 +16,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable {
         thrustAcceleration: 5.5,
         rotationAcceleration: 3,
         ballGravityMultiplier: 0.72,
-        ballDropHeight: 0.50,
+        ballDropHeight: 0.06,
         ballDropSpeed: 0.18,
         allowedBouncesPerHit: 1,
         allowedTouchesPerSide: 3
@@ -60,7 +60,7 @@ public final class FlightTuningStore {
         thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 2 ... 10)
         rotationAcceleration = Self.load(defaults, key: Keys.rotationAcceleration, fallback: baked.rotationAcceleration, range: 0.5 ... 8)
         ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
-        ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: 0.22 ... 0.58)
+        ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: -0.30 ... 0.10)
         ballDropSpeed = Self.load(defaults, key: Keys.ballDropSpeed, fallback: baked.ballDropSpeed, range: 0 ... 0.8)
         allowedBouncesPerHit = Self.load(
             defaults,

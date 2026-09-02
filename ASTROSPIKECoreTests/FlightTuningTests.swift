@@ -13,7 +13,7 @@ struct FlightTuningTests {
             first.thrustAcceleration = 4.25
             first.rotationAcceleration = 2.5
             first.ballGravityMultiplier = 0.58
-            first.ballDropHeight = 0.55
+            first.ballDropHeight = 0.02
             first.ballDropSpeed = 0.09
             first.allowedBouncesPerHit = 4
 
@@ -27,7 +27,7 @@ struct FlightTuningTests {
         try withIsolatedDefaults { defaults in
             let store = FlightTuningStore(defaults: defaults)
             store.gravityMagnitude = 3.7
-            store.ballDropHeight = 0.30
+            store.ballDropHeight = -0.20
             store.allowedBouncesPerHit = 5
 
             store.reset()

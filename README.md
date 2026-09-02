@@ -1,6 +1,6 @@
 # ASTROSPIKE
 
-ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and later. Two momentum-driven landers volley a fast, highly elastic luminous ball over a single centre net, trying to drive it flat through the net itself — a portal the ball vanishes into.
+ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and later. Two momentum-driven landers volley a fast, highly elastic luminous ball around a single centre net that hangs from the roof, trying to lift it up and drive it through the net itself — a portal the ball vanishes into.
 
 ## Project layout
 
@@ -21,12 +21,14 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - The prototype controls are canonical: the left thumb holds either directional rotation control, while the right thumb holds the constant-thrust control.
 - Lunar-style flight tuning is canonical: gravity is `-2` arena units/s², main thrust is a constant `5.5` arena units/s², and the full-input rotation rate is `3` rad/s.
 - Linear momentum persists without stabilization. Rotation applies only while a direction is held and stops immediately on release, leaving the ship at its current angle.
-- The net is the goal, and it is a portal rather than a wall. One slab, dead centre, standing on the floor. Drive the ball into a face and it passes through and disappears -- whoever drove it in takes the point, so you shoot at the face on your own side, flat and low.
-- The top of the net is hard and neutral. Clipping the cap rebounds the ball and never scores, so a ball dropped from above is a miss, not a cheap goal. The cap alternates its nudge by rally, which favours neither half and stops a ball settling on the crown.
-- Ships collide with the net like a wall, faces included. The portal is a target for the ball, never a tunnel for a hull.
+- The net is the goal, and it is a portal rather than a wall. One slab, dead centre, hanging from the roof. Drive the ball into a face and it passes through and disappears -- whoever drove it in takes the point, so you shoot at the face on your own side, lifted and driven on purpose: the top of the arena is where a ball never wanders by itself.
+- The bottom of the net is hard and neutral. Clipping the cap from below rebounds the ball and never scores, so a toss straight up is a miss, not a cheap goal. The cap alternates its nudge by rally, which favours neither half and stops a ball pogoing under it.
+- A lip juts out under each face and tilts inward. A shot that arrives a little under the mouth lands on the lip and rolls into the portal. It is the one soft surface in the arena, and it never counts as a bounce.
+- The roof bulges over the net with the same curve as the corners, so a ball riding the ceiling into the middle is thrown down and away rather than fed into the goal. The bulge is solid and never counts as a bounce.
+- Ships fly straight through the net, lips and all. The portal is a target for the ball, never a wall for a hull -- defending it means sitting in the mouth.
 - The floor and ceiling meet the outer walls through flattened elliptical arcs. They are wide and shallow, so a stray ball is nudged back toward the middle rather than spun around a bowl.
 - A ship contact always pushes the ball clear of the hull, so the ball can never be carried, ridden, or hovered with.
-- Nothing in the arena destroys a ship. The ground, the net, the outer walls, the ceiling, and the other ship are all rebounds.
+- Nothing in the arena destroys a ship. The ground, the roof bulge, the outer walls, the ceiling, and the other ship are all rebounds.
 - Ships may clear the net freely. Past the halfway marker the far half pushes back in proportion to how deep the ship is and bleeds its speed, so crossing is always possible and always costs more the further it goes.
 - A goal, a second floor bounce since the last hit, or a fourth touch on one trip awards one point. Those are the only three ways to score.
 - Each ship hit refreshes the bounce allowance but not the touch tally, so touch/bounce/touch/bounce is not a way to stall on your own half.

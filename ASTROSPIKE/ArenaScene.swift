@@ -131,8 +131,6 @@ final class ArenaScene: SKScene {
 
         let floor = CGMutablePath()
         floor.move(to: point(-arena.cornerTangentX, arena.floorY))
-        floor.addLine(to: point(-arena.moundBaseX, arena.floorY))
-        floor.move(to: point(arena.moundBaseX, arena.floorY))
         floor.addLine(to: point(arena.cornerTangentX, arena.floorY))
         let floorNode = SKShapeNode(path: floor)
         floorNode.strokeColor = .white.withAlphaComponent(0.55)
@@ -140,7 +138,7 @@ final class ArenaScene: SKScene {
         floorNode.glowWidth = 3
         arenaLayer.addChild(floorNode)
 
-        addMound()
+        addHump()
         addPortalNet()
     }
 
@@ -180,14 +178,14 @@ final class ArenaScene: SKScene {
         return path
     }
 
-    /// The hill the net stands on: the corner fillet mirrored into the middle,
-    /// walked from the same samples the simulation collides against so the
-    /// drawn slope cannot drift from the one balls ramp off.
-    private func addMound() {
-        let profile = arena.moundProfile
+    /// The hump the net hangs from: the corner fillet mirrored into the middle
+    /// of the roof, walked from the same samples the simulation collides
+    /// against so the drawn slope cannot drift from the one balls bounce off.
+    private func addHump() {
+        let profile = arena.humpProfile
 
         let hill = CGMutablePath()
-        hill.move(to: point(-profile.last!.x, arena.floorY))
+        hill.move(to: point(-profile.last!.x, arena.ceilingY))
         for sample in profile.reversed() {
             hill.addLine(to: point(-sample.x, sample.y))
         }
@@ -213,32 +211,34 @@ final class ArenaScene: SKScene {
     /// The net is the goal, and it is a portal: drive the ball into a face and
     /// it goes through and vanishes. Each face is painted in the colour of the
     /// side that shoots at it, so the target you are aiming for is the one in
-    /// front of you. The cap on top is hard and neutral -- white, not team
-    /// coloured -- because clipping it rebounds rather than scoring.
+    /// front of you. The cap underneath is hard and neutral -- white, not
+    /// team coloured -- because clipping it rebounds rather than scoring. The
+    /// lips either side of the cap are the one part of the goal that helps:
+    /// they tilt in, and a ball that lands on one rolls into the mouth.
     private func addPortalNet() {
         let half = arena.netHalfWidth
-        let sill = arena.portalMouthFloorY
+        let collarBottom = arena.portalMouthTopY
 
-        // The plinth: the part of the slab standing on the crest, below the
+        // The collar: the part of the slab hanging from the hump, above the
         // mouth. Solid and neutral, like the cap.
-        let plinth = CGMutablePath()
-        plinth.move(to: point(-half, arena.moundCrestY))
-        plinth.addLine(to: point(-half, sill))
-        plinth.addLine(to: point(half, sill))
-        plinth.addLine(to: point(half, arena.moundCrestY))
-        plinth.closeSubpath()
-        let plinthNode = SKShapeNode(path: plinth)
-        plinthNode.strokeColor = .white.withAlphaComponent(0.55)
-        plinthNode.lineWidth = 2
-        plinthNode.fillColor = SKColor(white: 0.16, alpha: 1)
-        arenaLayer.addChild(plinthNode)
+        let collar = CGMutablePath()
+        collar.move(to: point(-half, arena.humpUndersideY))
+        collar.addLine(to: point(-half, collarBottom))
+        collar.addLine(to: point(half, collarBottom))
+        collar.addLine(to: point(half, arena.humpUndersideY))
+        collar.closeSubpath()
+        let collarNode = SKShapeNode(path: collar)
+        collarNode.strokeColor = .white.withAlphaComponent(0.55)
+        collarNode.lineWidth = 2
+        collarNode.fillColor = SKColor(white: 0.16, alpha: 1)
+        arenaLayer.addChild(collarNode)
 
         // The mouth: a dark slot the ball disappears into.
         let mouth = CGMutablePath()
-        mouth.move(to: point(-half, sill))
-        mouth.addLine(to: point(-half, arena.netTopY))
-        mouth.addLine(to: point(half, arena.netTopY))
-        mouth.addLine(to: point(half, sill))
+        mouth.move(to: point(-half, collarBottom))
+        mouth.addLine(to: point(-half, arena.netBottomY))
+        mouth.addLine(to: point(half, arena.netBottomY))
+        mouth.addLine(to: point(half, collarBottom))
         mouth.closeSubpath()
         let mouthNode = SKShapeNode(path: mouth)
         mouthNode.strokeColor = .clear
@@ -250,8 +250,8 @@ final class ArenaScene: SKScene {
             let scorer: Team = sign < 0 ? .cyan : .orange
             let color: SKColor = scorer == .cyan ? .cyan : .orange
             let face = CGMutablePath()
-            face.move(to: point(half * sign, sill))
-            face.addLine(to: point(half * sign, arena.netTopY))
+            face.move(to: point(half * sign, collarBottom))
+            face.addLine(to: point(half * sign, arena.netBottomY))
             let faceNode = SKShapeNode(path: face)
             faceNode.strokeColor = color.withAlphaComponent(0.9)
             faceNode.lineWidth = 4
@@ -259,18 +259,46 @@ final class ArenaScene: SKScene {
             arenaLayer.addChild(faceNode)
         }
 
-        // The crown: solid, neutral, and the only part of the net that bounces.
+        // The cap: solid, neutral, and the part of the net that bounces.
         let cap = CGMutablePath()
-        cap.move(to: point(-half, arena.netTopY))
+        cap.move(to: point(-half, arena.netBottomY))
         cap.addQuadCurve(
-            to: point(half, arena.netTopY),
-            control: point(0, arena.netTopY + 0.04)
+            to: point(half, arena.netBottomY),
+            control: point(0, arena.netBottomY - 0.04)
         )
         let capNode = SKShapeNode(path: cap)
         capNode.strokeColor = .white.withAlphaComponent(0.95)
         capNode.lineWidth = 4
         capNode.glowWidth = 6
         arenaLayer.addChild(capNode)
+
+        // The lips: a thin ledge under each face, drawn from the same two
+        // points the ball rolls along, with a sliver of body underneath so it
+        // reads as a shelf rather than a stray line.
+        for sign in [-1.0, 1.0] {
+            let root = arena.lipRoot(sign: sign)
+            let tip = arena.lipTip(sign: sign)
+            let body = CGMutablePath()
+            body.move(to: point(root.x, root.y))
+            body.addLine(to: point(tip.x, tip.y))
+            body.addLine(to: point(tip.x, tip.y - 0.014))
+            body.addLine(to: point(root.x, root.y - 0.014))
+            body.closeSubpath()
+            let bodyNode = SKShapeNode(path: body)
+            bodyNode.strokeColor = .white.withAlphaComponent(0.55)
+            bodyNode.lineWidth = 2
+            bodyNode.fillColor = SKColor(white: 0.16, alpha: 1)
+            arenaLayer.addChild(bodyNode)
+
+            let ledge = CGMutablePath()
+            ledge.move(to: point(root.x, root.y))
+            ledge.addLine(to: point(tip.x, tip.y))
+            let ledgeNode = SKShapeNode(path: ledge)
+            ledgeNode.strokeColor = .white.withAlphaComponent(0.95)
+            ledgeNode.lineWidth = 4
+            ledgeNode.glowWidth = 6
+            arenaLayer.addChild(ledgeNode)
+        }
     }
 
     private func addSideLabel(_ text: String, team: Team, at position: CGPoint) {
@@ -333,7 +361,7 @@ final class ArenaScene: SKScene {
                 if reason == .goal {
                     // One portal, dead centre -- the ball went through it and
                     // is gone, so the burst is where it vanished.
-                    let goalCenterY = (arena.portalMouthFloorY + arena.netTopY) / 2
+                    let goalCenterY = (arena.portalMouthTopY + arena.netBottomY) / 2
                     goalBurst(
                         at: point(0, goalCenterY),
                         color: scoringTeam == .cyan ? .cyan : .orange

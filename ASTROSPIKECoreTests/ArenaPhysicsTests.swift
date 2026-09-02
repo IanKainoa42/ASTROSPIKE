@@ -4,100 +4,138 @@ import simd
 
 @Suite("Arena physics")
 struct ArenaPhysicsTests {
-    @Test("The hill is the corner arc, mirrored into the middle")
-    func moundMirrorsTheCornerCurvature() {
+    @Test("The hump is the corner arc, mirrored into the middle of the roof")
+    func humpMirrorsTheCornerCurvature() {
         let arena = ArenaGeometry.standard
 
         // Same arc, same semi-axes, with the net face standing in for the side
-        // wall: horizontal where it meets the floor, vertical at the post.
-        #expect(arena.moundBaseX == arena.netHalfWidth + arena.cornerRadiusX)
-        #expect(arena.moundCrestY == arena.floorY + arena.cornerRadiusY)
-        let crest = arena.moundSurfacePoint(0)
-        #expect(abs(crest.x - arena.netHalfWidth) < 1e-12)
-        #expect(abs(crest.y - arena.moundCrestY) < 1e-12)
-        let base = arena.moundSurfacePoint(arena.moundSampleCount - 1)
-        #expect(abs(base.x - arena.moundBaseX) < 1e-12)
-        #expect(abs(base.y - arena.floorY) < 1e-12)
-        // Flat enough at the bottom to be a ramp rather than a kerb.
-        #expect(arena.moundSurfacePoint(arena.moundSampleCount - 2).y < arena.floorY + 0.01)
+        // wall: vertical at the collar, horizontal where it meets the roof.
+        #expect(arena.humpBaseX == arena.netHalfWidth + arena.cornerRadiusX)
+        #expect(arena.humpUndersideY == arena.ceilingY - arena.cornerRadiusY)
+        let underside = arena.humpSurfacePoint(0)
+        #expect(abs(underside.x - arena.netHalfWidth) < 1e-12)
+        #expect(abs(underside.y - arena.humpUndersideY) < 1e-12)
+        let base = arena.humpSurfacePoint(arena.humpSampleCount - 1)
+        #expect(abs(base.x - arena.humpBaseX) < 1e-12)
+        #expect(abs(base.y - arena.ceilingY) < 1e-12)
+        // Flat enough at the roof to be a slope rather than a step.
+        #expect(arena.humpSurfacePoint(arena.humpSampleCount - 2).y > arena.ceilingY - 0.01)
     }
 
-    @Test("The portal mouth stands clear of the hill and stays aimable")
-    func portalMouthClearsTheMound() {
+    @Test("The portal mouth hangs clear of the hump and stays aimable")
+    func portalMouthClearsTheHump() {
         let arena = ArenaGeometry.standard
         let ballRadius = BallState(position: .zero).radius
 
-        // A whole ball of sill above the crest, so anything that scores is
-        // clear of the hill rather than grazing the point where the two meet.
-        #expect(arena.portalMouthFloorY >= arena.moundCrestY + ballRadius * 2)
-        // And the mouth left above it is still comfortably taller than the
-        // ball, so a flat drive can find it.
+        // A whole ball of collar under the hump, so anything that scores is
+        // clear of the slope rather than grazing the point where the two meet.
+        #expect(arena.portalMouthTopY <= arena.humpUndersideY - ballRadius * 2)
+        // And the mouth left below it is still comfortably taller than the
+        // ball, so a lifted drive can find it.
         #expect(arena.portalFaceHeight > ballRadius * 4)
         // It stays a slab, not a wall: thin, dead centre, so the middle of the
         // court is a target rather than an obstruction.
         #expect(arena.netHalfWidth < arena.halfWidth * 0.05)
     }
 
-    @Test("The top of the net is hard: a drop from above bounces, never scores")
+    @Test("The lips tilt inward and are wider than a ball")
+    func lipsFeedTheMouth() {
+        let arena = ArenaGeometry.standard
+        let ballRadius = BallState(position: .zero).radius
+
+        for sign in [-1.0, 1.0] {
+            let root = arena.lipRoot(sign: sign)
+            let tip = arena.lipTip(sign: sign)
+            // Rooted at the bottom corner of the face, jutting outward.
+            #expect(abs(root.x - sign * arena.netHalfWidth) < 1e-12)
+            #expect(abs(root.y - arena.netBottomY) < 1e-12)
+            #expect(tip.x * sign > root.x * sign)
+            // The outer end is the high end, so a ball rolls in, not off.
+            #expect(tip.y > root.y)
+            #expect(abs(tip.x - root.x) > ballRadius * 2)
+        }
+    }
+
+    @Test("A ball landing on a lip rolls into the portal and scores for that side")
+    func lipFeedsTheBallIntoThePortal() {
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
+        // Dropped from rest just above the orange lip: no drive at the face
+        // at all, only the tilt of the ledge to carry it in.
+        engine.state.ball = BallState(
+            position: SIMD2(0.115, 0.26),
+            velocity: .zero,
+            radius: 0.038
+        )
+
+        for tick in UInt64(0) ..< 240 where engine.state.match.phase == .playing {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+        }
+
+        #expect(engine.state.match.score == Score(cyan: 0, orange: 1), "the lip did not feed the goal")
+    }
+
+    @Test("The bottom of the net is hard: a toss from below bounces, never scores")
     func capIsHardAndNeverScores() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.55
-        engine.state.ships[.orange]!.position.y = 0.55
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.state.ball = BallState(
-            position: SIMD2(0, 0.20),
-            velocity: SIMD2(0, -2),
+            position: SIMD2(0, -0.20),
+            velocity: SIMD2(0, 2),
             radius: 0.038
         )
 
         for tick in UInt64(0) ..< 90 where engine.state.match.phase == .playing {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
-            // The instant it comes back up off the crown, the point is settled.
-            if engine.state.ball.velocity.y > 0 { break }
+            // The instant it comes back down off the cap, the point is settled.
+            if engine.state.ball.velocity.y < 0 { break }
         }
 
         #expect(engine.state.match.score == Score())
-        #expect(engine.state.ball.velocity.y > 0)
-        #expect(engine.state.ball.position.y > ArenaGeometry.standard.netTopY)
+        #expect(engine.state.ball.velocity.y < 0)
+        #expect(engine.state.ball.position.y < ArenaGeometry.standard.netBottomY)
     }
 
     @Test("The cap favours neither half")
     func capDeflectionIsNeutral() {
         // Neutral means unbiased, not motionless: which way the ball comes off
-        // the crown is set by where it lands, mirrored exactly. Neither half
-        // is the one the net always feeds.
+        // the cap is set by where it hits, mirrored exactly. Neither half is
+        // the one the net always feeds.
         var deflections: [Double] = []
         for offset in [-0.01, 0.01] {
             var engine = SimulationEngine.testing()
-            engine.state.ships[.cyan]!.position.y = 0.55
-            engine.state.ships[.orange]!.position.y = 0.55
+            engine.state.ships[.cyan]!.position.y = -0.40
+            engine.state.ships[.orange]!.position.y = -0.40
             engine.state.ball = BallState(
-                position: SIMD2(offset, 0.20),
-                velocity: SIMD2(0, -2),
+                position: SIMD2(offset, -0.20),
+                velocity: SIMD2(0, 2),
                 radius: 0.038
             )
             for tick in UInt64(0) ..< 90 where engine.state.match.phase == .playing {
                 engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
-                if engine.state.ball.velocity.y > 0 { break }
+                if engine.state.ball.velocity.y < 0 { break }
             }
-            #expect(engine.state.match.score == Score(), "the crown scored a point")
+            #expect(engine.state.match.score == Score(), "the cap scored a point")
             deflections.append(engine.state.ball.velocity.x)
         }
 
-        #expect(deflections[0] < 0, "a ball landing left of centre was not sent left")
-        #expect(deflections[1] > 0, "a ball landing right of centre was not sent right")
-        #expect(abs(deflections[0] + deflections[1]) < 0.001, "the crown leans one way")
+        #expect(deflections[0] < 0, "a ball hitting left of centre was not sent left")
+        #expect(deflections[1] > 0, "a ball hitting right of centre was not sent right")
+        #expect(abs(deflections[0] + deflections[1]) < 0.001, "the cap leans one way")
     }
 
-    @Test("A low drive into the portal scores for whoever drove it")
-    func lowDriveThroughThePortalScores() {
+    @Test("A lifted drive into the portal scores for whoever drove it")
+    func liftedDriveThroughThePortalScores() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.5
-        engine.state.ships[.orange]!.position.y = 0.5
-        // A flat drive from the cyan half into the near face -- the shot the
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
+        // A rising drive from the cyan half into the near face -- the shot the
         // whole game is aimed at.
         engine.state.ball = BallState(
-            position: SIMD2(-0.30, -0.30),
-            velocity: SIMD2(2, -0.3),
+            position: SIMD2(-0.30, 0.29),
+            velocity: SIMD2(2, 0.3),
             radius: 0.038
         )
 
@@ -116,13 +154,13 @@ struct ArenaPhysicsTests {
         #expect(arena.portalScorer(enteredFromLeft: false) == .orange)
     }
 
-    @Test("A ball crossing over the net has not scored")
-    func crossingAboveTheNetIsNotAGoal() {
+    @Test("A ball crossing under the net has not scored")
+    func crossingBelowTheNetIsNotAGoal() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.55
-        engine.state.ships[.orange]!.position.y = 0.55
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.state.ball = BallState(
-            position: SIMD2(-0.30, 0.10),
+            position: SIMD2(-0.30, 0.0),
             velocity: SIMD2(2, 0),
             radius: 0.038
         )
@@ -138,10 +176,10 @@ struct ArenaPhysicsTests {
     @Test("Driving the ball through the portal scores")
     func portalDriveScores() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.5
-        engine.state.ships[.orange]!.position.y = 0.5
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.state.ball = BallState(
-            position: SIMD2(-0.20, -0.30),
+            position: SIMD2(-0.20, 0.30),
             velocity: SIMD2(1.5, 0),
             radius: 0.038
         )
@@ -156,10 +194,10 @@ struct ArenaPhysicsTests {
     @Test("The ball does not linger in the net -- it is consumed on entry")
     func portalConsumesTheBall() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.55
-        engine.state.ships[.orange]!.position.y = 0.55
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.state.ball = BallState(
-            position: SIMD2(-0.06, -0.30),
+            position: SIMD2(-0.06, 0.30),
             velocity: SIMD2(2, 0),
             radius: 0.04
         )
@@ -171,23 +209,25 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.phase != .playing)
     }
 
-    @Test("A drop onto the cap deflects sideways instead of balancing")
-    func roundedNetCapDeflectsDrop() {
+    @Test("A toss up into the cap deflects sideways instead of pogoing")
+    func roundedNetCapDeflectsToss() {
         var engine = SimulationEngine.testing()
         let postX = 0.0
-        engine.state.ships[.cyan]!.position.y = 0.5
-        engine.state.ships[.orange]!.position.y = 0.5
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.state.ball = BallState(
-            position: SIMD2(postX, 0.32),
-            velocity: SIMD2(0, -2),
+            position: SIMD2(postX, -0.10),
+            velocity: SIMD2(0, 2),
             radius: 0.04
         )
 
         for tick in UInt64(0) ..< 60 where engine.state.match.phase == .playing {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            // Sample on the way back down, before the floor sends it up again.
+            if engine.state.ball.position.y < -0.30 { break }
         }
 
-        #expect(engine.state.ball.velocity.y > 0)
+        #expect(engine.state.ball.velocity.y < 0)
         #expect(abs(engine.state.ball.velocity.x) > 0.05)
         #expect(abs(engine.state.ball.position.x - postX) > 0.05)
     }
@@ -195,10 +235,10 @@ struct ArenaPhysicsTests {
     @Test("A maximum speed ball cannot tunnel past the portal unnoticed")
     func fastBallCannotTunnelThroughNet() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.55
-        engine.state.ships[.orange]!.position.y = 0.55
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.state.ball = BallState(
-            position: SIMD2(-0.40, -0.32),
+            position: SIMD2(-0.40, 0.30),
             velocity: SIMD2(60, 0),
             radius: 0.04
         )
@@ -209,31 +249,28 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
     }
 
-    @Test("A ball driven in low along the floor ramps up instead of scoring")
-    func lowRollIntoTheMiddleRampsUp() {
-        let arena = ArenaGeometry.standard
+    @Test("A ball riding the roof into the middle is thrown down instead of scoring")
+    func roofRideIntoTheMiddleIsThrownDown() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.55
-        engine.state.ships[.orange]!.position.y = 0.55
-        // Skimming in from the corner, below the sill: the shot that used to
-        // roll straight into the goal.
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
+        // Skimming in along the ceiling from the corner: the one path that
+        // would trickle into a roof-hung goal if the hump were not there.
         engine.state.ball = BallState(
-            position: SIMD2(-0.55, -0.58),
-            velocity: SIMD2(3, 0),
+            position: SIMD2(-0.55, 0.58),
+            velocity: SIMD2(3, 0.6),
             radius: 0.038
         )
 
-        var peak = -1.0
-        var tossedUp = false
+        var thrownDown = false
         for tick in UInt64(0) ..< 240 where engine.state.match.phase == .playing {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
-            peak = max(peak, engine.state.ball.position.y)
-            if engine.state.ball.velocity.y > 0.4 { tossedUp = true }
+            if engine.state.ball.velocity.y < -0.4 { thrownDown = true }
+            if engine.state.ball.position.y < 0 { break }
         }
 
-        #expect(engine.state.match.score == Score(), "the low roll still found the goal")
-        #expect(tossedUp, "the hill never kicked the ball upward")
-        #expect(peak > arena.moundCrestY, "the ball never got above the crest")
+        #expect(engine.state.match.score == Score(), "the roof ride still found the goal")
+        #expect(thrownDown, "the hump never threw the ball downward")
     }
 
     @Test("A maximum speed ball cannot tunnel through a ship")
@@ -313,8 +350,8 @@ struct ArenaPhysicsTests {
         #expect(engine.state.ball.velocity.x < -5.5)
     }
 
-    @Test("A ship can cross above the net and enter the opponent's half")
-    func shipCanEnterOpponentHalfAboveNet() {
+    @Test("A ship can cross under the net and enter the opponent's half")
+    func shipCanEnterOpponentHalfBelowNet() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position = SIMD2(-0.01, 0.20)
         engine.state.ships[.cyan]!.velocity = SIMD2(3, 0)
@@ -330,8 +367,8 @@ struct ArenaPhysicsTests {
     func shipPassesThroughThePortal() {
         // The net is a goal now, not a blocker: defending it means being able
         // to fly into the mouth and sit in front of it.
-        let mouthY = (ArenaGeometry.standard.portalMouthFloorY
-            + ArenaGeometry.standard.netTopY) / 2
+        let mouthY = (ArenaGeometry.standard.portalMouthTopY
+            + ArenaGeometry.standard.netBottomY) / 2
         for direction in [1.0, -1.0] {
             var engine = SimulationEngine.testing()
             engine.state.ships[.cyan]!.position = SIMD2(-0.10 * direction, mouthY)
@@ -348,52 +385,52 @@ struct ArenaPhysicsTests {
         }
     }
 
-    @Test("An untouched serve lands in play instead of scoring by itself")
+    @Test("An untouched serve falls into play instead of scoring by itself")
     func untouchedServeMissesThePortal() {
+        let arena = ArenaGeometry.standard
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.55
-        engine.state.ships[.orange]!.position.y = 0.55
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
         engine.prepareNextRally(mirrored: false)
         engine.beginPlay()
 
-        var reachedNetHeight = false
+        var highest = engine.state.ball.position.y
+        var reachedTheFloor = false
         for tick in UInt64(0) ..< 240 where engine.state.match.phase == .playing {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
-            if engine.state.ball.position.y <= ArenaGeometry.standard.netTopY {
-                reachedNetHeight = true
+            highest = max(highest, engine.state.ball.position.y)
+            if engine.state.ball.position.y < arena.floorY + 0.10 {
+                reachedTheFloor = true
                 break
             }
         }
 
-        #expect(reachedNetHeight, "the serve never reached net height")
-        // It has to arrive beside the net, not inside it: an untouched serve
-        // must never hand out a free point.
-        #expect(abs(engine.state.ball.position.x)
-            > ArenaGeometry.standard.netHalfWidth + engine.state.ball.radius)
+        // The goal is above the serve and the serve only ever falls, so an
+        // untouched serve can never hand out a free point.
+        #expect(highest < arena.netBottomY - engine.state.ball.radius)
+        #expect(reachedTheFloor, "the serve never came down into play")
         #expect(engine.state.match.score == Score())
     }
 
-    @Test("A ship dropped into the goal settles on the hill, not on the net")
-    func shipLandsOnTheMoundInsideTheGoal() {
+    @Test("A ship flown up into the goal stops on the hump, not on the net")
+    func shipStopsOnTheHumpInsideTheGoal() {
         let arena = ArenaGeometry.standard
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(0, -0.10)
-        engine.state.ships[.cyan]!.velocity = SIMD2(0, -3)
+        engine.state.ships[.cyan]!.position = SIMD2(0, 0.10)
+        engine.state.ships[.cyan]!.velocity = SIMD2(0, 3)
 
-        // Long enough for the hull to drop through, settle, and stop bouncing.
-        var lowest = engine.state.ships[.cyan]!.position.y
-        for tick in UInt64(0) ..< 300 {
+        var highest = engine.state.ships[.cyan]!.position.y
+        for tick in UInt64(0) ..< 60 {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
-            lowest = min(lowest, engine.state.ships[.cyan]!.position.y)
+            highest = max(highest, engine.state.ships[.cyan]!.position.y)
         }
 
         let ship = engine.state.ships[.cyan]!
         #expect(!ship.isDestroyed)
-        // Through the mouth -- the net did not hold it up ...
-        #expect(lowest < arena.portalMouthFloorY)
-        // ... and resting on the crest, which is solid, rather than sinking in.
-        #expect(lowest > arena.moundCrestY)
-        #expect(ship.position.y > arena.moundCrestY)
+        // Through the mouth -- the net did not stop it ...
+        #expect(highest > arena.portalMouthTopY)
+        // ... and stopped by the hump, which is solid, rather than sinking in.
+        #expect(highest < arena.humpUndersideY)
         #expect(engine.state.match.score == Score())
     }
 

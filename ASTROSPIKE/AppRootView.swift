@@ -457,10 +457,10 @@ private struct FlightTutorial: View {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
                     TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W, up arrow or space to thrust. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
-                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The net is the goal, and it is a portal. Drive the ball into the face on your side and it goes straight through and vanishes — that’s a point. Clip the hard top and it just bounces. Three touches a trip, one bounce a touch.")
-                    TutorialCard(number: "05", icon: "mountain.2.fill", title: "THE HILL", text: "The goal stands on a hill with the same curve as the corners. A ball rolled along the floor ramps up it and pops straight into the air instead of trickling in — so a scoring shot has to be driven, not rolled. The hill is solid; it never counts as a bounce.")
-                    TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly over the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
-                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the hill and the other ship all rebound. Points are won on the ball alone: a goal, a third touch, or a second bounce.")
+                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. Lift the ball and drive it into the face on your side and it goes straight through and vanishes — that’s a point. Clip the hard rounded bottom and it just bounces. Three touches a trip, one bounce a touch.")
+                    TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a shot that arrives a little low lands on the lip and rolls straight into the portal. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth — a scoring shot has to be lifted on purpose. Neither the lip nor the bulge counts as a bounce.")
+                    TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
+                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal, a third touch, or a second bounce.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }
@@ -539,7 +539,7 @@ private struct FlightTuningView: View {
                     GroupBox("Ball Drop") {
                         VStack(spacing: 14) {
                             TuningSlider(title: "Ball gravity", value: $tuning.ballGravityMultiplier, range: 0.1 ... 1.2, step: 0.02)
-                            TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: 0.22 ... 0.58, step: 0.01)
+                            TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: -0.30 ... 0.10, step: 0.01)
                             TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)
                         }
                     }

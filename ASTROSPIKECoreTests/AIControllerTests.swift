@@ -203,7 +203,7 @@ struct AIControllerTests {
         #expect(deepest < 0.10)
     }
 
-    @Test("The solo AI puts a served ball back over the net")
+    @Test("The solo AI puts a served ball back at the net")
     func soloAIReturnsTheServe() {
         for difficulty in AIDifficulty.allCases {
             var engine = SimulationEngine.testing()
@@ -211,17 +211,11 @@ struct AIControllerTests {
                 difficulty: difficulty,
                 configuration: engine.configuration
             )
-            // Staged exactly as a conceded point stages it: dead centre, drifting
-            // out to the AI's half.
-            //
-            // Not staged deep in the corner: a ball dropped from the ceiling
-            // into the far side of a half is out of reach for a ship starting
-            // near the floor, and with one bounce allowed the rally is over
-            // before the climb finishes. That is the bounce rule, not the AI --
-            // given altitude, every difficulty intercepts the same ball in 32
-            // ticks.
-            engine.state.ball = BallState(position: SIMD2(0, 0.50), velocity: SIMD2(0.45, -0.18))
+            // Staged exactly as a conceded point stages it: dead centre under
+            // the goal, drifting out to the AI's half.
+            engine.state.ball = BallState(position: SIMD2(0, 0.06), velocity: SIMD2(0.45, -0.18))
             var returned = false
+            var strikes = 0
 
             for tick in UInt64(0) ..< 1_200 {
                 let previousX = engine.state.ball.position.x
@@ -229,6 +223,16 @@ struct AIControllerTests {
                     .cyan: Self.stationKeeping(for: engine.state, team: .cyan, tick: tick),
                     .orange: controller.input(for: engine.state, team: .orange, tick: tick),
                 ])
+                if simd_distance(engine.state.ball.position, engine.state.ships[.orange]!.position) < 0.12 {
+                    strikes += 1
+                }
+                // The AI shoots at the goal on its own side, so a good return
+                // is a goal, and a near miss comes back across under the net.
+                // Either is the ball put back at the net rather than dropped.
+                if engine.state.match.score.orange == 1 {
+                    returned = true
+                    break
+                }
                 guard engine.state.match.phase == .playing else { break }
                 if previousX >= 0, engine.state.ball.position.x < 0 {
                     returned = true
@@ -236,7 +240,7 @@ struct AIControllerTests {
                 }
             }
 
-            #expect(returned, "\(difficulty) never returned the serve")
+            #expect(returned, "\(difficulty) never returned the serve (strikes \(strikes), ball \(engine.state.ball.position), phase \(engine.state.match.phase))")
         }
     }
 
@@ -293,8 +297,10 @@ struct AIControllerTests {
                     difficulty: difficulty,
                     configuration: engine.configuration
                 )
+                // Mid-court rather than up by the roof, which is where the
+                // goal hangs now.
                 engine.state.ball = BallState(
-                    position: SIMD2(opening.x, 0.60),
+                    position: SIMD2(opening.x, 0.0),
                     velocity: opening.velocity
                 )
                 var crossings = 0

@@ -106,14 +106,14 @@ public struct WorldState: Codable, Equatable, Sendable {
     public var match: MatchRuleState
     public var serveTicksRemaining: UInt64
     /// Which way the next serve drifts: -1 toward cyan, +1 toward orange. The
-    /// ball reappears dead centre, so it needs somewhere to go -- straight down
-    /// from there lands in a void and hands out a free point.
+    /// ball reappears dead centre under the goal, and the side that just
+    /// conceded is the side it is handed to.
     public var serveDriftSign: Double
 
     public init(
         tick: UInt64 = 0,
         ships: [Team: ShipState],
-        ball: BallState = BallState(position: SIMD2(0, 0.60)),
+        ball: BallState = BallState(position: SIMD2(0, 0.10)),
         match: MatchRuleState = MatchRuleState(),
         serveTicksRemaining: UInt64 = 0,
         serveDriftSign: Double = -1
@@ -154,7 +154,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         thrustRampRate: Double = 0,
         torqueAcceleration: Double = 3,
         ballGravityMultiplier: Double = 0.72,
-        ballDropHeight: Double = 0.50,
+        ballDropHeight: Double = 0.06,
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
         minimumBallSeparationSpeed: Double = 0.45,
@@ -323,16 +323,16 @@ public struct SimulationEngine: Sendable {
         state.tick += 1
     }
 
-    /// Enough sideways speed that the ball is past the outer post before it
-    /// falls to net height, whatever it does after that.
+    /// Enough sideways drift that the ball lands well inside the receiving
+    /// half rather than on the centre line.
     private var serveVelocity: SIMD2<Double> {
         SIMD2(state.serveDriftSign * 0.45, -configuration.ballDropSpeed)
     }
 
     private mutating func stageServe(on team: Team?) {
-        // The ball reappears dead centre, above the solid post, and drifts out
-        // to the side that just conceded -- far enough to clear the voids, so
-        // an untouched serve lands in play instead of scoring by itself.
+        // The ball reappears dead centre, just under the cap of the goal, and
+        // drifts out to the side that just conceded. It cannot score by
+        // itself: the goal is above it, and it only ever falls.
         switch team {
         case .cyan: state.serveDriftSign = -1
         case .orange: state.serveDriftSign = 1
@@ -416,18 +416,19 @@ public struct SimulationEngine: Sendable {
     ) {
         let radius = 0.048
 
-        // Nothing about the net stops a hull any more: it is a goal, and
-        // defending a goal means being able to fly into it. What is still solid
-        // in the middle is the hill it stands on.
-        if let mound = arena.moundContact(
+        // Nothing about the net stops a hull: it is a goal, and defending a
+        // goal means being able to fly into it. The lips are part of the net,
+        // so they let a hull through too. What is still solid in the middle
+        // is the hump the net hangs from.
+        if let hump = arena.humpContact(
             from: previousPosition,
             to: ship.position,
             radius: radius
         ) {
-            ship.position = mound.position
-            let inwardSpeed = simd_dot(ship.velocity, mound.normal)
+            ship.position = hump.position
+            let inwardSpeed = simd_dot(ship.velocity, hump.normal)
             if inwardSpeed < 0 {
-                ship.velocity -= mound.normal * ((1 + 0.12) * inwardSpeed)
+                ship.velocity -= hump.normal * ((1 + 0.12) * inwardSpeed)
             }
             effects.append(.collisionEffect(
                 position: ship.position,
@@ -467,10 +468,10 @@ public struct SimulationEngine: Sendable {
     ) {
         let r = state.ball.radius
         var struckNet = false
-        // Cap first: the crown of the net is hard and neutral, so clipping the
-        // top is a rebound rather than a score. Only the two faces below it are
-        // the portal, and a ball that reaches one is gone -- whoever drove it
-        // in takes the point.
+        // Cap first: the rounded bottom of the net is hard and neutral, so
+        // clipping it from below is a rebound rather than a score. Only the two
+        // faces above it are the portal, and a ball that reaches one is gone --
+        // whoever drove it in takes the point.
         if let capHit = sweptNetCapHit(
             from: previousPosition,
             to: state.ball.position,
@@ -489,17 +490,17 @@ public struct SimulationEngine: Sendable {
             radius: r,
             postCenterX: 0
         ) {
-            if netHit.crossedFace, netHit.position.y >= arena.portalMouthFloorY {
+            if netHit.crossedFace, netHit.position.y <= arena.portalMouthTopY {
                 state.ball.position = netHit.position
                 contacts.append(.ballEnteredGoal(
                     defending: arena.portalScorer(enteredFromLeft: netHit.fromLeft).opponent
                 ))
                 return
             }
-            if netHit.position.y < arena.portalMouthFloorY {
-                // Below the sill the slab is a solid post standing on the
-                // crest. A ball that has ramped up the hill arrives here, and
-                // it bounces off rather than sneaking in underneath.
+            if netHit.position.y > arena.portalMouthTopY {
+                // Above the mouth the slab is a solid collar hanging from the
+                // hump. A ball that has ridden the roof down the slope arrives
+                // here, and it bounces off rather than sneaking in over the top.
                 state.ball.position = netHit.position
                 let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
                 let inwardSpeed = simd_dot(state.ball.velocity, normal)
@@ -509,35 +510,47 @@ public struct SimulationEngine: Sendable {
                 struckNet = true
             }
             // Otherwise the ball is inside the open mouth without having been
-            // driven at either face -- kicked straight up off the hill. The
-            // mouth is a window, so it rises through and the rally goes on.
+            // driven at either face. The mouth is a window, so it falls back
+            // out and the rally goes on.
         }
 
         if !struckNet, previousPosition.x.sign != state.ball.position.x.sign {
             contacts.append(.ballCrossedCenter(into: state.ball.position.x < 0 ? .cyan : .orange))
         }
 
-        // The hill and the corner arcs run before the flat clamps so that where
-        // one of them is in play it, not the wall, sets the final position --
-        // and so the floor clamp cannot double-count a touch the arc has
-        // already reported.
-        var floorRegistered = false
-        if let mound = arena.moundContact(
+        // The lips are the one soft surface in the arena: a ball that lands
+        // on one is meant to settle and roll down into the mouth, not spring
+        // back off. They never count as a bounce -- they are part of the goal.
+        if let lip = arena.lipContact(
             from: previousPosition,
             to: state.ball.position,
             radius: r
         ) {
-            state.ball.position = mound.position
-            let inwardSpeed = simd_dot(state.ball.velocity, mound.normal)
+            state.ball.position = lip.position
+            let inwardSpeed = simd_dot(state.ball.velocity, lip.normal)
             if inwardSpeed < 0 {
-                state.ball.velocity -= mound.normal * ((1 + 0.94) * inwardSpeed)
+                state.ball.velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
             }
-            // Deliberately no floor contact. The hill is a structure in the
-            // middle of the court, not the ground: a ball driven into it skips
-            // up the slope over several ticks, and charging each of those as a
-            // bounce would end the rally the user wants to see turn into a
-            // toss-up. The corners register because they *are* the floor
-            // curving up at the ends of the court.
+        }
+
+        // The hump and the corner arcs run before the flat clamps so that where
+        // one of them is in play it, not the wall, sets the final position --
+        // and so the floor clamp cannot double-count a touch the arc has
+        // already reported.
+        var floorRegistered = false
+        if let hump = arena.humpContact(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r
+        ) {
+            state.ball.position = hump.position
+            let inwardSpeed = simd_dot(state.ball.velocity, hump.normal)
+            if inwardSpeed < 0 {
+                state.ball.velocity -= hump.normal * ((1 + 0.94) * inwardSpeed)
+            }
+            // Never a floor contact: the hump is a structure hanging from the
+            // roof, not the ground. The corners register because they *are*
+            // the floor curving up at the ends of the court.
         }
 
         if let corner = arena.cornerContact(position: state.ball.position, radius: r) {
@@ -579,7 +592,7 @@ public struct SimulationEngine: Sendable {
         radius: Double,
         postCenterX: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
-        let center = SIMD2(postCenterX, arena.netTopY)
+        let center = SIMD2(postCenterX, arena.netBottomY)
         let combinedRadius = radius + arena.netHalfWidth
         guard let hitTime = sweptCircleTime(
             from: start,
@@ -594,12 +607,12 @@ public struct SimulationEngine: Sendable {
         guard length > 0.000_001 else { return nil }
         normal /= length
         // The cap is hard and neutral: it rebounds, it never scores, and it
-        // favours neither half. A ball landing dead on top has no side to
-        // fall to, so alternate the nudge by rally -- symmetric across a
-        // match, and it keeps the ball from settling on the crown.
-        if abs(normal.x) < 0.02, normal.y > 0 {
+        // favours neither half. A ball tossed dead underneath it has no side
+        // to fall to, so alternate the nudge by rally -- symmetric across a
+        // match, and it keeps the ball from pogoing under the cap.
+        if abs(normal.x) < 0.02, normal.y < 0 {
             let rallyIndex = state.match.score.cyan + state.match.score.orange
-            normal = simd_normalize(SIMD2(rallyIndex.isMultiple(of: 2) ? -0.18 : 0.18, 1))
+            normal = simd_normalize(SIMD2(rallyIndex.isMultiple(of: 2) ? -0.18 : 0.18, -1))
         }
         guard simd_dot(state.ball.velocity, normal) < 0 else { return nil }
         return (center + normal * combinedRadius, normal)
@@ -614,11 +627,10 @@ public struct SimulationEngine: Sendable {
         let limit = arena.netHalfWidth + radius
         let delta = end - start
         let startOffset = start.x - postCenterX
-        // Already inside the slot. That is not a shot at a face -- most often
-        // it is a ball kicked straight up off the hill -- so it is reported
-        // without a crossing and the caller decides what the slab is at that
-        // height: solid post below the sill, open mouth above it.
-        if abs(startOffset) <= limit, start.y - radius <= arena.netTopY {
+        // Already inside the slot. That is not a shot at a face, so it is
+        // reported without a crossing and the caller decides what the slab is
+        // at that height: solid collar above the mouth, open mouth below it.
+        if abs(startOffset) <= limit, start.y + radius >= arena.netBottomY {
             let fromLeft = startOffset <= 0
             let penetration = limit - abs(startOffset)
             let movingTowardNet = fromLeft ? delta.x > 0 : delta.x < 0
@@ -631,7 +643,7 @@ public struct SimulationEngine: Sendable {
             }
         }
         guard abs(delta.x) > 0.000_000_1 else {
-            if abs(end.x - postCenterX) <= limit, end.y - radius <= arena.netTopY {
+            if abs(end.x - postCenterX) <= limit, end.y + radius >= arena.netBottomY {
                 let fromLeft = startOffset < 0
                 return (
                     SIMD2(postCenterX + (fromLeft ? -limit : limit), end.y),
@@ -649,7 +661,7 @@ public struct SimulationEngine: Sendable {
         let t = (boundary - start.x) / delta.x
         guard (0 ... 1).contains(t) else { return nil }
         let hitY = start.y + delta.y * t
-        guard hitY - radius <= arena.netTopY else { return nil }
+        guard hitY + radius >= arena.netBottomY else { return nil }
         return (SIMD2(boundary, hitY), fromLeft, true)
     }
 

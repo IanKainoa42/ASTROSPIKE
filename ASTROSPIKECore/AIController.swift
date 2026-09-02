@@ -109,11 +109,11 @@ public struct AIController: InputSource, Sendable {
         let projectedHomeDistance = (ship.position.x + ship.velocity.x * 1.20) * homeSign
         let crossingDanger = projectedHomeDistance < -(arena.opponentCrossingLimit - 0.12)
         let recovering = recoveryIsUrgent(for: ship)
-        // The net no longer traps anyone -- hulls fly straight through it. What
-        // does trap them is the hill underneath, so the escape check keys off
-        // the crest instead of the crown.
-        let pinnedByNet = ship.position.y < arena.moundCrestY + 0.20
-            && abs(ship.position.x) < arena.moundBaseX
+        // The net never traps anyone -- hulls fly straight through it. What
+        // can pin them is the hump above it, so the escape check keys off the
+        // underside of the hump rather than the net.
+        let pinnedByNet = ship.position.y > arena.humpUndersideY - 0.20
+            && abs(ship.position.x) < arena.humpBaseX
             && ship.position.x * homeSign < 0.20
 
         let elapsed = planTick.map { Double(tick &- $0) * configuration.stepDuration } ?? 0
@@ -180,7 +180,7 @@ public struct AIController: InputSource, Sendable {
             striking = true
         }
         if pinnedByNet {
-            target = SIMD2(homeSign * 0.34, arena.moundCrestY + 0.34)
+            target = SIMD2(homeSign * 0.34, arena.humpUndersideY - 0.34)
             closingVelocity = .zero
         }
         if recovering {
@@ -216,7 +216,17 @@ public struct AIController: InputSource, Sendable {
         // lander pointed at the horizon has no vertical support and is half a
         // second of turning away from being able to save itself.
         let altitudeMargin = min(1, max(0, (ship.position.y - (arena.floorY + 0.05)) / 0.33))
-        let minimumPitch = 0.42 + 0.30 * (1 - altitudeMargin)
+        var minimumPitch = 0.42 + 0.30 * (1 - altitudeMargin)
+        // The goal hangs from the roof, so the run-up is under the ball and
+        // the ship spends its life needing to get low. Inside the cone every
+        // sideways move is also a climb, so when it wants to sink and has the
+        // height to spare, let the nose drop toward the horizon: it slides
+        // across and falls at the same time instead of climbing away from
+        // the ball.
+        let wantsDescent = desiredVelocity.y < ship.velocity.y - 0.05
+        if wantsDescent, altitudeMargin > 0.5 {
+            minimumPitch = 0.22
+        }
         need.y = max(need.y, abs(need.x) * tan(minimumPitch))
         if altitudeMargin < 0.35 {
             need.y = max(need.y, 3.0)
@@ -263,8 +273,8 @@ public struct AIController: InputSource, Sendable {
         ship: ShipState,
         homeSign: Double
     ) -> Plan {
-        // Anchored to the roof, not the net: the net is a portal you fly
-        // through now, so its top is no longer the lid on useful play.
+        // Just under the hump: the goal hangs from the roof, so the useful
+        // part of the court runs right up to the collar.
         let ceiling = arena.ceilingY - 0.275
         let floor = arena.floorY + 0.21
         let radius = state.ball.radius
@@ -295,30 +305,30 @@ public struct AIController: InputSource, Sendable {
             }
             // The net is a portal, not a wall. A rollout that reaches the open
             // mouth is a ball already through and gone, so stop projecting
-            // rather than bouncing it off something that is not there. The cap,
-            // the post below the mouth, and the hill are all still solid, and a
-            // prediction that skips the hill has the ball rolling into a goal
-            // it actually ramps off.
-            if let mound = arena.moundContact(position: position, radius: radius) {
-                position = mound.position
-                let inward = simd_dot(velocity, mound.normal)
+            // rather than bouncing it off something that is not there. The
+            // cap, the collar above the mouth, and the hump are all still
+            // solid. The lips are left out: they only matter to a ball that
+            // is already at the mouth, which is a ball this side has lost.
+            if let hump = arena.humpContact(position: position, radius: radius) {
+                position = hump.position
+                let inward = simd_dot(velocity, hump.normal)
                 if inward < 0 {
-                    velocity -= mound.normal * (1.94 * inward)
+                    velocity -= hump.normal * (1.94 * inward)
                 }
             }
             if abs(position.x) <= arena.netHalfWidth + radius {
-                if position.y >= arena.portalMouthFloorY, position.y - radius <= arena.netTopY {
+                if position.y <= arena.portalMouthTopY, position.y + radius >= arena.netBottomY {
                     break
                 }
-                if position.y < arena.portalMouthFloorY {
-                    // Solid post below the mouth: it shoves the ball back down
-                    // the slope it came up.
+                if position.y > arena.portalMouthTopY {
+                    // Solid collar above the mouth: it shoves the ball back
+                    // out along the slope it came down.
                     let sign: Double = position.x < 0 ? -1 : 1
                     position.x = sign * (arena.netHalfWidth + radius)
                     velocity.x = sign * abs(velocity.x)
-                } else if position.y - radius <= arena.netTopY + radius {
-                    position.y = arena.netTopY + radius * 2
-                    velocity.y = abs(velocity.y)
+                } else if position.y + radius >= arena.netBottomY - radius {
+                    position.y = arena.netBottomY - radius * 2
+                    velocity.y = -abs(velocity.y)
                 }
             }
             guard position.x * homeSign > 0.06,
@@ -326,10 +336,13 @@ public struct AIController: InputSource, Sendable {
                   position.y >= floor else { continue }
 
             let shot = shotDirection(from: position, homeSign: homeSign)
+            // Every shot is a lift now, so the run-up sits under the ball and
+            // a low ball has its run-up on the floor. That is fine -- the
+            // ground is survivable and `clamped` lifts the run-up off it --
+            // as long as the contact itself is not down in the deck.
+            let contact = position - shot * Self.strikeStandoff
+            guard contact.y >= arena.floorY + 0.10 else { continue }
             let runup = position - shot * (Self.strikeStandoff + Self.strikeRunup)
-            // The ground is survivable now, so the only thing a low run-up costs
-            // is manoeuvring room. Keep a little, and play the rest of the court.
-            guard runup.y >= arena.floorY + 0.13 else { continue }
 
             let delay = Double(step) * Self.predictionStep
             let candidate = Plan(hasIntercept: true, point: position, delay: delay, shot: shot)
@@ -352,26 +365,20 @@ public struct AIController: InputSource, Sendable {
 
     /// Ready position while the ball is on the far side of the net.
     private func guardPost(homeSign: Double) -> SIMD2<Double> {
-        SIMD2(homeSign * 0.42, arena.moundCrestY + 0.34)
+        SIMD2(homeSign * 0.42, arena.floorY + 0.50)
     }
 
-    /// Direction to send the ball from `point`: across the net, lifted enough to
-    /// clear it from however little height the strike has to work with.
+    /// Direction to send the ball from `point`: at the mouth of the goal on
+    /// this side, which hangs from the roof, so every shot is a lift. The
+    /// aim sits a little above centre because the ball drops on the way.
     private func shotDirection(from point: SIMD2<Double>, homeSign: Double) -> SIMD2<Double> {
-        let aim = SIMD2(-homeSign * 0.60, arena.floorY + 0.18)
+        let mouthCenterY = (arena.portalMouthTopY + arena.netBottomY) / 2
+        let aim = SIMD2(homeSign * arena.netHalfWidth, mouthCenterY + 0.03)
         var direction = simd_normalize(aim - point)
+        // Never straight up: a shot with no run at the face pogoes under the
+        // cap instead of going in.
         if direction.x * homeSign > -0.35 {
             direction = simd_normalize(SIMD2(-homeSign * 0.35, direction.y))
-        }
-        // Clearance is measured over the hill in the middle -- the surface a
-        // shot actually has to rise above -- rather than over the net cap.
-        let headroom = min(1, max(0, (point.y - (arena.moundCrestY + 0.10)) / 0.55))
-        let minimumLift = 0.62 - 0.48 * headroom
-        if direction.y < minimumLift {
-            direction = SIMD2(
-                -homeSign * (1 - minimumLift * minimumLift).squareRoot(),
-                minimumLift
-            )
         }
         return direction
     }
@@ -379,7 +386,7 @@ public struct AIController: InputSource, Sendable {
     /// Keeps a flight target on this side of the net and clear of the hazards.
     private func clamped(_ point: SIMD2<Double>, homeSign: Double) -> SIMD2<Double> {
         var result = point
-        let minimumX = result.y < arena.moundCrestY + 0.30 ? 0.12 : 0.03
+        let minimumX = result.y > arena.humpUndersideY - 0.30 ? 0.12 : 0.03
         if result.x * homeSign < minimumX {
             result.x = homeSign * minimumX
         }

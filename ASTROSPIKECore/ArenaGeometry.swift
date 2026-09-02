@@ -3,7 +3,7 @@ import simd
 
 public struct BallState: Codable, Equatable, Sendable {
     /// The radius every ball is created with. The arena is dimensioned against
-    /// it -- the portal sill in particular -- so it belongs here rather than
+    /// it -- the portal collar in particular -- so it belongs here rather than
     /// buried as a literal in the initialiser.
     public static let nominalRadius = 0.038
 
@@ -28,36 +28,51 @@ public struct ArenaGeometry: Equatable, Sendable {
     public var ceilingY: Double
     /// Half-thickness of the net slab.
     public var netHalfWidth: Double
-    public var netTopY: Double
+    /// Where the slab ends: the bottom of the mouth, and the centre of the
+    /// rounded cap that closes it underneath.
+    public var netBottomY: Double
     /// Corner arcs are deliberately elliptical, not quarter circles: wide and
-    /// shallow, so a stray ball is nudged back toward the net rather than
+    /// shallow, so a stray ball is nudged back toward the middle rather than
     /// spun around a bowl. Nobody plays the corners, so the payoff is a less
     /// predictable rebound rather than a new place to camp.
     ///
-    /// The same arc is mirrored into the middle as the hill the net stands on,
-    /// so tuning one tunes both.
+    /// The same arc is mirrored into the middle of the roof as the hump the
+    /// net hangs from, so tuning one tunes both.
     public var cornerRadiusX: Double
     public var cornerRadiusY: Double
+    /// How far the lip under each face reaches out from the slab.
+    public var lipLength: Double
+    /// How much higher the outer end of each lip sits than its root. That
+    /// tilt is the whole point of the lip: a ball that lands on it rolls
+    /// back down into the mouth instead of sitting there.
+    public var lipRise: Double
 
     public init(
         halfWidth: Double = 0.96,
         floorY: Double = -0.64,
         ceilingY: Double = 0.64,
         netHalfWidth: Double = 0.018,
-        // Sits one portal-mouth above the crest of the hill (see
-        // `portalMouthFloorY`), which is what keeps the goal the same size it
-        // has always been now that the bottom of the net is buried.
-        netTopY: Double = -0.184,
+        // Hangs one collar below the underside of the hump (see
+        // `portalMouthTopY`), which keeps the goal the same size it has
+        // always been now that the top of the net is buried in the roof.
+        netBottomY: Double = 0.184,
         cornerRadiusX: Double = 0.30,
-        cornerRadiusY: Double = 0.16
+        cornerRadiusY: Double = 0.16,
+        // Three ball radii of ledge: big enough to catch a shot that arrives
+        // a little under the mouth, small enough that it is still the mouth,
+        // not the lip, that you are shooting at.
+        lipLength: Double = 0.11,
+        lipRise: Double = 0.035
     ) {
         self.halfWidth = halfWidth
         self.floorY = floorY
         self.ceilingY = ceilingY
         self.netHalfWidth = netHalfWidth
-        self.netTopY = netTopY
+        self.netBottomY = netBottomY
         self.cornerRadiusX = cornerRadiusX
         self.cornerRadiusY = cornerRadiusY
+        self.lipLength = lipLength
+        self.lipRise = lipRise
     }
 
     public static let standard = ArenaGeometry()
@@ -67,81 +82,153 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// Where the flat floor and ceiling end and the corner arc begins.
     public var cornerTangentX: Double { halfWidth - cornerRadiusX }
 
-    // MARK: - The hill under the net
+    // MARK: - The hump the net hangs from
 
-    /// The corner fillet, mirrored inward with the net face standing in for the
-    /// side wall: horizontal where it meets the floor, vertical where it meets
-    /// the post. A ball driven along the floor into the middle therefore ramps
-    /// and pops up instead of rolling into the goal.
-    public var moundBaseX: Double { netHalfWidth + cornerRadiusX }
+    /// The corner fillet, mirrored inward and hung from the roof with the net
+    /// face standing in for the side wall: horizontal where it meets the
+    /// ceiling, vertical where it meets the slab. A ball riding the roof into
+    /// the middle is therefore turned down and away instead of sliding along
+    /// the ceiling into the goal.
+    public var humpBaseX: Double { netHalfWidth + cornerRadiusX }
 
-    /// Top of the hill, flat across the width of the post.
-    public var moundCrestY: Double { floorY + cornerRadiusY }
+    /// The underside of the hump: the lowest it reaches, flat across the
+    /// width of the slab.
+    public var humpUndersideY: Double { ceilingY - cornerRadiusY }
 
-    /// The face is a portal only above this line. Below it the slab is a solid
-    /// post standing on the crest, because the crest is tangent to the face --
-    /// without the band, a ball riding up the last of the slope would be
-    /// touching the portal at the exact instant it is touching the hill.
-    /// One ball diameter of sill, so anything that scores is clear of the hill.
-    public var portalMouthFloorY: Double { moundCrestY + BallState.nominalRadius * 2 }
+    /// The face is a portal only below this line. Above it the slab is a
+    /// solid collar hanging from the hump, because the underside is tangent
+    /// to the face -- without the band, a ball riding down the last of the
+    /// slope would be touching the portal at the exact instant it is touching
+    /// the hump. One ball diameter of collar, so anything that scores is
+    /// clear of the hump.
+    public var portalMouthTopY: Double { humpUndersideY - BallState.nominalRadius * 2 }
 
     /// The net *is* the goal, and it is a portal rather than a wall: a ball
     /// driven into the open part of either face passes through and is gone.
-    /// The rounded cap on top still rebounds, so clipping the net is a miss.
+    /// The rounded cap underneath still rebounds, so clipping the net from
+    /// below is a miss.
     ///
-    /// One slab, dead centre, standing on the hill. Its mouth is the target
-    /// both sides shoot at -- from their own half, flat and low, because a
-    /// ball dropped from above lands on the cap instead.
-    public var portalFaceHeight: Double { netTopY - portalMouthFloorY }
+    /// One slab, dead centre, hanging from the roof. Its mouth is the target
+    /// both sides shoot at -- lifted and driven on purpose, because it is the
+    /// one place in the arena a ball never wanders on its own.
+    public var portalFaceHeight: Double { portalMouthTopY - netBottomY }
 
-    /// How many segments the quarter arc is cut into.
-    public static let moundArcSegments = 16
+    // MARK: - The lips
 
-    /// Evenly spaced (sin, cos) from the face (theta = pi/2) down to the floor
-    /// (theta = 0). A table rather than live trig: the hill is tested several
-    /// times per body per tick, and the renderer walks the same samples, so the
-    /// drawn slope cannot drift from the one balls bounce off.
-    private static let arcUnit: [SIMD2<Double>] = (0 ... moundArcSegments).map { step in
-        let theta = Double(moundArcSegments - step) / Double(moundArcSegments) * (.pi / 2)
-        return SIMD2(sin(theta), cos(theta))
+    /// Where the lip on the `sign` side meets the slab.
+    public func lipRoot(sign: Double) -> SIMD2<Double> {
+        SIMD2(sign * netHalfWidth, netBottomY)
     }
 
-    public var moundSampleCount: Int { Self.arcUnit.count }
-
-    /// Sample `index` of the right-hand slope, running crest to base.
-    public func moundSurfacePoint(_ index: Int) -> SIMD2<Double> {
-        let unit = Self.arcUnit[index]
-        return SIMD2(moundBaseX - cornerRadiusX * unit.x, moundCrestY - cornerRadiusY * unit.y)
+    /// The outer end of the lip on the `sign` side, raised so the ledge
+    /// slopes down into the mouth.
+    public func lipTip(sign: Double) -> SIMD2<Double> {
+        SIMD2(sign * (netHalfWidth + lipLength), netBottomY + lipRise)
     }
 
-    /// The right-hand profile including the flat crest, for drawing.
-    public var moundProfile: [SIMD2<Double>] {
-        [SIMD2(0, moundCrestY)] + (0 ..< moundSampleCount).map(moundSurfacePoint)
-    }
-
-    /// Pushes a body of `radius` off the hill. Tested against the sampled
-    /// polyline rather than the ellipse itself: the shrink-the-semi-axes trick
-    /// the corners use is only valid from the inside of a curve. Grown by a
-    /// ball radius, this arc would first touch a floor-rolling ball at x = 0.05
-    /// -- a wall in the middle of the court, not a ramp.
-    public func moundContact(
+    /// Pushes a ball of `radius` off whichever lip it is touching. The lip is
+    /// a line rather than a slab, so the ball can be on either side of it: on
+    /// top, where it rolls into the mouth, or underneath, where it is simply
+    /// in the way. Both sides push straight away from the ledge.
+    public func lipContact(
         position: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
         let mirrored = SIMD2(abs(position.x), position.y)
-        guard mirrored.x <= moundBaseX + radius, mirrored.y <= moundCrestY + radius else {
+        let root = lipRoot(sign: 1)
+        let tip = lipTip(sign: 1)
+        guard mirrored.x <= tip.x + radius,
+              mirrored.y >= root.y - radius,
+              mirrored.y <= tip.y + radius else { return nil }
+
+        let edge = tip - root
+        let t = min(1, max(0, simd_dot(mirrored - root, edge) / simd_length_squared(edge)))
+        let closest = root + edge * t
+        let away = mirrored - closest
+        let distance = simd_length(away)
+        guard distance < radius else { return nil }
+
+        // A ball centred exactly on the line has no side; call it the top,
+        // which is where a ball that got that close was heading.
+        var normal = distance > 1e-9
+            ? away / distance
+            : simd_normalize(SIMD2(-edge.y, edge.x))
+        var contact = closest + normal * radius
+        if position.x < 0 {
+            contact.x = -contact.x
+            normal.x = -normal.x
+        }
+        return (contact, normal)
+    }
+
+    /// Swept version of `lipContact`, for the same reason the hump has one:
+    /// the lip is thin, and a driven ball crosses its own diameter in a tick.
+    public func lipContact(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let travel = simd_distance(start, end)
+        let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
+        for step in 1 ... steps {
+            let sample = start + (end - start) * (Double(step) / Double(steps))
+            if let contact = lipContact(position: sample, radius: radius) {
+                return contact
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Hump surface
+
+    /// How many segments the quarter arc is cut into.
+    public static let humpArcSegments = 16
+
+    /// Evenly spaced (sin, cos) from the face (theta = pi/2) up to the roof
+    /// (theta = 0). A table rather than live trig: the hump is tested several
+    /// times per body per tick, and the renderer walks the same samples, so the
+    /// drawn slope cannot drift from the one balls bounce off.
+    private static let arcUnit: [SIMD2<Double>] = (0 ... humpArcSegments).map { step in
+        let theta = Double(humpArcSegments - step) / Double(humpArcSegments) * (.pi / 2)
+        return SIMD2(sin(theta), cos(theta))
+    }
+
+    public var humpSampleCount: Int { Self.arcUnit.count }
+
+    /// Sample `index` of the right-hand slope, running underside to roof.
+    public func humpSurfacePoint(_ index: Int) -> SIMD2<Double> {
+        let unit = Self.arcUnit[index]
+        return SIMD2(humpBaseX - cornerRadiusX * unit.x, humpUndersideY + cornerRadiusY * unit.y)
+    }
+
+    /// The right-hand profile including the flat underside, for drawing.
+    public var humpProfile: [SIMD2<Double>] {
+        [SIMD2(0, humpUndersideY)] + (0 ..< humpSampleCount).map(humpSurfacePoint)
+    }
+
+    /// Pushes a body of `radius` off the hump. Tested against the sampled
+    /// polyline rather than the ellipse itself: the shrink-the-semi-axes trick
+    /// the corners use is only valid from the inside of a curve. Grown by a
+    /// ball radius, this arc would first touch a roof-riding ball at x = 0.05
+    /// -- a wall in the middle of the court, not a ramp.
+    public func humpContact(
+        position: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let mirrored = SIMD2(abs(position.x), position.y)
+        guard mirrored.x <= humpBaseX + radius, mirrored.y >= humpUndersideY - radius else {
             return nil
         }
 
-        var closest = SIMD2(0.0, moundCrestY)
-        var closestNormal = SIMD2(0.0, 1.0)
+        var closest = SIMD2(0.0, humpUndersideY)
+        var closestNormal = SIMD2(0.0, -1.0)
         var closestDistanceSquared = Double.greatestFiniteMagnitude
-        // The crest is flat across the post, so the walk starts at the middle
-        // of the plateau: without it the 0.036-wide slot between the two faces
-        // is a notch a hull can drop into.
-        var previous = SIMD2(0.0, moundCrestY)
-        for index in 0 ..< moundSampleCount {
-            let current = moundSurfacePoint(index)
+        // The underside is flat across the slab, so the walk starts at the
+        // middle of it: without that the 0.036-wide slot between the two
+        // faces is a notch a hull can wedge into.
+        var previous = SIMD2(0.0, humpUndersideY)
+        for index in 0 ..< humpSampleCount {
+            let current = humpSurfacePoint(index)
             let edge = current - previous
             let lengthSquared = simd_length_squared(edge)
             var point = previous
@@ -153,17 +240,17 @@ public struct ArenaGeometry: Equatable, Sendable {
             if distanceSquared < closestDistanceSquared {
                 closestDistanceSquared = distanceSquared
                 closest = point
-                // The profile runs crest to base, so each segment's left-hand
-                // normal points up and out of the hill.
+                // The profile runs underside to roof, so each segment's
+                // right-hand normal points down and out of the hump.
                 closestNormal = simd_normalize(
-                    SIMD2(previous.y - current.y, current.x - previous.x)
+                    SIMD2(current.y - previous.y, previous.x - current.x)
                 )
             }
             previous = current
         }
 
         var normal = closestNormal
-        if !isUnderMound(mirrored) {
+        if !isInsideHump(mirrored) {
             guard closestDistanceSquared < radius * radius else { return nil }
             let away = mirrored - closest
             let length = simd_length(away)
@@ -182,10 +269,10 @@ public struct ArenaGeometry: Equatable, Sendable {
 
     /// Steps along the motion in radius-sized slices. Static tests are enough
     /// for the walls and the corner arcs -- overshoot a concave boundary and
-    /// you are still outside it -- but the hill is convex, and a driven ball
+    /// you are still outside it -- but the hump is convex, and a driven ball
     /// covers three or four of its own radii a tick, so left unswept it simply
-    /// teleports over the crest.
-    public func moundContact(
+    /// teleports through.
+    public func humpContact(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
         radius: Double
@@ -194,20 +281,20 @@ public struct ArenaGeometry: Equatable, Sendable {
         let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
         for step in 1 ... steps {
             let sample = start + (end - start) * (Double(step) / Double(steps))
-            if let contact = moundContact(position: sample, radius: radius) {
+            if let contact = humpContact(position: sample, radius: radius) {
                 return contact
             }
         }
         return nil
     }
 
-    private func isUnderMound(_ mirrored: SIMD2<Double>) -> Bool {
-        guard mirrored.y < moundCrestY else { return false }
+    private func isInsideHump(_ mirrored: SIMD2<Double>) -> Bool {
+        guard mirrored.y > humpUndersideY else { return false }
         if mirrored.x <= netHalfWidth { return true }
-        guard mirrored.x < moundBaseX else { return false }
+        guard mirrored.x < humpBaseX else { return false }
         let unit = SIMD2(
-            (mirrored.x - moundBaseX) / cornerRadiusX,
-            (mirrored.y - moundCrestY) / cornerRadiusY
+            (mirrored.x - humpBaseX) / cornerRadiusX,
+            (mirrored.y - humpUndersideY) / cornerRadiusY
         )
         return simd_length_squared(unit) > 1
     }
