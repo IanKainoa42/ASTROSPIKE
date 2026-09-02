@@ -11,7 +11,8 @@ public enum WirePayload: Codable, Equatable, Sendable {
 }
 
 public struct WireEnvelope: Codable, Equatable, Sendable {
-    public static let currentVersion: UInt16 = 3
+    // 4: MatchRuleState gained shipTouches and PointReason gained touchLimit.
+    public static let currentVersion: UInt16 = 4
 
     public var version: UInt16
     public var sequence: UInt64
@@ -66,6 +67,40 @@ public struct RemoteInputBuffer: Sendable {
         guard latest == nil || input.tick > latest!.tick else { return false }
         latest = input
         return true
+    }
+}
+
+public struct AuthoritativeSnapshotGate: Sendable {
+    private var latestTick: UInt64?
+
+    public init() {}
+
+    @discardableResult
+    public mutating func accept(tick: UInt64) -> Bool {
+        guard latestTick == nil || tick > latestTick! else { return false }
+        latestTick = tick
+        return true
+    }
+
+    public mutating func reset(to tick: UInt64? = nil) {
+        latestTick = tick
+    }
+}
+
+public struct MonotonicSequenceGate: Sendable {
+    private var latestSequence: UInt64?
+
+    public init() {}
+
+    @discardableResult
+    public mutating func accept(sequence: UInt64) -> Bool {
+        guard latestSequence == nil || sequence > latestSequence! else { return false }
+        latestSequence = sequence
+        return true
+    }
+
+    public mutating func reset() {
+        latestSequence = nil
     }
 }
 

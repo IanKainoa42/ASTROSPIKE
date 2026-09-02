@@ -50,3 +50,56 @@ public struct OnlineSessionStateMachine: Equatable, Sendable {
         return [.requestFullResync, .startCountdown]
     }
 }
+
+public enum OnlineMatchLifecyclePhase: Equatable, Sendable {
+    case idle
+    case configuring
+    case active
+    case reconnecting
+    case terminal
+}
+
+public struct OnlineMatchLifecycle: Equatable, Sendable {
+    public private(set) var phase: OnlineMatchLifecyclePhase = .idle
+
+    public var acceptsGameplayData: Bool {
+        phase == .active || phase == .reconnecting
+    }
+
+    public var acceptsNetworkMessages: Bool {
+        phase == .configuring || phase == .active || phase == .reconnecting
+    }
+
+    public init() {}
+
+    public mutating func beginConfiguration() {
+        phase = .configuring
+    }
+
+    public mutating func beginMatch() {
+        phase = .active
+    }
+
+    @discardableResult
+    public mutating func beginReconnect() -> Bool {
+        guard phase == .active else { return false }
+        phase = .reconnecting
+        return true
+    }
+
+    @discardableResult
+    public mutating func acceptConnection() -> Bool {
+        if phase == .configuring { return true }
+        guard phase == .active || phase == .reconnecting else { return false }
+        phase = .active
+        return true
+    }
+
+    public mutating func finish() {
+        phase = .terminal
+    }
+
+    public mutating func reset() {
+        phase = .idle
+    }
+}

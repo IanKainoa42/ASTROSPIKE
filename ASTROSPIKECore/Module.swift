@@ -105,19 +105,25 @@ public struct WorldState: Codable, Equatable, Sendable {
     public var ball: BallState
     public var match: MatchRuleState
     public var serveTicksRemaining: UInt64
+    /// Which way the next serve drifts: -1 toward cyan, +1 toward orange. The
+    /// ball reappears dead centre, so it needs somewhere to go -- straight down
+    /// from there lands in a void and hands out a free point.
+    public var serveDriftSign: Double
 
     public init(
         tick: UInt64 = 0,
         ships: [Team: ShipState],
         ball: BallState = BallState(position: SIMD2(0, 0.60)),
         match: MatchRuleState = MatchRuleState(),
-        serveTicksRemaining: UInt64 = 0
+        serveTicksRemaining: UInt64 = 0,
+        serveDriftSign: Double = -1
     ) {
         self.tick = tick
         self.ships = ships
         self.ball = ball
         self.match = match
         self.serveTicksRemaining = serveTicksRemaining
+        self.serveDriftSign = serveDriftSign
     }
 }
 
@@ -138,6 +144,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// Drag applied past the marker, ramping in with depth.
     public var crossingDrag: Double
     public var allowedFloorBounces: Int
+    public var allowedShipTouches: Int
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -147,13 +154,14 @@ public struct SimulationConfiguration: Equatable, Sendable {
         thrustRampRate: Double = 0,
         torqueAcceleration: Double = 3,
         ballGravityMultiplier: Double = 0.72,
-        ballDropHeight: Double = 0.60,
+        ballDropHeight: Double = 0.50,
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
         minimumBallSeparationSpeed: Double = 0.45,
         crossingPushBack: Double = 30,
         crossingDrag: Double = 5.0,
-        allowedFloorBounces: Int = 2
+        allowedFloorBounces: Int = 1,
+        allowedShipTouches: Int = 3
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
@@ -169,6 +177,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.crossingPushBack = max(0, crossingPushBack)
         self.crossingDrag = max(0, crossingDrag)
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
+        self.allowedShipTouches = min(6, max(1, allowedShipTouches))
     }
 }
 
@@ -190,32 +199,35 @@ public struct SimulationEngine: Sendable {
         self.arena = arena
         self.rules = MatchRules(
             state: state.match,
-            allowedFloorBounces: configuration.allowedFloorBounces
+            allowedFloorBounces: configuration.allowedFloorBounces,
+            allowedShipTouches: configuration.allowedShipTouches
         )
     }
 
     public static func testing() -> SimulationEngine {
         SimulationEngine(state: WorldState(ships: [
-            .cyan: ShipState(position: SIMD2(-0.55, -0.55), angle: .pi / 2),
-            .orange: ShipState(position: SIMD2(0.55, -0.55), angle: .pi / 2),
+            .cyan: ShipState(position: SIMD2(-0.55, -0.45), angle: .pi / 2),
+            .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
         ]))
     }
 
     public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
         self.configuration = configuration
         rules.updateAllowedFloorBounces(configuration.allowedFloorBounces)
+        rules.updateAllowedShipTouches(configuration.allowedShipTouches)
     }
 
     public mutating func prepareNextRally(mirrored: Bool) {
         guard state.match.phase != .finished else { return }
         let direction = mirrored ? 1.0 : -1.0
         state.ships = [
-            .cyan: ShipState(position: SIMD2(0.55 * direction, -0.55), angle: .pi / 2),
-            .orange: ShipState(position: SIMD2(-0.55 * direction, -0.55), angle: .pi / 2),
+            .cyan: ShipState(position: SIMD2(0.55 * direction, -0.45), angle: .pi / 2),
+            .orange: ShipState(position: SIMD2(-0.55 * direction, -0.45), angle: .pi / 2),
         ]
+        state.serveDriftSign = mirrored ? 1 : -1
         state.ball = BallState(
             position: SIMD2(0, configuration.ballDropHeight),
-            velocity: SIMD2(0, -configuration.ballDropSpeed)
+            velocity: serveVelocity
         )
         state.serveTicksRemaining = 0
         rules.prepareNextRally()
@@ -311,15 +323,23 @@ public struct SimulationEngine: Sendable {
         state.tick += 1
     }
 
+    /// Enough sideways speed that the ball is past the outer post before it
+    /// falls to net height, whatever it does after that.
+    private var serveVelocity: SIMD2<Double> {
+        SIMD2(state.serveDriftSign * 0.45, -configuration.ballDropSpeed)
+    }
+
     private mutating func stageServe(on team: Team?) {
-        let x: Double
+        // The ball reappears dead centre, above the solid post, and drifts out
+        // to the side that just conceded -- far enough to clear the voids, so
+        // an untouched serve lands in play instead of scoring by itself.
         switch team {
-        case .cyan: x = -arena.halfWidth / 2
-        case .orange: x = arena.halfWidth / 2
-        case nil: x = 0
+        case .cyan: state.serveDriftSign = -1
+        case .orange: state.serveDriftSign = 1
+        case nil: state.serveDriftSign = -state.serveDriftSign
         }
         state.ball = BallState(
-            position: SIMD2(x, configuration.ballDropHeight),
+            position: SIMD2(0, configuration.ballDropHeight),
             velocity: .zero,
             radius: state.ball.radius
         )
@@ -336,7 +356,7 @@ public struct SimulationEngine: Sendable {
         }
         guard state.serveTicksRemaining == 0 else { return }
         respawnDestroyedShips()
-        state.ball.velocity = SIMD2(0, -configuration.ballDropSpeed)
+        state.ball.velocity = serveVelocity
         rules.beginNextRally()
         state.match = rules.state
     }
@@ -346,7 +366,7 @@ public struct SimulationEngine: Sendable {
             guard let destroyedShip = state.ships[team], destroyedShip.isDestroyed else { continue }
             let homeSide = destroyedShip.homeSide
             state.ships[team] = ShipState(
-                position: SIMD2(homeSide == .cyan ? -0.55 : 0.55, -0.55),
+                position: SIMD2(homeSide == .cyan ? -0.55 : 0.55, -0.45),
                 angle: .pi / 2,
                 homeSide: homeSide
             )
@@ -368,7 +388,7 @@ public struct SimulationEngine: Sendable {
             from: relativeStart,
             to: relativeEnd,
             center: .zero,
-            radius: 0.13
+            radius: 0.096
         ) else { return }
 
         let impactSpeed = simd_length(cyan.velocity - orange.velocity)
@@ -394,12 +414,15 @@ public struct SimulationEngine: Sendable {
         from previousPosition: SIMD2<Double>,
         effects: inout [SimulationEvent]
     ) {
-        let radius = 0.065
+        let radius = 0.048
 
+        // The net is a portal for the ball only. A hull hits it like a wall,
+        // so the low route through the middle stays closed exactly as it was.
         if let netContact = sweptNetContact(
             from: previousPosition,
             to: ship.position,
-            radius: radius
+            radius: radius,
+            postCenterX: 0
         ) {
             ship.position = netContact.position
             let inwardSpeed = simd_dot(ship.velocity, netContact.normal)
@@ -410,6 +433,14 @@ public struct SimulationEngine: Sendable {
                 position: ship.position,
                 intensity: abs(inwardSpeed)
             ))
+        }
+
+        if let corner = arena.cornerContact(position: ship.position, radius: radius) {
+            ship.position = corner.position
+            let inwardSpeed = simd_dot(ship.velocity, corner.normal)
+            if inwardSpeed < 0 {
+                ship.velocity -= corner.normal * ((1 + 0.3) * inwardSpeed)
+            }
         }
 
         if ship.position.y - radius <= arena.floorY {
@@ -433,9 +464,10 @@ public struct SimulationEngine: Sendable {
     private func sweptNetContact(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
-        radius: Double
+        radius: Double,
+        postCenterX: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
-        let capCenter = SIMD2(0.0, arena.netTopY)
+        let capCenter = SIMD2(postCenterX, arena.netTopY)
         let combinedRadius = radius + arena.netHalfWidth
         let capHitTime = sweptCircleTime(
             from: start,
@@ -449,14 +481,19 @@ public struct SimulationEngine: Sendable {
             var normal = contactCenter - capCenter
             let length = simd_length(normal)
             if length <= 0.000_001 {
-                normal = SIMD2(start.x <= 0 ? -1 : 1, 0)
+                normal = SIMD2(start.x <= postCenterX ? -1 : 1, 0)
             } else {
                 normal /= length
             }
             return (capCenter + normal * combinedRadius, normal)
         }
 
-        guard let bodyHit = sweptNetHit(from: start, to: end, radius: radius) else {
+        guard let bodyHit = sweptNetHit(
+            from: start,
+            to: end,
+            radius: radius,
+            postCenterX: postCenterX
+        ) else {
             return nil
         }
         let normal = SIMD2(bodyHit.fromLeft ? -1.0 : 1.0, 0)
@@ -467,35 +504,63 @@ public struct SimulationEngine: Sendable {
         previousPosition: SIMD2<Double>,
         contacts: inout [RuleContact]
     ) {
-        if let defending = arena.goalDefender(for: state.ball) {
-            contacts.append(.ballEnteredGoal(defending: defending))
-            return
-        }
-
         let r = state.ball.radius
+        var struckNet = false
+        // Cap first: the crown of the net is hard and neutral, so clipping the
+        // top is a rebound rather than a score. Only the two faces below it are
+        // the portal, and a ball that reaches one is gone -- whoever drove it
+        // in takes the point.
         if let capHit = sweptNetCapHit(
             from: previousPosition,
             to: state.ball.position,
-            radius: r
+            radius: r,
+            postCenterX: 0
         ) {
             state.ball.position = capHit.position
             let inwardSpeed = simd_dot(state.ball.velocity, capHit.normal)
             if inwardSpeed < 0 {
-                state.ball.velocity -= capHit.normal * ((1 + 0.94) * inwardSpeed)
+                state.ball.velocity -= capHit.normal * (2 * inwardSpeed)
             }
-        } else if let netHit = sweptNetHit(from: previousPosition, to: state.ball.position, radius: r) {
+            struckNet = true
+        } else if let netHit = sweptNetHit(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r,
+            postCenterX: 0
+        ) {
             state.ball.position = netHit.position
-            state.ball.velocity.x = netHit.fromLeft
-                ? -abs(state.ball.velocity.x) * 0.94
-                : abs(state.ball.velocity.x) * 0.94
-        } else if previousPosition.x.sign != state.ball.position.x.sign {
+            contacts.append(.ballEnteredGoal(
+                defending: arena.portalScorer(enteredFromLeft: netHit.fromLeft).opponent
+            ))
+            return
+        }
+
+        if !struckNet, previousPosition.x.sign != state.ball.position.x.sign {
             contacts.append(.ballCrossedCenter(into: state.ball.position.x < 0 ? .cyan : .orange))
+        }
+
+        // The arc runs first so that in a corner it, not the flat wall, sets the
+        // final position -- and so the floor clamp below cannot double-count a
+        // touch the arc has already reported.
+        var floorRegistered = false
+        if let corner = arena.cornerContact(position: state.ball.position, radius: r) {
+            state.ball.position = corner.position
+            let inwardSpeed = simd_dot(state.ball.velocity, corner.normal)
+            if inwardSpeed < 0 {
+                state.ball.velocity -= corner.normal * ((1 + 0.94) * inwardSpeed)
+            }
+            if corner.normal.y > 0.5 {
+                floorRegistered = true
+                contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
+            }
         }
 
         if state.ball.position.y - r <= arena.floorY {
             state.ball.position.y = arena.floorY + r
             state.ball.velocity.y = abs(state.ball.velocity.y) * 0.90
-            contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
+            if !floorRegistered {
+                contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
+            }
         }
         if state.ball.position.y + r >= arena.ceilingY {
             state.ball.position.y = arena.ceilingY - r
@@ -514,9 +579,10 @@ public struct SimulationEngine: Sendable {
     private func sweptNetCapHit(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
-        radius: Double
+        radius: Double,
+        postCenterX: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
-        let center = SIMD2(0.0, arena.netTopY)
+        let center = SIMD2(postCenterX, arena.netTopY)
         let combinedRadius = radius + arena.netHalfWidth
         guard let hitTime = sweptCircleTime(
             from: start,
@@ -530,6 +596,10 @@ public struct SimulationEngine: Sendable {
         let length = simd_length(normal)
         guard length > 0.000_001 else { return nil }
         normal /= length
+        // The cap is hard and neutral: it rebounds, it never scores, and it
+        // favours neither half. A ball landing dead on top has no side to
+        // fall to, so alternate the nudge by rally -- symmetric across a
+        // match, and it keeps the ball from settling on the crown.
         if abs(normal.x) < 0.02, normal.y > 0 {
             let rallyIndex = state.match.score.cyan + state.match.score.orange
             normal = simd_normalize(SIMD2(rallyIndex.isMultiple(of: 2) ? -0.18 : 0.18, 1))
@@ -541,27 +611,30 @@ public struct SimulationEngine: Sendable {
     private func sweptNetHit(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
-        radius: Double
+        radius: Double,
+        postCenterX: Double
     ) -> (position: SIMD2<Double>, fromLeft: Bool)? {
         let limit = arena.netHalfWidth + radius
         let delta = end - start
-        if abs(start.x) <= limit, start.y - radius <= arena.netTopY {
-            let fromLeft = start.x <= 0
-            let penetration = limit - abs(start.x)
+        let startOffset = start.x - postCenterX
+        if abs(startOffset) <= limit, start.y - radius <= arena.netTopY {
+            let fromLeft = startOffset <= 0
+            let penetration = limit - abs(startOffset)
             let movingTowardNet = fromLeft ? delta.x > 0 : delta.x < 0
             if penetration > 0.000_000_1 || movingTowardNet {
-                return (SIMD2(fromLeft ? -limit : limit, start.y), fromLeft)
+                return (SIMD2(postCenterX + (fromLeft ? -limit : limit), start.y), fromLeft)
             }
         }
         guard abs(delta.x) > 0.000_000_1 else {
-            if abs(end.x) <= limit, end.y - radius <= arena.netTopY {
-                return (SIMD2(start.x < 0 ? -limit : limit, end.y), start.x < 0)
+            if abs(end.x - postCenterX) <= limit, end.y - radius <= arena.netTopY {
+                let fromLeft = startOffset < 0
+                return (SIMD2(postCenterX + (fromLeft ? -limit : limit), end.y), fromLeft)
             }
             return nil
         }
 
-        let fromLeft = start.x < 0
-        let boundary = fromLeft ? -limit : limit
+        let fromLeft = startOffset < 0
+        let boundary = postCenterX + (fromLeft ? -limit : limit)
         let crossed = fromLeft ? end.x >= boundary : end.x <= boundary
         guard crossed else { return nil }
         let t = (boundary - start.x) / delta.x
@@ -591,19 +664,19 @@ public struct SimulationEngine: Sendable {
             let axis = SIMD2(cos(ship.angle), sin(ship.angle))
             let fixtures = [
                 Fixture(
-                    previousCenter: previousShipPosition - axis * 0.045,
-                    center: ship.position - axis * 0.045,
-                    radius: 0.048
+                    previousCenter: previousShipPosition - axis * 0.033,
+                    center: ship.position - axis * 0.033,
+                    radius: 0.035
                 ),
                 Fixture(
                     previousCenter: previousShipPosition,
                     center: ship.position,
-                    radius: 0.055
+                    radius: 0.041
                 ),
                 Fixture(
-                    previousCenter: previousShipPosition + axis * 0.060,
-                    center: ship.position + axis * 0.060,
-                    radius: 0.035
+                    previousCenter: previousShipPosition + axis * 0.044,
+                    center: ship.position + axis * 0.044,
+                    radius: 0.026
                 ),
             ]
             for fixture in fixtures {

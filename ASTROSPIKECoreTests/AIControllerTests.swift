@@ -211,8 +211,16 @@ struct AIControllerTests {
                 difficulty: difficulty,
                 configuration: engine.configuration
             )
-            // Staged exactly as a conceded point stages it, above the AI's half.
-            engine.state.ball = BallState(position: SIMD2(0.48, 0.60), velocity: SIMD2(0, -0.18))
+            // Staged exactly as a conceded point stages it: dead centre, drifting
+            // out to the AI's half.
+            //
+            // Not staged deep in the corner: a ball dropped from the ceiling
+            // into the far side of a half is out of reach for a ship starting
+            // near the floor, and with one bounce allowed the rally is over
+            // before the climb finishes. That is the bounce rule, not the AI --
+            // given altitude, every difficulty intercepts the same ball in 32
+            // ticks.
+            engine.state.ball = BallState(position: SIMD2(0, 0.50), velocity: SIMD2(0.45, -0.18))
             var returned = false
 
             for tick in UInt64(0) ..< 1_200 {
@@ -222,7 +230,7 @@ struct AIControllerTests {
                     .orange: controller.input(for: engine.state, team: .orange, tick: tick),
                 ])
                 guard engine.state.match.phase == .playing else { break }
-                if previousX > 0, engine.state.ball.position.x < 0 {
+                if previousX >= 0, engine.state.ball.position.x < 0 {
                     returned = true
                     break
                 }

@@ -85,6 +85,8 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.buttons["game-center-diagnostics-toggle"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["diagnostics-player-value"].exists)
+        app.buttons["game-center-diagnostics-toggle"].tap()
         XCTAssertEqual(app.staticTexts["diagnostics-player-value"].label, "GC TEST PILOT")
         XCTAssertEqual(app.staticTexts["diagnostics-side-value"].label, "CYAN")
         XCTAssertEqual(app.staticTexts["diagnostics-authority-value"].label, "HOST")
@@ -93,5 +95,19 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["diagnostics-match-value"].label, "READY")
         XCTAssertEqual(app.staticTexts["diagnostics-reconnect-value"].label, "7 S")
         XCTAssertFalse(app.staticTexts["GAME CENTER OFFLINE"].exists)
+    }
+
+    @MainActor
+    func testOnlineModeDoesNotOfferLocalOnlyPauseOrSoloTuning() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--online-diagnostics-preview"]
+        app.launch()
+
+        XCTAssertTrue(app.buttons["Leave online match"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Pause match"].exists)
+        XCTAssertFalse(app.buttons["Flight Tuning"].exists)
+        app.buttons["Leave online match"].tap()
+        XCTAssertTrue(app.staticTexts["Leave Match?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Leave Match"].exists)
     }
 }

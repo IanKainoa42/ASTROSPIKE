@@ -13,7 +13,7 @@ struct FlightTuningTests {
             first.thrustAcceleration = 4.25
             first.rotationAcceleration = 2.5
             first.ballGravityMultiplier = 0.58
-            first.ballDropHeight = 0.70
+            first.ballDropHeight = 0.55
             first.ballDropSpeed = 0.09
             first.allowedBouncesPerHit = 4
 

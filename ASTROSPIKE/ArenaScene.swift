@@ -1,5 +1,6 @@
 import ASTROSPIKECore
 import SpriteKit
+import UIKit
 
 @MainActor
 final class ArenaScene: SKScene {
@@ -8,16 +9,20 @@ final class ArenaScene: SKScene {
 
     private let arenaLayer = SKNode()
     private let trailLayer = SKNode()
+    private let plumeLayer = SKNode()
     private let actorLayer = SKNode()
     private let arena = ArenaGeometry.standard
     private let cyanShip = SKShapeNode()
     private let orangeShip = SKShapeNode()
     private let cyanExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
     private let orangeExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
-    private let ball = SKShapeNode(circleOfRadius: 12)
+    private let ball = SKShapeNode(circleOfRadius: 10)
     private var cyanTrail: [CGPoint] = []
     private var orangeTrail: [CGPoint] = []
     private var ballTrail: [CGPoint] = []
+    private var cyanPlumeBudget = 0.0
+    private var orangePlumeBudget = 0.0
+    private var plumeSeed = 0
     private var didBuild = false
 
     override init(size: CGSize = CGSize(width: 960, height: 540)) {
@@ -26,6 +31,7 @@ final class ArenaScene: SKScene {
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         addChild(arenaLayer)
         addChild(trailLayer)
+        addChild(plumeLayer)
         addChild(actorLayer)
         actorLayer.addChild(cyanShip)
         actorLayer.addChild(orangeShip)
@@ -58,6 +64,9 @@ final class ArenaScene: SKScene {
             (orangeShip, orangeExhaust, SKColor.orange),
         ] {
             exhaust.position = CGPoint(x: 0, y: -29)
+            // Lancet burns a tight needle, Anvil a wide chunky wash. yScale is
+            // driven per frame by thrust, so only xScale is set here.
+            exhaust.xScale = ship === cyanShip ? 0.75 : 1.9
             exhaust.fillColor = .white
             exhaust.strokeColor = color
             exhaust.lineWidth = 3
@@ -114,66 +123,108 @@ final class ArenaScene: SKScene {
             arenaLayer.addChild(star)
         }
 
-        let bounds = CGMutablePath()
-        bounds.move(to: point(-arena.halfWidth, arena.floorY))
-        bounds.addLine(to: point(-arena.halfWidth, arena.ceilingY))
-        bounds.addLine(to: point(arena.halfWidth, arena.ceilingY))
-        bounds.addLine(to: point(arena.halfWidth, arena.floorY))
-        let wall = SKShapeNode(path: bounds)
+        let wall = SKShapeNode(path: boundsPath())
         wall.strokeColor = SKColor(white: 0.8, alpha: 0.45)
         wall.lineWidth = 3
         wall.glowWidth = 5
         arenaLayer.addChild(wall)
 
         let floor = CGMutablePath()
-        floor.move(to: point(-arena.halfWidth, arena.floorY))
-        floor.addLine(to: point(-arena.goalOuterX, arena.floorY))
-        floor.move(to: point(arena.goalOuterX, arena.floorY))
-        floor.addLine(to: point(arena.halfWidth, arena.floorY))
+        floor.move(to: point(-arena.cornerTangentX, arena.floorY))
+        floor.addLine(to: point(-arena.netHalfWidth, arena.floorY))
+        floor.move(to: point(arena.netHalfWidth, arena.floorY))
+        floor.addLine(to: point(arena.cornerTangentX, arena.floorY))
         let floorNode = SKShapeNode(path: floor)
         floorNode.strokeColor = .white.withAlphaComponent(0.55)
         floorNode.lineWidth = 4
         floorNode.glowWidth = 3
         arenaLayer.addChild(floorNode)
 
-        addGoal(defender: .cyan)
-        addGoal(defender: .orange)
-        let netPath = CGMutablePath()
-        let netLeftBottom = point(-arena.netHalfWidth, arena.floorY)
-        let netLeftTop = point(-arena.netHalfWidth, arena.netTopY)
-        let netRightTop = point(arena.netHalfWidth, arena.netTopY)
-        let netRightBottom = point(arena.netHalfWidth, arena.floorY)
-        netPath.move(to: netLeftBottom)
-        netPath.addLine(to: netLeftTop)
-        netPath.addQuadCurve(to: netRightTop, control: point(0, arena.netTopY + 0.04))
-        netPath.addLine(to: netRightBottom)
-        netPath.closeSubpath()
-        let net = SKShapeNode(path: netPath)
-        net.strokeColor = SKColor(red: 0.75, green: 0.35, blue: 1, alpha: 1)
-        net.fillColor = SKColor(red: 0.18, green: 0.02, blue: 0.35, alpha: 0.75)
-        net.lineWidth = 2
-        net.glowWidth = 10
-        arenaLayer.addChild(net)
+        addPortalNet()
     }
 
-    private func addGoal(defender: Team) {
-        let sign = defender == .cyan ? -1.0 : 1.0
-        let mouthTopY = arena.floorY + (arena.goalOuterX - arena.goalInnerX)
+    /// The playable boundary, with the same flattened corner arcs the
+    /// simulation collides against. Sampled rather than approximated with
+    /// Bezier control points so the drawn edge cannot drift from the physics.
+    private func boundsPath() -> CGPath {
         let path = CGMutablePath()
-        path.move(to: point(arena.goalInnerX * sign, arena.floorY))
-        path.addLine(to: point(arena.goalOuterX * sign, mouthTopY))
-        path.addLine(to: point(arena.goalOuterX * sign, arena.floorY))
-        let goal = SKShapeNode(path: path)
-        goal.strokeColor = defender == .cyan ? .cyan : .orange
-        goal.lineWidth = 5
-        goal.glowWidth = 11
-        arenaLayer.addChild(goal)
+        let steps = 14
+        var started = false
+        // Bottom-left, top-left, top-right, bottom-right.
+        let corners: [(x: Double, y: Double)] = [(-1, -1), (-1, 1), (1, 1), (1, -1)]
+        for corner in corners {
+            let originX = corner.x * arena.cornerTangentX
+            let originY = corner.y > 0
+                ? arena.ceilingY - arena.cornerRadiusY
+                : arena.floorY + arena.cornerRadiusY
+            // Walk each arc from its vertical tangent to its horizontal one, so
+            // consecutive corners join along the straight wall between them.
+            for step in 0...steps {
+                let t = Double(step) / Double(steps)
+                let sweep = t * .pi / 2
+                let goingUp = corner.y > 0
+                let angle = goingUp == (corner.x < 0) ? sweep : .pi / 2 - sweep
+                let x = originX + corner.x * arena.cornerRadiusX * sin(angle)
+                let y = originY + corner.y * arena.cornerRadiusY * cos(angle)
+                let screen = point(x, y)
+                if started {
+                    path.addLine(to: screen)
+                } else {
+                    path.move(to: screen)
+                    started = true
+                }
+            }
+        }
+        path.closeSubpath()
+        return path
+    }
 
-        let lip = SKShapeNode(rectOf: CGSize(width: 8, height: 18), cornerRadius: 3)
-        lip.position = point(arena.goalOuterX * sign, arena.floorY + 0.03)
-        lip.fillColor = defender == .cyan ? .cyan : .orange
-        lip.strokeColor = .white
-        arenaLayer.addChild(lip)
+    /// The net is the goal, and it is a portal: drive the ball into a face and
+    /// it goes through and vanishes. Each face is painted in the colour of the
+    /// side that shoots at it, so the target you are aiming for is the one in
+    /// front of you. The cap on top is hard and neutral -- white, not team
+    /// coloured -- because clipping it rebounds rather than scoring.
+    private func addPortalNet() {
+        let half = arena.netHalfWidth
+
+        // The mouth: a dark slot the ball disappears into.
+        let mouth = CGMutablePath()
+        mouth.move(to: point(-half, arena.floorY))
+        mouth.addLine(to: point(-half, arena.netTopY))
+        mouth.addLine(to: point(half, arena.netTopY))
+        mouth.addLine(to: point(half, arena.floorY))
+        mouth.closeSubpath()
+        let mouthNode = SKShapeNode(path: mouth)
+        mouthNode.strokeColor = .clear
+        mouthNode.fillColor = SKColor(white: 0, alpha: 0.85)
+        mouthNode.zPosition = -1
+        arenaLayer.addChild(mouthNode)
+
+        for sign in [-1.0, 1.0] {
+            let scorer: Team = sign < 0 ? .cyan : .orange
+            let color: SKColor = scorer == .cyan ? .cyan : .orange
+            let face = CGMutablePath()
+            face.move(to: point(half * sign, arena.floorY))
+            face.addLine(to: point(half * sign, arena.netTopY))
+            let faceNode = SKShapeNode(path: face)
+            faceNode.strokeColor = color.withAlphaComponent(0.9)
+            faceNode.lineWidth = 4
+            faceNode.glowWidth = 14
+            arenaLayer.addChild(faceNode)
+        }
+
+        // The crown: solid, neutral, and the only part of the net that bounces.
+        let cap = CGMutablePath()
+        cap.move(to: point(-half, arena.netTopY))
+        cap.addQuadCurve(
+            to: point(half, arena.netTopY),
+            control: point(0, arena.netTopY + 0.04)
+        )
+        let capNode = SKShapeNode(path: cap)
+        capNode.strokeColor = .white.withAlphaComponent(0.95)
+        capNode.lineWidth = 4
+        capNode.glowWidth = 6
+        arenaLayer.addChild(capNode)
     }
 
     private func addSideLabel(_ text: String, team: Team, at position: CGPoint) {
@@ -222,7 +273,7 @@ final class ArenaScene: SKScene {
         update(shipNode: cyanShip, team: .cyan, state: snapshot.ships[.cyan])
         update(shipNode: orangeShip, team: .orange, state: snapshot.ships[.orange])
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
-        let ballScale = CGFloat(snapshot.ball.radius / 0.045)
+        let ballScale = CGFloat(snapshot.ball.radius / 0.038)
         ball.setScale(ballScale)
         ball.glowWidth = 12 + min(20, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y))
         updateTrails(snapshot)
@@ -234,13 +285,11 @@ final class ArenaScene: SKScene {
             case let .point(scoringTeam, reason):
                 ballTrail.removeAll()
                 if reason == .goal {
-                    let defendingGoalX = scoringTeam == .cyan
-                        ? arena.goalOuterX
-                        : -arena.goalOuterX
-                    let goalCenterY = arena.floorY
-                        + (arena.goalOuterX - arena.goalInnerX) / 2
+                    // One portal, dead centre -- the ball went through it and
+                    // is gone, so the burst is where it vanished.
+                    let goalCenterY = (arena.floorY + arena.netTopY) / 2
                     goalBurst(
-                        at: point(defendingGoalX, goalCenterY),
+                        at: point(0, goalCenterY),
                         color: scoringTeam == .cyan ? .cyan : .orange
                     )
                 } else if let destroyed = snapshot?.ships[scoringTeam.opponent] {
@@ -296,17 +345,105 @@ final class ArenaScene: SKScene {
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
         let unit = min(arenaRect.width / 2, arenaRect.height) / 1.7
-        shipNode.setScale(unit / 350)
+        shipNode.setScale(unit / 473)
         shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)
         let exhaust = team == .cyan ? cyanExhaust : orangeExhaust
         exhaust.isHidden = state.thrustLevel <= 0 || state.isDestroyed
         exhaust.yScale = 0.35 + CGFloat(state.thrustLevel / 18) * 1.65
         exhaust.alpha = 0.55 + CGFloat(state.thrustLevel / 18) * 0.45
+        emitPlume(from: shipNode, team: team, state: state)
+    }
+
+    /// Soft radial falloff, built once. Sprites are far cheaper than one
+    /// SKShapeNode per puff, and a gradient reads as vapour rather than a disc.
+    private static let puffTexture: SKTexture = {
+        let side: CGFloat = 64
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            let colors = [
+                UIColor(white: 1, alpha: 1).cgColor,
+                UIColor(white: 1, alpha: 0.35).cgColor,
+                UIColor(white: 1, alpha: 0).cgColor,
+            ] as CFArray
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: colors,
+                locations: [0, 0.45, 1]
+            ) else { return }
+            let centre = CGPoint(x: side / 2, y: side / 2)
+            context.cgContext.drawRadialGradient(
+                gradient,
+                startCenter: centre,
+                startRadius: 0,
+                endCenter: centre,
+                endRadius: side / 2,
+                options: []
+            )
+        }
+        return SKTexture(image: image)
+    }()
+
+    /// Spends a thrust-proportional budget so puff density tracks throttle
+    /// instead of frame rate, then trails smoke back along the nose axis.
+    private func emitPlume(from shipNode: SKShapeNode, team: Team, state: ShipState) {
+        guard !reduceMotion, !state.isDestroyed, state.thrustLevel > 0 else { return }
+        var budget = (team == .cyan ? cyanPlumeBudget : orangePlumeBudget)
+            + state.thrustLevel * 0.022
+        while budget >= 1 {
+            budget -= 1
+            spawnPuff(from: shipNode, team: team, state: state)
+        }
+        if team == .cyan { cyanPlumeBudget = budget } else { orangePlumeBudget = budget }
+    }
+
+    private func spawnPuff(from shipNode: SKShapeNode, team: Team, state: ShipState) {
+        plumeSeed &+= 1
+        let jitter = Double((plumeSeed &* 7919) % 199) / 199 - 0.5
+        let drift = Double((plumeSeed &* 104_729) % 173) / 173 - 0.5
+
+        let scale = Double(shipNode.xScale)
+        let origin = convert(CGPoint(x: 0, y: -34), from: shipNode)
+        let back = (x: -cos(state.angle), y: -sin(state.angle))
+        let side = (x: -sin(state.angle), y: cos(state.angle))
+        let travel = (32 + state.thrustLevel * 2.4) * scale
+        let spread = (11 + state.thrustLevel * 1.1) * scale
+
+        let puff = SKSpriteNode(texture: Self.puffTexture)
+        puff.color = team == .cyan
+            ? SKColor(red: 0.55, green: 0.86, blue: 1, alpha: 1)
+            : SKColor(red: 1, green: 0.72, blue: 0.42, alpha: 1)
+        puff.colorBlendFactor = 1
+        puff.blendMode = .add
+        puff.zPosition = -2
+        puff.alpha = 0
+        puff.setScale(CGFloat(scale * (0.32 + jitter * 0.1 + state.thrustLevel * 0.012)))
+        puff.position = CGPoint(
+            x: origin.x + CGFloat(side.x * 4 * jitter * scale),
+            y: origin.y + CGFloat(side.y * 4 * jitter * scale)
+        )
+        plumeLayer.addChild(puff)
+
+        let destination = CGPoint(
+            x: origin.x + CGFloat(back.x * travel + side.x * spread * drift),
+            y: origin.y + CGFloat(back.y * travel + side.y * spread * drift)
+        )
+        let life = 0.52 + jitter * 0.14 + state.thrustLevel * 0.012
+        puff.run(.sequence([
+            .group([
+                .move(to: destination, duration: life),
+                .scale(by: 3.1, duration: life),
+                .sequence([
+                    .fadeAlpha(to: 0.32, duration: life * 0.16),
+                    .fadeOut(withDuration: life * 0.84),
+                ]),
+            ]),
+            .removeFromParent(),
+        ]))
     }
 
     private func updateTrails(_ snapshot: WorldState) {
         guard !reduceMotion else {
             trailLayer.removeAllChildren()
+            plumeLayer.removeAllChildren()
             cyanTrail.removeAll()
             orangeTrail.removeAll()
             ballTrail.removeAll()
@@ -338,19 +475,65 @@ final class ArenaScene: SKScene {
         return node
     }
 
+    /// Two hulls with genuinely different silhouettes, not one dart with a
+    /// different decal. Both stay inside roughly the same envelope so the
+    /// three collision fixtures in the simulation still read true.
     private func shipPath(symbol: Team) -> CGPath {
+        symbol == .cyan ? lancetPath() : anvilPath()
+    }
+
+    /// Cyan "Lancet" — narrow interceptor: raked needle nose, swept wings that
+    /// hook forward at the tips, split tail.
+    private func lancetPath() -> CGPath {
         let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: 28))
-        path.addLine(to: CGPoint(x: -18, y: -18))
-        path.addLine(to: CGPoint(x: 0, y: -10))
-        path.addLine(to: CGPoint(x: 18, y: -18))
+        path.move(to: CGPoint(x: 0, y: 30))
+        path.addLine(to: CGPoint(x: 3.5, y: 14))
+        path.addLine(to: CGPoint(x: 7, y: 1))
+        path.addLine(to: CGPoint(x: 21, y: -16))
+        path.addLine(to: CGPoint(x: 14, y: -19))
+        path.addLine(to: CGPoint(x: 6, y: -11))
+        path.addLine(to: CGPoint(x: 0, y: -15))
+        path.addLine(to: CGPoint(x: -6, y: -11))
+        path.addLine(to: CGPoint(x: -14, y: -19))
+        path.addLine(to: CGPoint(x: -21, y: -16))
+        path.addLine(to: CGPoint(x: -7, y: 1))
+        path.addLine(to: CGPoint(x: -3.5, y: 14))
         path.closeSubpath()
-        if symbol == .orange {
-            path.addEllipse(in: CGRect(x: -5, y: -3, width: 10, height: 10))
-        } else {
-            path.move(to: CGPoint(x: -7, y: 2))
-            path.addLine(to: CGPoint(x: 7, y: 2))
-        }
+
+        // Canopy slit along the spine.
+        path.move(to: CGPoint(x: 0, y: 16))
+        path.addLine(to: CGPoint(x: 0, y: 4))
+        return path
+    }
+
+    /// Orange "Anvil" — heavy lander: blunt chisel nose, boxy shoulders and two
+    /// outboard engine pods hanging wide off the hull.
+    private func anvilPath() -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -7, y: 26))
+        path.addLine(to: CGPoint(x: 7, y: 26))
+        path.addLine(to: CGPoint(x: 13, y: 12))
+        path.addLine(to: CGPoint(x: 11, y: -2))
+        path.addLine(to: CGPoint(x: 21, y: -4))
+        path.addLine(to: CGPoint(x: 22, y: -19))
+        path.addLine(to: CGPoint(x: 12, y: -19))
+        path.addLine(to: CGPoint(x: 9, y: -9))
+        path.addLine(to: CGPoint(x: -9, y: -9))
+        path.addLine(to: CGPoint(x: -12, y: -19))
+        path.addLine(to: CGPoint(x: -22, y: -19))
+        path.addLine(to: CGPoint(x: -21, y: -4))
+        path.addLine(to: CGPoint(x: -11, y: -2))
+        path.addLine(to: CGPoint(x: -13, y: 12))
+        path.closeSubpath()
+
+        // Hex viewport.
+        path.move(to: CGPoint(x: 0, y: 18))
+        path.addLine(to: CGPoint(x: 6, y: 13))
+        path.addLine(to: CGPoint(x: 6, y: 5))
+        path.addLine(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: -6, y: 5))
+        path.addLine(to: CGPoint(x: -6, y: 13))
+        path.closeSubpath()
         return path
     }
 
@@ -360,9 +543,13 @@ final class ArenaScene: SKScene {
                       width: size.width - inset * 2, height: size.height - inset * 2)
     }
 
+    /// Derived from the geometry rather than hardcoded, so shortening the
+    /// court cannot silently desync the render from the simulation.
     private func point(_ x: Double, _ y: Double) -> CGPoint {
         let rect = arenaRect
-        return CGPoint(x: rect.midX + CGFloat(x / 1.92) * rect.width,
-                       y: rect.midY + CGFloat(y / 1.56) * rect.height)
+        let worldWidth = arena.halfWidth * 2
+        let worldHeight = arena.ceilingY - arena.floorY
+        return CGPoint(x: rect.midX + CGFloat(x / worldWidth) * rect.width,
+                       y: rect.midY + CGFloat(y / worldHeight) * rect.height)
     }
 }

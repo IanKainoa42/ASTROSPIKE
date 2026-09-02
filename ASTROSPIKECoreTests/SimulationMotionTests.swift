@@ -7,7 +7,7 @@ struct SimulationMotionTests {
     @Test("A free-falling lander uses the reduced lunar gravity")
     func gravityUsesReducedLunarTuning() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position.y = 0.6
+        engine.state.ships[.cyan]!.position.y = 0.4
         engine.state.ships[.cyan]!.velocity = .zero
 
         for tick in 0 ..< 30 {

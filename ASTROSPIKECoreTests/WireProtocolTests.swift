@@ -68,4 +68,47 @@ struct WireProtocolTests {
         #expect(reconciler.reconcile(predicted: far, authoritative: authoritative).position == .zero)
         #expect(abs(reconciler.reconcile(predicted: nearby, authoritative: authoritative).position.x - 0.0375) < 0.000_000_001)
     }
+
+    @Test("Older and duplicate snapshots cannot replace newer authority")
+    func staleSnapshotSuppression() {
+        var gate = AuthoritativeSnapshotGate()
+
+        let first = gate.accept(tick: 42)
+        let older = gate.accept(tick: 41)
+        let duplicate = gate.accept(tick: 42)
+        let newer = gate.accept(tick: 43)
+        #expect(first)
+        #expect(!older)
+        #expect(!duplicate)
+        #expect(newer)
+    }
+
+    @Test("A full resync establishes a new snapshot baseline")
+    func resyncResetsSnapshotBaseline() {
+        var gate = AuthoritativeSnapshotGate()
+        let initial = gate.accept(tick: 80)
+        #expect(initial)
+
+        gate.reset(to: 12)
+
+        let duplicate = gate.accept(tick: 12)
+        let next = gate.accept(tick: 13)
+        #expect(!duplicate)
+        #expect(next)
+    }
+
+    @Test("Delayed reliable events cannot replay after a newer event")
+    func reliableEventSequenceSuppression() {
+        var gate = MonotonicSequenceGate()
+
+        let first = gate.accept(sequence: 10)
+        let delayed = gate.accept(sequence: 8)
+        let duplicate = gate.accept(sequence: 10)
+        let next = gate.accept(sequence: 14)
+
+        #expect(first)
+        #expect(!delayed)
+        #expect(!duplicate)
+        #expect(next)
+    }
 }

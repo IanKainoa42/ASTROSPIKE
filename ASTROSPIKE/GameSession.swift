@@ -80,6 +80,7 @@ final class GameSession {
     }
 
     func setApplicationActive(_ active: Bool) {
+        guard case .solo = mode else { return }
         isPaused = !active
     }
 
@@ -170,20 +171,31 @@ final class GameSession {
 
         state = engine.state
         events = engine.lastEvents
-        if !events.isEmpty { scene.present(events) }
-        if let point = events.first(where: { if case .point = $0 { true } else { false } }) {
+        let presentsLocalEvents = switch mode {
+        case .solo: true
+        case .online: online?.isAuthoritative == true
+        }
+        if presentsLocalEvents, !events.isEmpty { scene.present(events) }
+        if presentsLocalEvents,
+           let point = events.first(where: { if case .point = $0 { true } else { false } }) {
             lastPointText = point.label(
                 bounceAllowance: engine.configuration.allowedFloorBounces
             )
             if case let .point(team, _) = point { FeedbackCenter.shared.point(team: team) }
-        } else if events.contains(.rallyReset) {
+        } else if presentsLocalEvents, events.contains(.rallyReset) {
             lastPointText = nil
         }
-        for event in events {
+        for event in events where presentsLocalEvents {
             if case .collisionEffect = event { FeedbackCenter.shared.impact() }
             if case .matchEnded = event { FeedbackCenter.shared.win() }
             if case .online = mode, online?.isAuthoritative == true {
+                if case .matchEnded = event {
+                    online?.sendFullResync(engine.state)
+                }
                 online?.sendEvent(event)
+                if case .matchEnded = event {
+                    online?.finishCompletedMatch()
+                }
             }
         }
     }
@@ -211,6 +223,27 @@ final class GameSession {
             self.isPaused = false
             self.countdown = 3
             self.countdownAccumulator = 0
+        }
+        online.onEvent = { [weak self] event in
+            guard let self, !online.isAuthoritative else { return }
+            self.events = [event]
+            self.scene.present([event])
+            switch event {
+            case let .point(team, _):
+                self.lastPointText = event.label(
+                    bounceAllowance: self.engine.configuration.allowedFloorBounces
+                )
+                FeedbackCenter.shared.point(team: team)
+            case .rallyReset:
+                self.lastPointText = nil
+            case .collisionEffect:
+                FeedbackCenter.shared.impact()
+            case .destruction:
+                FeedbackCenter.shared.impact()
+            case .matchEnded:
+                FeedbackCenter.shared.win()
+                online.finishCompletedMatch()
+            }
         }
         online.onForfeit = { [weak self] winner in
             guard let self else { return }
@@ -268,6 +301,7 @@ private extension SimulationEvent {
         switch reason {
         case .goal: return "\(scorer) GOAL"
         case .thirdBounce: return "BOUNCE LIMIT (\(bounceAllowance)) — \(scorer)"
+        case .touchLimit: return "TOO MANY TOUCHES — \(scorer)"
         case .crash: return "CRASH — \(scorer)"
         case .netContact: return "NET / CROSS — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"

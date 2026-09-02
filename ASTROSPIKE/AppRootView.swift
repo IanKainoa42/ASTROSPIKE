@@ -123,7 +123,8 @@ private struct HomeView: View {
         switch online.status {
         case .connected, .ready: .green
         case .failed: .orange
-        default: .white.opacity(0.6)
+        case .authenticating, .matching, .reconnecting: .yellow
+        case .signedOut: .white.opacity(0.6)
         }
     }
 }
@@ -137,6 +138,7 @@ private struct GameView: View {
 
     @State private var session: GameSession
     @State private var showPause = false
+    @State private var showLeaveConfirmation = false
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
@@ -173,9 +175,17 @@ private struct GameView: View {
                 MatchHUD(
                     state: session.state,
                     allowedBounces: allowedBounces,
-                    online: mode == .online && diagnosticsOverride == nil ? online : nil
+                    allowedTouches: allowedTouches,
+                    online: mode == .online && diagnosticsOverride == nil ? online : nil,
+                    actionLabel: mode == .online ? "Leave online match" : "Pause match",
+                    actionIcon: mode == .online ? "xmark" : "pause.fill"
                 ) {
-                    session.togglePause(); showPause = true
+                    if mode == .online {
+                        showLeaveConfirmation = true
+                    } else {
+                        session.togglePause()
+                        showPause = true
+                    }
                 }
                 if mode == .online {
                     GameCenterDiagnosticsPanel(
@@ -201,11 +211,26 @@ private struct GameView: View {
                     .background(.black.opacity(0.66), in: Capsule())
                     .overlay(Capsule().stroke(.white.opacity(0.35)))
             }
-            if session.state.match.phase == .finished { ResultsOverlay(state: session.state, exit: exit) }
+            if session.state.match.phase == .finished {
+                ResultsOverlay(state: session.state, localTeam: localTeam, exit: leaveGame)
+            }
         }
         .accessibilityIdentifier("game-screen")
+        .confirmationDialog(
+            "Leave Match?",
+            isPresented: $showLeaveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Leave Match", role: .destructive, action: leaveGame)
+            Button("Keep Playing", role: .cancel) {}
+        } message: {
+            Text("Leaving disconnects you from the current Game Center match.")
+        }
         .onAppear { FeedbackCenter.shared.hapticsEnabled = haptics; session.start() }
-        .onDisappear { session.stop() }
+        .onDisappear {
+            session.stop()
+            if mode == .online { online.leaveMatch() }
+        }
         .onChange(of: tuning.snapshot) { _, _ in
             session.applyTuning(tuning.configuration)
         }
@@ -217,7 +242,7 @@ private struct GameView: View {
                 tuning: tuning,
                 restartDrop: { session.restartRally(with: tuning.configuration) },
                 resume: { showPause = false; session.resume() },
-                exit: { showPause = false; exit() }
+                exit: { showPause = false; leaveGame() }
             )
             .presentationDetents([.large])
             .interactiveDismissDisabled()
@@ -229,12 +254,24 @@ private struct GameView: View {
     private var allowedBounces: Int {
         switch mode {
         case .solo: tuning.allowedBouncesPerHit
-        case .online: 2
+        case .online: 1
+        }
+    }
+
+    private var allowedTouches: Int {
+        switch mode {
+        case .solo: tuning.allowedTouchesPerSide
+        case .online: 3
         }
     }
 
     private var localHomeSide: Team {
         session.state.ships[localTeam]?.homeSide ?? localTeam
+    }
+
+    private func leaveGame() {
+        if mode == .online { online.leaveMatch() }
+        exit()
     }
 }
 
@@ -258,46 +295,88 @@ private struct TeamSideBadge: View {
 private struct MatchHUD: View {
     let state: WorldState
     let allowedBounces: Int
+    let allowedTouches: Int
     let online: OnlineMatchCoordinator?
-    let pause: () -> Void
+    let actionLabel: String
+    let actionIcon: String
+    let action: () -> Void
 
     var body: some View {
         HStack {
-            score(team: .cyan, value: state.match.score.cyan, bounces: state.match.floorContacts.cyan)
+            score(
+                team: .cyan,
+                value: state.match.score.cyan,
+                bounces: state.match.floorContacts.cyan,
+                touches: state.match.shipTouches.cyan
+            )
             Spacer()
             VStack(spacing: 2) {
                 Text("FIRST TO 7 • WIN BY 2").font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.white.opacity(0.55))
                 if let online {
-                    Label(online.status.label, systemImage: signalIcon).font(.caption2.weight(.bold)).foregroundStyle(.green)
+                    Label(online.status.label, systemImage: signalIcon)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(statusColor)
                 }
             }
             Spacer()
-            score(team: .orange, value: state.match.score.orange, bounces: state.match.floorContacts.orange)
-            Button(action: pause) {
-                Image(systemName: "pause.fill").frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
+            score(
+                team: .orange,
+                value: state.match.score.orange,
+                bounces: state.match.floorContacts.orange,
+                touches: state.match.shipTouches.orange
+            )
+            Button(action: action) {
+                Image(systemName: actionIcon).frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
             }
-            .accessibilityLabel("Pause match").accessibilityIdentifier("pause-button")
+            .accessibilityLabel(actionLabel).accessibilityIdentifier("match-action-button")
         }
         .padding(.horizontal, 24).padding(.top, 10)
     }
 
-    private func score(team: Team, value: Int, bounces: Int) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(team == .cyan ? .cyan : .orange)
+    private func score(team: Team, value: Int, bounces: Int, touches: Int) -> some View {
+        let tint = team == .cyan ? Color.cyan : .orange
+        return HStack(spacing: 12) {
+            Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
             Text(value.formatted()).font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
-            HStack(spacing: 4) {
-                ForEach(0..<allowedBounces, id: \.self) { index in
-                    Circle().fill(index < bounces ? (team == .cyan ? Color.cyan : .orange) : .white.opacity(0.16)).frame(width: 8, height: 8)
+            // Touches are the harder limit, so they read as bars above the
+            // softer bounce dots rather than competing with them.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 3) {
+                    ForEach(0..<allowedTouches, id: \.self) { index in
+                        Capsule()
+                            .fill(index < touches ? tint : .white.opacity(0.16))
+                            .frame(width: 9, height: 4)
+                    }
+                }
+                HStack(spacing: 4) {
+                    ForEach(0..<allowedBounces, id: \.self) { index in
+                        Circle()
+                            .fill(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
+                            .frame(width: 7, height: 7)
+                    }
                 }
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(team.rawValue) score \(value), \(bounces) of \(allowedBounces) bounces used")
+        .accessibilityLabel(
+            "\(team.rawValue) score \(value), \(touches) of \(allowedTouches) touches used, "
+                + "\(bounces) of \(allowedBounces) bounces used"
+        )
     }
 
     private var signalIcon: String {
         guard let ping = online?.pingMilliseconds else { return "wifi" }
         return ping < 80 ? "wifi" : ping < 160 ? "wifi.exclamationmark" : "exclamationmark.triangle"
+    }
+
+    private var statusColor: Color {
+        guard let online else { return .white.opacity(0.6) }
+        return switch online.status {
+        case .connected, .ready: .green
+        case .matching, .authenticating, .reconnecting: .yellow
+        case .failed: .orange
+        case .signedOut: .white.opacity(0.6)
+        }
     }
 }
 
@@ -344,7 +423,7 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
-                    TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "Bank the ball off the center net and down into the opponent’s compact goal. Each ship hit refreshes your floor-bounce allowance.")
+                    TutorialCard(number: "03", icon: "volleyball.fill", title: "SCORE", text: "The net is the goal, and it is a portal. Drive the ball into the face on your side and it goes straight through and vanishes — that’s a point. Clip the hard top and it just bounces. Three touches a trip, one bounce a touch.")
                     TutorialCard(number: "04", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Clear the low net to enter the opponent’s side. You can fly as far as the colored MAX CROSS line.")
                     TutorialCard(number: "05", icon: "burst.fill", title: "DANGER", text: "You explode if you touch the net from their side, cross their MAX CROSS line, hit the ground, or collide with the other ship. Side walls and the ceiling rebound safely.")
                 }.padding(28)
@@ -382,11 +461,16 @@ private struct SettingsView: View {
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
                 Section("Match Rules") {
                     Stepper(
+                        "Touches per side: \(tuning.allowedTouchesPerSide)",
+                        value: $tuning.allowedTouchesPerSide,
+                        in: 1 ... 6
+                    )
+                    Stepper(
                         "Bounces per hit: \(tuning.allowedBouncesPerHit)",
                         value: $tuning.allowedBouncesPerHit,
                         in: 1 ... 5
                     )
-                    Text("Applies to solo matches. Online matches use two bounces per hit for both players.")
+                    Text("Applies to solo matches. Online matches use three touches and one bounce per hit for both players.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -420,11 +504,16 @@ private struct FlightTuningView: View {
                     GroupBox("Ball Drop") {
                         VStack(spacing: 14) {
                             TuningSlider(title: "Ball gravity", value: $tuning.ballGravityMultiplier, range: 0.1 ... 1.2, step: 0.02)
-                            TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: 0.25 ... 0.72, step: 0.01)
+                            TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: 0.22 ... 0.58, step: 0.01)
                             TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)
                         }
                     }
                     GroupBox("Match Rule") {
+                        Stepper(
+                            "Touches per side: \(tuning.allowedTouchesPerSide)",
+                            value: $tuning.allowedTouchesPerSide,
+                            in: 1 ... 6
+                        )
                         Stepper(
                             "Bounces per hit: \(tuning.allowedBouncesPerHit)",
                             value: $tuning.allowedBouncesPerHit,
@@ -498,14 +587,20 @@ private struct PauseView: View {
 
 private struct ResultsOverlay: View {
     let state: WorldState
+    let localTeam: Team
     let exit: () -> Void
     var body: some View {
         VStack(spacing: 14) {
-            Text("MATCH COMPLETE").font(.caption.monospaced().bold()).tracking(3)
+            Text(didLocalPlayerWin ? "YOU WIN" : "YOU LOSE")
+                .font(.caption.monospaced().bold()).tracking(3)
             Text("\(state.match.score.cyan)  —  \(state.match.score.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
             Button("Return to Hangar", action: exit).buttonStyle(.borderedProminent).tint(.cyan)
         }
         .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26)).accessibilityIdentifier("results-screen")
+    }
+
+    private var didLocalPlayerWin: Bool {
+        state.match.score[localTeam] > state.match.score[localTeam.opponent]
     }
 }
 

@@ -21,10 +21,12 @@ struct RallyLifecycleTests {
         engine.prepareNextRally(mirrored: false)
 
         #expect(engine.state.ball.position == .init(0, 0.72))
-        #expect(engine.state.ball.velocity == .init(0, -0.08))
+        // Centre is directly above the net cap, which is hard and neutral, so a
+        // serve is released with a sideways drift toward the receiving half.
+        #expect(engine.state.ball.velocity == .init(-0.45, -0.08))
     }
 
-    @Test("A point respawns only the ball on the conceding side")
+    @Test("A point respawns only the ball, over the middle")
     func pointRespawnsOnlyBall() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan] = ShipState(
@@ -41,14 +43,14 @@ struct RallyLifecycleTests {
             angularVelocity: 0,
             thrustLevel: 1.5
         )
-        engine.state.ball.position = .init(0.08, -0.72)
-        engine.state.ball.velocity = .init(0.4, -2)
+        engine.state.ball.position = .init(-0.06, -0.50)
+        engine.state.ball.velocity = .init(2, 0)
 
         engine.step(inputs: [:])
 
         #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
         #expect(engine.state.match.phase == .serve)
-        #expect(engine.state.ball.position == .init(0.48, 0.60))
+        #expect(engine.state.ball.position == .init(0, 0.50))
         #expect(engine.state.ball.velocity == .zero)
         #expect(engine.state.ships[.cyan]!.angle == 0.8)
         #expect(engine.state.ships[.cyan]!.position.x < 0)
@@ -61,8 +63,8 @@ struct RallyLifecycleTests {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position = .init(-0.55, 0.25)
         engine.state.ships[.cyan]!.angle = .pi / 2
-        engine.state.ball.position = .init(0.08, -0.72)
-        engine.state.ball.velocity = .init(0.4, -2)
+        engine.state.ball.position = .init(-0.06, -0.50)
+        engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldBall = engine.state.ball
         let velocityBeforeInput = engine.state.ships[.cyan]!.velocity
@@ -83,8 +85,8 @@ struct RallyLifecycleTests {
     @Test("The serve releases after the prototype delay without a countdown")
     func serveDropsAfterPrototypeDelay() {
         var engine = SimulationEngine.testing()
-        engine.state.ball.position = .init(0.08, -0.72)
-        engine.state.ball.velocity = .init(0.4, -2)
+        engine.state.ball.position = .init(-0.06, -0.50)
+        engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldPosition = engine.state.ball.position
 
@@ -99,7 +101,7 @@ struct RallyLifecycleTests {
 
         #expect(engine.state.match.phase == .playing)
         #expect(engine.state.ball.position == heldPosition)
-        #expect(engine.state.ball.velocity == .init(0, -0.18))
+        #expect(engine.state.ball.velocity == .init(0.45, -0.18))
     }
 
     @Test("Play no longer destroys a ship at all")

@@ -9,15 +9,17 @@ public struct FlightTuningSnapshot: Equatable, Sendable {
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var allowedBouncesPerHit: Int
+    public var allowedTouchesPerSide: Int
 
     public static let defaults = FlightTuningSnapshot(
         gravityMagnitude: 2,
         thrustAcceleration: 5.5,
         rotationAcceleration: 3,
         ballGravityMultiplier: 0.72,
-        ballDropHeight: 0.60,
+        ballDropHeight: 0.50,
         ballDropSpeed: 0.18,
-        allowedBouncesPerHit: 2
+        allowedBouncesPerHit: 1,
+        allowedTouchesPerSide: 3
     )
 }
 
@@ -47,6 +49,9 @@ public final class FlightTuningStore {
     public var allowedBouncesPerHit: Int {
         didSet { defaults.set(allowedBouncesPerHit, forKey: Keys.allowedBouncesPerHit) }
     }
+    public var allowedTouchesPerSide: Int {
+        didSet { defaults.set(allowedTouchesPerSide, forKey: Keys.allowedTouchesPerSide) }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -55,13 +60,19 @@ public final class FlightTuningStore {
         thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 2 ... 10)
         rotationAcceleration = Self.load(defaults, key: Keys.rotationAcceleration, fallback: baked.rotationAcceleration, range: 0.5 ... 8)
         ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
-        ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: 0.25 ... 0.72)
+        ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: 0.22 ... 0.58)
         ballDropSpeed = Self.load(defaults, key: Keys.ballDropSpeed, fallback: baked.ballDropSpeed, range: 0 ... 0.8)
         allowedBouncesPerHit = Self.load(
             defaults,
             key: Keys.allowedBouncesPerHit,
             fallback: baked.allowedBouncesPerHit,
             range: 1 ... 5
+        )
+        allowedTouchesPerSide = Self.load(
+            defaults,
+            key: Keys.allowedTouchesPerSide,
+            fallback: baked.allowedTouchesPerSide,
+            range: 1 ... 6
         )
     }
 
@@ -73,7 +84,8 @@ public final class FlightTuningStore {
             ballGravityMultiplier: ballGravityMultiplier,
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
-            allowedBouncesPerHit: allowedBouncesPerHit
+            allowedBouncesPerHit: allowedBouncesPerHit,
+            allowedTouchesPerSide: allowedTouchesPerSide
         )
     }
 
@@ -86,7 +98,8 @@ public final class FlightTuningStore {
             ballGravityMultiplier: ballGravityMultiplier,
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
-            allowedFloorBounces: allowedBouncesPerHit
+            allowedFloorBounces: allowedBouncesPerHit,
+            allowedShipTouches: allowedTouchesPerSide
         )
     }
 
@@ -99,6 +112,7 @@ public final class FlightTuningStore {
         ballDropHeight = baked.ballDropHeight
         ballDropSpeed = baked.ballDropSpeed
         allowedBouncesPerHit = baked.allowedBouncesPerHit
+        allowedTouchesPerSide = baked.allowedTouchesPerSide
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
 
@@ -134,6 +148,7 @@ public final class FlightTuningStore {
         static let ballDropHeight = "tuning.ballDropHeight"
         static let ballDropSpeed = "tuning.ballDropSpeed"
         static let allowedBouncesPerHit = "tuning.allowedBouncesPerHit"
+        static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
         static let all = [
             gravityMagnitude,
             thrustAcceleration,
@@ -142,6 +157,7 @@ public final class FlightTuningStore {
             ballDropHeight,
             ballDropSpeed,
             allowedBouncesPerHit,
+            allowedTouchesPerSide,
         ]
     }
 }

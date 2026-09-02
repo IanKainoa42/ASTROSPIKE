@@ -15,6 +15,7 @@ public enum MatchPhase: String, Codable, Equatable, Sendable {
 public enum PointReason: String, Codable, Equatable, Sendable {
     case goal
     case thirdBounce
+    case touchLimit
     case crash
     case netContact
     case forfeit
@@ -37,7 +38,8 @@ public struct Score: Codable, Equatable, Sendable {
     }
 }
 
-public struct FloorContactCounts: Codable, Equatable, Sendable {
+/// A plain per-side tally. Used for both floor bounces and ship touches.
+public struct SideCounts: Codable, Equatable, Sendable {
     public var cyan: Int
     public var orange: Int
 
@@ -54,18 +56,25 @@ public struct FloorContactCounts: Codable, Equatable, Sendable {
     }
 }
 
+public typealias FloorContactCounts = SideCounts
+
 public struct MatchRuleState: Codable, Equatable, Sendable {
     public var score: Score
-    public var floorContacts: FloorContactCounts
+    public var floorContacts: SideCounts
+    /// Ship touches taken during the current possession. Reset when the ball
+    /// crosses the net, so the cap is per trip rather than per rally.
+    public var shipTouches: SideCounts
     public var phase: MatchPhase
 
     public init(
         score: Score = Score(),
-        floorContacts: FloorContactCounts = FloorContactCounts(),
+        floorContacts: SideCounts = SideCounts(),
+        shipTouches: SideCounts = SideCounts(),
         phase: MatchPhase = .playing
     ) {
         self.score = score
         self.floorContacts = floorContacts
+        self.shipTouches = shipTouches
         self.phase = phase
     }
 }
@@ -89,35 +98,45 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
 public struct MatchRules: Sendable {
     public private(set) var state: MatchRuleState
     public private(set) var allowedFloorBounces: Int
+    public private(set) var allowedShipTouches: Int
 
     public init(
         state: MatchRuleState = MatchRuleState(),
-        allowedFloorBounces: Int = 2
+        allowedFloorBounces: Int = 1,
+        allowedShipTouches: Int = 3
     ) {
         self.state = state
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
+        self.allowedShipTouches = min(6, max(1, allowedShipTouches))
     }
 
     public mutating func updateAllowedFloorBounces(_ value: Int) {
         allowedFloorBounces = min(5, max(1, value))
     }
 
+    public mutating func updateAllowedShipTouches(_ value: Int) {
+        allowedShipTouches = min(6, max(1, value))
+    }
+
     public mutating func beginNextRally() {
         guard state.phase != .finished else { return }
-        state.floorContacts = FloorContactCounts()
+        state.floorContacts = SideCounts()
+        state.shipTouches = SideCounts()
         state.phase = .playing
     }
 
     public mutating func prepareNextRally() {
         guard state.phase != .finished else { return }
-        state.floorContacts = FloorContactCounts()
+        state.floorContacts = SideCounts()
+        state.shipTouches = SideCounts()
         state.phase = .countdown
     }
 
     public mutating func forfeit(winner: Team) -> [SimulationEvent] {
         guard state.phase != .finished else { return [] }
         state.score[winner] += 1
-        state.floorContacts = FloorContactCounts()
+        state.floorContacts = SideCounts()
+        state.shipTouches = SideCounts()
         state.phase = .finished
         return [
             .point(scoringTeam: winner, reason: .forfeit),
@@ -137,10 +156,19 @@ public struct MatchRules: Sendable {
 
         for contact in contacts {
             switch contact {
-            case .ballTouchedShip:
-                state.floorContacts = FloorContactCounts()
+            case let .ballTouchedShip(team):
+                // A hit still refreshes the bounce allowance -- but the touch
+                // tally does not reset, so touch/bounce/touch/bounce is no
+                // longer an unlimited way to stall on your own half.
+                state.floorContacts = SideCounts()
+                state.shipTouches[team] += 1
+                if state.shipTouches[team] > allowedShipTouches {
+                    return awardPoint(to: team.opponent, reason: .touchLimit)
+                }
             case let .ballCrossedCenter(team):
                 state.floorContacts[team] = 0
+                // Sending it over ends the possession for both sides.
+                state.shipTouches = SideCounts()
             case let .ballTouchedFloor(side):
                 state.floorContacts[side] += 1
                 if state.floorContacts[side] > allowedFloorBounces {
@@ -157,7 +185,8 @@ public struct MatchRules: Sendable {
         }
         let destroyedTeams = Set(destructions.map(\.0))
         if destroyedTeams.count == 2 {
-            state.floorContacts = FloorContactCounts()
+            state.floorContacts = SideCounts()
+            state.shipTouches = SideCounts()
             state.phase = .serve
             return [.rallyReset]
         }
@@ -169,7 +198,8 @@ public struct MatchRules: Sendable {
 
     private mutating func awardPoint(to team: Team, reason: PointReason) -> [SimulationEvent] {
         state.score[team] += 1
-        state.floorContacts = FloorContactCounts()
+        state.floorContacts = SideCounts()
+        state.shipTouches = SideCounts()
         var events: [SimulationEvent] = [.point(scoringTeam: team, reason: reason)]
         if hasWon(team) {
             state.phase = .finished

@@ -31,6 +31,11 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    private enum MatchmakingIntent: Equatable {
+        case quickMatch
+        case friendInvite
+    }
+
     private(set) var status: Status = .signedOut
     private(set) var isMatchReady = false
     private(set) var isAuthoritative = false
@@ -110,12 +115,18 @@ final class OnlineMatchCoordinator: NSObject,
     private var match: GKMatch?
     private var sequence: UInt64 = 0
     private var inputBuffer = RemoteInputBuffer()
+    private var snapshotGate = AuthoritativeSnapshotGate()
+    private var eventGate = MonotonicSequenceGate()
+    private var lifecycle = OnlineMatchLifecycle()
+    private var peerReadyReceived = false
     private var session: OnlineSessionStateMachine?
     private var reconnectTask: Task<Void, Never>?
+    private var finishTask: Task<Void, Never>?
     private var lastAuthoritativeState: WorldState?
     private var pendingPing: UInt64?
     private let codec = WireCodec()
     private var isListenerRegistered = false
+    private var pendingMatchmakingIntent: MatchmakingIntent?
 
     func authenticate() {
         guard !GKLocalPlayer.local.isAuthenticated else {
@@ -132,8 +143,10 @@ final class OnlineMatchCoordinator: NSObject,
                     self.signedIn()
                 } else if let error {
                     _ = error
+                    self.pendingMatchmakingIntent = nil
                     self.status = .failed(message: "Game Center unavailable")
                 } else {
+                    self.pendingMatchmakingIntent = nil
                     self.status = .signedOut
                 }
             }
@@ -148,6 +161,10 @@ final class OnlineMatchCoordinator: NSObject,
             GKLocalPlayer.local.register(self)
         }
         status = .ready(playerName: GKLocalPlayer.local.displayName)
+        if let intent = pendingMatchmakingIntent {
+            pendingMatchmakingIntent = nil
+            presentMatchmaker(inviteOnly: intent == .friendInvite)
+        }
     }
 
     func presentQuickMatch() {
@@ -188,6 +205,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     private func presentMatchmaker(inviteOnly: Bool) {
         guard GKLocalPlayer.local.isAuthenticated else {
+            pendingMatchmakingIntent = inviteOnly ? .friendInvite : .quickMatch
             authenticate()
             return
         }
@@ -208,12 +226,20 @@ final class OnlineMatchCoordinator: NSObject,
 
     private func configure(_ match: GKMatch) {
         self.match = match
+        peerReadyReceived = false
+        lifecycle.beginConfiguration()
         match.delegate = self
-        let expectedPlayerCount = match.expectedPlayerCount
+        let matchIdentifier = ObjectIdentifier(match)
         match.chooseBestHostingPlayer { [weak self] player in
             let hostPlayerID = player?.gamePlayerID
             Task { @MainActor in
-                guard let self else { return }
+                guard let self,
+                      self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
+                guard let hostPlayerID else {
+                    self.status = .failed(message: "Unable to select host")
+                    self.leaveMatch(preservingStatus: true)
+                    return
+                }
                 let localID = GKLocalPlayer.local.gamePlayerID
                 self.isAuthoritative = hostPlayerID == localID
                 self.localTeam = self.isAuthoritative ? .cyan : .orange
@@ -221,7 +247,10 @@ final class OnlineMatchCoordinator: NSObject,
                     localTeam: self.localTeam ?? .cyan,
                     ticksPerSecond: 120
                 )
-                self.isMatchReady = expectedPlayerCount == 0
+                self.lifecycle.beginMatch()
+                self.snapshotGate.reset()
+                self.eventGate.reset()
+                self.isMatchReady = match.expectedPlayerCount == 0 && self.peerReadyReceived
                 self.status = self.isMatchReady ? .connected : .matching
                 self.send(.ready, mode: .reliable)
                 self.sendPing()
@@ -244,15 +273,25 @@ final class OnlineMatchCoordinator: NSObject,
         guard let envelope = try? codec.decode(data) else { return }
         switch envelope.payload {
         case let .input(_, value):
-            if inputBuffer.accept(value) { remoteInput = inputBuffer.latest }
+            if lifecycle.acceptsGameplayData, inputBuffer.accept(value) {
+                remoteInput = inputBuffer.latest
+            }
         case let .snapshot(state):
-            onSnapshot?(state)
+            if lifecycle.acceptsGameplayData, snapshotGate.accept(tick: state.tick) {
+                onSnapshot?(state)
+            }
         case let .event(event):
-            onEvent?(event)
+            if lifecycle.acceptsGameplayData, eventGate.accept(sequence: envelope.sequence) {
+                onEvent?(event)
+            }
         case .ready:
+            guard lifecycle.acceptsNetworkMessages else { return }
+            peerReadyReceived = true
+            guard lifecycle.phase != .configuring else { return }
             isMatchReady = true
             status = .connected
         case let .ping(sentAt):
+            guard lifecycle.acceptsNetworkMessages else { return }
             if pendingPing == sentAt {
                 let now = DispatchTime.now().uptimeNanoseconds
                 pingMilliseconds = Int((now - sentAt) / 1_000_000)
@@ -261,12 +300,15 @@ final class OnlineMatchCoordinator: NSObject,
                 send(.ping(nanoseconds: sentAt), mode: .unreliable)
             }
         case let .resync(state):
-            onResync?(state)
+            if lifecycle.acceptsGameplayData {
+                snapshotGate.reset(to: state.tick)
+                onResync?(state)
+            }
         }
     }
 
     private func beginReconnectWindow() {
-        guard var session else { return }
+        guard lifecycle.beginReconnect(), var session else { return }
         _ = session.remoteDisconnected(at: 0)
         self.session = session
         status = .reconnecting(seconds: 10)
@@ -279,7 +321,9 @@ final class OnlineMatchCoordinator: NSObject,
                 if remaining == 0 {
                     self.status = .failed(message: "Opponent forfeited")
                     self.isMatchReady = false
+                    self.lifecycle.finish()
                     if let localTeam = self.localTeam { self.onForfeit?(localTeam) }
+                    self.disconnectTransport()
                     return
                 }
                 self.status = .reconnecting(seconds: remaining)
@@ -313,17 +357,23 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     func match(_ match: GKMatch, didReceive data: Data, fromRemotePlayer player: GKPlayer) {
+        guard self.match === match else { return }
         receive(data)
     }
 
     func match(_ match: GKMatch, player: GKPlayer, didChange state: GKPlayerConnectionState) {
+        guard self.match === match else { return }
         switch state {
         case .connected:
+            guard lifecycle.acceptConnection() else { return }
+            if lifecycle.phase == .configuring {
+                return
+            }
             let wasReconnecting: Bool
             if case .reconnecting = status { wasReconnecting = true } else { wasReconnecting = false }
             reconnectTask?.cancel()
             status = .connected
-            isMatchReady = match.expectedPlayerCount == 0
+            isMatchReady = match.expectedPlayerCount == 0 && peerReadyReceived
             if wasReconnecting {
                 if var session {
                     _ = session.remoteReconnected(at: 0)
@@ -350,5 +400,62 @@ final class OnlineMatchCoordinator: NSObject,
         guard let controller = GKMatchmakerViewController(invite: invite) else { return }
         controller.matchmakerDelegate = self
         present(controller)
+    }
+
+    func leaveMatch() {
+        leaveMatch(preservingStatus: false)
+    }
+
+    private func leaveMatch(preservingStatus: Bool) {
+        disconnectTransport()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        finishTask?.cancel()
+        finishTask = nil
+        session = nil
+        lifecycle.reset()
+        snapshotGate.reset()
+        eventGate.reset()
+        inputBuffer = RemoteInputBuffer()
+        remoteInput = nil
+        isMatchReady = false
+        isAuthoritative = false
+        localTeam = nil
+        pingMilliseconds = nil
+        pendingPing = nil
+        peerReadyReceived = false
+        lastAuthoritativeState = nil
+        onSnapshot = nil
+        onResync = nil
+        onEvent = nil
+        onForfeit = nil
+        onConnectionPaused = nil
+        onReconnect = nil
+        if !preservingStatus {
+            status = GKLocalPlayer.local.isAuthenticated
+                ? .ready(playerName: GKLocalPlayer.local.displayName)
+                : .signedOut
+        }
+    }
+
+    private func disconnectTransport() {
+        match?.delegate = nil
+        match?.disconnect()
+        match = nil
+    }
+
+    func finishCompletedMatch() {
+        guard lifecycle.acceptsGameplayData else { return }
+        lifecycle.finish()
+        isMatchReady = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        finishTask?.cancel()
+        finishTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self, !Task.isCancelled, self.lifecycle.phase == .terminal else { return }
+            self.disconnectTransport()
+            self.finishTask = nil
+        }
     }
 }
