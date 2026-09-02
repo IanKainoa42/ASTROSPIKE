@@ -31,6 +31,9 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
     public let linkState: OnlineLinkState
     public let matchmakingState: OnlineMatchmakingState
     public let reconnectSeconds: Int?
+    /// Most recent Game Center events, oldest first. Surfaced verbatim in the
+    /// diagnostics panel so invite and matchmaking failures can be read on-device.
+    public let eventLog: [String]
 
     public init(
         playerName: String?,
@@ -39,7 +42,8 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
         pingMilliseconds: Int?,
         linkState: OnlineLinkState,
         matchmakingState: OnlineMatchmakingState,
-        reconnectSeconds: Int?
+        reconnectSeconds: Int?,
+        eventLog: [String] = []
     ) {
         self.playerName = playerName
         self.localTeam = localTeam
@@ -48,6 +52,7 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
         self.linkState = linkState
         self.matchmakingState = matchmakingState
         self.reconnectSeconds = reconnectSeconds
+        self.eventLog = eventLog
     }
 
     public var playerLabel: String {
@@ -94,5 +99,15 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
 
     public var reconnectLabel: String {
         reconnectSeconds.map { "\($0) S" } ?? "—"
+    }
+
+    /// The newest event, or a placeholder when nothing has happened yet.
+    public var eventLabel: String {
+        eventLog.last ?? "NO EVENTS YET"
+    }
+
+    /// The newest `limit` events, newest first, for the expanded panel.
+    public func recentEvents(limit: Int) -> [String] {
+        Array(eventLog.suffix(limit).reversed())
     }
 }

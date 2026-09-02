@@ -44,6 +44,28 @@ struct GameCenterDiagnosticsPanel: View {
                     metric("RETRY", diagnostics.reconnectLabel, width: 54, identifier: "diagnostics-reconnect-value")
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("EVENTS")
+                        .font(.system(size: 7, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.5))
+                    ForEach(Array(diagnostics.recentEvents(limit: 5).enumerated()), id: \.offset) { index, event in
+                        Text(event)
+                            .font(.system(size: 9, weight: index == 0 ? .black : .semibold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(index == 0 ? 1 : 0.7))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .accessibilityIdentifier(index == 0 ? "diagnostics-event-value" : "diagnostics-event-\(index)")
+                    }
+                    if diagnostics.eventLog.isEmpty {
+                        Text(diagnostics.eventLabel)
+                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .accessibilityIdentifier("diagnostics-event-value")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(.horizontal, 9)

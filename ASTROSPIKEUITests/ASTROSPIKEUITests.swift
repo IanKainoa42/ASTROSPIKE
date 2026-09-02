@@ -94,6 +94,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["diagnostics-link-value"].label, "RECONNECTING")
         XCTAssertEqual(app.staticTexts["diagnostics-match-value"].label, "READY")
         XCTAssertEqual(app.staticTexts["diagnostics-reconnect-value"].label, "7 S")
+        XCTAssertEqual(app.staticTexts["diagnostics-event-value"].label, "10:46:09 INVITE → WINGMAN: NO ANSWER")
         XCTAssertFalse(app.staticTexts["GAME CENTER OFFLINE"].exists)
     }
 

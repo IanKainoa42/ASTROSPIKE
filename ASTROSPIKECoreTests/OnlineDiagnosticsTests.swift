@@ -62,3 +62,20 @@ struct OnlineDiagnosticsTests {
         #expect(diagnostics.reconnectLabel == "—")
     }
 }
+
+@Test func eventLogSurfacesNewestFirstWithPlaceholder() {
+    let empty = OnlineDiagnosticsSnapshot(
+        playerName: nil, localTeam: nil, authority: .undetermined, pingMilliseconds: nil,
+        linkState: .signedOut, matchmakingState: .notLinked, reconnectSeconds: nil
+    )
+    #expect(empty.eventLabel == "NO EVENTS YET")
+    #expect(empty.recentEvents(limit: 5).isEmpty)
+
+    let logged = OnlineDiagnosticsSnapshot(
+        playerName: "A", localTeam: nil, authority: .undetermined, pingMilliseconds: nil,
+        linkState: .ready, matchmakingState: .notLinked, reconnectSeconds: nil,
+        eventLog: ["one", "two", "three"]
+    )
+    #expect(logged.eventLabel == "three")
+    #expect(logged.recentEvents(limit: 2) == ["three", "two"])
+}

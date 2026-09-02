@@ -2,6 +2,7 @@
 import ASTROSPIKECore
 import Observation
 import UIKit
+import os
 
 @MainActor
 @Observable
@@ -42,6 +43,15 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var localTeam: Team?
     private(set) var remoteInput: PlayerInput?
     private(set) var pingMilliseconds: Int?
+    /// Rolling on-device log of Game Center events, oldest first.
+    private(set) var eventLog: [String] = []
+
+    private static let logger = Logger(subsystem: "com.iankainoa.ASTROSPIKE", category: "GameCenter")
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 
     var diagnosticsSnapshot: OnlineDiagnosticsSnapshot {
         let linkState: OnlineLinkState
@@ -101,8 +111,51 @@ final class OnlineMatchCoordinator: NSObject,
             pingMilliseconds: pingMilliseconds,
             linkState: linkState,
             matchmakingState: matchmakingState,
-            reconnectSeconds: reconnectSeconds
+            reconnectSeconds: reconnectSeconds,
+            eventLog: eventLog
         )
+    }
+
+    /// Records an event for the diagnostics panel and the unified log.
+    private func note(_ message: String) {
+        Self.logger.info("\(message, privacy: .public)")
+        eventLog.append("\(Self.clock.string(from: .now)) \(message)")
+        if eventLog.count > 12 { eventLog.removeFirst(eventLog.count - 12) }
+    }
+
+    /// Compact, readable description of a GameKit failure: `GK<code> <NAME>`.
+    private func describe(_ error: Error) -> String {
+        let nsError = error as NSError
+        var text: String
+        if let gkError = error as? GKError {
+            let name: String = switch gkError.code {
+            case .notAuthenticated: "NOT AUTHENTICATED"
+            case .authenticationInProgress: "AUTH IN PROGRESS"
+            case .userDenied: "USER DENIED"
+            case .communicationsFailure: "COMMS FAILURE"
+            case .invitationsDisabled: "INVITATIONS DISABLED"
+            case .restrictedToAutomatch: "RESTRICTED TO AUTOMATCH"
+            case .matchRequestInvalid: "MATCH REQUEST INVALID"
+            case .matchNotConnected: "MATCH NOT CONNECTED"
+            case .underage: "UNDERAGE"
+            case .gameUnrecognized: "GAME UNRECOGNIZED"
+            case .notSupported: "NOT SUPPORTED"
+            case .invalidPlayer: "INVALID PLAYER"
+            case .cancelled: "CANCELLED"
+            case .iCloudUnavailable: "ICLOUD UNAVAILABLE"
+            case .notAuthorized: "NOT AUTHORIZED"
+            case .connectionTimeout: "CONNECTION TIMEOUT"
+            case .apiNotAvailable: "API NOT AVAILABLE"
+            default: gkError.localizedDescription.uppercased()
+            }
+            text = "GK\(gkError.code.rawValue) \(name)"
+        } else {
+            text = "\(nsError.domain)#\(nsError.code) \(nsError.localizedDescription)"
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            text += " ← \(underlying.domain)#\(underlying.code)"
+        }
+        return text
     }
 
     var onSnapshot: ((WorldState) -> Void)?
@@ -138,14 +191,17 @@ final class OnlineMatchCoordinator: NSObject,
             Task { @MainActor in
                 guard let self else { return }
                 if let viewController {
+                    self.note("AUTH: SHOWING SIGN-IN")
                     self.present(viewController)
                 } else if GKLocalPlayer.local.isAuthenticated {
                     self.signedIn()
                 } else if let error {
-                    _ = error
+                    let detail = self.describe(error)
+                    self.note("AUTH FAILED: \(detail)")
                     self.pendingMatchmakingIntent = nil
-                    self.status = .failed(message: "Game Center unavailable")
+                    self.status = .failed(message: "Game Center unavailable · \(detail)")
                 } else {
+                    self.note("AUTH: SIGNED OUT")
                     self.pendingMatchmakingIntent = nil
                     self.status = .signedOut
                 }
@@ -160,7 +216,18 @@ final class OnlineMatchCoordinator: NSObject,
             isListenerRegistered = true
             GKLocalPlayer.local.register(self)
         }
-        status = .ready(playerName: GKLocalPlayer.local.displayName)
+        let player = GKLocalPlayer.local
+        var flags: [String] = []
+        if player.isUnderage { flags.append("UNDERAGE") }
+        if player.isMultiplayerGamingRestricted { flags.append("MULTIPLAYER RESTRICTED") }
+        if player.isPersonalizedCommunicationRestricted { flags.append("COMMS RESTRICTED") }
+        note("SIGNED IN: \(player.displayName)" + (flags.isEmpty ? "" : " · " + flags.joined(separator: ", ")))
+        if player.isMultiplayerGamingRestricted {
+            status = .failed(message: "Multiplayer restricted by Screen Time")
+            pendingMatchmakingIntent = nil
+            return
+        }
+        status = .ready(playerName: player.displayName)
         if let intent = pendingMatchmakingIntent {
             pendingMatchmakingIntent = nil
             presentMatchmaker(inviteOnly: intent == .friendInvite)
@@ -213,15 +280,35 @@ final class OnlineMatchCoordinator: NSObject,
         request.minPlayers = 2
         request.maxPlayers = 2
         request.defaultNumberOfPlayers = 2
+        request.inviteMessage = "Duel me in ASTROSPIKE"
+        request.recipientResponseHandler = { [weak self] player, response in
+            Task { @MainActor in
+                self?.note("INVITE → \(player.displayName): \(Self.describe(response))")
+            }
+        }
         guard let controller = GKMatchmakerViewController(matchRequest: request) else {
+            note("MATCHMAKER: CONTROLLER UNAVAILABLE")
             status = .failed(message: "Matchmaker unavailable")
             return
         }
         controller.matchmakerDelegate = self
         controller.canStartWithMinimumPlayers = false
         controller.matchmakingMode = inviteOnly ? .inviteOnly : .automatchOnly
+        note(inviteOnly ? "MATCHMAKER: INVITE PICKER OPEN" : "MATCHMAKER: QUICK MATCH SEARCHING")
         status = .matching
         present(controller)
+    }
+
+    private static func describe(_ response: GKInviteRecipientResponse) -> String {
+        switch response {
+        case .accepted: "ACCEPTED"
+        case .declined: "DECLINED"
+        case .failed: "FAILED TO DELIVER"
+        case .incompatible: "INCOMPATIBLE (NO APP / VERSION)"
+        case .unableToConnect: "UNABLE TO CONNECT"
+        case .noAnswer: "NO ANSWER"
+        @unknown default: "RESPONSE \(response.rawValue)"
+        }
     }
 
     private func configure(_ match: GKMatch) {
@@ -236,12 +323,14 @@ final class OnlineMatchCoordinator: NSObject,
                 guard let self,
                       self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
                 guard let hostPlayerID else {
+                    self.note("HOST SELECTION FAILED")
                     self.status = .failed(message: "Unable to select host")
                     self.leaveMatch(preservingStatus: true)
                     return
                 }
                 let localID = GKLocalPlayer.local.gamePlayerID
                 self.isAuthoritative = hostPlayerID == localID
+                self.note("HOST: \(player?.displayName ?? "?") · LOCAL IS \(self.isAuthoritative ? "HOST" : "GUEST")")
                 self.localTeam = self.isAuthoritative ? .cyan : .orange
                 self.session = OnlineSessionStateMachine(
                     localTeam: self.localTeam ?? .cyan,
@@ -265,6 +354,7 @@ final class OnlineMatchCoordinator: NSObject,
             let data = try codec.encode(WireEnvelope(sequence: sequence, payload: payload))
             try match.sendData(toAllPlayers: data, with: mode)
         } catch {
+            note("SEND FAILED: \(describe(error))")
             status = .failed(message: "Network send failed")
         }
     }
@@ -342,16 +432,21 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     func matchmakerViewControllerWasCancelled(_ viewController: GKMatchmakerViewController) {
+        note("MATCHMAKER: CANCELLED")
         viewController.dismiss(animated: true)
         status = .ready(playerName: GKLocalPlayer.local.displayName)
     }
 
     func matchmakerViewController(_ viewController: GKMatchmakerViewController, didFailWithError error: Error) {
+        let detail = describe(error)
+        note("MATCHMAKER FAILED: \(detail)")
         viewController.dismiss(animated: true)
-        status = .failed(message: error.localizedDescription)
+        status = .failed(message: detail)
     }
 
     func matchmakerViewController(_ viewController: GKMatchmakerViewController, didFind match: GKMatch) {
+        let names = match.players.map(\.displayName).joined(separator: ", ")
+        note("MATCH FOUND: [\(names)] · EXPECTING \(match.expectedPlayerCount) MORE")
         viewController.dismiss(animated: true)
         configure(match)
     }
@@ -363,6 +458,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     func match(_ match: GKMatch, player: GKPlayer, didChange state: GKPlayerConnectionState) {
         guard self.match === match else { return }
+        note("PEER \(player.displayName): \(state == .connected ? "CONNECTED" : state == .disconnected ? "DISCONNECTED" : "UNKNOWN")")
         switch state {
         case .connected:
             guard lifecycle.acceptConnection() else { return }
@@ -397,8 +493,45 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     func player(_ player: GKPlayer, didAccept invite: GKInvite) {
-        guard let controller = GKMatchmakerViewController(invite: invite) else { return }
+        note("INVITE ACCEPTED FROM \(invite.sender.displayName)")
+        guard let controller = GKMatchmakerViewController(invite: invite) else {
+            note("INVITE: CONTROLLER UNAVAILABLE")
+            status = .failed(message: "Could not open invitation")
+            return
+        }
         controller.matchmakerDelegate = self
+        status = .matching
+        present(controller)
+    }
+
+    /// Game Center app / Messages "Play together" route: the system hands us the
+    /// chosen recipients and expects us to open a matchmaker pre-filled with them.
+    func player(_ player: GKPlayer, didRequestMatchWithRecipients recipientPlayers: [GKPlayer]) {
+        note("SYSTEM MATCH REQUEST WITH \(recipientPlayers.map(\.displayName).joined(separator: ", "))")
+        guard GKLocalPlayer.local.isAuthenticated else {
+            pendingMatchmakingIntent = .friendInvite
+            authenticate()
+            return
+        }
+        let request = GKMatchRequest()
+        request.minPlayers = 2
+        request.maxPlayers = 2
+        request.defaultNumberOfPlayers = 2
+        request.recipients = recipientPlayers
+        request.inviteMessage = "Duel me in ASTROSPIKE"
+        request.recipientResponseHandler = { [weak self] player, response in
+            Task { @MainActor in
+                self?.note("INVITE → \(player.displayName): \(Self.describe(response))")
+            }
+        }
+        guard let controller = GKMatchmakerViewController(matchRequest: request) else {
+            note("MATCHMAKER: CONTROLLER UNAVAILABLE")
+            status = .failed(message: "Matchmaker unavailable")
+            return
+        }
+        controller.matchmakerDelegate = self
+        controller.matchmakingMode = .inviteOnly
+        status = .matching
         present(controller)
     }
 

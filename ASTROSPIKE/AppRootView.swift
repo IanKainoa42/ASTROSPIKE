@@ -20,7 +20,8 @@ struct AppRootView: View {
             pingMilliseconds: 42,
             linkState: .reconnecting,
             matchmakingState: .ready,
-            reconnectSeconds: 7
+            reconnectSeconds: 7,
+            eventLog: ["10:46:01 SIGNED IN: GC TEST PILOT", "10:46:09 INVITE → WINGMAN: NO ANSWER"]
         ) : nil
         _gameMode = State(initialValue: diagnosticsPreviewMode ? .online : (demoMode ? .solo(.pilot) : nil))
     }
