@@ -4,3 +4,6 @@ DerivedData/
 xcuserdata/
 .DS_Store
 build/
+
+# Agent workspace learnings (local only)
+.learnings/
