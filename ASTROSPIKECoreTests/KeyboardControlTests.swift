@@ -21,10 +21,36 @@ struct KeyboardControlTests {
 
     @Test("Keys we do not own are left for the responder chain")
     func unmappedKeysAreNotClaimed() {
-        // Escape, Q, Tab, Return: system and menu keys must stay untouched.
-        for code in [41, 20, 43, 40] {
+        // Q and Tab drive nothing at all: not the ship, not the match.
+        for code in [20, 43] {
             #expect(KeyboardControlMapping.action(forKeyCode: code) == nil)
+            #expect(KeyboardControlMapping.command(forKeyCode: code) == nil)
         }
+    }
+
+    @Test("Pause and confirm have keys, and none of them fly the ship")
+    func commandKeysAreDisjointFromFlight() {
+        for command in [FlightControlCommand.pause, .confirm] {
+            let codes = KeyboardControlMapping.keyCodes(for: command)
+            #expect(codes.count >= 2, "every command needs more than one key")
+            for code in codes {
+                #expect(KeyboardControlMapping.command(forKeyCode: code) == command)
+                // Critical: a key that flies the ship must never also pause it.
+                #expect(KeyboardControlMapping.action(forKeyCode: code) == nil)
+            }
+        }
+        // ... and nothing that flies the ship is a command.
+        for action in [FlightControlAction.left, .right, .thrust] {
+            for code in KeyboardControlMapping.keyCodes(for: action) {
+                #expect(KeyboardControlMapping.command(forKeyCode: code) == nil)
+            }
+        }
+    }
+
+    @Test("Escape pauses and Return confirms")
+    func escapeAndReturnAreWiredTheObviousWay() {
+        #expect(KeyboardControlMapping.command(forKeyCode: 41) == .pause)
+        #expect(KeyboardControlMapping.command(forKeyCode: 40) == .confirm)
     }
 
     @Test("No key is wired to two actions at once")

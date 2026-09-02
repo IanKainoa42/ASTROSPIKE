@@ -8,6 +8,14 @@ public enum FlightControlAction: String, Codable, Hashable, Sendable {
     case thrust
 }
 
+/// Keys that act on the match rather than the ship. Separate from
+/// `FlightControlAction` because these fire once on key-down instead of being
+/// held, and because a held key must never trigger one.
+public enum FlightControlCommand: String, Codable, Hashable, Sendable {
+    case pause
+    case confirm
+}
+
 /// Maps physical keys onto flight actions.
 ///
 /// Keys are identified by USB HID usage code rather than by the character they
@@ -24,6 +32,10 @@ public enum KeyboardControlMapping {
     static let rightArrow = 79
     static let leftArrow = 80
     static let upArrow = 82
+    static let keyP = 19
+    static let returnKey = 40
+    static let escape = 41
+    static let keypadEnter = 88
 
     /// The action a key drives, or `nil` if the key is not ours to consume --
     /// in which case the caller must pass the press along the responder chain
@@ -34,6 +46,24 @@ public enum KeyboardControlMapping {
         case keyD, rightArrow: .right
         case keyW, upArrow, spacebar: .thrust
         default: nil
+        }
+    }
+
+    /// The match command a key fires, or `nil`. Disjoint from `action` -- a key
+    /// never both flies the ship and works the menu.
+    public static func command(forKeyCode code: Int) -> FlightControlCommand? {
+        switch code {
+        case escape, keyP: .pause
+        case returnKey, keypadEnter: .confirm
+        default: nil
+        }
+    }
+
+    /// Every key that fires `command`, for on-screen hints and tests.
+    public static func keyCodes(for command: FlightControlCommand) -> [Int] {
+        switch command {
+        case .pause: [escape, keyP]
+        case .confirm: [returnKey, keypadEnter]
         }
     }
 

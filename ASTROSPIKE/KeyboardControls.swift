@@ -8,15 +8,20 @@ import UIKit
 struct KeyboardControls: UIViewRepresentable {
     @Binding var torque: Double
     @Binding var thrust: Bool
+    /// Match commands (pause, confirm). Nil while a sheet is up, so the keys
+    /// fall through to the system and Escape still dismisses what is on screen.
+    var onCommand: ((FlightControlCommand) -> Void)?
 
     func makeUIView(context: Context) -> KeyboardCaptureView {
         let view = KeyboardCaptureView()
         view.inputChanged = apply
+        view.commandFired = onCommand
         return view
     }
 
     func updateUIView(_ view: KeyboardCaptureView, context: Context) {
         view.inputChanged = apply
+        view.commandFired = onCommand
     }
 
     private func apply(_ held: Set<FlightControlAction>) {
@@ -28,6 +33,7 @@ struct KeyboardControls: UIViewRepresentable {
 
 final class KeyboardCaptureView: UIView {
     var inputChanged: ((Set<FlightControlAction>) -> Void)?
+    var commandFired: ((FlightControlCommand) -> Void)?
     private var held: Set<FlightControlAction> = []
 
     override var canBecomeFirstResponder: Bool { true }
@@ -77,17 +83,30 @@ final class KeyboardCaptureView: UIView {
     /// Returns whether the press was ours.
     @discardableResult
     private func update(_ press: UIPress, pressed: Bool) -> Bool {
-        guard let code = press.key?.keyCode.rawValue,
-              let action = KeyboardControlMapping.action(forKeyCode: code)
-        else { return false }
+        guard let code = press.key?.keyCode.rawValue else { return false }
 
-        if pressed {
-            held.insert(action)
-        } else {
-            held.remove(action)
+        if let action = KeyboardControlMapping.action(forKeyCode: code) {
+            if pressed {
+                held.insert(action)
+            } else {
+                held.remove(action)
+            }
+            inputChanged?(held)
+            return true
         }
-        inputChanged?(held)
-        return true
+
+        // Commands fire once, on the way down, and only while someone is
+        // listening -- otherwise Escape belongs to whatever sheet is showing.
+        if let commandFired, let command = KeyboardControlMapping.command(forKeyCode: code) {
+            if pressed {
+                // Steering is not held through a pause.
+                held.removeAll()
+                inputChanged?(held)
+                commandFired(command)
+            }
+            return true
+        }
+        return false
     }
 
     private func releaseAll() {

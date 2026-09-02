@@ -205,9 +205,13 @@ private struct GameView: View {
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
             // the ship without displacing the thumb controls.
-            KeyboardControls(torque: $session.torque, thrust: $session.thrust)
-                .frame(width: 0, height: 0)
-                .allowsHitTesting(false)
+            KeyboardControls(
+                torque: $session.torque,
+                thrust: $session.thrust,
+                onCommand: keyCommandHandler
+            )
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
             if session.state.match.phase == .serve, let text = session.lastPointText {
                 Text(text)
@@ -272,6 +276,29 @@ private struct GameView: View {
 
     private var localHomeSide: Team {
         session.state.ships[localTeam]?.homeSide ?? localTeam
+    }
+
+    /// Nil while a sheet owns the screen, so Escape closes the sheet instead of
+    /// re-triggering the thing that opened it.
+    private var keyCommandHandler: ((FlightControlCommand) -> Void)? {
+        if showPause || showLeaveConfirmation { return nil }
+        return handleKeyCommand
+    }
+
+    /// Keyboard equivalents for the two buttons a pilot actually needs mid-match.
+    private func handleKeyCommand(_ command: FlightControlCommand) {
+        switch command {
+        case .pause:
+            if mode == .online {
+                showLeaveConfirmation = true
+            } else {
+                session.togglePause()
+                showPause = true
+            }
+        case .confirm:
+            // Only meaningful on the results card, where it is the one button.
+            if session.state.match.phase == .finished { leaveGame() }
+        }
     }
 
     private func leaveGame() {
@@ -428,7 +455,7 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
-                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W, up arrow or space to thrust. The arrow keys steer too. Touch and keys work together.")
+                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W, up arrow or space to thrust. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The net is the goal, and it is a portal. Drive the ball into the face on your side and it goes straight through and vanishes — that’s a point. Clip the hard top and it just bounces. Three touches a trip, one bounce a touch.")
                     TutorialCard(number: "05", icon: "mountain.2.fill", title: "THE HILL", text: "The goal stands on a hill with the same curve as the corners. A ball rolled along the floor ramps up it and pops straight into the air instead of trickling in — so a scoring shot has to be driven, not rolled. The hill is solid; it never counts as a bounce.")
                     TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly over the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
