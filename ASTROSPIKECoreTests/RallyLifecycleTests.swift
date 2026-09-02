@@ -43,7 +43,7 @@ struct RallyLifecycleTests {
             angularVelocity: 0,
             thrustLevel: 1.5
         )
-        engine.state.ball.position = .init(-0.06, -0.50)
+        engine.state.ball.position = .init(-0.06, -0.30)
         engine.state.ball.velocity = .init(2, 0)
 
         engine.step(inputs: [:])
@@ -63,7 +63,7 @@ struct RallyLifecycleTests {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position = .init(-0.55, 0.25)
         engine.state.ships[.cyan]!.angle = .pi / 2
-        engine.state.ball.position = .init(-0.06, -0.50)
+        engine.state.ball.position = .init(-0.06, -0.30)
         engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldBall = engine.state.ball
@@ -85,7 +85,7 @@ struct RallyLifecycleTests {
     @Test("The serve releases after the prototype delay without a countdown")
     func serveDropsAfterPrototypeDelay() {
         var engine = SimulationEngine.testing()
-        engine.state.ball.position = .init(-0.06, -0.50)
+        engine.state.ball.position = .init(-0.06, -0.30)
         engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldPosition = engine.state.ball.position

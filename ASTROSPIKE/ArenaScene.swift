@@ -131,8 +131,8 @@ final class ArenaScene: SKScene {
 
         let floor = CGMutablePath()
         floor.move(to: point(-arena.cornerTangentX, arena.floorY))
-        floor.addLine(to: point(-arena.netHalfWidth, arena.floorY))
-        floor.move(to: point(arena.netHalfWidth, arena.floorY))
+        floor.addLine(to: point(-arena.moundBaseX, arena.floorY))
+        floor.move(to: point(arena.moundBaseX, arena.floorY))
         floor.addLine(to: point(arena.cornerTangentX, arena.floorY))
         let floorNode = SKShapeNode(path: floor)
         floorNode.strokeColor = .white.withAlphaComponent(0.55)
@@ -140,6 +140,7 @@ final class ArenaScene: SKScene {
         floorNode.glowWidth = 3
         arenaLayer.addChild(floorNode)
 
+        addMound()
         addPortalNet()
     }
 
@@ -179,6 +180,36 @@ final class ArenaScene: SKScene {
         return path
     }
 
+    /// The hill the net stands on: the corner fillet mirrored into the middle,
+    /// walked from the same samples the simulation collides against so the
+    /// drawn slope cannot drift from the one balls ramp off.
+    private func addMound() {
+        let profile = arena.moundProfile
+
+        let hill = CGMutablePath()
+        hill.move(to: point(-profile.last!.x, arena.floorY))
+        for sample in profile.reversed() {
+            hill.addLine(to: point(-sample.x, sample.y))
+        }
+        for sample in profile {
+            hill.addLine(to: point(sample.x, sample.y))
+        }
+        hill.closeSubpath()
+
+        let fill = SKShapeNode(path: hill)
+        fill.strokeColor = .clear
+        fill.fillColor = SKColor(white: 0.16, alpha: 1)
+        fill.zPosition = -2
+        arenaLayer.addChild(fill)
+
+        let edge = SKShapeNode(path: hill)
+        edge.strokeColor = .white.withAlphaComponent(0.55)
+        edge.lineWidth = 4
+        edge.glowWidth = 3
+        edge.fillColor = .clear
+        arenaLayer.addChild(edge)
+    }
+
     /// The net is the goal, and it is a portal: drive the ball into a face and
     /// it goes through and vanishes. Each face is painted in the colour of the
     /// side that shoots at it, so the target you are aiming for is the one in
@@ -186,13 +217,28 @@ final class ArenaScene: SKScene {
     /// coloured -- because clipping it rebounds rather than scoring.
     private func addPortalNet() {
         let half = arena.netHalfWidth
+        let sill = arena.portalMouthFloorY
+
+        // The plinth: the part of the slab standing on the crest, below the
+        // mouth. Solid and neutral, like the cap.
+        let plinth = CGMutablePath()
+        plinth.move(to: point(-half, arena.moundCrestY))
+        plinth.addLine(to: point(-half, sill))
+        plinth.addLine(to: point(half, sill))
+        plinth.addLine(to: point(half, arena.moundCrestY))
+        plinth.closeSubpath()
+        let plinthNode = SKShapeNode(path: plinth)
+        plinthNode.strokeColor = .white.withAlphaComponent(0.55)
+        plinthNode.lineWidth = 2
+        plinthNode.fillColor = SKColor(white: 0.16, alpha: 1)
+        arenaLayer.addChild(plinthNode)
 
         // The mouth: a dark slot the ball disappears into.
         let mouth = CGMutablePath()
-        mouth.move(to: point(-half, arena.floorY))
+        mouth.move(to: point(-half, sill))
         mouth.addLine(to: point(-half, arena.netTopY))
         mouth.addLine(to: point(half, arena.netTopY))
-        mouth.addLine(to: point(half, arena.floorY))
+        mouth.addLine(to: point(half, sill))
         mouth.closeSubpath()
         let mouthNode = SKShapeNode(path: mouth)
         mouthNode.strokeColor = .clear
@@ -204,7 +250,7 @@ final class ArenaScene: SKScene {
             let scorer: Team = sign < 0 ? .cyan : .orange
             let color: SKColor = scorer == .cyan ? .cyan : .orange
             let face = CGMutablePath()
-            face.move(to: point(half * sign, arena.floorY))
+            face.move(to: point(half * sign, sill))
             face.addLine(to: point(half * sign, arena.netTopY))
             let faceNode = SKShapeNode(path: face)
             faceNode.strokeColor = color.withAlphaComponent(0.9)
@@ -287,7 +333,7 @@ final class ArenaScene: SKScene {
                 if reason == .goal {
                     // One portal, dead centre -- the ball went through it and
                     // is gone, so the burst is where it vanished.
-                    let goalCenterY = (arena.floorY + arena.netTopY) / 2
+                    let goalCenterY = (arena.portalMouthFloorY + arena.netTopY) / 2
                     goalBurst(
                         at: point(0, goalCenterY),
                         color: scoringTeam == .cyan ? .cyan : .orange

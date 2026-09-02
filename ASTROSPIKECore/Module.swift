@@ -416,18 +416,18 @@ public struct SimulationEngine: Sendable {
     ) {
         let radius = 0.048
 
-        // The net is a portal for the ball only. A hull hits it like a wall,
-        // so the low route through the middle stays closed exactly as it was.
-        if let netContact = sweptNetContact(
+        // Nothing about the net stops a hull any more: it is a goal, and
+        // defending a goal means being able to fly into it. What is still solid
+        // in the middle is the hill it stands on.
+        if let mound = arena.moundContact(
             from: previousPosition,
             to: ship.position,
-            radius: radius,
-            postCenterX: 0
+            radius: radius
         ) {
-            ship.position = netContact.position
-            let inwardSpeed = simd_dot(ship.velocity, netContact.normal)
+            ship.position = mound.position
+            let inwardSpeed = simd_dot(ship.velocity, mound.normal)
             if inwardSpeed < 0 {
-                ship.velocity -= netContact.normal * ((1 + 0.45) * inwardSpeed)
+                ship.velocity -= mound.normal * ((1 + 0.12) * inwardSpeed)
             }
             effects.append(.collisionEffect(
                 position: ship.position,
@@ -461,45 +461,6 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    private func sweptNetContact(
-        from start: SIMD2<Double>,
-        to end: SIMD2<Double>,
-        radius: Double,
-        postCenterX: Double
-    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
-        let capCenter = SIMD2(postCenterX, arena.netTopY)
-        let combinedRadius = radius + arena.netHalfWidth
-        let capHitTime = sweptCircleTime(
-            from: start,
-            to: end,
-            center: capCenter,
-            radius: combinedRadius
-        )
-        let endOverlapsCap = simd_distance(end, capCenter) <= combinedRadius
-        if let hitTime = capHitTime ?? (endOverlapsCap ? 1 : nil) {
-            let contactCenter = start + (end - start) * hitTime
-            var normal = contactCenter - capCenter
-            let length = simd_length(normal)
-            if length <= 0.000_001 {
-                normal = SIMD2(start.x <= postCenterX ? -1 : 1, 0)
-            } else {
-                normal /= length
-            }
-            return (capCenter + normal * combinedRadius, normal)
-        }
-
-        guard let bodyHit = sweptNetHit(
-            from: start,
-            to: end,
-            radius: radius,
-            postCenterX: postCenterX
-        ) else {
-            return nil
-        }
-        let normal = SIMD2(bodyHit.fromLeft ? -1.0 : 1.0, 0)
-        return (bodyHit.position, normal)
-    }
-
     private mutating func resolveBallCollision(
         previousPosition: SIMD2<Double>,
         contacts: inout [RuleContact]
@@ -528,21 +489,57 @@ public struct SimulationEngine: Sendable {
             radius: r,
             postCenterX: 0
         ) {
-            state.ball.position = netHit.position
-            contacts.append(.ballEnteredGoal(
-                defending: arena.portalScorer(enteredFromLeft: netHit.fromLeft).opponent
-            ))
-            return
+            if netHit.crossedFace, netHit.position.y >= arena.portalMouthFloorY {
+                state.ball.position = netHit.position
+                contacts.append(.ballEnteredGoal(
+                    defending: arena.portalScorer(enteredFromLeft: netHit.fromLeft).opponent
+                ))
+                return
+            }
+            if netHit.position.y < arena.portalMouthFloorY {
+                // Below the sill the slab is a solid post standing on the
+                // crest. A ball that has ramped up the hill arrives here, and
+                // it bounces off rather than sneaking in underneath.
+                state.ball.position = netHit.position
+                let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
+                let inwardSpeed = simd_dot(state.ball.velocity, normal)
+                if inwardSpeed < 0 {
+                    state.ball.velocity -= normal * ((1 + 0.94) * inwardSpeed)
+                }
+                struckNet = true
+            }
+            // Otherwise the ball is inside the open mouth without having been
+            // driven at either face -- kicked straight up off the hill. The
+            // mouth is a window, so it rises through and the rally goes on.
         }
 
         if !struckNet, previousPosition.x.sign != state.ball.position.x.sign {
             contacts.append(.ballCrossedCenter(into: state.ball.position.x < 0 ? .cyan : .orange))
         }
 
-        // The arc runs first so that in a corner it, not the flat wall, sets the
-        // final position -- and so the floor clamp below cannot double-count a
-        // touch the arc has already reported.
+        // The hill and the corner arcs run before the flat clamps so that where
+        // one of them is in play it, not the wall, sets the final position --
+        // and so the floor clamp cannot double-count a touch the arc has
+        // already reported.
         var floorRegistered = false
+        if let mound = arena.moundContact(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r
+        ) {
+            state.ball.position = mound.position
+            let inwardSpeed = simd_dot(state.ball.velocity, mound.normal)
+            if inwardSpeed < 0 {
+                state.ball.velocity -= mound.normal * ((1 + 0.94) * inwardSpeed)
+            }
+            // Deliberately no floor contact. The hill is a structure in the
+            // middle of the court, not the ground: a ball driven into it skips
+            // up the slope over several ticks, and charging each of those as a
+            // bounce would end the rally the user wants to see turn into a
+            // toss-up. The corners register because they *are* the floor
+            // curving up at the ends of the court.
+        }
+
         if let corner = arena.cornerContact(position: state.ball.position, radius: r) {
             state.ball.position = corner.position
             let inwardSpeed = simd_dot(state.ball.velocity, corner.normal)
@@ -613,22 +610,34 @@ public struct SimulationEngine: Sendable {
         to end: SIMD2<Double>,
         radius: Double,
         postCenterX: Double
-    ) -> (position: SIMD2<Double>, fromLeft: Bool)? {
+    ) -> (position: SIMD2<Double>, fromLeft: Bool, crossedFace: Bool)? {
         let limit = arena.netHalfWidth + radius
         let delta = end - start
         let startOffset = start.x - postCenterX
+        // Already inside the slot. That is not a shot at a face -- most often
+        // it is a ball kicked straight up off the hill -- so it is reported
+        // without a crossing and the caller decides what the slab is at that
+        // height: solid post below the sill, open mouth above it.
         if abs(startOffset) <= limit, start.y - radius <= arena.netTopY {
             let fromLeft = startOffset <= 0
             let penetration = limit - abs(startOffset)
             let movingTowardNet = fromLeft ? delta.x > 0 : delta.x < 0
             if penetration > 0.000_000_1 || movingTowardNet {
-                return (SIMD2(postCenterX + (fromLeft ? -limit : limit), start.y), fromLeft)
+                return (
+                    SIMD2(postCenterX + (fromLeft ? -limit : limit), start.y),
+                    fromLeft,
+                    false
+                )
             }
         }
         guard abs(delta.x) > 0.000_000_1 else {
             if abs(end.x - postCenterX) <= limit, end.y - radius <= arena.netTopY {
                 let fromLeft = startOffset < 0
-                return (SIMD2(postCenterX + (fromLeft ? -limit : limit), end.y), fromLeft)
+                return (
+                    SIMD2(postCenterX + (fromLeft ? -limit : limit), end.y),
+                    fromLeft,
+                    false
+                )
             }
             return nil
         }
@@ -641,7 +650,7 @@ public struct SimulationEngine: Sendable {
         guard (0 ... 1).contains(t) else { return nil }
         let hitY = start.y + delta.y * t
         guard hitY - radius <= arena.netTopY else { return nil }
-        return (SIMD2(boundary, hitY), fromLeft)
+        return (SIMD2(boundary, hitY), fromLeft, true)
     }
 
     private mutating func resolveBallShipCollisions(
