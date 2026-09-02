@@ -318,7 +318,10 @@ final class OnlineMatchCoordinator: NSObject,
         match.delegate = self
         let matchIdentifier = ObjectIdentifier(match)
         match.chooseBestHostingPlayer { [weak self] player in
+            // Read everything off the player here: GKPlayer is not Sendable, so
+            // only plain values may cross into the main actor.
             let hostPlayerID = player?.gamePlayerID
+            let hostName = player?.displayName ?? "?"
             Task { @MainActor in
                 guard let self,
                       self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
@@ -330,7 +333,7 @@ final class OnlineMatchCoordinator: NSObject,
                 }
                 let localID = GKLocalPlayer.local.gamePlayerID
                 self.isAuthoritative = hostPlayerID == localID
-                self.note("HOST: \(player?.displayName ?? "?") · LOCAL IS \(self.isAuthoritative ? "HOST" : "GUEST")")
+                self.note("HOST: \(hostName) · LOCAL IS \(self.isAuthoritative ? "HOST" : "GUEST")")
                 self.localTeam = self.isAuthoritative ? .cyan : .orange
                 self.session = OnlineSessionStateMachine(
                     localTeam: self.localTeam ?? .cyan,
@@ -339,7 +342,7 @@ final class OnlineMatchCoordinator: NSObject,
                 self.lifecycle.beginMatch()
                 self.snapshotGate.reset()
                 self.eventGate.reset()
-                self.isMatchReady = match.expectedPlayerCount == 0 && self.peerReadyReceived
+                self.isMatchReady = (self.match?.expectedPlayerCount ?? 0) == 0 && self.peerReadyReceived
                 self.status = self.isMatchReady ? .connected : .matching
                 self.send(.ready, mode: .reliable)
                 self.sendPing()
