@@ -433,6 +433,36 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.score == Score())
     }
 
+    @Test("Skidding along the hump is quiet; hitting it is a knock")
+    func skiddingAlongTheHumpIsNotAKnockEveryTick() {
+        // Thrusting up under the roof, the hull rides the hump for the whole
+        // run. That must not spark and buzz every tick.
+        var engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(0.25, 0.42)
+        engine.state.ships[.cyan]!.velocity = SIMD2(-0.6, 0.3)
+        engine.state.ships[.cyan]!.angle = 1.9
+        var effects = 0
+        for tick in UInt64(0) ..< 150 {
+            engine.step(inputs: [
+                .cyan: PlayerInput(tick: tick, torque: 0, thrust: true),
+                .orange: .idle(tick: tick),
+            ])
+            for case .collisionEffect in engine.lastEvents { effects += 1 }
+        }
+        #expect(effects <= 3)
+
+        // A hull flung straight into the hump still registers one.
+        engine = SimulationEngine.testing()
+        engine.state.ships[.cyan]!.position = SIMD2(0.20, 0.36)
+        engine.state.ships[.cyan]!.velocity = SIMD2(0, 3)
+        var hits = 0
+        for tick in UInt64(0) ..< 30 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            for case .collisionEffect in engine.lastEvents { hits += 1 }
+        }
+        #expect(hits >= 1)
+    }
+
     @Test("Short of the marker a ship flies free")
     func insideTheMarkerIsUnresisted() {
         var engine = SimulationEngine.testing()

@@ -208,6 +208,8 @@ public struct SimulationEngine: Sendable {
     /// collar. Below the old 0.94 so the ball feels like it has some weight
     /// to it instead of pinging around the arena.
     static let ballRestitution = 0.82
+    /// Slowest hull-on-arena or hull-on-hull knock that counts as an impact.
+    static let effectImpactSpeed = 0.25
     /// The floor takes a little more out of it than the walls do.
     static let floorRestitution = 0.78
 
@@ -410,10 +412,14 @@ public struct SimulationEngine: Sendable {
         }
         state.ships[.cyan] = cyan
         state.ships[.orange] = orange
-        effects.append(.collisionEffect(
-            position: (cyan.position + orange.position) / 2,
-            intensity: impactSpeed
-        ))
+        // Same rule as the hump: two hulls resting against each other are
+        // not colliding every tick.
+        if closingSpeed > Self.effectImpactSpeed {
+            effects.append(.collisionEffect(
+                position: (cyan.position + orange.position) / 2,
+                intensity: impactSpeed
+            ))
+        }
     }
 
     private mutating func resolveArenaCollision(
@@ -437,10 +443,15 @@ public struct SimulationEngine: Sendable {
             if inwardSpeed < 0 {
                 ship.velocity -= hump.normal * ((1 + 0.12) * inwardSpeed)
             }
-            effects.append(.collisionEffect(
-                position: ship.position,
-                intensity: abs(inwardSpeed)
-            ))
+            // A hull skidding along the hump touches it every tick. Only a
+            // real knock is an event; the rest would be sparks and haptics
+            // at 120 Hz, and every one of them sent over the wire online.
+            if inwardSpeed < -Self.effectImpactSpeed {
+                effects.append(.collisionEffect(
+                    position: ship.position,
+                    intensity: abs(inwardSpeed)
+                ))
+            }
         }
 
         if let corner = arena.cornerContact(position: ship.position, radius: radius) {
