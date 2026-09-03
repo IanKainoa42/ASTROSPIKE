@@ -56,6 +56,8 @@ public struct AIController: InputSource, Sendable {
     private static let accelerationGain = 3.5
     /// Fraction of full thrust that has to be useful before the motor fires.
     private static let thrustGate = 0.34
+    /// Cosine of the largest nose error the motor will still fire through.
+    private static let thrustAlignment = 0.7
     private static let turnGain = 4.0
     private static let turnDeadzone = 0.06
     /// Ship centre to ball centre for a nose-on contact.
@@ -64,6 +66,12 @@ public struct AIController: InputSource, Sendable {
     private static let strikeRunup = 0.18
     /// Seconds before contact that the run-in begins.
     private static let driveWindow = 0.55
+    /// How far under the cap the shot is aimed. Deep enough that a low ball
+    /// is driven nearly flat, so the run-up is beside it rather than under
+    /// it, and a high one is spiked down into the far half.
+    private static let aimDepthUnderCap = 0.34
+    /// Seconds a plan assumes the ship spends turning before it can move.
+    private static let turnLatency = 0.25
     /// Contact ticks after which the ball is swatted clear no matter what.
     private static let carryLimitTicks: UInt64 = 36
     private static let predictionSteps = 120
@@ -224,11 +232,14 @@ public struct AIController: InputSource, Sendable {
         // across and falls at the same time instead of climbing away from
         // the ball.
         let wantsDescent = desiredVelocity.y < ship.velocity.y - 0.05
-        if wantsDescent, altitudeMargin > 0.5 {
+        if wantsDescent, altitudeMargin > 0.25 {
             minimumPitch = 0.22
         }
         need.y = max(need.y, abs(need.x) * tan(minimumPitch))
-        if altitudeMargin < 0.35 {
+        // Only right down at the deck is a climb forced regardless: the floor
+        // is survivable, and low balls have to be played from low down. A
+        // genuinely dangerous descent is already caught by `recovering`.
+        if altitudeMargin < 0.12 {
             need.y = max(need.y, 3.0)
         }
 
@@ -240,9 +251,27 @@ public struct AIController: InputSource, Sendable {
         let turnDemand = angleError * Self.turnGain
         let torque = abs(turnDemand) < Self.turnDeadzone ? 0 : max(-1, min(1, turnDemand))
         let nose = SIMD2(cos(ship.angle), sin(ship.angle))
+        // Fire only once the nose is roughly where the demand points. A big
+        // lateral demand always carries some lift, and burning on that lift
+        // alone while the nose is still upright is how the ship climbs away
+        // from a ball it was told to go down and get.
+        let aligned = cos(angleError) > Self.thrustAlignment
+        // The motor is all or nothing, and at full burn the nose carries far
+        // more lift than the demand asked for. So when the ship is already
+        // rising faster than it wants to, and a burn would lift it further,
+        // coast: it keeps its sideways speed and sinks, which is the only way
+        // a lander gets down to a low ball. The deck rule above still wins.
+        let liftsWhenBurning = nose.y * configuration.maximumThrustAcceleration
+            > -configuration.gravity.y
+        let climbingAway = ship.velocity.y > desiredVelocity.y + 0.10
+            && liftsWhenBurning
+            && !recovering
+            && altitudeMargin >= 0.12
         let thrust = crossingDanger
             ? cos(ship.angle) * homeSign > 0.25
-            : simd_dot(need, nose) > configuration.maximumThrustAcceleration * Self.thrustGate
+            : aligned
+                && !climbingAway
+                && simd_dot(need, nose) > configuration.maximumThrustAcceleration * Self.thrustGate
         return PlayerInput(tick: tick, torque: torque, thrust: thrust)
     }
 
@@ -289,19 +318,19 @@ public struct AIController: InputSource, Sendable {
             position += velocity * Self.predictionStep
             if position.x - radius <= -arena.halfWidth {
                 position.x = -arena.halfWidth + radius
-                velocity.x = abs(velocity.x) * 0.94
+                velocity.x = abs(velocity.x) * SimulationEngine.ballRestitution
             }
             if position.x + radius >= arena.halfWidth {
                 position.x = arena.halfWidth - radius
-                velocity.x = -abs(velocity.x) * 0.94
+                velocity.x = -abs(velocity.x) * SimulationEngine.ballRestitution
             }
             if position.y + radius >= arena.ceilingY {
                 position.y = arena.ceilingY - radius
-                velocity.y = -abs(velocity.y) * 0.94
+                velocity.y = -abs(velocity.y) * SimulationEngine.ballRestitution
             }
             if position.y - radius <= arena.floorY {
                 position.y = arena.floorY + radius
-                velocity.y = abs(velocity.y) * 0.90
+                velocity.y = abs(velocity.y) * SimulationEngine.floorRestitution
             }
             // The net is a portal, not a wall. A rollout that reaches the open
             // mouth is a ball already through and gone, so stop projecting
@@ -313,7 +342,7 @@ public struct AIController: InputSource, Sendable {
                 position = hump.position
                 let inward = simd_dot(velocity, hump.normal)
                 if inward < 0 {
-                    velocity -= hump.normal * (1.94 * inward)
+                    velocity -= hump.normal * ((1 + SimulationEngine.ballRestitution) * inward)
                 }
             }
             if abs(position.x) <= arena.netHalfWidth + radius {
@@ -348,7 +377,10 @@ public struct AIController: InputSource, Sendable {
             let candidate = Plan(hasIntercept: true, point: position, delay: delay, shot: shot)
             if earliestArrival == nil { earliestArrival = candidate }
             let travel = simd_length(clamped(runup, homeSign: homeSign) - ship.position)
-            let reach = 0.45 * shipSpeed * delay + 1.6 * delay * delay
+            // A lander goes nowhere until its nose points the right way, so
+            // the first quarter second of any plan buys no distance at all.
+            let burn = max(0, delay - Self.turnLatency)
+            let reach = 0.45 * shipSpeed * delay + 1.6 * burn * burn
             if travel + 0.05 <= reach { return candidate }
         }
 
@@ -368,15 +400,15 @@ public struct AIController: InputSource, Sendable {
         SIMD2(homeSign * 0.42, arena.floorY + 0.50)
     }
 
-    /// Direction to send the ball from `point`: at the mouth of the goal on
-    /// this side, which hangs from the roof, so every shot is a lift. The
-    /// aim sits a little above centre because the ball drops on the way.
+    /// Direction to send the ball from `point`. The face on this side is the
+    /// goal this ship defends, so the ball must never be driven at it. The
+    /// shot goes just under the cap instead: across into the far half, and
+    /// rising, so it can drop onto the far lip and roll into the goal the
+    /// other side is defending.
     private func shotDirection(from point: SIMD2<Double>, homeSign: Double) -> SIMD2<Double> {
-        let mouthCenterY = (arena.portalMouthTopY + arena.netBottomY) / 2
-        let aim = SIMD2(homeSign * arena.netHalfWidth, mouthCenterY + 0.03)
+        let aim = SIMD2(0, arena.netBottomY - Self.aimDepthUnderCap)
         var direction = simd_normalize(aim - point)
-        // Never straight up: a shot with no run at the face pogoes under the
-        // cap instead of going in.
+        // Always across, never a lob into the roof.
         if direction.x * homeSign > -0.35 {
             direction = simd_normalize(SIMD2(-homeSign * 0.35, direction.y))
         }

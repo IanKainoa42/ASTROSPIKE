@@ -56,7 +56,7 @@ struct ArenaPhysicsTests {
         }
     }
 
-    @Test("A ball landing on a lip rolls into the portal and scores for that side")
+    @Test("A ball landing on a lip rolls into the portal, against the side defending it")
     func lipFeedsTheBallIntoThePortal() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position.y = -0.40
@@ -73,7 +73,7 @@ struct ArenaPhysicsTests {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
         }
 
-        #expect(engine.state.match.score == Score(cyan: 0, orange: 1), "the lip did not feed the goal")
+        #expect(engine.state.match.score == Score(cyan: 1, orange: 0), "the lip did not feed the goal")
     }
 
     @Test("The bottom of the net is hard: a toss from below bounces, never scores")
@@ -126,13 +126,12 @@ struct ArenaPhysicsTests {
         #expect(abs(deflections[0] + deflections[1]) < 0.001, "the cap leans one way")
     }
 
-    @Test("A lifted drive into the portal scores for whoever drove it")
+    @Test("A lifted drive into the near face is a point against the side defending it")
     func liftedDriveThroughThePortalScores() {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position.y = -0.40
         engine.state.ships[.orange]!.position.y = -0.40
-        // A rising drive from the cyan half into the near face -- the shot the
-        // whole game is aimed at.
+        // A rising drive from the cyan half into the cyan face: an own goal.
         engine.state.ball = BallState(
             position: SIMD2(-0.30, 0.29),
             velocity: SIMD2(2, 0.3),
@@ -143,15 +142,15 @@ struct ArenaPhysicsTests {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
         }
 
-        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
     }
 
-    @Test("The half the ball came from is the half that scores")
-    func portalEntryScoresForWhoeverDroveItIn() {
+    @Test("The face on your side is your goal: entry from your half scores for the other side")
+    func portalEntryScoresAgainstTheDefender() {
         let arena = ArenaGeometry.standard
 
-        #expect(arena.portalScorer(enteredFromLeft: true) == .cyan)
-        #expect(arena.portalScorer(enteredFromLeft: false) == .orange)
+        #expect(arena.portalScorer(enteredFromLeft: true) == .orange)
+        #expect(arena.portalScorer(enteredFromLeft: false) == .cyan)
     }
 
     @Test("A ball crossing under the net has not scored")
@@ -188,7 +187,7 @@ struct ArenaPhysicsTests {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
         }
 
-        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
     }
 
     @Test("The ball does not linger in the net -- it is consumed on entry")
@@ -205,7 +204,7 @@ struct ArenaPhysicsTests {
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
         // One tick is enough: the face is reached and the rally is already over.
-        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
         #expect(engine.state.match.phase != .playing)
     }
 
@@ -246,7 +245,7 @@ struct ArenaPhysicsTests {
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
         // Half an arena in one tick still has to be caught by the swept test.
-        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
     }
 
     @Test("A ball riding the roof into the middle is thrown down instead of scoring")
@@ -347,7 +346,7 @@ struct ArenaPhysicsTests {
 
         engine.step(inputs: [.cyan: .idle(tick: 0), .orange: .idle(tick: 0)])
 
-        #expect(engine.state.ball.velocity.x < -5.5)
+        #expect(engine.state.ball.velocity.x < -4.8)
     }
 
     @Test("A ship can cross under the net and enter the opponent's half")

@@ -15,7 +15,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable {
         gravityMagnitude: 2,
         thrustAcceleration: 5.5,
         rotationAcceleration: 3,
-        ballGravityMultiplier: 0.72,
+        ballGravityMultiplier: 0.95,
         ballDropHeight: 0.06,
         ballDropSpeed: 0.18,
         allowedBouncesPerHit: 1,

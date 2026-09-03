@@ -48,7 +48,8 @@ struct RallyLifecycleTests {
 
         engine.step(inputs: [:])
 
-        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        // Through the cyan face: cyan's goal, so orange's point.
+        #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
         #expect(engine.state.match.phase == .serve)
         #expect(engine.state.ball.position == .init(0, 0.06))
         #expect(engine.state.ball.velocity == .zero)
@@ -101,7 +102,8 @@ struct RallyLifecycleTests {
 
         #expect(engine.state.match.phase == .playing)
         #expect(engine.state.ball.position == heldPosition)
-        #expect(engine.state.ball.velocity == .init(0.45, -0.18))
+        // Orange took the point, so the serve drifts toward cyan, who conceded.
+        #expect(engine.state.ball.velocity == .init(-0.45, -0.18))
     }
 
     @Test("Play no longer destroys a ship at all")

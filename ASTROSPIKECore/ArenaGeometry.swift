@@ -337,10 +337,10 @@ public struct ArenaGeometry: Equatable, Sendable {
         return (contact, normal)
     }
 
-    /// Who scores, for a ball that has just gone through the portal. Whoever
-    /// drove it in gets the point, so entry through the left face is a shot
-    /// from the cyan half.
+    /// Who scores, for a ball that has just gone through the portal. The face
+    /// on your side is your goal to defend, so a ball that enters through the
+    /// left face -- from the cyan half -- is a point for orange.
     public func portalScorer(enteredFromLeft: Bool) -> Team {
-        enteredFromLeft ? .cyan : .orange
+        enteredFromLeft ? .orange : .cyan
     }
 }

@@ -153,7 +153,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         maximumThrustAcceleration: Double = 5.5,
         thrustRampRate: Double = 0,
         torqueAcceleration: Double = 3,
-        ballGravityMultiplier: Double = 0.72,
+        ballGravityMultiplier: Double = 0.95,
         ballDropHeight: Double = 0.06,
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
@@ -203,6 +203,13 @@ public struct SimulationEngine: Sendable {
             allowedShipTouches: configuration.allowedShipTouches
         )
     }
+
+    /// How much speed the ball keeps off the walls, roof, hump, corners and
+    /// collar. Below the old 0.94 so the ball feels like it has some weight
+    /// to it instead of pinging around the arena.
+    static let ballRestitution = 0.82
+    /// The floor takes a little more out of it than the walls do.
+    static let floorRestitution = 0.78
 
     public static func testing() -> SimulationEngine {
         SimulationEngine(state: WorldState(ships: [
@@ -505,7 +512,7 @@ public struct SimulationEngine: Sendable {
                 let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
                 let inwardSpeed = simd_dot(state.ball.velocity, normal)
                 if inwardSpeed < 0 {
-                    state.ball.velocity -= normal * ((1 + 0.94) * inwardSpeed)
+                    state.ball.velocity -= normal * ((1 + Self.ballRestitution) * inwardSpeed)
                 }
                 struckNet = true
             }
@@ -546,7 +553,7 @@ public struct SimulationEngine: Sendable {
             state.ball.position = hump.position
             let inwardSpeed = simd_dot(state.ball.velocity, hump.normal)
             if inwardSpeed < 0 {
-                state.ball.velocity -= hump.normal * ((1 + 0.94) * inwardSpeed)
+                state.ball.velocity -= hump.normal * ((1 + Self.ballRestitution) * inwardSpeed)
             }
             // Never a floor contact: the hump is a structure hanging from the
             // roof, not the ground. The corners register because they *are*
@@ -557,7 +564,7 @@ public struct SimulationEngine: Sendable {
             state.ball.position = corner.position
             let inwardSpeed = simd_dot(state.ball.velocity, corner.normal)
             if inwardSpeed < 0 {
-                state.ball.velocity -= corner.normal * ((1 + 0.94) * inwardSpeed)
+                state.ball.velocity -= corner.normal * ((1 + Self.ballRestitution) * inwardSpeed)
             }
             if corner.normal.y > 0.5 {
                 floorRegistered = true
@@ -567,22 +574,22 @@ public struct SimulationEngine: Sendable {
 
         if state.ball.position.y - r <= arena.floorY {
             state.ball.position.y = arena.floorY + r
-            state.ball.velocity.y = abs(state.ball.velocity.y) * 0.90
+            state.ball.velocity.y = abs(state.ball.velocity.y) * Self.floorRestitution
             if !floorRegistered {
                 contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
             }
         }
         if state.ball.position.y + r >= arena.ceilingY {
             state.ball.position.y = arena.ceilingY - r
-            state.ball.velocity.y = -abs(state.ball.velocity.y) * 0.94
+            state.ball.velocity.y = -abs(state.ball.velocity.y) * Self.ballRestitution
         }
         if state.ball.position.x - r <= -arena.halfWidth {
             state.ball.position.x = -arena.halfWidth + r
-            state.ball.velocity.x = abs(state.ball.velocity.x) * 0.94
+            state.ball.velocity.x = abs(state.ball.velocity.x) * Self.ballRestitution
         }
         if state.ball.position.x + r >= arena.halfWidth {
             state.ball.position.x = arena.halfWidth - r
-            state.ball.velocity.x = -abs(state.ball.velocity.x) * 0.94
+            state.ball.velocity.x = -abs(state.ball.velocity.x) * Self.ballRestitution
         }
     }
 

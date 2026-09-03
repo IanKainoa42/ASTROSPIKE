@@ -89,9 +89,17 @@ struct AIControllerTests {
         state.ball.position = SIMD2(-0.30, 0.30)
         var controller = AIController(difficulty: .ace)
 
-        let input = controller.input(for: state, team: .orange, tick: 0)
+        // The motor waits for the nose to come round before it fires, so
+        // give it a moment to turn; what matters is that it does fire
+        // rather than treating the centre line as something to flee.
+        var thrusted = false
+        for tick in UInt64(0) ..< 30 {
+            let input = controller.input(for: state, team: .orange, tick: tick)
+            if input.thrust { thrusted = true; break }
+            state.ships[.orange]!.angle += input.torque * 3 / 120
+        }
 
-        #expect(input.thrust)
+        #expect(thrusted)
     }
 
     @Test("Pilot survives ten seconds while the ball remains across the net")
@@ -226,9 +234,9 @@ struct AIControllerTests {
                 if simd_distance(engine.state.ball.position, engine.state.ships[.orange]!.position) < 0.12 {
                     strikes += 1
                 }
-                // The AI shoots at the goal on its own side, so a good return
-                // is a goal, and a near miss comes back across under the net.
-                // Either is the ball put back at the net rather than dropped.
+                // The AI's own face is the goal it defends, so its shot goes
+                // under the cap into the far half. Landing it on the far lip
+                // is a goal; short of that it has still crossed.
                 if engine.state.match.score.orange == 1 {
                     returned = true
                     break
