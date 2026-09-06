@@ -35,7 +35,9 @@ final class GameSession {
     init(
         mode: GameMode,
         online: OnlineMatchCoordinator? = nil,
-        configuration: SimulationConfiguration = .init()
+        configuration: SimulationConfiguration = .init(),
+        localHull: Hull = .lancet,
+        rivalHull: Hull = .anvil
     ) {
         self.mode = mode
         self.online = online
@@ -52,6 +54,9 @@ final class GameSession {
         }
         scene.scaleMode = .resizeFill
         scene.snapshot = state
+        let localTeam = online?.localTeam ?? .cyan
+        scene.setHull(localHull, for: localTeam)
+        scene.setHull(online?.remoteHull ?? rivalHull, for: localTeam.opponent)
         installOnlineCallbacks()
     }
 

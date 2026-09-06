@@ -42,6 +42,11 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var isAuthoritative = false
     private(set) var localTeam: Team?
     private(set) var remoteInput: PlayerInput?
+    /// The hull the peer flies, once their profile arrives. Nil until then,
+    /// so the scene keeps the team default and never shows a wrong hull.
+    private(set) var remoteHull: Hull?
+    /// Set by the app from the pilot profile; sent with the ready handshake.
+    var localHull: Hull = .lancet
     private(set) var pingMilliseconds: Int?
     /// Rolling on-device log of Game Center events, oldest first.
     private(set) var eventLog: [String] = []
@@ -345,6 +350,7 @@ final class OnlineMatchCoordinator: NSObject,
                 self.isMatchReady = (self.match?.expectedPlayerCount ?? 0) == 0 && self.peerReadyReceived
                 self.status = self.isMatchReady ? .connected : .matching
                 self.send(.ready, mode: .reliable)
+                self.send(.profile(team: self.localTeam ?? .cyan, hull: self.localHull), mode: .reliable)
                 self.sendPing()
             }
         }
@@ -383,6 +389,10 @@ final class OnlineMatchCoordinator: NSObject,
             guard lifecycle.phase != .configuring else { return }
             isMatchReady = true
             status = .connected
+        case let .profile(team, hull):
+            guard lifecycle.acceptsNetworkMessages, team != localTeam else { return }
+            remoteHull = hull
+            note("PEER FLIES \(hull.spec.name.uppercased())")
         case let .ping(sentAt):
             guard lifecycle.acceptsNetworkMessages else { return }
             if pendingPing == sentAt {
@@ -554,6 +564,7 @@ final class OnlineMatchCoordinator: NSObject,
         eventGate.reset()
         inputBuffer = RemoteInputBuffer()
         remoteInput = nil
+        remoteHull = nil
         isMatchReady = false
         isAuthoritative = false
         localTeam = nil

@@ -5,8 +5,11 @@ import SwiftUI
 struct AppRootView: View {
     @State private var online = OnlineMatchCoordinator()
     @State private var tuning = FlightTuningStore()
+    @State private var profile = PilotProfileStore()
+    @State private var entitlements = HullEntitlements()
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
+    @State private var showOnboarding: Bool
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
     init() {
@@ -24,6 +27,10 @@ struct AppRootView: View {
             eventLog: ["10:46:01 SIGNED IN: GC TEST PILOT", "10:46:09 INVITE → WINGMAN: NO ANSWER"]
         ) : nil
         _gameMode = State(initialValue: diagnosticsPreviewMode ? .online : (demoMode ? .solo(.pilot) : nil))
+        // Automation and UI tests land on the home screen; a fresh install lands
+        // on the intro.
+        let bypass = demoMode || diagnosticsPreviewMode || arguments.contains("--skip-onboarding")
+        _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
     }
 
     var body: some View {
@@ -34,13 +41,22 @@ struct AppRootView: View {
                     mode: gameMode,
                     online: online,
                     tuning: tuning,
+                    profile: profile,
                     diagnosticsOverride: diagnosticsPreview
                 ) {
                     self.gameMode = nil
                 }
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
+            } else if showOnboarding {
+                OnboardingFlow(profile: profile, entitlements: entitlements) { launch in
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showOnboarding = false
+                        if launch { gameMode = .solo(.rookie) }
+                    }
+                }
+                .transition(.opacity)
             } else {
-                HomeView(online: online, sheet: $sheet) { mode in
+                HomeView(online: online, profile: profile, sheet: $sheet) { mode in
                     withAnimation(.easeOut(duration: 0.25)) { gameMode = mode }
                 }
                 .transition(.opacity)
@@ -48,10 +64,12 @@ struct AppRootView: View {
         }
         .preferredColorScheme(.dark)
         .task {
+            online.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
                 online.authenticate()
             }
         }
+        .onChange(of: profile.selectedHull) { _, hull in online.localHull = hull }
         .onChange(of: online.isMatchReady) { _, ready in
             if ready { withAnimation { gameMode = .online } }
         }
@@ -66,19 +84,25 @@ struct AppRootView: View {
             case .tutorial:
                 FlightTutorial()
             case .settings:
-                SettingsView(tuning: tuning).presentationDetents([.large])
+                SettingsView(tuning: tuning, replayIntro: {
+                    sheet = nil
+                    showOnboarding = true
+                }).presentationDetents([.large])
+            case .hangar:
+                HangarSheet(profile: profile, entitlements: entitlements)
             }
         }
     }
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, tutorial, settings
+    case difficulty, tutorial, settings, hangar
     var id: String { rawValue }
 }
 
 private struct HomeView: View {
     let online: OnlineMatchCoordinator
+    let profile: PilotProfileStore
     @Binding var sheet: MenuSheet?
     let startGame: (GameMode) -> Void
 
@@ -96,6 +120,22 @@ private struct HomeView: View {
                     Spacer().frame(height: 14)
                     TeamMarkRow()
                     Spacer()
+                    Button { sheet = .hangar } label: {
+                        HStack(spacing: 12) {
+                            HullBadge(hull: profile.selectedHull, team: .cyan).frame(width: 48, height: 52)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("YOUR HULL").font(.caption2.monospaced().weight(.bold)).tracking(2)
+                                    .foregroundStyle(.white.opacity(0.5))
+                                Text(profile.selectedHull.spec.name.uppercased())
+                                    .font(.headline.weight(.black)).tracking(1).foregroundStyle(.cyan)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Your hull: \(profile.selectedHull.spec.name). Open hangar")
+                    .accessibilityIdentifier("home-hull")
+                    Spacer().frame(height: 10)
                     Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
                         .font(.caption2.monospaced().weight(.bold))
                         .foregroundStyle(statusColor).lineLimit(1)
@@ -108,6 +148,7 @@ private struct HomeView: View {
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.presentQuickMatch() }
                     MenuButton(title: "INVITE A FRIEND", subtitle: "GAME CENTER", icon: "person.2.wave.2.fill") { online.presentFriendInvite() }
                     HStack(spacing: 12) {
+                        SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
                         SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
                         SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
                     }
@@ -134,6 +175,7 @@ private struct GameView: View {
     let mode: GameMode
     let online: OnlineMatchCoordinator
     let tuning: FlightTuningStore
+    let profile: PilotProfileStore
     let diagnosticsOverride: OnlineDiagnosticsSnapshot?
     let exit: () -> Void
 
@@ -149,12 +191,14 @@ private struct GameView: View {
         mode: GameMode,
         online: OnlineMatchCoordinator,
         tuning: FlightTuningStore,
+        profile: PilotProfileStore,
         diagnosticsOverride: OnlineDiagnosticsSnapshot? = nil,
         exit: @escaping () -> Void
     ) {
         self.mode = mode
         self.online = online
         self.tuning = tuning
+        self.profile = profile
         self.diagnosticsOverride = diagnosticsOverride
         self.exit = exit
         let configuration = switch mode {
@@ -164,7 +208,9 @@ private struct GameView: View {
         _session = State(initialValue: GameSession(
             mode: mode,
             online: online,
-            configuration: configuration
+            configuration: configuration,
+            localHull: profile.selectedHull,
+            rivalHull: profile.rivalHull()
         ))
     }
 
@@ -243,6 +289,10 @@ private struct GameView: View {
         }
         .onChange(of: tuning.snapshot) { _, _ in
             session.applyTuning(tuning.configuration)
+        }
+        .onChange(of: online.remoteHull) { _, hull in
+            // The peer's profile can land after the session is built.
+            if mode == .online, let hull { session.scene.setHull(hull, for: localTeam.opponent) }
         }
         .onChange(of: scenePhase) { _, phase in
             session.setApplicationActive(phase == .active)
@@ -484,6 +534,7 @@ private struct TutorialCard: View {
 
 private struct SettingsView: View {
     @Bindable var tuning: FlightTuningStore
+    var replayIntro: (() -> Void)?
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
@@ -512,6 +563,12 @@ private struct SettingsView: View {
                 Section("Developer") {
                     NavigationLink("Flight Tuning") {
                         FlightTuningView(tuning: tuning)
+                    }
+                }
+                if let replayIntro {
+                    Section("Intro") {
+                        Button("Replay intro", action: replayIntro)
+                            .accessibilityIdentifier("replay-intro")
                     }
                 }
                 Section("Team symbols") { Label("Cyan uses a bar", systemImage: "minus"); Label("Orange uses a diamond", systemImage: "diamond.fill") }
@@ -673,7 +730,7 @@ private struct TeamMarkRow: View {
     }
 }
 
-private struct CosmicBackground: View {
+struct CosmicBackground: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(red: 0.01, green: 0.02, blue: 0.08), .black], startPoint: .topLeading, endPoint: .bottomTrailing)

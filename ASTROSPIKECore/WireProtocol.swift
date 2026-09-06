@@ -6,13 +6,16 @@ public enum WirePayload: Codable, Equatable, Sendable {
     case snapshot(WorldState)
     case event(SimulationEvent)
     case ready
+    /// Which hull the sender flies, so the peer can draw it. Cosmetic only.
+    case profile(team: Team, hull: Hull)
     case ping(nanoseconds: UInt64)
     case resync(WorldState)
 }
 
 public struct WireEnvelope: Codable, Equatable, Sendable {
     // 4: MatchRuleState gained shipTouches and PointReason gained touchLimit.
-    public static let currentVersion: UInt16 = 4
+    // 5: WirePayload gained profile(team:hull:).
+    public static let currentVersion: UInt16 = 5
 
     public var version: UInt16
     public var sequence: UInt64

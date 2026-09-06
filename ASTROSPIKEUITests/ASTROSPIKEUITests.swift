@@ -4,6 +4,7 @@ final class ASTROSPIKEUITests: XCTestCase {
     @MainActor
     func testLaunchShowsMainModesInLandscape() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
         app.launch()
         XCTAssertTrue(app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["QUICK MATCH, AUTOMATIC ONLINE DUEL"].exists)
@@ -14,6 +15,7 @@ final class ASTROSPIKEUITests: XCTestCase {
     @MainActor
     func testTutorialAndSettingsEntryPoints() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
         app.launch()
 
         app.buttons["HOW TO FLY"].tap()
@@ -51,6 +53,7 @@ final class ASTROSPIKEUITests: XCTestCase {
     @MainActor
     func testSoloMatchAndPauseFlow() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
         app.launch()
         app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].tap()
         XCTAssertTrue(app.buttons["ROOKIE, Patient learner"].waitForExistence(timeout: 3))
@@ -82,6 +85,7 @@ final class ASTROSPIKEUITests: XCTestCase {
     func testGameCenterDiagnosticsPanelSurfacesValidationFields() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--online-diagnostics-preview"]
+        app.launchArguments.append("--skip-onboarding")
         app.launch()
 
         XCTAssertTrue(app.buttons["game-center-diagnostics-toggle"].waitForExistence(timeout: 5))
@@ -102,6 +106,7 @@ final class ASTROSPIKEUITests: XCTestCase {
     func testOnlineModeDoesNotOfferLocalOnlyPauseOrSoloTuning() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--online-diagnostics-preview"]
+        app.launchArguments.append("--skip-onboarding")
         app.launch()
 
         XCTAssertTrue(app.buttons["Leave online match"].waitForExistence(timeout: 5))

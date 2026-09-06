@@ -49,24 +49,16 @@ final class ArenaScene: SKScene {
     }
 
     private func configureActorNodes() {
-        cyanShip.path = shipPath(symbol: .cyan)
-        cyanShip.fillColor = .cyan
-        cyanShip.strokeColor = .white
-        cyanShip.lineWidth = 1.5
-        cyanShip.glowWidth = 8
-        orangeShip.path = shipPath(symbol: .orange)
-        orangeShip.fillColor = .orange
-        orangeShip.strokeColor = .white
-        orangeShip.lineWidth = 1.5
-        orangeShip.glowWidth = 8
-        for (ship, exhaust, color) in [
-            (cyanShip, cyanExhaust, SKColor.cyan),
-            (orangeShip, orangeExhaust, SKColor.orange),
+        for (ship, exhaust, team) in [
+            (cyanShip, cyanExhaust, Team.cyan),
+            (orangeShip, orangeExhaust, Team.orange),
         ] {
+            let color: SKColor = team == .cyan ? .cyan : .orange
+            ship.fillColor = color
+            ship.strokeColor = .white
+            ship.lineWidth = 1.5
+            ship.glowWidth = 8
             exhaust.position = CGPoint(x: 0, y: -29)
-            // Lancet burns a tight needle, Anvil a wide chunky wash. yScale is
-            // driven per frame by thrust, so only xScale is set here.
-            exhaust.xScale = ship === cyanShip ? 0.75 : 1.9
             exhaust.fillColor = .white
             exhaust.strokeColor = color
             exhaust.lineWidth = 3
@@ -74,6 +66,7 @@ final class ArenaScene: SKScene {
             exhaust.zPosition = -1
             exhaust.isHidden = true
             ship.addChild(exhaust)
+            setHull(Hull.defaultHull(for: team), for: team)
         }
         ball.fillColor = .white
         ball.strokeColor = SKColor(red: 0.65, green: 0.95, blue: 1, alpha: 1)
@@ -549,66 +542,14 @@ final class ArenaScene: SKScene {
         return node
     }
 
-    /// Two hulls with genuinely different silhouettes, not one dart with a
-    /// different decal. Both stay inside roughly the same envelope so the
-    /// three collision fixtures in the simulation still read true.
-    private func shipPath(symbol: Team) -> CGPath {
-        symbol == .cyan ? lancetPath() : anvilPath()
-    }
-
-    /// Cyan "Lancet" — narrow interceptor: raked needle nose, swept wings that
-    /// hook forward at the tips, split tail.
-    private func lancetPath() -> CGPath {
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: 30))
-        path.addLine(to: CGPoint(x: 3.5, y: 14))
-        path.addLine(to: CGPoint(x: 7, y: 1))
-        path.addLine(to: CGPoint(x: 21, y: -16))
-        path.addLine(to: CGPoint(x: 14, y: -19))
-        path.addLine(to: CGPoint(x: 6, y: -11))
-        path.addLine(to: CGPoint(x: 0, y: -15))
-        path.addLine(to: CGPoint(x: -6, y: -11))
-        path.addLine(to: CGPoint(x: -14, y: -19))
-        path.addLine(to: CGPoint(x: -21, y: -16))
-        path.addLine(to: CGPoint(x: -7, y: 1))
-        path.addLine(to: CGPoint(x: -3.5, y: 14))
-        path.closeSubpath()
-
-        // Canopy slit along the spine.
-        path.move(to: CGPoint(x: 0, y: 16))
-        path.addLine(to: CGPoint(x: 0, y: 4))
-        return path
-    }
-
-    /// Orange "Anvil" — heavy lander: blunt chisel nose, boxy shoulders and two
-    /// outboard engine pods hanging wide off the hull.
-    private func anvilPath() -> CGPath {
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: -7, y: 26))
-        path.addLine(to: CGPoint(x: 7, y: 26))
-        path.addLine(to: CGPoint(x: 13, y: 12))
-        path.addLine(to: CGPoint(x: 11, y: -2))
-        path.addLine(to: CGPoint(x: 21, y: -4))
-        path.addLine(to: CGPoint(x: 22, y: -19))
-        path.addLine(to: CGPoint(x: 12, y: -19))
-        path.addLine(to: CGPoint(x: 9, y: -9))
-        path.addLine(to: CGPoint(x: -9, y: -9))
-        path.addLine(to: CGPoint(x: -12, y: -19))
-        path.addLine(to: CGPoint(x: -22, y: -19))
-        path.addLine(to: CGPoint(x: -21, y: -4))
-        path.addLine(to: CGPoint(x: -11, y: -2))
-        path.addLine(to: CGPoint(x: -13, y: 12))
-        path.closeSubpath()
-
-        // Hex viewport.
-        path.move(to: CGPoint(x: 0, y: 18))
-        path.addLine(to: CGPoint(x: 6, y: 13))
-        path.addLine(to: CGPoint(x: 6, y: 5))
-        path.addLine(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: -6, y: 5))
-        path.addLine(to: CGPoint(x: -6, y: 13))
-        path.closeSubpath()
-        return path
+    /// Swaps the drawn silhouette without touching the simulation: every hull
+    /// shares one collision envelope. yScale of the exhaust is driven per
+    /// frame by thrust, so only its width is set here.
+    func setHull(_ hull: Hull, for team: Team) {
+        let ship = team == .cyan ? cyanShip : orangeShip
+        let exhaust = team == .cyan ? cyanExhaust : orangeExhaust
+        ship.path = hull.spec.outline.cgPath
+        exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
     }
 
     private var arenaRect: CGRect {

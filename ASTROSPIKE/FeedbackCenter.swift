@@ -12,6 +12,12 @@ final class FeedbackCenter {
         UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.65)
     }
 
+    /// Menu selection tick: haptic only, no tone.
+    func tap() {
+        guard hapticsEnabled else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
     func point(team: Team) {
         SpatialAudioCenter.shared.play(
             frequency: team == .cyan ? 720 : 520,
