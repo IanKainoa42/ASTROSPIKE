@@ -7,9 +7,9 @@ import os
 @MainActor
 @Observable
 final class OnlineMatchCoordinator: NSObject,
-    @MainActor GKMatchDelegate,
-    @MainActor GKMatchmakerViewControllerDelegate,
-    @MainActor GKLocalPlayerListener {
+    GKMatchDelegate,
+    GKMatchmakerViewControllerDelegate,
+    GKLocalPlayerListener {
     enum Status: Equatable {
         case signedOut
         case authenticating
@@ -698,14 +698,25 @@ final class OnlineMatchCoordinator: NSObject,
         configure(match)
     }
 
-    func match(_ match: GKMatch, didReceive data: Data, fromRemotePlayer player: GKPlayer) {
-        guard self.match === match else { return }
-        receive(data, from: player.gamePlayerID)
+    nonisolated func match(_ match: GKMatch, didReceive data: Data, fromRemotePlayer player: GKPlayer) {
+        let playerID = player.gamePlayerID
+        Task { @MainActor [weak self] in
+            guard let self, self.match === match else { return }
+            self.receive(data, from: playerID)
+        }
     }
 
-    func match(_ match: GKMatch, player: GKPlayer, didChange state: GKPlayerConnectionState) {
-        guard self.match === match else { return }
-        note("PEER \(player.displayName): \(state == .connected ? "CONNECTED" : state == .disconnected ? "DISCONNECTED" : "UNKNOWN")")
+    nonisolated func match(_ match: GKMatch, player: GKPlayer, didChange state: GKPlayerConnectionState) {
+        let displayName = player.displayName
+        let playerID = player.gamePlayerID
+        Task { @MainActor [weak self] in
+            guard let self, self.match === match else { return }
+            self.handlePeerConnectionChange(displayName: displayName, playerID: playerID, state: state)
+        }
+    }
+
+    private func handlePeerConnectionChange(displayName: String, playerID: String, state: GKPlayerConnectionState) {
+        note("PEER \(displayName): \(state == .connected ? "CONNECTED" : state == .disconnected ? "DISCONNECTED" : "UNKNOWN")")
         switch state {
         case .connected:
             guard lifecycle.acceptConnection() else { return }
@@ -729,7 +740,7 @@ final class OnlineMatchCoordinator: NSObject,
             }
         case .disconnected:
             // Whoever left loses it for their side, whichever side that is.
-            pendingForfeitWinner = seating[player.gamePlayerID]?.team.opponent
+            pendingForfeitWinner = seating[playerID]?.team.opponent
             beginReconnectWindow()
         case .unknown:
             break
@@ -738,13 +749,29 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    func match(_ match: GKMatch, shouldReinviteDisconnectedPlayer player: GKPlayer) -> Bool {
-        true
+    nonisolated func match(_ match: GKMatch, shouldReinviteDisconnectedPlayer player: GKPlayer) -> Bool {
+        false
     }
 
-    func player(_ player: GKPlayer, didAccept invite: GKInvite) {
-        note("INVITE ACCEPTED FROM \(invite.sender.displayName)")
-        inviteNotice = "JOINING \(invite.sender.displayName.uppercased())"
+    nonisolated func match(_ match: GKMatch, didFailWithError error: Error?) {
+        let message = error.map { describe($0) }
+        Task { @MainActor [weak self] in
+            guard let self, self.match === match else { return }
+            if let message { self.note("MATCH FAILED: \(message)") }
+        }
+    }
+
+    nonisolated func player(_ player: GKPlayer, didAccept invite: GKInvite) {
+        let displayName = invite.sender.displayName
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.handleInviteAccepted(senderDisplayName: displayName, invite: invite)
+        }
+    }
+
+    private func handleInviteAccepted(senderDisplayName: String, invite: GKInvite) {
+        note("INVITE ACCEPTED FROM \(senderDisplayName)")
+        inviteNotice = "JOINING \(senderDisplayName.uppercased())"
         status = .matching
         GKMatchmaker.shared().match(for: invite) { [weak self] match, error in
             nonisolated(unsafe) let match = match
@@ -767,9 +794,13 @@ final class OnlineMatchCoordinator: NSObject,
 
     /// Game Center app / Messages "Play together" route: the system hands us the
     /// chosen recipients and expects us to open a matchmaker pre-filled with them.
-    func player(_ player: GKPlayer, didRequestMatchWithRecipients recipientPlayers: [GKPlayer]) {
-        note("SYSTEM MATCH REQUEST WITH \(recipientPlayers.map(\.displayName).joined(separator: ", "))")
-        invite(recipientPlayers)
+    nonisolated func player(_ player: GKPlayer, didRequestMatchWithRecipients recipientPlayers: [GKPlayer]) {
+        let players = recipientPlayers
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.note("SYSTEM MATCH REQUEST WITH \(players.map(\.displayName).joined(separator: ", "))")
+            self.invite(players)
+        }
     }
 
     func leaveMatch() {
