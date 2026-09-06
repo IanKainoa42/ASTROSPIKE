@@ -50,6 +50,8 @@ final class GameSession {
     private var demoAI: AIController?
     let localSeat: Seat
     private weak var online: OnlineMatchCoordinator?
+    /// The host mirrors the score to the lobby; guests leave it alone.
+    private weak var lobby: LobbyService?
     private var frameDriver: FrameDriver?
     private var accumulator = 0.0
     private var previousTimestamp: CFTimeInterval?
@@ -58,12 +60,14 @@ final class GameSession {
     init(
         mode: GameMode,
         online: OnlineMatchCoordinator? = nil,
+        lobby: LobbyService? = nil,
         configuration: SimulationConfiguration = .init(),
         localHull: Hull = .lancet,
         rivalHull: Hull = .anvil
     ) {
         self.mode = mode
         self.online = online
+        self.lobby = lobby
         let localSeat = mode == .online ? (online?.localSeat ?? .cyan) : .cyan
         self.localSeat = localSeat
         var initialEngine = SimulationEngine.testing()
@@ -269,7 +273,11 @@ final class GameSession {
                     online?.sendFullResync(engine.state)
                 }
                 online?.sendEvent(event)
-                if case .matchEnded = event {
+                if case .point = event {
+                    lobby?.hostDuelScored(engine.state.match.score)
+                }
+                if case let .matchEnded(winner) = event {
+                    lobby?.hostDuelFinished(winner: winner, score: engine.state.match.score)
                     online?.finishCompletedMatch()
                 }
             }
@@ -325,6 +333,9 @@ final class GameSession {
             self.engine.finishByForfeit(winner: winner)
             self.state = self.engine.state
             self.events = self.engine.lastEvents
+            if online.isAuthoritative {
+                self.lobby?.hostDuelFinished(winner: winner, score: self.state.match.score)
+            }
         }
         online.onConnectionPaused = { [weak self] paused in
             self?.isPaused = paused

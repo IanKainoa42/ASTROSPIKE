@@ -4,12 +4,14 @@ import SwiftUI
 
 struct AppRootView: View {
     @State private var online = OnlineMatchCoordinator()
+    @State private var lobby = LobbyService()
     @State private var tuning = FlightTuningStore()
     @State private var profile = PilotProfileStore()
     @State private var entitlements = HullEntitlements()
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
     @State private var showOnboarding: Bool
+    @Environment(\.scenePhase) private var scenePhase
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
     init() {
@@ -34,8 +36,11 @@ struct AppRootView: View {
             : demoMode ? .solo(.pilot) : nil)
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
-        let bypass = demoMode || warmupMode || diagnosticsPreviewMode || arguments.contains("--skip-onboarding")
+        let lobbyMode = arguments.contains("--lobby")
+        let bypass = demoMode || warmupMode || diagnosticsPreviewMode || lobbyMode || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
+        // `--lobby` opens the board straight away; the simulator cannot tap it.
+        _sheet = State(initialValue: lobbyMode ? .lobby : nil)
     }
 
     var body: some View {
@@ -45,6 +50,7 @@ struct AppRootView: View {
                 GameView(
                     mode: gameMode,
                     online: online,
+                    lobby: lobby,
                     tuning: tuning,
                     profile: profile,
                     diagnosticsOverride: diagnosticsPreview
@@ -71,20 +77,38 @@ struct AppRootView: View {
         .preferredColorScheme(.dark)
         .task {
             online.localHull = profile.selectedHull
+            lobby.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
                 online.authenticate()
             }
         }
-        .onChange(of: profile.selectedHull) { _, hull in online.localHull = hull }
+        .onChange(of: profile.selectedHull) { _, hull in
+            online.localHull = hull
+            lobby.localHull = hull
+        }
         .onChange(of: online.isMatchReady) { _, ready in
-            if ready { withAnimation { gameMode = .online } }
+            if ready {
+                withAnimation { gameMode = .online }
+                if online.isAuthoritative { announceHostedDuel() }
+            }
         }
         .onChange(of: online.status) { _, status in
+            // Signed in: this pilot can show up in the lobby.
+            if case .ready = status { lobby.start() }
+            syncLobbyActivity()
             // An invite or a search is out: fly in the bay instead of staring
             // at a status label.
             if case .matching = status, gameMode == nil, !showOnboarding {
                 sheet = nil
                 withAnimation(.easeOut(duration: 0.25)) { gameMode = .warmup }
+            }
+        }
+        .onChange(of: gameMode) { _, _ in syncLobbyActivity() }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active: lobby.start()
+            case .background: lobby.stop()
+            default: break
             }
         }
         .sheet(item: $sheet) { item in
@@ -104,6 +128,9 @@ struct AppRootView: View {
                 }).presentationDetents([.large])
             case .hangar:
                 HangarSheet(profile: profile, entitlements: entitlements)
+            case .lobby:
+                LobbyView(lobby: lobby, online: online)
+                    .presentationDetents([.large])
             case .invite:
                 InviteSheet(online: online) {
                     sheet = nil
@@ -118,10 +145,35 @@ struct AppRootView: View {
             }
         }
     }
+
+    /// What this pilot is doing, as the lobby should show it.
+    private func syncLobbyActivity() {
+        let activity: PilotActivity = switch gameMode {
+        case .online: .playing
+        case .warmup: .matching
+        case .solo, .doubles: .solo
+        case nil: if case .matching = online.status { .matching } else { .idle }
+        }
+        lobby.setActivity(activity, matchID: activity == .playing ? lobby.hostedDuel?.id : nil)
+    }
+
+    /// The host puts the duel on the lobby's board as soon as the table is
+    /// seated. Doubles is recorded as its two leads.
+    private func announceHostedDuel() {
+        let names = online.seatedPilotNames
+        guard let cyanID = online.seating.first(where: { $0.value == .cyan })?.key,
+              let orangeID = online.seating.first(where: { $0.value == .orange })?.key else { return }
+        Task {
+            await lobby.hostDuelStarted(
+                cyanID: cyanID, cyanName: names[cyanID] ?? "?",
+                orangeID: orangeID, orangeName: names[orangeID] ?? "?"
+            )
+        }
+    }
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, tutorial, settings, hangar, invite
+    case difficulty, tutorial, settings, hangar, invite, lobby
     var id: String { rawValue }
 }
 
@@ -224,8 +276,9 @@ private struct HomeView: View {
                 VStack(spacing: 12) {
                     MenuButton(title: "SOLO FLIGHT", subtitle: "ROOKIE • PILOT • ACE", icon: "person.fill") { sheet = .difficulty }
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
-                    MenuButton(title: "INVITE A FRIEND", subtitle: "GAME CENTER", icon: "person.2.wave.2.fill") { sheet = .invite }
-                    HStack(spacing: 12) {
+                    MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
+                        SmallMenuButton(title: "INVITE", icon: "person.2.wave.2.fill") { sheet = .invite }
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
                         SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
                         SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
@@ -252,6 +305,7 @@ private struct HomeView: View {
 private struct GameView: View {
     let mode: GameMode
     let online: OnlineMatchCoordinator
+    let lobby: LobbyService
     let tuning: FlightTuningStore
     let profile: PilotProfileStore
     let diagnosticsOverride: OnlineDiagnosticsSnapshot?
@@ -268,6 +322,7 @@ private struct GameView: View {
     init(
         mode: GameMode,
         online: OnlineMatchCoordinator,
+        lobby: LobbyService,
         tuning: FlightTuningStore,
         profile: PilotProfileStore,
         diagnosticsOverride: OnlineDiagnosticsSnapshot? = nil,
@@ -275,6 +330,7 @@ private struct GameView: View {
     ) {
         self.mode = mode
         self.online = online
+        self.lobby = lobby
         self.tuning = tuning
         self.profile = profile
         self.diagnosticsOverride = diagnosticsOverride
@@ -287,6 +343,7 @@ private struct GameView: View {
         _session = State(initialValue: GameSession(
             mode: mode,
             online: online,
+            lobby: lobby,
             configuration: configuration,
             localHull: profile.selectedHull,
             rivalHull: profile.rivalHull()
@@ -451,7 +508,9 @@ private struct GameView: View {
 
     private func leaveGame() {
         switch mode {
-        case .online: online.leaveMatch()
+        case .online:
+            lobby.hostDuelAbandoned()
+            online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
         case .solo, .doubles: break
         }
@@ -877,7 +936,7 @@ private struct SmallMenuButton: View {
     let title: String, icon: String
     let action: () -> Void
     var body: some View {
-        Button(action: action) { Label(title, systemImage: icon).font(.caption.weight(.bold)).frame(maxWidth: .infinity, minHeight: 44).background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 13)) }
+        Button(action: action) { Label(title, systemImage: icon).font(.caption.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 6).frame(maxWidth: .infinity, minHeight: 44).background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 13)) }
             .buttonStyle(.plain).accessibilityIdentifier(title.lowercased().replacingOccurrences(of: " ", with: "-"))
     }
 }

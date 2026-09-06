@@ -53,6 +53,12 @@ final class OnlineMatchCoordinator: NSObject,
     /// The host's seating plan, Game Center player ID to seat.
     private(set) var seating: [String: Seat] = [:]
     var filledSeats: Set<Seat> { Set(seating.values) }
+    /// Display names of everyone at the table, by Game Center player ID.
+    var seatedPilotNames: [String: String] {
+        var names = [GKLocalPlayer.local.gamePlayerID: GKLocalPlayer.local.displayName]
+        for player in match?.players ?? [] { names[player.gamePlayerID] = player.displayName }
+        return names
+    }
     /// The latest input from every other pilot, by seat.
     private(set) var remoteInputs: [Seat: PlayerInput] = [:]
     /// The hulls the peers fly, once their profiles arrive. A seat missing

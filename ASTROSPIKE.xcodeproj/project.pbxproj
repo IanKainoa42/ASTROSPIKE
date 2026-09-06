@@ -25,11 +25,14 @@
 		4ABE3DC27EA7E0AA4E79BA2D /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */; };
 		58B4CF56A2EA0B283E718739 /* HullShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8F43E674683CFA8668873B /* HullShapes.swift */; };
+		594C28054C252A6E6577D9EC /* Lobby.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC83DD77126E7FA513D2942 /* Lobby.swift */; };
 		73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */; };
 		767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACCBC1253D91A47299D2645 /* DoublesTests.swift */; };
+		769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07221F436E712100C50841C1 /* LobbyTests.swift */; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
 		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
 		8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */; };
+		8D4415BEF5D274D18341CD57 /* LobbyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D734BE128C9E77556BF0D012 /* LobbyService.swift */; };
 		90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */; };
 		92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CD4F97738D5A2F620398EBF /* Assets.xcassets */; };
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
@@ -52,6 +55,7 @@
 		EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */; };
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
 		F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */; };
+		F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B202192D985A9E29E73E1 /* LobbyView.swift */; };
 		FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5637738B4E3686D57BD33184 /* WarmupRings.swift */; };
 /* End PBXBuildFile section */
 
@@ -106,7 +110,9 @@
 
 /* Begin PBXFileReference section */
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
+		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
+		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
 		1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
 		2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsTests.swift; sourceTree = "<group>"; };
@@ -124,6 +130,7 @@
 		3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionStateMachine.swift; sourceTree = "<group>"; };
 		3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltAndWashTests.swift; sourceTree = "<group>"; };
 		4033BD3492F8C74CE390EB56 /* FlightTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuning.swift; sourceTree = "<group>"; };
+		415B202192D985A9E29E73E1 /* LobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyView.swift; sourceTree = "<group>"; };
 		4405102C04B2CE798F18AD89 /* WarmupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmupTests.swift; sourceTree = "<group>"; };
 		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
@@ -150,6 +157,7 @@
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
 		B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioCenter.swift; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
+		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
@@ -183,6 +191,7 @@
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				828D26A07A966607CF8F1287 /* Hulls.swift */,
 				047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */,
+				1AC83DD77126E7FA513D2942 /* Lobby.swift */,
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
@@ -227,6 +236,8 @@
 				4B8F43E674683CFA8668873B /* HullShapes.swift */,
 				394FFF2162051CDBC12CE239 /* Info.plist */,
 				859573897DB0229481CD4EC8 /* KeyboardControls.swift */,
+				D734BE128C9E77556BF0D012 /* LobbyService.swift */,
+				415B202192D985A9E29E73E1 /* LobbyView.swift */,
 				1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */,
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
 				B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */,
@@ -257,6 +268,7 @@
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
 				58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */,
 				64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */,
+				07221F436E712100C50841C1 /* LobbyTests.swift */,
 				9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */,
 				2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */,
 				8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */,
@@ -419,6 +431,7 @@
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				077E31AEAA3268F71CF606CB /* Hulls.swift in Sources */,
 				C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */,
+				594C28054C252A6E6577D9EC /* Lobby.swift in Sources */,
 				76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */,
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
@@ -441,6 +454,8 @@
 				EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */,
 				58B4CF56A2EA0B283E718739 /* HullShapes.swift in Sources */,
 				3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */,
+				8D4415BEF5D274D18341CD57 /* LobbyService.swift in Sources */,
+				F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */,
 				73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */,
 				C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */,
 				3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */,
@@ -460,6 +475,7 @@
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
 				0E4F35B9E15BE39946916228 /* HullCatalogTests.swift in Sources */,
 				52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */,
+				769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */,
 				0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */,
 				CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */,
 				9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */,
@@ -627,7 +643,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -687,7 +703,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 20;
+				CURRENT_PROJECT_VERSION = 21;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
