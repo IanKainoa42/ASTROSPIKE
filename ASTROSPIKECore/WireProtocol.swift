@@ -15,7 +15,9 @@ public enum WirePayload: Codable, Equatable, Sendable {
 public struct WireEnvelope: Codable, Equatable, Sendable {
     // 4: MatchRuleState gained shipTouches and PointReason gained touchLimit.
     // 5: WirePayload gained profile(team:hull:).
-    public static let currentVersion: UInt16 = 5
+    // 6: PlayerInput gained fire, ShipState gained fireCooldownTicks,
+    //    WorldState gained bolts and nextBoltID.
+    public static let currentVersion: UInt16 = 6
 
     public var version: UInt16
     public var sequence: UInt64
@@ -129,7 +131,8 @@ public struct StateReconciler: Sendable {
                 + authoritative.angularVelocity * blendFraction,
             isDestroyed: authoritative.isDestroyed,
             thrustLevel: authoritative.thrustLevel,
-            homeSide: authoritative.homeSide
+            homeSide: authoritative.homeSide,
+            fireCooldownTicks: authoritative.fireCooldownTicks
         )
     }
 }

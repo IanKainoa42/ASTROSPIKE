@@ -1,6 +1,6 @@
 import Foundation
 
-/// The three things a pilot can ask for. Shared by every input surface so a
+/// The four things a pilot can ask for. Shared by every input surface so a
 /// keyboard and a thumb cannot drift apart in what they mean.
 public enum FlightControlAction: String, Codable, Hashable, Sendable {
     case left
@@ -87,7 +87,8 @@ public enum KeyboardControlMapping {
             tick: tick,
             leftPressed: held.contains(.left),
             rightPressed: held.contains(.right),
-            thrustPressed: held.contains(.thrust)
+            thrustPressed: held.contains(.thrust),
+            firePressed: held.contains(.fire)
         )
     }
 }

@@ -247,7 +247,7 @@ private struct GameView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 4)
-                TouchControls(torque: $session.torque, thrust: $session.thrust,
+                TouchControls(torque: $session.torque, thrust: $session.thrust, fire: $session.fire,
                               largeControls: largeControls, leftHanded: leftHanded)
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
@@ -255,6 +255,7 @@ private struct GameView: View {
             KeyboardControls(
                 torque: $session.torque,
                 thrust: $session.thrust,
+                fire: $session.fire,
                 onCommand: keyCommandHandler
             )
             .frame(width: 0, height: 0)
@@ -505,7 +506,8 @@ private struct FlightTutorial: View {
             ScrollView {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
-                    TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
+                    TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
+                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and counts as one of your touches. Bolts fizzle at the centre line and never hurt a ship.")
                     TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip, one bounce a touch.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")

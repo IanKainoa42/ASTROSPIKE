@@ -5,12 +5,14 @@ import UIKit
 struct TouchControls: View {
     @Binding var torque: Double
     @Binding var thrust: Bool
+    @Binding var fire: Bool
     let largeControls: Bool
     let leftHanded: Bool
 
     @State private var leftPressed = false
     @State private var rightPressed = false
     @State private var thrustPressed = false
+    @State private var firePressed = false
 
     // The live area is the whole side of the screen, not the drawn button. A thumb
     // anywhere on the right thrusts; anywhere on the left steers. The chrome is
@@ -105,7 +107,23 @@ struct TouchControls: View {
         }
     }
 
+    /// The engine side is split: the outer half (nearest the screen edge) is
+    /// thrust, the inner half fires. Both are held with the same thumb, so the
+    /// hint chrome sits low where it rests.
     private var thrustZone: some View {
+        HStack(spacing: 0) {
+            if leftHanded {
+                thrustPad
+                firePad
+            } else {
+                firePad
+                thrustPad
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var thrustPad: some View {
         ControlZone(
             icon: "flame.fill",
             label: "Thrust",
@@ -117,11 +135,26 @@ struct TouchControls: View {
         )
     }
 
+    private var firePad: some View {
+        ControlZone(
+            icon: "bolt.fill",
+            label: "Fire",
+            identifier: "fire-control",
+            tint: .yellow,
+            active: firePressed,
+            chrome: fireChrome,
+            pressChanged: setFirePressed
+        )
+    }
+
     private var steeringChrome: CGSize {
         largeControls ? CGSize(width: 132, height: 132) : CGSize(width: 104, height: 108)
     }
     private var thrustChrome: CGSize {
-        largeControls ? CGSize(width: 200, height: 148) : CGSize(width: 168, height: 122)
+        largeControls ? CGSize(width: 132, height: 148) : CGSize(width: 108, height: 122)
+    }
+    private var fireChrome: CGSize {
+        largeControls ? CGSize(width: 104, height: 118) : CGSize(width: 84, height: 96)
     }
 
     private func setThrustPressed(_ pressed: Bool) {
@@ -129,12 +162,19 @@ struct TouchControls: View {
         thrust = pressed
     }
 
+    private func setFirePressed(_ pressed: Bool) {
+        firePressed = pressed
+        fire = pressed
+    }
+
     private func clearInput() {
         leftPressed = false
         rightPressed = false
         thrustPressed = false
+        firePressed = false
         torque = 0
         thrust = false
+        fire = false
     }
 }
 

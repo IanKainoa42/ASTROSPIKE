@@ -136,12 +136,13 @@ struct OnboardingFlow: View {
 
     private var fly: some View {
         IntroPage(kicker: "01 • FLY") {
-            Text("STEER AND THRUST. THAT’S IT.")
+            Text("STEER, THRUST, FIRE.")
                 .font(.system(size: 30, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "arrow.left.and.right", tint: .cyan, title: "STEER", text: "Hold left or right to rotate. Let go and the nose stays where it is.")
-            IntroLine(icon: "flame.fill", tint: .orange, title: "THRUST", text: "Hold to burn. Gravity pulls you down the whole time; you never stop drifting.")
-            IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W or space thrusts. Touch and keys work together.")
+            IntroLine(icon: "flame.fill", tint: .orange, title: "THRUST", text: "Hold to burn. Gravity pulls you down the whole time, and your exhaust shoves the ball.")
+            IntroLine(icon: "bolt.fill", tint: .yellow, title: "FIRE", text: "Tap to shoot a bolt from the nose. It knocks the ball where you point and counts as a touch.")
+            IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W thrusts, space fires. Touch and keys work together.")
         } side: {
             ControlsDiagram()
         }
@@ -243,6 +244,7 @@ private struct ControlsDiagram: View {
                 pad("arrow.counterclockwise", "LEFT", .cyan)
                 pad("arrow.clockwise", "RIGHT", .cyan)
                 Spacer(minLength: 20)
+                pad("bolt.fill", "FIRE", .yellow)
                 pad("flame.fill", "THRUST", .orange)
             }
         }

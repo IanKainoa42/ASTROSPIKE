@@ -8,6 +8,7 @@ import UIKit
 struct KeyboardControls: UIViewRepresentable {
     @Binding var torque: Double
     @Binding var thrust: Bool
+    @Binding var fire: Bool
     /// Match commands (pause, confirm). Nil while a sheet is up, so the keys
     /// fall through to the system and Escape still dismisses what is on screen.
     var onCommand: ((FlightControlCommand) -> Void)?
@@ -28,6 +29,7 @@ struct KeyboardControls: UIViewRepresentable {
         let input = KeyboardControlMapping.input(tick: 0, held: held)
         torque = input.torque
         thrust = input.thrust
+        fire = input.fire
     }
 }
 

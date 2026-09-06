@@ -19,6 +19,10 @@ final class GameSession {
 
     var torque = 0.0
     var thrust = false
+    /// A tap shorter than one simulation tick would otherwise be lost, so a
+    /// press latches until the next tick consumes it.
+    var fire = false { didSet { if fire { fireLatched = true } } }
+    private var fireLatched = false
 
     let mode: GameMode
     let scene = ArenaScene()
@@ -109,6 +113,8 @@ final class GameSession {
         accumulator = 0
         torque = 0
         thrust = false
+        fire = false
+        fireLatched = false
     }
 
     private func frame(timestamp: CFTimeInterval) {
@@ -148,7 +154,8 @@ final class GameSession {
     private func simulateOneTick() {
         let tick = engine.state.tick
         let localTeam = online?.localTeam ?? .cyan
-        var localInput = PlayerInput(tick: tick, torque: torque, thrust: thrust)
+        var localInput = PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched)
+        fireLatched = false
         if var demoAI {
             localInput = demoAI.input(for: engine.state, team: localTeam, tick: tick)
             self.demoAI = demoAI

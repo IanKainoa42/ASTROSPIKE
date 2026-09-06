@@ -37,6 +37,7 @@
 		B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */; };
 		B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */; };
 		BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF5E91B39BF78BC48AAE5C2 /* Module.swift */; };
+		BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */; };
 		C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2938C10E066FBAEF95E3652B /* GameSession.swift */; };
 		C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */; };
 		C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */; };
@@ -118,6 +119,7 @@
 		384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulationMotionTests.swift; sourceTree = "<group>"; };
 		394FFF2162051CDBC12CE239 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionStateMachine.swift; sourceTree = "<group>"; };
+		3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltAndWashTests.swift; sourceTree = "<group>"; };
 		4033BD3492F8C74CE390EB56 /* FlightTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuning.swift; sourceTree = "<group>"; };
 		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
@@ -242,6 +244,7 @@
 			children = (
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
+				3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */,
 				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
 				58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */,
@@ -441,6 +444,7 @@
 			files = (
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
+				BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */,
 				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
 				0E4F35B9E15BE39946916228 /* HullCatalogTests.swift in Sources */,
@@ -611,7 +615,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -671,7 +675,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

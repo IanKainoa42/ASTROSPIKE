@@ -10,11 +10,15 @@ public struct PlayerInput: Codable, Equatable, Sendable {
     public var tick: UInt64
     public var torque: Double
     public var thrust: Bool
+    /// Asks for a bolt. Held down it repeats at the cooldown rate, so a
+    /// thumb mashing the pad and a thumb resting on it behave the same.
+    public var fire: Bool
 
-    public init(tick: UInt64, torque: Double, thrust: Bool) {
+    public init(tick: UInt64, torque: Double, thrust: Bool, fire: Bool = false) {
         self.tick = tick
         self.torque = max(-1, min(1, torque))
         self.thrust = thrust
+        self.fire = fire
     }
 
     public static func idle(tick: UInt64) -> PlayerInput {
@@ -39,11 +43,12 @@ public enum FlightControlMapping {
         tick: UInt64,
         leftPressed: Bool,
         rightPressed: Bool,
-        thrustPressed: Bool
+        thrustPressed: Bool,
+        firePressed: Bool = false
     ) -> PlayerInput {
         let torque = (leftPressed ? torque(for: .left) : 0)
             + (rightPressed ? torque(for: .right) : 0)
-        return PlayerInput(tick: tick, torque: torque, thrust: thrustPressed)
+        return PlayerInput(tick: tick, torque: torque, thrust: thrustPressed, fire: firePressed)
     }
 }
 
@@ -79,6 +84,8 @@ public struct ShipState: Codable, Equatable, Sendable {
     public var isDestroyed: Bool
     public var thrustLevel: Double
     public var homeSide: Team
+    /// Ticks until the cannon can fire again. Zero means ready.
+    public var fireCooldownTicks: UInt64
 
     public init(
         position: SIMD2<Double>,
@@ -87,7 +94,8 @@ public struct ShipState: Codable, Equatable, Sendable {
         angularVelocity: Double = 0,
         isDestroyed: Bool = false,
         thrustLevel: Double = 0,
-        homeSide: Team? = nil
+        homeSide: Team? = nil,
+        fireCooldownTicks: UInt64 = 0
     ) {
         self.position = position
         self.velocity = velocity
@@ -96,6 +104,34 @@ public struct ShipState: Codable, Equatable, Sendable {
         self.isDestroyed = isDestroyed
         self.thrustLevel = thrustLevel
         self.homeSide = homeSide ?? (position.x < 0 ? .cyan : .orange)
+        self.fireCooldownTicks = fireCooldownTicks
+    }
+}
+
+/// A bolt from a ship's nose. It only ever talks to the ball: hulls fly
+/// through it, and it dies at the centre line so nobody can shoot the far
+/// half. Hitting the ball is a touch by the owner, same as a hull would be.
+public struct BoltState: Codable, Equatable, Sendable {
+    public static let radius = 0.012
+
+    public var id: UInt64
+    public var owner: Team
+    public var position: SIMD2<Double>
+    public var velocity: SIMD2<Double>
+    public var ticksRemaining: UInt64
+
+    public init(
+        id: UInt64,
+        owner: Team,
+        position: SIMD2<Double>,
+        velocity: SIMD2<Double>,
+        ticksRemaining: UInt64
+    ) {
+        self.id = id
+        self.owner = owner
+        self.position = position
+        self.velocity = velocity
+        self.ticksRemaining = ticksRemaining
     }
 }
 
@@ -109,6 +145,9 @@ public struct WorldState: Codable, Equatable, Sendable {
     /// ball reappears dead centre under the goal, and the side that just
     /// conceded is the side it is handed to.
     public var serveDriftSign: Double
+    /// Bolts in flight, oldest first.
+    public var bolts: [BoltState]
+    public var nextBoltID: UInt64
 
     public init(
         tick: UInt64 = 0,
@@ -116,7 +155,9 @@ public struct WorldState: Codable, Equatable, Sendable {
         ball: BallState = BallState(position: SIMD2(0, 0.10)),
         match: MatchRuleState = MatchRuleState(),
         serveTicksRemaining: UInt64 = 0,
-        serveDriftSign: Double = -1
+        serveDriftSign: Double = -1,
+        bolts: [BoltState] = [],
+        nextBoltID: UInt64 = 0
     ) {
         self.tick = tick
         self.ships = ships
@@ -124,6 +165,8 @@ public struct WorldState: Codable, Equatable, Sendable {
         self.match = match
         self.serveTicksRemaining = serveTicksRemaining
         self.serveDriftSign = serveDriftSign
+        self.bolts = bolts
+        self.nextBoltID = nextBoltID
     }
 }
 
@@ -145,6 +188,19 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var crossingDrag: Double
     public var allowedFloorBounces: Int
     public var allowedShipTouches: Int
+    /// Bolt muzzle speed, arena units per second.
+    public var boltSpeed: Double
+    /// Seconds a bolt flies before it fizzles.
+    public var boltLifetime: Double
+    /// Seconds between shots.
+    public var boltCooldown: Double
+    /// Speed a bolt adds to the ball along its line of flight.
+    public var boltPunch: Double
+    /// How hard the exhaust shoves a ball sitting in it, as a fraction of the
+    /// ship's own thrust acceleration at the nozzle.
+    public var exhaustWashStrength: Double
+    /// How far behind the ship the exhaust still reaches the ball.
+    public var exhaustWashRange: Double
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -161,7 +217,13 @@ public struct SimulationConfiguration: Equatable, Sendable {
         crossingPushBack: Double = 30,
         crossingDrag: Double = 5.0,
         allowedFloorBounces: Int = 1,
-        allowedShipTouches: Int = 3
+        allowedShipTouches: Int = 3,
+        boltSpeed: Double = 2.6,
+        boltLifetime: Double = 0.55,
+        boltCooldown: Double = 0.45,
+        boltPunch: Double = 1.15,
+        exhaustWashStrength: Double = 0.65,
+        exhaustWashRange: Double = 0.36
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
@@ -178,6 +240,12 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.crossingDrag = max(0, crossingDrag)
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
         self.allowedShipTouches = min(6, max(1, allowedShipTouches))
+        self.boltSpeed = max(0, boltSpeed)
+        self.boltLifetime = max(0, boltLifetime)
+        self.boltCooldown = max(0, boltCooldown)
+        self.boltPunch = max(0, boltPunch)
+        self.exhaustWashStrength = max(0, exhaustWashStrength)
+        self.exhaustWashRange = max(0, exhaustWashRange)
     }
 
     public static let online = SimulationConfiguration(
@@ -257,6 +325,7 @@ public struct SimulationEngine: Sendable {
             velocity: serveVelocity
         )
         state.serveTicksRemaining = 0
+        state.bolts.removeAll()
         rules.prepareNextRally()
         state.match = rules.state
         lastEvents = [.rallyReset]
@@ -312,6 +381,10 @@ public struct SimulationEngine: Sendable {
                 from: previousShipPositions[team] ?? ship.position,
                 effects: &collisionEffects
             )
+            if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
+            if input.fire, ship.fireCooldownTicks == 0, state.match.phase == .playing {
+                fireBolt(from: &ship, owner: team)
+            }
             state.ships[team] = ship
         }
         resolveShipShipCollision(
@@ -328,7 +401,9 @@ public struct SimulationEngine: Sendable {
 
         let previousBallPosition = state.ball.position
         state.ball.velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
+        applyExhaustWash(dt: dt)
         state.ball.position += state.ball.velocity * dt
+        advanceBolts(contacts: &contacts, effects: &collisionEffects)
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,
             previousShipPositions: previousShipPositions,
@@ -370,6 +445,7 @@ public struct SimulationEngine: Sendable {
             velocity: .zero,
             radius: state.ball.radius
         )
+        state.bolts.removeAll()
         state.serveTicksRemaining = max(
             1,
             UInt64((configuration.serveDelay / configuration.stepDuration).rounded())
@@ -398,6 +474,93 @@ public struct SimulationEngine: Sendable {
                 homeSide: homeSide
             )
         }
+    }
+
+    private mutating func fireBolt(from ship: inout ShipState, owner: Team) {
+        let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+        let lifetime = UInt64((configuration.boltLifetime / configuration.stepDuration).rounded())
+        guard lifetime > 0, configuration.boltSpeed > 0 else { return }
+        state.bolts.append(BoltState(
+            id: state.nextBoltID,
+            owner: owner,
+            // Leaves from just past the nose so it cannot spawn inside a ball
+            // already resting against the hull.
+            position: ship.position + axis * 0.075,
+            velocity: axis * configuration.boltSpeed,
+            ticksRemaining: lifetime
+        ))
+        state.nextBoltID &+= 1
+        ship.fireCooldownTicks = UInt64((configuration.boltCooldown / configuration.stepDuration).rounded())
+    }
+
+    /// The exhaust is a real jet: a ball sitting in it gets shoved down the
+    /// plume. Strongest at the nozzle, gone at `exhaustWashRange`, and only
+    /// inside a cone behind the tail, so flying past the ball does nothing.
+    /// It is not a touch -- nothing has hit anything -- so it never counts
+    /// against the touch limit, which is what makes hovering under a ball to
+    /// cushion it a real option rather than a foul.
+    private static let exhaustWashCone = 0.80
+
+    private mutating func applyExhaustWash(dt: Double) {
+        let range = configuration.exhaustWashRange
+        guard range > 0, configuration.exhaustWashStrength > 0 else { return }
+        for team in Team.allCases {
+            guard let ship = state.ships[team], !ship.isDestroyed, ship.thrustLevel > 0 else { continue }
+            let tail = SIMD2(-cos(ship.angle), -sin(ship.angle))
+            let offset = state.ball.position - ship.position
+            let distance = simd_length(offset)
+            guard distance > 0.000_001, distance < range else { continue }
+            let along = simd_dot(offset / distance, tail)
+            guard along > Self.exhaustWashCone else { continue }
+            let falloff = 1 - distance / range
+            let centring = (along - Self.exhaustWashCone) / (1 - Self.exhaustWashCone)
+            let push = ship.thrustLevel * configuration.exhaustWashStrength * falloff * centring
+            state.ball.velocity += tail * (push * dt)
+        }
+    }
+
+    private mutating func advanceBolts(
+        contacts: inout [RuleContact],
+        effects: inout [SimulationEvent]
+    ) {
+        guard !state.bolts.isEmpty else { return }
+        let dt = configuration.stepDuration
+        var survivors: [BoltState] = []
+        survivors.reserveCapacity(state.bolts.count)
+        var ballStruck = false
+        for var bolt in state.bolts {
+            let previous = bolt.position
+            bolt.position += bolt.velocity * dt
+            bolt.ticksRemaining -= 1
+
+            if !ballStruck, let _ = sweptCircleTime(
+                from: previous - state.ball.position,
+                to: bolt.position - state.ball.position,
+                center: .zero,
+                radius: state.ball.radius + BoltState.radius
+            ) {
+                ballStruck = true
+                let speed = simd_length(bolt.velocity)
+                let direction = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
+                state.ball.velocity += direction * configuration.boltPunch
+                contacts.append(.ballTouchedShip(team: bolt.owner))
+                effects.append(.collisionEffect(
+                    position: state.ball.position,
+                    intensity: configuration.boltPunch
+                ))
+                continue
+            }
+
+            let homeSign = (state.ships[bolt.owner]?.homeSide ?? bolt.owner) == .cyan ? -1.0 : 1.0
+            let crossedCentre = bolt.position.x * homeSign < 0
+            let outside = abs(bolt.position.x) > arena.halfWidth
+                || bolt.position.y < arena.floorY
+                || bolt.position.y > arena.ceilingY
+            let struckHump = arena.humpContact(position: bolt.position, radius: BoltState.radius) != nil
+            if bolt.ticksRemaining == 0 || crossedCentre || outside || struckHump { continue }
+            survivors.append(bolt)
+        }
+        state.bolts = survivors
     }
 
     private mutating func resolveShipShipCollision(

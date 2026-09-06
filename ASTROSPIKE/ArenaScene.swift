@@ -14,12 +14,13 @@ final class ArenaScene: SKScene {
     private let arena = ArenaGeometry.standard
     private let cyanShip = SKShapeNode()
     private let orangeShip = SKShapeNode()
-    private let cyanExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
-    private let orangeExhaust = SKShapeNode(rectOf: CGSize(width: 9, height: 24), cornerRadius: 4)
+    private let cyanExhaust = SKSpriteNode(texture: ArenaScene.puffTexture, size: CGSize(width: 30, height: 34))
+    private let orangeExhaust = SKSpriteNode(texture: ArenaScene.puffTexture, size: CGSize(width: 30, height: 34))
     private let ball = SKShapeNode(circleOfRadius: 10)
-    private var cyanTrail: [CGPoint] = []
-    private var orangeTrail: [CGPoint] = []
+    private var boltNodes: [UInt64: SKNode] = [:]
     private var ballTrail: [CGPoint] = []
+    private var cyanWakeAnchor: CGPoint?
+    private var orangeWakeAnchor: CGPoint?
     private var cyanPlumeBudget = 0.0
     private var orangePlumeBudget = 0.0
     private var plumeSeed = 0
@@ -58,11 +59,13 @@ final class ArenaScene: SKScene {
             ship.strokeColor = .white
             ship.lineWidth = 1.5
             ship.glowWidth = 8
-            exhaust.position = CGPoint(x: 0, y: -29)
-            exhaust.fillColor = .white
-            exhaust.strokeColor = color
-            exhaust.lineWidth = 3
-            exhaust.glowWidth = 10
+            // A soft vapour sprite hung from the tail, anchored at its top so
+            // yScale stretches it backwards along the nose axis as throttle rises.
+            exhaust.anchorPoint = CGPoint(x: 0.5, y: 1)
+            exhaust.position = CGPoint(x: 0, y: -16)
+            exhaust.color = color
+            exhaust.colorBlendFactor = 0.6
+            exhaust.blendMode = .add
             exhaust.zPosition = -1
             exhaust.isHidden = true
             ship.addChild(exhaust)
@@ -344,6 +347,53 @@ final class ArenaScene: SKScene {
         ball.setScale(ballScale)
         ball.glowWidth = 12 + min(20, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y))
         updateTrails(snapshot)
+        updateBolts(snapshot)
+    }
+
+    /// Bolts are keyed by simulation id so a node lives exactly as long as its
+    /// bolt: a new id gets a muzzle flash, a vanished id gets a fizzle.
+    private func updateBolts(_ snapshot: WorldState) {
+        var live = Set<UInt64>()
+        for bolt in snapshot.bolts {
+            live.insert(bolt.id)
+            let position = point(bolt.position.x, bolt.position.y)
+            let heading = CGFloat(atan2(bolt.velocity.y, bolt.velocity.x)) - .pi / 2
+            if let node = boltNodes[bolt.id] {
+                node.position = position
+                node.zRotation = heading
+                continue
+            }
+            let color: SKColor = bolt.owner == .cyan ? .cyan : .orange
+            let node = SKShapeNode(rectOf: CGSize(width: 5, height: 18), cornerRadius: 2.5)
+            node.fillColor = .white
+            node.strokeColor = color
+            node.lineWidth = 2
+            node.glowWidth = 9
+            node.zPosition = 6
+            node.position = position
+            node.zRotation = heading
+            actorLayer.addChild(node)
+            boltNodes[bolt.id] = node
+            if !reduceMotion { flash(at: position, color: color, scale: 0.9, life: 0.16) }
+        }
+        for (id, node) in boltNodes where !live.contains(id) {
+            if !reduceMotion { flash(at: node.position, color: .white, scale: 0.5, life: 0.22) }
+            node.removeFromParent()
+            boltNodes[id] = nil
+        }
+    }
+
+    private func flash(at position: CGPoint, color: SKColor, scale: CGFloat, life: TimeInterval) {
+        let puff = SKSpriteNode(texture: Self.puffTexture)
+        puff.color = color
+        puff.colorBlendFactor = 1
+        puff.blendMode = .add
+        puff.zPosition = 5
+        puff.position = position
+        puff.setScale(scale)
+        puff.alpha = 0.9
+        actorLayer.addChild(puff)
+        puff.run(.sequence([.group([.scale(by: 2.4, duration: life), .fadeOut(withDuration: life)]), .removeFromParent()]))
     }
 
     func present(_ events: [SimulationEvent]) {
@@ -368,6 +418,8 @@ final class ArenaScene: SKScene {
                 sparks(at: point(position.x, position.y), color: .white)
             case .rallyReset:
                 ballTrail.removeAll()
+                cyanWakeAnchor = nil
+                orangeWakeAnchor = nil
             case .matchEnded:
                 break
             }
@@ -419,6 +471,49 @@ final class ArenaScene: SKScene {
         exhaust.yScale = 0.35 + CGFloat(state.thrustLevel / 18) * 1.65
         exhaust.alpha = 0.55 + CGFloat(state.thrustLevel / 18) * 0.45
         emitPlume(from: shipNode, team: team, state: state)
+        emitWake(from: shipNode, team: team, state: state)
+    }
+
+    /// A drifting ship leaves vapour rather than a pen line: one soft puff
+    /// every few points of travel, laid down where the ship was and left to
+    /// swell and fade in place.
+    private func emitWake(from shipNode: SKShapeNode, team: Team, state: ShipState) {
+        guard !reduceMotion, !state.isDestroyed else { return }
+        let here = shipNode.position
+        let anchor = team == .cyan ? cyanWakeAnchor : orangeWakeAnchor
+        let spacing: CGFloat = 5
+        guard let anchor else {
+            if team == .cyan { cyanWakeAnchor = here } else { orangeWakeAnchor = here }
+            return
+        }
+        let travelled = hypot(here.x - anchor.x, here.y - anchor.y)
+        guard travelled >= spacing else { return }
+        if team == .cyan { cyanWakeAnchor = here } else { orangeWakeAnchor = here }
+        plumeSeed &+= 1
+        let jitter = Double((plumeSeed &* 7919) % 199) / 199 - 0.5
+        let scale = Double(shipNode.xScale)
+        let puff = SKSpriteNode(texture: Self.puffTexture)
+        puff.color = team == .cyan
+            ? SKColor(red: 0.45, green: 0.8, blue: 1, alpha: 1)
+            : SKColor(red: 1, green: 0.66, blue: 0.38, alpha: 1)
+        puff.colorBlendFactor = 1
+        puff.blendMode = .add
+        puff.zPosition = -3
+        puff.alpha = 0
+        puff.setScale(CGFloat(scale * (0.42 + jitter * 0.12)))
+        puff.position = CGPoint(x: here.x + CGFloat(jitter * 3), y: here.y - CGFloat(jitter * 3))
+        plumeLayer.addChild(puff)
+        let life = 0.62 + jitter * 0.12
+        puff.run(.sequence([
+            .group([
+                .scale(by: 2.2, duration: life),
+                .sequence([
+                    .fadeAlpha(to: 0.22, duration: life * 0.12),
+                    .fadeOut(withDuration: life * 0.88),
+                ]),
+            ]),
+            .removeFromParent(),
+        ]))
     }
 
     /// Soft radial falloff, built once. Sprites are far cheaper than one
@@ -511,20 +606,14 @@ final class ArenaScene: SKScene {
         guard !reduceMotion else {
             trailLayer.removeAllChildren()
             plumeLayer.removeAllChildren()
-            cyanTrail.removeAll()
-            orangeTrail.removeAll()
             ballTrail.removeAll()
+            cyanWakeAnchor = nil
+            orangeWakeAnchor = nil
             return
         }
-        if let cyan = snapshot.ships[.cyan], !cyan.isDestroyed { cyanTrail.append(point(cyan.position.x, cyan.position.y)) }
-        if let orange = snapshot.ships[.orange], !orange.isDestroyed { orangeTrail.append(point(orange.position.x, orange.position.y)) }
         ballTrail.append(point(snapshot.ball.position.x, snapshot.ball.position.y))
-        cyanTrail = Array(cyanTrail.suffix(22))
-        orangeTrail = Array(orangeTrail.suffix(22))
         ballTrail = Array(ballTrail.suffix(16))
         trailLayer.removeAllChildren()
-        trailLayer.addChild(trail(points: cyanTrail, color: .cyan))
-        trailLayer.addChild(trail(points: orangeTrail, color: .orange))
         let ballTrailNode = trail(points: ballTrail, color: .white)
         ballTrailNode.lineWidth = 2 + min(6, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y) * 0.25)
         ballTrailNode.glowWidth = 8

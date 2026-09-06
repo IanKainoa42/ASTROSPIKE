@@ -36,6 +36,16 @@ public enum AIDifficulty: String, Codable, CaseIterable, Sendable {
     }
 
     public var physicsMultiplier: Double { 1 }
+
+    /// How well the nose has to line up with the shot before the bot fires.
+    /// Cosine of the angle; nil means this level never shoots.
+    public var fireAlignment: Double? {
+        switch self {
+        case .rookie: nil
+        case .pilot: 0.86
+        case .ace: 0.72
+        }
+    }
 }
 
 /// Flies a lander the way a player has to. It rolls the ball forward to find
@@ -272,7 +282,28 @@ public struct AIController: InputSource, Sendable {
             : aligned
                 && !climbingAway
                 && simd_dot(need, nose) > configuration.maximumThrustAcceleration * Self.thrustGate
-        return PlayerInput(tick: tick, torque: torque, thrust: thrust)
+        let fire = wantsToFire(state: state, ship: ship, nose: nose, homeSign: homeSign)
+        return PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire)
+    }
+
+    /// Shoot when the ball is out in front, on this half, and the nose is
+    /// already pointing roughly the way the shot should go -- so a bolt sends
+    /// it over rather than into the bot's own face. Too close and the hull
+    /// will hit it anyway; too far and the bolt fizzles first.
+    private func wantsToFire(
+        state: WorldState,
+        ship: ShipState,
+        nose: SIMD2<Double>,
+        homeSign: Double
+    ) -> Bool {
+        guard let alignment = difficulty.fireAlignment, ship.fireCooldownTicks == 0 else { return false }
+        let toBall = state.ball.position - ship.position
+        let distance = simd_length(toBall)
+        let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
+        guard distance > 0.16, distance < reach else { return false }
+        guard state.ball.position.x * homeSign > 0.02 else { return false }
+        guard simd_dot(toBall / distance, nose) > 0.985 else { return false }
+        return simd_dot(nose, plannedShot) > alignment
     }
 
     /// Altitude a full recovery costs from here: swing the nose upright at the
