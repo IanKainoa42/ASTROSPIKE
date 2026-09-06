@@ -8,7 +8,7 @@ import os
 @Observable
 final class OnlineMatchCoordinator: NSObject,
     GKMatchDelegate,
-    GKMatchmakerViewControllerDelegate,
+    @MainActor GKMatchmakerViewControllerDelegate,
     GKLocalPlayerListener {
     enum Status: Equatable {
         case signedOut
@@ -142,7 +142,7 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     /// Compact, readable description of a GameKit failure: `GK<code> <NAME>`.
-    private func describe(_ error: Error) -> String {
+    nonisolated func describe(_ error: Error) -> String {
         let nsError = error as NSError
         var text: String
         if let gkError = error as? GKError {
@@ -763,9 +763,10 @@ final class OnlineMatchCoordinator: NSObject,
 
     nonisolated func player(_ player: GKPlayer, didAccept invite: GKInvite) {
         let displayName = invite.sender.displayName
+        nonisolated(unsafe) let safeInvite = invite
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.handleInviteAccepted(senderDisplayName: displayName, invite: invite)
+            self.handleInviteAccepted(senderDisplayName: displayName, invite: safeInvite)
         }
     }
 
@@ -795,7 +796,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// Game Center app / Messages "Play together" route: the system hands us the
     /// chosen recipients and expects us to open a matchmaker pre-filled with them.
     nonisolated func player(_ player: GKPlayer, didRequestMatchWithRecipients recipientPlayers: [GKPlayer]) {
-        let players = recipientPlayers
+        nonisolated(unsafe) let players = recipientPlayers
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.note("SYSTEM MATCH REQUEST WITH \(players.map(\.displayName).joined(separator: ", "))")
