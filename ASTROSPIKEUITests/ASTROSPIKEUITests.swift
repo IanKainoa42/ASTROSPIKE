@@ -8,7 +8,8 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["QUICK MATCH, AUTOMATIC ONLINE DUEL"].exists)
-        XCTAssertTrue(app.buttons["INVITE A FRIEND, GAME CENTER"].exists)
+        XCTAssertTrue(app.buttons["LOBBY, WHO'S ONLINE • LIVE DUELS • BRACKETS"].exists)
+        XCTAssertTrue(app.buttons["INVITE"].exists)
         XCTAssertTrue(app.frame.width > app.frame.height)
     }
 
