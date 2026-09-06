@@ -180,6 +180,9 @@ final class OnlineMatchCoordinator: NSObject,
     private var session: OnlineSessionStateMachine?
     private var reconnectTask: Task<Void, Never>?
     private var finishTask: Task<Void, Never>?
+    private var handshakeTask: Task<Void, Never>?
+    /// How long to keep re-sending `.ready` before giving up on the peer.
+    private static let handshakeTimeoutSeconds = 20
     private var lastAuthoritativeState: WorldState?
     private var pendingPing: UInt64?
     private let codec = WireCodec()
@@ -349,11 +352,41 @@ final class OnlineMatchCoordinator: NSObject,
                 self.eventGate.reset()
                 self.isMatchReady = (self.match?.expectedPlayerCount ?? 0) == 0 && self.peerReadyReceived
                 self.status = self.isMatchReady ? .connected : .matching
-                self.send(.ready, mode: .reliable)
-                self.send(.profile(team: self.localTeam ?? .cyan, hull: self.localHull), mode: .reliable)
+                self.beginHandshake()
                 self.sendPing()
             }
         }
+    }
+
+    /// The peer only learns we are ready from a message, and a message sent
+    /// before the peer has installed its match delegate is silently dropped by
+    /// GameKit. Re-send the handshake every second until the peer's own `.ready`
+    /// arrives, and fail visibly instead of sitting on FINDING PILOT forever.
+    private func beginHandshake() {
+        handshakeTask?.cancel()
+        let matchIdentifier = match.map(ObjectIdentifier.init)
+        note("HANDSHAKE: WAITING FOR PILOT READY")
+        handshakeTask = Task { @MainActor [weak self] in
+            var elapsed = 0
+            while !Task.isCancelled {
+                guard let self, self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
+                if self.peerReadyReceived { return }
+                if elapsed >= Self.handshakeTimeoutSeconds {
+                    self.note("HANDSHAKE TIMED OUT: PEER NEVER SENT READY")
+                    self.status = .failed(message: "Pilot never answered · try again")
+                    self.leaveMatch(preservingStatus: true)
+                    return
+                }
+                self.sendHandshake()
+                try? await Task.sleep(for: .seconds(1))
+                elapsed += 1
+            }
+        }
+    }
+
+    private func sendHandshake() {
+        send(.ready, mode: .reliable)
+        send(.profile(team: localTeam ?? .cyan, hull: localHull), mode: .reliable)
     }
 
     private func send(_ payload: WirePayload, mode: GKMatch.SendDataMode) {
@@ -385,8 +418,15 @@ final class OnlineMatchCoordinator: NSObject,
             }
         case .ready:
             guard lifecycle.acceptsNetworkMessages else { return }
+            let firstHearing = !peerReadyReceived
             peerReadyReceived = true
             guard lifecycle.phase != .configuring else { return }
+            // Answer once more now that the peer is provably listening, in
+            // case everything we sent before this point was dropped.
+            if firstHearing {
+                note("HANDSHAKE: PILOT READY")
+                sendHandshake()
+            }
             isMatchReady = true
             status = .connected
         case let .profile(team, hull):
@@ -558,6 +598,8 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask = nil
         finishTask?.cancel()
         finishTask = nil
+        handshakeTask?.cancel()
+        handshakeTask = nil
         session = nil
         lifecycle.reset()
         snapshotGate.reset()
@@ -597,6 +639,8 @@ final class OnlineMatchCoordinator: NSObject,
         isMatchReady = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        handshakeTask?.cancel()
+        handshakeTask = nil
         finishTask?.cancel()
         finishTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
