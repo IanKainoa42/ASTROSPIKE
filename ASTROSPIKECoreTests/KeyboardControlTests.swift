@@ -14,9 +14,9 @@ struct KeyboardControlTests {
         }
     }
 
-    @Test("Space thrusts, because that is where a thumb already is")
-    func spacebarThrusts() {
-        #expect(KeyboardControlMapping.action(forKeyCode: 44) == .thrust)
+    @Test("Space fires, because that is where a thumb already is")
+    func spacebarFires() {
+        #expect(KeyboardControlMapping.action(forKeyCode: 44) == .fire)
     }
 
     @Test("Keys we do not own are left for the responder chain")
@@ -40,7 +40,7 @@ struct KeyboardControlTests {
             }
         }
         // ... and nothing that flies the ship is a command.
-        for action in [FlightControlAction.left, .right, .thrust] {
+        for action in [FlightControlAction.left, .right, .thrust, .fire] {
             for code in KeyboardControlMapping.keyCodes(for: action) {
                 #expect(KeyboardControlMapping.command(forKeyCode: code) == nil)
             }
@@ -56,7 +56,7 @@ struct KeyboardControlTests {
     @Test("No key is wired to two actions at once")
     func mappingIsUnambiguous() {
         var seen: Set<Int> = []
-        for action in [FlightControlAction.left, .right, .thrust] {
+        for action in [FlightControlAction.left, .right, .thrust, .fire] {
             for code in KeyboardControlMapping.keyCodes(for: action) {
                 #expect(seen.insert(code).inserted, "key \(code) is mapped twice")
             }

@@ -38,25 +38,70 @@ struct TouchControls: View {
     }
 
     private var steeringZones: some View {
-        HStack(spacing: 0) {
-            ControlZone(
-                icon: "rotate.left",
-                label: "Rotate left",
-                identifier: "rotate-left-control",
-                tint: .cyan,
-                active: leftPressed,
-                chrome: steeringChrome,
-                pressChanged: setLeftPressed
+        ZStack(alignment: .bottom) {
+            HStack(spacing: 0) {
+                ControlZone(
+                    icon: "rotate.left",
+                    label: "Rotate left",
+                    identifier: "rotate-left-control",
+                    tint: .cyan,
+                    active: leftPressed,
+                    chrome: steeringChrome,
+                    pressChanged: nil
+                )
+                ControlZone(
+                    icon: "rotate.right",
+                    label: "Rotate right",
+                    identifier: "rotate-right-control",
+                    tint: .cyan,
+                    active: rightPressed,
+                    chrome: steeringChrome,
+                    pressChanged: nil
+                )
+            }
+
+            // Trim slider needle indicator across the bottom chrome
+            trimSliderIndicator
+                .padding(.bottom, 16)
+                .allowsHitTesting(false)
+
+            // Touch capture for continuous slide/trim and pegged edge hold
+            SteeringCapture(
+                onTorque: { newTorque in
+                    torque = newTorque
+                },
+                onActive: { left, right in
+                    leftPressed = left
+                    rightPressed = right
+                }
             )
-            ControlZone(
-                icon: "rotate.right",
-                label: "Rotate right",
-                identifier: "rotate-right-control",
-                tint: .cyan,
-                active: rightPressed,
-                chrome: steeringChrome,
-                pressChanged: setRightPressed
-            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var trimSliderIndicator: some View {
+        let totalWidth: CGFloat = (steeringChrome.width * 2) - 36
+        let maxOffset: CGFloat = totalWidth / 2 - 20
+        // Torque: +1 is left, -1 is right
+        let currentOffset: CGFloat = CGFloat(-torque) * maxOffset
+        let isPegged = abs(torque) >= 0.98
+
+        return ZStack {
+            // Track
+            Capsule()
+                .fill(Color.white.opacity(0.08))
+                .frame(width: totalWidth, height: 4)
+            // Center detent
+            Rectangle()
+                .fill(Color.white.opacity(0.35))
+                .frame(width: 2, height: 8)
+            // Sliding needle
+            Capsule()
+                .fill(Color.cyan.opacity(abs(torque) > 0 ? (isPegged ? 1.0 : 0.85) : 0.25))
+                .frame(width: isPegged ? 28 : 20, height: 6)
+                .shadow(color: .cyan.opacity(abs(torque) > 0 ? 0.8 : 0), radius: isPegged ? 6 : 3)
+                .offset(x: currentOffset)
+                .animation(.easeOut(duration: 0.08), value: torque)
         }
     }
 
@@ -79,40 +124,9 @@ struct TouchControls: View {
         largeControls ? CGSize(width: 200, height: 148) : CGSize(width: 168, height: 122)
     }
 
-    private func setLeftPressed(_ pressed: Bool) {
-        setPressed(pressed, for: .left)
-    }
-
-    private func setRightPressed(_ pressed: Bool) {
-        setPressed(pressed, for: .right)
-    }
-
     private func setThrustPressed(_ pressed: Bool) {
-        setPressed(pressed, for: .thrust)
-    }
-
-    private func setPressed(_ pressed: Bool, for control: ControlInput) {
-        switch control {
-        case .left:
-            leftPressed = pressed
-        case .right:
-            rightPressed = pressed
-        case .thrust:
-            thrustPressed = pressed
-        }
-
-        applyInput()
-    }
-
-    private func applyInput() {
-        let input = FlightControlMapping.input(
-            tick: 0,
-            leftPressed: leftPressed,
-            rightPressed: rightPressed,
-            thrustPressed: thrustPressed
-        )
-        torque = input.torque
-        thrust = input.thrust
+        thrustPressed = pressed
+        thrust = pressed
     }
 
     private func clearInput() {
@@ -124,12 +138,6 @@ struct TouchControls: View {
     }
 }
 
-private enum ControlInput {
-    case left
-    case right
-    case thrust
-}
-
 private struct ControlZone: View {
     let icon: String
     let label: String
@@ -137,7 +145,7 @@ private struct ControlZone: View {
     let tint: Color
     let active: Bool
     let chrome: CGSize
-    let pressChanged: (Bool) -> Void
+    let pressChanged: ((Bool) -> Void)?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -158,9 +166,11 @@ private struct ControlZone: View {
                 )
                 .frame(width: chrome.width, height: chrome.height)
                 .padding(.bottom, 14)
-            // Fills the zone, so this is what actually receives the touch.
-            PressCapture(pressChanged: pressChanged)
-                .accessibilityHidden(true)
+            if let pressChanged {
+                // Fills the zone, so this is what actually receives the touch.
+                PressCapture(pressChanged: pressChanged)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -169,6 +179,108 @@ private struct ControlZone: View {
         .accessibilityValue(active ? "Pressed" : "Released")
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier(identifier)
+    }
+}
+
+private struct SteeringCapture: UIViewRepresentable {
+    let onTorque: (Double) -> Void
+    let onActive: (Bool, Bool) -> Void
+
+    func makeUIView(context: Context) -> SteeringCaptureView {
+        let view = SteeringCaptureView()
+        view.isMultipleTouchEnabled = true
+        view.isAccessibilityElement = false
+        view.onTorqueChanged = onTorque
+        view.onActiveChanged = onActive
+        return view
+    }
+
+    func updateUIView(_ view: SteeringCaptureView, context: Context) {
+        view.onTorqueChanged = onTorque
+        view.onActiveChanged = onActive
+    }
+}
+
+private final class SteeringCaptureView: UIView {
+    var onTorqueChanged: ((Double) -> Void)?
+    var onActiveChanged: ((Bool, Bool) -> Void)?
+
+    private var activeTouchID: ObjectIdentifier?
+    private var touchAnchor: CGPoint = .zero
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        guard activeTouchID == nil, let touch = touches.first else { return }
+        let id = ObjectIdentifier(touch)
+        activeTouchID = id
+        touchAnchor = touch.location(in: self)
+        updateTorque(for: touch)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        guard let activeID = activeTouchID,
+              let touch = touches.first(where: { ObjectIdentifier($0) == activeID }) else { return }
+        updateTorque(for: touch)
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        guard let activeID = activeTouchID,
+              touches.contains(where: { ObjectIdentifier($0) == activeID }) else { return }
+        releaseTouch()
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        guard let activeID = activeTouchID,
+              touches.contains(where: { ObjectIdentifier($0) == activeID }) else { return }
+        releaseTouch()
+    }
+
+    private func updateTorque(for touch: UITouch) {
+        let current = touch.location(in: self)
+        let deltaX = current.x - touchAnchor.x
+        let deadZone: CGFloat = 6.0
+        let pegThreshold: CGFloat = 42.0
+
+        if abs(deltaX) > deadZone {
+            let magnitude = Double(min(1.0, max(0.0, (abs(deltaX) - deadZone) / (pegThreshold - deadZone))))
+            let analogTorque: Double = 0.18 + 0.82 * (magnitude * magnitude)
+            if deltaX < 0 {
+                // Dragging left -> Rotate left (positive torque)
+                let t = min(1.0, analogTorque)
+                onTorqueChanged?(t)
+                onActiveChanged?(true, false)
+            } else {
+                // Dragging right -> Rotate right (negative torque)
+                let t = -min(1.0, analogTorque)
+                onTorqueChanged?(t)
+                onActiveChanged?(false, true)
+            }
+        } else {
+            // Stationary tap: check which half of the steering container was tapped
+            let midX = bounds.width / 2
+            if touchAnchor.x < midX {
+                onTorqueChanged?(1.0)
+                onActiveChanged?(true, false)
+            } else {
+                onTorqueChanged?(-1.0)
+                onActiveChanged?(false, true)
+            }
+        }
+    }
+
+    private func releaseTouch() {
+        activeTouchID = nil
+        onTorqueChanged?(0.0)
+        onActiveChanged?(false, false)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window == nil else { return }
+        releaseTouch()
     }
 }
 

@@ -203,7 +203,7 @@ private struct GameView: View {
         self.exit = exit
         let configuration = switch mode {
         case .solo: tuning.configuration
-        case .online: SimulationConfiguration()
+        case .online: SimulationConfiguration.online
         }
         _session = State(initialValue: GameSession(
             mode: mode,
@@ -314,7 +314,7 @@ private struct GameView: View {
     private var allowedBounces: Int {
         switch mode {
         case .solo: tuning.allowedBouncesPerHit
-        case .online: 1
+        case .online: 3
         }
     }
 
@@ -506,7 +506,7 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake.")
-                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W, up arrow or space to thrust. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
+                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip, one bounce a touch.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
                     TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
@@ -556,7 +556,7 @@ private struct SettingsView: View {
                         value: $tuning.allowedBouncesPerHit,
                         in: 1 ... 5
                     )
-                    Text("Applies to solo matches. Online matches use three touches and one bounce per hit for both players.")
+                    Text("Applies to solo matches. Online matches use three touches and three bounces per hit for both players.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

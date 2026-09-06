@@ -6,6 +6,7 @@ public enum FlightControlAction: String, Codable, Hashable, Sendable {
     case left
     case right
     case thrust
+    case fire
 }
 
 /// Keys that act on the match rather than the ship. Separate from
@@ -44,7 +45,8 @@ public enum KeyboardControlMapping {
         switch code {
         case keyA, leftArrow: .left
         case keyD, rightArrow: .right
-        case keyW, upArrow, spacebar: .thrust
+        case keyW, upArrow: .thrust
+        case spacebar: .fire
         default: nil
         }
     }
@@ -72,7 +74,8 @@ public enum KeyboardControlMapping {
         switch action {
         case .left: [keyA, leftArrow]
         case .right: [keyD, rightArrow]
-        case .thrust: [keyW, upArrow, spacebar]
+        case .thrust: [keyW, upArrow]
+        case .fire: [spacebar]
         }
     }
 

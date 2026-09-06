@@ -179,6 +179,24 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
         self.allowedShipTouches = min(6, max(1, allowedShipTouches))
     }
+
+    public static let online = SimulationConfiguration(
+        stepDuration: 1.0 / 120.0,
+        gravity: SIMD2(0, -1.10),
+        initialThrustAcceleration: 2.50,
+        maximumThrustAcceleration: 2.50,
+        thrustRampRate: 0,
+        torqueAcceleration: 6.00,
+        ballGravityMultiplier: 0.54,
+        ballDropHeight: 0.10,
+        ballDropSpeed: 0.06,
+        serveDelay: 1.35,
+        minimumBallSeparationSpeed: 0.45,
+        crossingPushBack: 30,
+        crossingDrag: 5.0,
+        allowedFloorBounces: 3,
+        allowedShipTouches: 3
+    )
 }
 
 public struct SimulationEngine: Sendable {
