@@ -191,6 +191,7 @@ final class OnlineMatchCoordinator: NSObject,
     private var handshakeTask: Task<Void, Never>?
     /// How long to keep re-sending `.ready` before giving up on the peer.
     private static let handshakeTimeoutSeconds = 20
+    private static let connectTimeoutSeconds = 30
     private var lastAuthoritativeState: WorldState?
     private var pendingPing: UInt64?
     private let codec = WireCodec()
@@ -431,43 +432,64 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// A programmatic `findMatch` hands the match back before the invited
+    /// pilot has connected, and `chooseBestHostingPlayer` returns nil on a
+    /// match that is not fully connected. So: wait for every seat to fill,
+    /// then pick the host without asking GameKit at all.
     private func configure(_ match: GKMatch) {
         self.match = match
         peerReadyReceived = false
         lifecycle.beginConfiguration()
         match.delegate = self
-        let matchIdentifier = ObjectIdentifier(match)
-        match.chooseBestHostingPlayer { [weak self] player in
-            // Read everything off the player here: GKPlayer is not Sendable, so
-            // only plain values may cross into the main actor.
-            let hostPlayerID = player?.gamePlayerID
-            let hostName = player?.displayName ?? "?"
-            Task { @MainActor in
-                guard let self,
-                      self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
-                guard let hostPlayerID else {
-                    self.note("HOST SELECTION FAILED")
-                    self.status = .failed(message: "Unable to select host")
-                    self.leaveMatch(preservingStatus: true)
-                    return
-                }
-                let localID = GKLocalPlayer.local.gamePlayerID
-                self.isAuthoritative = hostPlayerID == localID
-                self.note("HOST: \(hostName) · LOCAL IS \(self.isAuthoritative ? "HOST" : "GUEST")")
-                self.localTeam = self.isAuthoritative ? .cyan : .orange
-                self.session = OnlineSessionStateMachine(
-                    localTeam: self.localTeam ?? .cyan,
-                    ticksPerSecond: 120
-                )
-                self.lifecycle.beginMatch()
-                self.snapshotGate.reset()
-                self.eventGate.reset()
-                self.isMatchReady = (self.match?.expectedPlayerCount ?? 0) == 0 && self.peerReadyReceived
-                self.status = self.isMatchReady ? .connected : .matching
-                self.beginHandshake()
-                self.sendPing()
-            }
+        status = .matching
+        if match.expectedPlayerCount == 0 {
+            startConfiguredMatch()
+        } else {
+            note("WAITING FOR \(match.expectedPlayerCount) MORE PILOT(S) TO CONNECT")
+            beginConnectWait()
         }
+    }
+
+    private func beginConnectWait() {
+        handshakeTask?.cancel()
+        let matchIdentifier = match.map(ObjectIdentifier.init)
+        handshakeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.connectTimeoutSeconds))
+            guard let self, !Task.isCancelled,
+                  self.match.map(ObjectIdentifier.init) == matchIdentifier,
+                  self.lifecycle.phase == .configuring else { return }
+            self.note("CONNECT TIMED OUT: PILOT NEVER JOINED")
+            self.status = .failed(message: "Pilot never connected · try again")
+            self.leaveMatch(preservingStatus: true)
+        }
+    }
+
+    /// Every player is connected. Both ends see the same player list, so the
+    /// lowest Game Center player ID is the host on both devices with no
+    /// negotiation and nothing that can come back nil.
+    private func startConfiguredMatch() {
+        guard let match, lifecycle.phase == .configuring else { return }
+        handshakeTask?.cancel()
+        let localID = GKLocalPlayer.local.gamePlayerID
+        let candidates = [localID] + match.players.map(\.gamePlayerID)
+        let hostID = candidates.min() ?? localID
+        let hostName = hostID == localID
+            ? GKLocalPlayer.local.displayName
+            : match.players.first { $0.gamePlayerID == hostID }?.displayName ?? "?"
+        isAuthoritative = hostID == localID
+        note("HOST: \(hostName) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST")")
+        localTeam = isAuthoritative ? .cyan : .orange
+        session = OnlineSessionStateMachine(localTeam: localTeam ?? .cyan, ticksPerSecond: 120)
+        lifecycle.beginMatch()
+        snapshotGate.reset()
+        eventGate.reset()
+        isMatchReady = peerReadyReceived
+        status = isMatchReady ? .connected : .matching
+        // Answer any `.ready` that arrived while we were still configuring:
+        // the handshake loop below stops at once when the peer is already heard.
+        sendHandshake()
+        beginHandshake()
+        sendPing()
     }
 
     /// The peer only learns we are ready from a message, and a message sent
@@ -628,6 +650,7 @@ final class OnlineMatchCoordinator: NSObject,
         case .connected:
             guard lifecycle.acceptConnection() else { return }
             if lifecycle.phase == .configuring {
+                if match.expectedPlayerCount == 0 { startConfiguredMatch() }
                 return
             }
             let wasReconnecting: Bool
