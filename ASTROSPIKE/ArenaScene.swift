@@ -6,6 +6,9 @@ import UIKit
 final class ArenaScene: SKScene {
     var snapshot: WorldState? { didSet { renderSnapshot() } }
     var reduceMotion = false
+    /// Warm-up bay hoops. Empty in a real match.
+    var rings: [WarmupRing] = [] { didSet { renderRings() } }
+    private var ringNodes: [UInt64: SKShapeNode] = [:]
 
     private let arenaLayer = SKNode()
     private let trailLayer = SKNode()
@@ -47,6 +50,53 @@ final class ArenaScene: SKScene {
         didBuild = false
         buildArena()
         renderSnapshot()
+        renderRings()
+    }
+
+    private func renderRings() {
+        let live = Set(rings.map(\.id))
+        for (id, node) in ringNodes where !live.contains(id) {
+            node.removeFromParent()
+            ringNodes[id] = nil
+        }
+        guard size.width > 0 else { return }
+        let rect = arenaRect
+        for ring in rings {
+            let diameter = CGSize(
+                width: CGFloat(ring.radius * 2 / (arena.halfWidth * 2)) * rect.width,
+                height: CGFloat(ring.radius * 2 / (arena.ceilingY - arena.floorY)) * rect.height
+            )
+            let node: SKShapeNode
+            if let existing = ringNodes[ring.id] {
+                node = existing
+                node.path = CGPath(ellipseIn: CGRect(origin: CGPoint(x: -diameter.width / 2, y: -diameter.height / 2), size: diameter), transform: nil)
+            } else {
+                node = SKShapeNode(ellipseOf: diameter)
+                node.strokeColor = SKColor(red: 1, green: 0.86, blue: 0.3, alpha: 0.9)
+                node.fillColor = SKColor(red: 1, green: 0.86, blue: 0.3, alpha: 0.07)
+                node.lineWidth = 3
+                node.glowWidth = 7
+                node.zPosition = -0.5
+                node.alpha = 0
+                actorLayer.addChild(node)
+                ringNodes[ring.id] = node
+                node.run(.fadeIn(withDuration: 0.25))
+                if !reduceMotion {
+                    node.run(.repeatForever(.sequence([
+                        .scale(to: 1.07, duration: 0.9),
+                        .scale(to: 1.0, duration: 0.9),
+                    ])))
+                }
+            }
+            node.position = point(ring.position.x, ring.position.y)
+        }
+    }
+
+    func popRing(_ ring: WarmupRing) {
+        let position = point(ring.position.x, ring.position.y)
+        let gold = SKColor(red: 1, green: 0.86, blue: 0.3, alpha: 1)
+        sparks(at: position, color: gold)
+        if !reduceMotion { flash(at: position, color: gold, scale: 1.4, life: 0.3) }
     }
 
     private func configureActorNodes() {

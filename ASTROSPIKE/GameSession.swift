@@ -3,9 +3,12 @@ import Observation
 import QuartzCore
 import SwiftUI
 
-enum GameMode: Equatable {
+enum GameMode: Hashable {
     case solo(AIDifficulty)
     case online
+    /// The warm-up bay: a lone pilot, the same court, hoops to pop and a
+    /// keep-up streak, while a Game Center invite is out.
+    case warmup
 }
 
 @MainActor
@@ -16,6 +19,9 @@ final class GameSession {
     private(set) var countdown = 3
     private(set) var lastPointText: String?
     private(set) var isPaused = false
+    private(set) var ringsPopped = 0
+    private(set) var bestKeepUp = 0
+    private var rings = WarmupRings()
 
     var torque = 0.0
     var thrust = false
@@ -48,16 +54,22 @@ final class GameSession {
         var initialEngine = SimulationEngine.testing()
         initialEngine.updateConfiguration(configuration)
         initialEngine.prepareNextRally(mirrored: false)
+        if mode == .warmup {
+            // Nobody to defend against, and no ceremony before the first serve.
+            initialEngine.state.ships[.orange] = nil
+            countdown = 1
+        }
         engine = initialEngine
         state = initialEngine.state
         if case let .solo(difficulty) = mode {
             ai = AIController(difficulty: difficulty, configuration: configuration)
-            if ProcessInfo.processInfo.arguments.contains("--demo") {
-                demoAI = AIController(difficulty: .pilot, configuration: configuration)
-            }
+        }
+        if mode != .online, ProcessInfo.processInfo.arguments.contains("--demo") {
+            demoAI = AIController(difficulty: .pilot, configuration: configuration)
         }
         scene.scaleMode = .resizeFill
         scene.snapshot = state
+        if mode == .warmup { scene.rings = rings.rings }
         let localTeam = online?.localTeam ?? .cyan
         scene.setHull(localHull, for: localTeam)
         scene.setHull(online?.remoteHull ?? rivalHull, for: localTeam.opponent)
@@ -89,7 +101,7 @@ final class GameSession {
     }
 
     func setApplicationActive(_ active: Bool) {
-        guard case .solo = mode else { return }
+        guard mode != .online else { return }
         isPaused = !active
     }
 
@@ -169,6 +181,8 @@ final class GameSession {
                 self.ai = ai
             }
             engine.step(inputs: inputs)
+        case .warmup:
+            engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
             if tick.isMultiple(of: 4) {
@@ -183,8 +197,18 @@ final class GameSession {
 
         state = engine.state
         events = engine.lastEvents
+        if mode == .warmup {
+            bestKeepUp = max(bestKeepUp, state.match.shipTouches.cyan)
+            let burst = rings.observe(state)
+            if !burst.isEmpty {
+                ringsPopped = rings.popped
+                scene.rings = rings.rings
+                for ring in burst { scene.popRing(ring) }
+                FeedbackCenter.shared.impact()
+            }
+        }
         let presentsLocalEvents = switch mode {
-        case .solo: true
+        case .solo, .warmup: true
         case .online: online?.isAuthoritative == true
         }
         if presentsLocalEvents, !events.isEmpty { scene.present(events) }

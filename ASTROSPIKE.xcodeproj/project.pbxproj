@@ -18,6 +18,7 @@
 		1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */; };
 		3A4D0B7ACDA79D239BD06DDB /* ASTROSPIKEApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */; };
 		3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859573897DB0229481CD4EC8 /* KeyboardControls.swift */; };
+		3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4405102C04B2CE798F18AD89 /* WarmupTests.swift */; };
 		3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */; };
 		422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */; };
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
@@ -50,6 +51,7 @@
 		EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */; };
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
 		F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */; };
+		FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5637738B4E3686D57BD33184 /* WarmupRings.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -121,6 +123,7 @@
 		3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionStateMachine.swift; sourceTree = "<group>"; };
 		3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltAndWashTests.swift; sourceTree = "<group>"; };
 		4033BD3492F8C74CE390EB56 /* FlightTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuning.swift; sourceTree = "<group>"; };
+		4405102C04B2CE798F18AD89 /* WarmupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmupTests.swift; sourceTree = "<group>"; };
 		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
 		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -129,6 +132,7 @@
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
 		5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuningTests.swift; sourceTree = "<group>"; };
 		5488DBEBDCDC52A967D49F5A /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
+		5637738B4E3686D57BD33184 /* WarmupRings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmupRings.swift; sourceTree = "<group>"; };
 		58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullCatalogTests.swift; sourceTree = "<group>"; };
 		64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControlTests.swift; sourceTree = "<group>"; };
 		6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocolTests.swift; sourceTree = "<group>"; };
@@ -181,6 +185,7 @@
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
+				5637738B4E3686D57BD33184 /* WarmupRings.swift */,
 				2CD95C0514B3196435647AEC /* WireProtocol.swift */,
 			);
 			path = ASTROSPIKECore;
@@ -255,6 +260,7 @@
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
+				4405102C04B2CE798F18AD89 /* WarmupTests.swift */,
 				6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */,
 			);
 			path = ASTROSPIKECoreTests;
@@ -414,6 +420,7 @@
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
+				FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */,
 				189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -455,6 +462,7 @@
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
+				3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */,
 				422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -615,7 +623,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -675,7 +683,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 16;
+				CURRENT_PROJECT_VERSION = 17;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

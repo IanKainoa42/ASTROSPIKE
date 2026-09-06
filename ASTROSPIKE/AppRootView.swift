@@ -26,10 +26,15 @@ struct AppRootView: View {
             reconnectSeconds: 7,
             eventLog: ["10:46:01 SIGNED IN: GC TEST PILOT", "10:46:09 INVITE → WINGMAN: NO ANSWER"]
         ) : nil
-        _gameMode = State(initialValue: diagnosticsPreviewMode ? .online : (demoMode ? .solo(.pilot) : nil))
+        // `--warmup` opens the bay directly, for screenshots and simulator checks
+        // where Game Center cannot put an invite out.
+        let warmupMode = arguments.contains("--warmup")
+        _gameMode = State(initialValue: diagnosticsPreviewMode ? .online
+            : warmupMode ? .warmup
+            : demoMode ? .solo(.pilot) : nil)
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
-        let bypass = demoMode || diagnosticsPreviewMode || arguments.contains("--skip-onboarding")
+        let bypass = demoMode || warmupMode || diagnosticsPreviewMode || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
     }
 
@@ -46,6 +51,7 @@ struct AppRootView: View {
                 ) {
                     self.gameMode = nil
                 }
+                .id(gameMode)
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
             } else if showOnboarding {
                 OnboardingFlow(profile: profile, entitlements: entitlements) { launch in
@@ -73,6 +79,14 @@ struct AppRootView: View {
         .onChange(of: online.isMatchReady) { _, ready in
             if ready { withAnimation { gameMode = .online } }
         }
+        .onChange(of: online.status) { _, status in
+            // An invite or a search is out: fly in the bay instead of staring
+            // at a status label.
+            if case .matching = status, gameMode == nil, !showOnboarding {
+                sheet = nil
+                withAnimation(.easeOut(duration: 0.25)) { gameMode = .warmup }
+            }
+        }
         .sheet(item: $sheet) { item in
             switch item {
             case .difficulty:
@@ -90,14 +104,78 @@ struct AppRootView: View {
                 }).presentationDetents([.large])
             case .hangar:
                 HangarSheet(profile: profile, entitlements: entitlements)
+            case .invite:
+                InviteSheet(online: online) {
+                    sheet = nil
+                    // Let the sheet finish dismissing before Game Center's own
+                    // picker takes the top of the stack.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        online.presentFriendInvite()
+                    }
+                }
+                .presentationDetents([.medium, .large])
             }
         }
     }
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, tutorial, settings, hangar
+    case difficulty, tutorial, settings, hangar, invite
     var id: String { rawValue }
+}
+
+private struct InviteSheet: View {
+    let online: OnlineMatchCoordinator
+    let openPicker: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Pick a pilot. You fly in the warm-up bay while they answer.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("RECENT PILOTS AND FRIENDS") {
+                    if online.invitees.isEmpty {
+                        if online.isLoadingInvitees {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Text("Nobody yet. Use the Game Center picker below.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(online.invitees, id: \.gamePlayerID) { player in
+                        Button { online.invite([player]) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.cyan)
+                                Text(player.displayName).font(.headline)
+                                Spacer()
+                                Image(systemName: "paperplane.fill").foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Invite \(player.displayName)")
+                    }
+                }
+                Section {
+                    Button(action: openPicker) {
+                        Label("Game Center picker", systemImage: "person.2.wave.2.fill")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("invite-picker-fallback")
+                } footer: {
+                    Text("Apple's picker reaches anyone, but it is a modal sheet: no bay while you wait.")
+                }
+            }
+            .navigationTitle("INVITE A PILOT")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .task { online.loadInvitees() }
+        .accessibilityIdentifier("invite-screen")
+    }
 }
 
 private struct HomeView: View {
@@ -145,8 +223,8 @@ private struct HomeView: View {
 
                 VStack(spacing: 12) {
                     MenuButton(title: "SOLO FLIGHT", subtitle: "ROOKIE • PILOT • ACE", icon: "person.fill") { sheet = .difficulty }
-                    MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.presentQuickMatch() }
-                    MenuButton(title: "INVITE A FRIEND", subtitle: "GAME CENTER", icon: "person.2.wave.2.fill") { online.presentFriendInvite() }
+                    MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
+                    MenuButton(title: "INVITE A FRIEND", subtitle: "GAME CENTER", icon: "person.2.wave.2.fill") { sheet = .invite }
                     HStack(spacing: 12) {
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
                         SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
@@ -204,6 +282,7 @@ private struct GameView: View {
         let configuration = switch mode {
         case .solo: tuning.configuration
         case .online: SimulationConfiguration.online
+        case .warmup: SimulationConfiguration.warmup
         }
         _session = State(initialValue: GameSession(
             mode: mode,
@@ -219,19 +298,23 @@ private struct GameView: View {
             SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
                 .ignoresSafeArea().accessibilityHidden(true)
             VStack(spacing: 0) {
-                MatchHUD(
-                    state: session.state,
-                    allowedBounces: allowedBounces,
-                    allowedTouches: allowedTouches,
-                    online: mode == .online && diagnosticsOverride == nil ? online : nil,
-                    actionLabel: mode == .online ? "Leave online match" : "Pause match",
-                    actionIcon: mode == .online ? "xmark" : "pause.fill"
-                ) {
-                    if mode == .online {
-                        showLeaveConfirmation = true
-                    } else {
-                        session.togglePause()
-                        showPause = true
+                if mode == .warmup {
+                    WarmupHUD(session: session, online: online) { showLeaveConfirmation = true }
+                } else {
+                    MatchHUD(
+                        state: session.state,
+                        allowedBounces: allowedBounces,
+                        allowedTouches: allowedTouches,
+                        online: mode == .online && diagnosticsOverride == nil ? online : nil,
+                        actionLabel: mode == .online ? "Leave online match" : "Pause match",
+                        actionIcon: mode == .online ? "xmark" : "pause.fill"
+                    ) {
+                        if mode == .online {
+                            showLeaveConfirmation = true
+                        } else {
+                            session.togglePause()
+                            showPause = true
+                        }
                     }
                 }
                 if mode == .online {
@@ -240,13 +323,15 @@ private struct GameView: View {
                     )
                     .padding(.top, 4)
                 }
-                HStack {
-                    if localHomeSide == .orange { Spacer() }
-                    TeamSideBadge(team: localTeam)
-                    if localHomeSide == .cyan { Spacer() }
+                if mode != .warmup {
+                    HStack {
+                        if localHomeSide == .orange { Spacer() }
+                        TeamSideBadge(team: localTeam)
+                        if localHomeSide == .cyan { Spacer() }
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 4)
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 4)
                 TouchControls(torque: $session.torque, thrust: $session.thrust, fire: $session.fire,
                               largeControls: largeControls, leftHanded: leftHanded)
             }
@@ -274,19 +359,26 @@ private struct GameView: View {
         }
         .accessibilityIdentifier("game-screen")
         .confirmationDialog(
-            "Leave Match?",
+            mode == .warmup ? "Leave the Bay?" : "Leave Match?",
             isPresented: $showLeaveConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Leave Match", role: .destructive, action: leaveGame)
-            Button("Keep Playing", role: .cancel) {}
+            Button(mode == .warmup ? "Cancel Invite" : "Leave Match", role: .destructive, action: leaveGame)
+            Button(mode == .warmup ? "Keep Warming Up" : "Keep Playing", role: .cancel) {}
         } message: {
-            Text("Leaving disconnects you from the current Game Center match.")
+            Text(mode == .warmup
+                ? "Leaving withdraws the invite or search."
+                : "Leaving disconnects you from the current Game Center match.")
         }
         .onAppear { FeedbackCenter.shared.hapticsEnabled = haptics; session.start() }
         .onDisappear {
             session.stop()
             if mode == .online { online.leaveMatch() }
+        }
+        .onChange(of: online.status) { _, status in
+            // Apple's picker was cancelled under the bay: nothing is pending, so
+            // there is nothing to warm up for.
+            if mode == .warmup, case .ready = status { exit() }
         }
         .onChange(of: tuning.snapshot) { _, _ in
             session.applyTuning(tuning.configuration)
@@ -315,14 +407,14 @@ private struct GameView: View {
     private var allowedBounces: Int {
         switch mode {
         case .solo: tuning.allowedBouncesPerHit
-        case .online: 3
+        case .online, .warmup: 3
         }
     }
 
     private var allowedTouches: Int {
         switch mode {
         case .solo: tuning.allowedTouchesPerSide
-        case .online: 3
+        case .online, .warmup: 3
         }
     }
 
@@ -341,11 +433,11 @@ private struct GameView: View {
     private func handleKeyCommand(_ command: FlightControlCommand) {
         switch command {
         case .pause:
-            if mode == .online {
-                showLeaveConfirmation = true
-            } else {
+            if case .solo = mode {
                 session.togglePause()
                 showPause = true
+            } else {
+                showLeaveConfirmation = true
             }
         case .confirm:
             // Only meaningful on the results card, where it is the one button.
@@ -354,8 +446,69 @@ private struct GameView: View {
     }
 
     private func leaveGame() {
-        if mode == .online { online.leaveMatch() }
+        switch mode {
+        case .online: online.leaveMatch()
+        case .warmup: online.cancelMatchmaking()
+        case .solo: break
+        }
         exit()
+    }
+}
+
+/// The bay's scoreboard: a keep-up streak, hoops popped, goals scored, and
+/// the state of the invite in the middle where the match rules would be.
+private struct WarmupHUD: View {
+    let session: GameSession
+    let online: OnlineMatchCoordinator
+    let leave: () -> Void
+
+    var body: some View {
+        HStack {
+            stat(title: "KEEP-UP", value: session.state.match.shipTouches.cyan,
+                 detail: "BEST \(session.bestKeepUp)", tint: .cyan)
+            Spacer()
+            VStack(spacing: 3) {
+                Text("WARM-UP BAY").font(.caption2.monospaced().weight(.bold)).tracking(2)
+                    .foregroundStyle(.white.opacity(0.55))
+                Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption2.weight(.bold)).foregroundStyle(statusColor).lineLimit(1)
+                if let notice = online.inviteNotice {
+                    Text(notice).font(.caption2.monospaced().weight(.semibold))
+                        .foregroundStyle(.yellow.opacity(0.9)).lineLimit(1)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            Spacer()
+            stat(title: "HOOPS", value: session.ringsPopped,
+                 detail: "GOALS \(session.state.match.score.cyan)", tint: .yellow)
+            Button(action: leave) {
+                Image(systemName: "xmark").frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
+            }
+            .accessibilityLabel("Leave warm-up bay").accessibilityIdentifier("match-action-button")
+        }
+        .padding(.horizontal, 24).padding(.top, 10)
+        .accessibilityIdentifier("warmup-hud")
+    }
+
+    private func stat(title: String, value: Int, detail: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Text(value.formatted()).font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.caption2.monospaced().weight(.bold)).tracking(1.5)
+                Text(detail).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.55))
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var statusColor: Color {
+        switch online.status {
+        case .connected, .ready: .green
+        case .matching, .authenticating, .reconnecting: .yellow
+        case .failed: .orange
+        case .signedOut: .white.opacity(0.6)
+        }
     }
 }
 

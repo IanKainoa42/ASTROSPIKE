@@ -35,7 +35,15 @@ final class OnlineMatchCoordinator: NSObject,
     private enum MatchmakingIntent: Equatable {
         case quickMatch
         case friendInvite
+        case invite([GKPlayer])
     }
+
+    /// Everyone the local pilot can invite without leaving the app: recent
+    /// opponents first, then Game Center friends once that consent is given.
+    private(set) var invitees: [GKPlayer] = []
+    private(set) var isLoadingInvitees = false
+    /// The latest word from an invited pilot, shown in the warm-up bay.
+    private(set) var inviteNotice: String?
 
     private(set) var status: Status = .signedOut
     private(set) var isMatchReady = false
@@ -238,7 +246,11 @@ final class OnlineMatchCoordinator: NSObject,
         status = .ready(playerName: player.displayName)
         if let intent = pendingMatchmakingIntent {
             pendingMatchmakingIntent = nil
-            presentMatchmaker(inviteOnly: intent == .friendInvite)
+            switch intent {
+            case .quickMatch: startQuickMatch()
+            case .friendInvite: presentMatchmaker(inviteOnly: true)
+            case let .invite(players): invite(players)
+            }
         }
     }
 
@@ -246,8 +258,108 @@ final class OnlineMatchCoordinator: NSObject,
         presentMatchmaker(inviteOnly: false)
     }
 
+    /// Apple's picker, kept as the fallback for pilots who are not in the
+    /// in-app list. It is modal, so there is no warm-up bay behind it.
     func presentFriendInvite() {
         presentMatchmaker(inviteOnly: true)
+    }
+
+    /// Automatch without the modal picker, so the pilot warms up in the bay
+    /// while Game Center searches.
+    func startQuickMatch() {
+        startMatchmaking(recipients: nil)
+    }
+
+    /// Sends Game Center invitations straight from the app and returns at
+    /// once, so the pilot waits in the bay instead of in a modal sheet.
+    func invite(_ players: [GKPlayer]) {
+        startMatchmaking(recipients: players)
+    }
+
+    /// Drops a search or an outstanding invite. Safe when nothing is pending.
+    func cancelMatchmaking() {
+        GKMatchmaker.shared().cancel()
+        if case .matching = status {
+            note("MATCHMAKING: CANCELLED BY PILOT")
+            status = .ready(playerName: GKLocalPlayer.local.displayName)
+        }
+    }
+
+    func loadInvitees() {
+        guard GKLocalPlayer.local.isAuthenticated, !isLoadingInvitees else { return }
+        isLoadingInvitees = true
+        GKLocalPlayer.local.loadRecentPlayers { [weak self] recent, recentError in
+            GKLocalPlayer.local.loadFriends { friends, friendsError in
+                // GameKit hands these back on its own queue; they are only ever
+                // read on the main actor from here on.
+                nonisolated(unsafe) let recent = recent
+                nonisolated(unsafe) let friends = friends
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let recentError { self.note("RECENT PLAYERS: \(self.describe(recentError))") }
+                    if let friendsError { self.note("FRIENDS: \(self.describe(friendsError))") }
+                    var seen: Set<String> = []
+                    self.invitees = ((recent ?? []) + (friends ?? []))
+                        .filter { seen.insert($0.gamePlayerID).inserted }
+                    self.note("INVITEES: \(self.invitees.count)")
+                    self.isLoadingInvitees = false
+                }
+            }
+        }
+    }
+
+    private func startMatchmaking(recipients: [GKPlayer]?) {
+        guard GKLocalPlayer.local.isAuthenticated else {
+            pendingMatchmakingIntent = recipients.map { .invite($0) } ?? .quickMatch
+            authenticate()
+            return
+        }
+        let request = GKMatchRequest()
+        request.minPlayers = 2
+        request.maxPlayers = 2
+        request.defaultNumberOfPlayers = 2
+        request.inviteMessage = "Duel me in ASTROSPIKE"
+        request.recipients = recipients
+        let recipientCount = recipients?.count ?? 0
+        request.recipientResponseHandler = { [weak self] player, response in
+            Task { @MainActor in
+                guard let self else { return }
+                let word = Self.describe(response)
+                self.note("INVITE → \(player.displayName): \(word)")
+                self.inviteNotice = "\(player.displayName.uppercased()) · \(word)"
+                // The only pilot we asked said no, so there is nothing to wait for.
+                if response != .accepted, recipientCount <= 1, case .matching = self.status {
+                    GKMatchmaker.shared().cancel()
+                    self.status = .failed(message: "\(player.displayName): \(word.lowercased())")
+                }
+            }
+        }
+        inviteNotice = nil
+        if let recipients {
+            note("INVITING \(recipients.map(\.displayName).joined(separator: ", "))")
+        } else {
+            note("QUICK MATCH: SEARCHING")
+        }
+        status = .matching
+        GKMatchmaker.shared().findMatch(for: request) { [weak self] match, error in
+            nonisolated(unsafe) let match = match
+            Task { @MainActor in
+                guard let self, case .matching = self.status else { return }
+                if let error {
+                    let detail = self.describe(error)
+                    self.note("MATCHMAKING FAILED: \(detail)")
+                    self.status = .failed(message: detail)
+                    return
+                }
+                guard let match else {
+                    self.status = .failed(message: "No match returned")
+                    return
+                }
+                let names = match.players.map(\.displayName).joined(separator: ", ")
+                self.note("MATCH FOUND: [\(names)] · EXPECTING \(match.expectedPlayerCount) MORE")
+                self.configure(match)
+            }
+        }
     }
 
     func sendInput(_ input: PlayerInput) {
@@ -547,45 +659,32 @@ final class OnlineMatchCoordinator: NSObject,
 
     func player(_ player: GKPlayer, didAccept invite: GKInvite) {
         note("INVITE ACCEPTED FROM \(invite.sender.displayName)")
-        guard let controller = GKMatchmakerViewController(invite: invite) else {
-            note("INVITE: CONTROLLER UNAVAILABLE")
-            status = .failed(message: "Could not open invitation")
-            return
-        }
-        controller.matchmakerDelegate = self
+        inviteNotice = "JOINING \(invite.sender.displayName.uppercased())"
         status = .matching
-        present(controller)
+        GKMatchmaker.shared().match(for: invite) { [weak self] match, error in
+            nonisolated(unsafe) let match = match
+            Task { @MainActor in
+                guard let self, case .matching = self.status else { return }
+                if let error {
+                    let detail = self.describe(error)
+                    self.note("INVITE JOIN FAILED: \(detail)")
+                    self.status = .failed(message: detail)
+                    return
+                }
+                guard let match else {
+                    self.status = .failed(message: "Could not open invitation")
+                    return
+                }
+                self.configure(match)
+            }
+        }
     }
 
     /// Game Center app / Messages "Play together" route: the system hands us the
     /// chosen recipients and expects us to open a matchmaker pre-filled with them.
     func player(_ player: GKPlayer, didRequestMatchWithRecipients recipientPlayers: [GKPlayer]) {
         note("SYSTEM MATCH REQUEST WITH \(recipientPlayers.map(\.displayName).joined(separator: ", "))")
-        guard GKLocalPlayer.local.isAuthenticated else {
-            pendingMatchmakingIntent = .friendInvite
-            authenticate()
-            return
-        }
-        let request = GKMatchRequest()
-        request.minPlayers = 2
-        request.maxPlayers = 2
-        request.defaultNumberOfPlayers = 2
-        request.recipients = recipientPlayers
-        request.inviteMessage = "Duel me in ASTROSPIKE"
-        request.recipientResponseHandler = { [weak self] player, response in
-            Task { @MainActor in
-                self?.note("INVITE → \(player.displayName): \(Self.describe(response))")
-            }
-        }
-        guard let controller = GKMatchmakerViewController(matchRequest: request) else {
-            note("MATCHMAKER: CONTROLLER UNAVAILABLE")
-            status = .failed(message: "Matchmaker unavailable")
-            return
-        }
-        controller.matchmakerDelegate = self
-        controller.matchmakingMode = .inviteOnly
-        status = .matching
-        present(controller)
+        invite(recipientPlayers)
     }
 
     func leaveMatch() {

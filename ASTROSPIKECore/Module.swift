@@ -201,6 +201,10 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var exhaustWashStrength: Double
     /// How far behind the ship the exhaust still reaches the ball.
     public var exhaustWashRange: Double
+    /// Warm-up bay: nothing is a fault. Touches and bounces are tallied but
+    /// never award a point, a goal simply re-serves, and bolts fly the whole
+    /// court. There is no opponent, so there is nothing to defend.
+    public var sandbox: Bool
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -223,7 +227,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
         boltCooldown: Double = 0.45,
         boltPunch: Double = 1.15,
         exhaustWashStrength: Double = 0.65,
-        exhaustWashRange: Double = 0.36
+        exhaustWashRange: Double = 0.36,
+        sandbox: Bool = false
     ) {
         self.stepDuration = stepDuration
         self.gravity = gravity
@@ -246,7 +251,29 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.boltPunch = max(0, boltPunch)
         self.exhaustWashStrength = max(0, exhaustWashStrength)
         self.exhaustWashRange = max(0, exhaustWashRange)
+        self.sandbox = sandbox
     }
+
+    /// The online feel, with the halfway treacle switched off so a lone pilot
+    /// can roam the whole court while the invite is out.
+    public static let warmup = SimulationConfiguration(
+        stepDuration: 1.0 / 120.0,
+        gravity: SIMD2(0, -1.10),
+        initialThrustAcceleration: 2.50,
+        maximumThrustAcceleration: 2.50,
+        thrustRampRate: 0,
+        torqueAcceleration: 6.00,
+        ballGravityMultiplier: 0.54,
+        ballDropHeight: 0.10,
+        ballDropSpeed: 0.06,
+        serveDelay: 0.9,
+        minimumBallSeparationSpeed: 0.45,
+        crossingPushBack: 0,
+        crossingDrag: 0,
+        allowedFloorBounces: 3,
+        allowedShipTouches: 3,
+        sandbox: true
+    )
 
     public static let online = SimulationConfiguration(
         stepDuration: 1.0 / 120.0,
@@ -412,6 +439,12 @@ public struct SimulationEngine: Sendable {
         )
         resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
 
+        if configuration.sandbox {
+            resolveSandbox(contacts: contacts, effects: collisionEffects)
+            state.tick += 1
+            return
+        }
+
         let ruleEvents = rules.resolve(contacts)
         lastEvents = ruleEvents + collisionEffects
         state.match = rules.state
@@ -460,8 +493,39 @@ public struct SimulationEngine: Sendable {
         guard state.serveTicksRemaining == 0 else { return }
         respawnDestroyedShips()
         state.ball.velocity = serveVelocity
+        if configuration.sandbox {
+            state.match.phase = .playing
+            state.match.floorContacts = SideCounts()
+            state.match.shipTouches = SideCounts()
+            return
+        }
         rules.beginNextRally()
         state.match = rules.state
+    }
+
+    /// The warm-up bay's stand-in for the rulebook. Touches count up as a
+    /// keep-up streak that a floor bounce resets, a goal is a point for
+    /// whoever is flying and a fresh serve, and nothing else is a fault.
+    private mutating func resolveSandbox(contacts: [RuleContact], effects: [SimulationEvent]) {
+        var events = effects
+        for contact in contacts {
+            switch contact {
+            case let .ballTouchedShip(team):
+                state.match.shipTouches[team] += 1
+            case let .ballTouchedFloor(side):
+                state.match.floorContacts[side] += 1
+                state.match.shipTouches = SideCounts()
+            case .ballEnteredGoal:
+                let pilot = state.ships.keys.sorted { $0.rawValue < $1.rawValue }.first ?? .cyan
+                if pilot == .cyan { state.match.score.cyan += 1 } else { state.match.score.orange += 1 }
+                events.append(.point(scoringTeam: pilot, reason: .goal))
+                state.match.phase = .serve
+                stageServe(on: nil)
+            case .ballCrossedCenter, .shipDestroyed:
+                break
+            }
+        }
+        lastEvents = events
     }
 
     private mutating func respawnDestroyedShips() {
@@ -552,7 +616,7 @@ public struct SimulationEngine: Sendable {
             }
 
             let homeSign = (state.ships[bolt.owner]?.homeSide ?? bolt.owner) == .cyan ? -1.0 : 1.0
-            let crossedCentre = bolt.position.x * homeSign < 0
+            let crossedCentre = !configuration.sandbox && bolt.position.x * homeSign < 0
             let outside = abs(bolt.position.x) > arena.halfWidth
                 || bolt.position.y < arena.floorY
                 || bolt.position.y > arena.ceilingY
