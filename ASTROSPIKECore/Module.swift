@@ -6,6 +6,62 @@ public enum Team: String, Codable, CaseIterable, Sendable {
     case orange
 }
 
+/// A place on the court. Every match has the two leads; doubles adds a wing
+/// on each side. Seats are what ships, inputs and hulls are keyed by, and
+/// the team is what the rulebook keys by.
+public enum Seat: Int, Codable, CaseIterable, Sendable, Hashable, Comparable {
+    case cyan = 0
+    case orange = 1
+    case cyanWing = 2
+    case orangeWing = 3
+
+    public var team: Team {
+        switch self {
+        case .cyan, .cyanWing: .cyan
+        case .orange, .orangeWing: .orange
+        }
+    }
+
+    public var isWing: Bool { self == .cyanWing || self == .orangeWing }
+
+    /// The other seat on the same side.
+    public var partner: Seat {
+        switch self {
+        case .cyan: .cyanWing
+        case .cyanWing: .cyan
+        case .orange: .orangeWing
+        case .orangeWing: .orange
+        }
+    }
+
+    public static func lead(_ team: Team) -> Seat { team == .cyan ? .cyan : .orange }
+    public static func wing(_ team: Team) -> Seat { team == .cyan ? .cyanWing : .orangeWing }
+
+    /// The classic duel.
+    public static let singles: Set<Seat> = [.cyan, .orange]
+    /// Two a side.
+    public static let doubles: Set<Seat> = Set(Seat.allCases)
+
+    public var label: String {
+        switch self {
+        case .cyan: "CYAN"
+        case .orange: "ORANGE"
+        case .cyanWing: "CYAN WING"
+        case .orangeWing: "ORANGE WING"
+        }
+    }
+
+    public static func < (lhs: Seat, rhs: Seat) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
+extension Dictionary where Key == Seat, Value == ShipState {
+    /// The lead ship of a team, for code and tests that think in teams.
+    public subscript(team team: Team) -> ShipState? {
+        get { self[Seat.lead(team)] }
+        set { self[Seat.lead(team)] = newValue }
+    }
+}
+
 public struct PlayerInput: Codable, Equatable, Sendable {
     public var tick: UInt64
     public var torque: Double
@@ -137,7 +193,7 @@ public struct BoltState: Codable, Equatable, Sendable {
 
 public struct WorldState: Codable, Equatable, Sendable {
     public var tick: UInt64
-    public var ships: [Team: ShipState]
+    public var ships: [Seat: ShipState]
     public var ball: BallState
     public var match: MatchRuleState
     public var serveTicksRemaining: UInt64
@@ -151,7 +207,7 @@ public struct WorldState: Codable, Equatable, Sendable {
 
     public init(
         tick: UInt64 = 0,
-        ships: [Team: ShipState],
+        ships: [Seat: ShipState],
         ball: BallState = BallState(position: SIMD2(0, 0.10)),
         match: MatchRuleState = MatchRuleState(),
         serveTicksRemaining: UInt64 = 0,
@@ -339,13 +395,30 @@ public struct SimulationEngine: Sendable {
         rules.updateAllowedShipTouches(configuration.allowedShipTouches)
     }
 
+    /// Where a seat starts a rally. Leads sit mid-court, wings sit behind
+    /// them nearer the wall, so neither is under the ball when it drops.
+    public static func spawnPosition(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
+        let direction = mirrored ? 1.0 : -1.0
+        let side = seat.team == .cyan ? direction : -direction
+        return SIMD2((seat.isWing ? 0.80 : 0.55) * side, -0.45)
+    }
+
+    /// Replaces every ship with a fresh one in each of the given seats and
+    /// stages a rally. Seats not listed are simply empty.
+    public mutating func configureRoster(_ seats: Set<Seat>, mirrored: Bool = false) {
+        state.ships = Dictionary(uniqueKeysWithValues: seats.map { seat in
+            (seat, ShipState(position: Self.spawnPosition(for: seat, mirrored: mirrored), angle: .pi / 2))
+        })
+        prepareNextRally(mirrored: mirrored)
+    }
+
     public mutating func prepareNextRally(mirrored: Bool) {
         guard state.match.phase != .finished else { return }
-        let direction = mirrored ? 1.0 : -1.0
-        state.ships = [
-            .cyan: ShipState(position: SIMD2(0.55 * direction, -0.45), angle: .pi / 2),
-            .orange: ShipState(position: SIMD2(-0.55 * direction, -0.45), angle: .pi / 2),
-        ]
+        // Whoever is seated stays seated; only the positions reset.
+        let seats = state.ships.isEmpty ? Seat.singles : Set(state.ships.keys)
+        state.ships = Dictionary(uniqueKeysWithValues: seats.map { seat in
+            (seat, ShipState(position: Self.spawnPosition(for: seat, mirrored: mirrored), angle: .pi / 2))
+        })
         state.serveDriftSign = mirrored ? 1 : -1
         state.ball = BallState(
             position: SIMD2(0, configuration.ballDropHeight),
@@ -369,14 +442,14 @@ public struct SimulationEngine: Sendable {
         state.match = rules.state
     }
 
-    public mutating func step(inputs: [Team: PlayerInput]) {
+    public mutating func step(inputs: [Seat: PlayerInput]) {
         let dt = configuration.stepDuration
         var contacts: [RuleContact] = []
         var collisionEffects: [SimulationEvent] = []
         let previousShipPositions = state.ships.mapValues(\.position)
-        for team in Team.allCases {
-            guard var ship = state.ships[team], !ship.isDestroyed else { continue }
-            let input = inputs[team] ?? .idle(tick: state.tick)
+        for seat in Seat.allCases {
+            guard var ship = state.ships[seat], !ship.isDestroyed else { continue }
+            let input = inputs[seat] ?? .idle(tick: state.tick)
             ship.angularVelocity = input.torque * configuration.torqueAcceleration
             ship.angle += ship.angularVelocity * dt
             var acceleration = configuration.gravity
@@ -405,16 +478,16 @@ public struct SimulationEngine: Sendable {
             ship.position += ship.velocity * dt
             resolveArenaCollision(
                 for: &ship,
-                from: previousShipPositions[team] ?? ship.position,
+                from: previousShipPositions[seat] ?? ship.position,
                 effects: &collisionEffects
             )
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
             if input.fire, ship.fireCooldownTicks == 0, state.match.phase == .playing {
-                fireBolt(from: &ship, owner: team)
+                fireBolt(from: &ship, owner: seat.team)
             }
-            state.ships[team] = ship
+            state.ships[seat] = ship
         }
-        resolveShipShipCollision(
+        resolveShipShipCollisions(
             previousPositions: previousShipPositions,
             effects: &collisionEffects
         )
@@ -516,7 +589,7 @@ public struct SimulationEngine: Sendable {
                 state.match.floorContacts[side] += 1
                 state.match.shipTouches = SideCounts()
             case .ballEnteredGoal:
-                let pilot = state.ships.keys.sorted { $0.rawValue < $1.rawValue }.first ?? .cyan
+                let pilot = state.ships.keys.min()?.team ?? .cyan
                 if pilot == .cyan { state.match.score.cyan += 1 } else { state.match.score.orange += 1 }
                 events.append(.point(scoringTeam: pilot, reason: .goal))
                 state.match.phase = .serve
@@ -529,11 +602,12 @@ public struct SimulationEngine: Sendable {
     }
 
     private mutating func respawnDestroyedShips() {
-        for team in Team.allCases {
-            guard let destroyedShip = state.ships[team], destroyedShip.isDestroyed else { continue }
+        for seat in Seat.allCases {
+            guard let destroyedShip = state.ships[seat], destroyedShip.isDestroyed else { continue }
             let homeSide = destroyedShip.homeSide
-            state.ships[team] = ShipState(
-                position: SIMD2(homeSide == .cyan ? -0.55 : 0.55, -0.45),
+            let depth = seat.isWing ? 0.80 : 0.55
+            state.ships[seat] = ShipState(
+                position: SIMD2(homeSide == .cyan ? -depth : depth, -0.45),
                 angle: .pi / 2,
                 homeSide: homeSide
             )
@@ -568,8 +642,8 @@ public struct SimulationEngine: Sendable {
     private mutating func applyExhaustWash(dt: Double) {
         let range = configuration.exhaustWashRange
         guard range > 0, configuration.exhaustWashStrength > 0 else { return }
-        for team in Team.allCases {
-            guard let ship = state.ships[team], !ship.isDestroyed, ship.thrustLevel > 0 else { continue }
+        for seat in Seat.allCases {
+            guard let ship = state.ships[seat], !ship.isDestroyed, ship.thrustLevel > 0 else { continue }
             let tail = SIMD2(-cos(ship.angle), -sin(ship.angle))
             let offset = state.ball.position - ship.position
             let distance = simd_length(offset)
@@ -615,7 +689,7 @@ public struct SimulationEngine: Sendable {
                 continue
             }
 
-            let homeSign = (state.ships[bolt.owner]?.homeSide ?? bolt.owner) == .cyan ? -1.0 : 1.0
+            let homeSign = (state.ships[team: bolt.owner]?.homeSide ?? bolt.owner) == .cyan ? -1.0 : 1.0
             let crossedCentre = !configuration.sandbox && bolt.position.x * homeSign < 0
             let outside = abs(bolt.position.x) > arena.halfWidth
                 || bolt.position.y < arena.floorY
@@ -627,17 +701,38 @@ public struct SimulationEngine: Sendable {
         state.bolts = survivors
     }
 
-    private mutating func resolveShipShipCollision(
-        previousPositions: [Team: SIMD2<Double>],
+    /// Every seated hull can knock every other one, teammates included.
+    private mutating func resolveShipShipCollisions(
+        previousPositions: [Seat: SIMD2<Double>],
         effects: inout [SimulationEvent]
     ) {
-        guard var cyan = state.ships[.cyan], var orange = state.ships[.orange],
-              !cyan.isDestroyed, !orange.isDestroyed,
-              let previousCyan = previousPositions[.cyan],
-              let previousOrange = previousPositions[.orange] else { return }
+        let seats = Seat.allCases.filter { state.ships[$0] != nil }
+        guard seats.count > 1 else { return }
+        for (index, first) in seats.enumerated() {
+            for second in seats[(index + 1)...] {
+                resolveShipShipCollision(
+                    between: first,
+                    and: second,
+                    previousPositions: previousPositions,
+                    effects: &effects
+                )
+            }
+        }
+    }
 
-        let relativeStart = previousCyan - previousOrange
-        let relativeEnd = cyan.position - orange.position
+    private mutating func resolveShipShipCollision(
+        between firstSeat: Seat,
+        and secondSeat: Seat,
+        previousPositions: [Seat: SIMD2<Double>],
+        effects: inout [SimulationEvent]
+    ) {
+        guard var first = state.ships[firstSeat], var second = state.ships[secondSeat],
+              !first.isDestroyed, !second.isDestroyed,
+              let previousFirst = previousPositions[firstSeat],
+              let previousSecond = previousPositions[secondSeat] else { return }
+
+        let relativeStart = previousFirst - previousSecond
+        let relativeEnd = first.position - second.position
         guard let hitTime = sweptCircleTime(
             from: relativeStart,
             to: relativeEnd,
@@ -645,23 +740,23 @@ public struct SimulationEngine: Sendable {
             radius: 0.096
         ) else { return }
 
-        let impactSpeed = simd_length(cyan.velocity - orange.velocity)
+        let impactSpeed = simd_length(first.velocity - second.velocity)
         var normal = relativeStart + (relativeEnd - relativeStart) * hitTime
         let length = simd_length(normal)
         normal = length > 0.000_001 ? normal / length : SIMD2(-1, 0)
-        let closingSpeed = max(0, -simd_dot(cyan.velocity - orange.velocity, normal))
+        let closingSpeed = max(0, -simd_dot(first.velocity - second.velocity, normal))
         if closingSpeed > 0 {
             let impulse = normal * (closingSpeed * 0.82)
-            cyan.velocity += impulse
-            orange.velocity -= impulse
+            first.velocity += impulse
+            second.velocity -= impulse
         }
-        state.ships[.cyan] = cyan
-        state.ships[.orange] = orange
+        state.ships[firstSeat] = first
+        state.ships[secondSeat] = second
         // Same rule as the hump: two hulls resting against each other are
         // not colliding every tick.
         if closingSpeed > Self.effectImpactSpeed {
             effects.append(.collisionEffect(
-                position: (cyan.position + orange.position) / 2,
+                position: (first.position + second.position) / 2,
                 intensity: impactSpeed
             ))
         }
@@ -930,7 +1025,7 @@ public struct SimulationEngine: Sendable {
 
     private mutating func resolveBallShipCollisions(
         previousBallPosition: SIMD2<Double>,
-        previousShipPositions: [Team: SIMD2<Double>],
+        previousShipPositions: [Seat: SIMD2<Double>],
         contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
@@ -941,10 +1036,10 @@ public struct SimulationEngine: Sendable {
         }
 
         let ballEnd = state.ball.position
-        var earliest: (team: Team, fixture: Fixture, t: Double)?
-        for team in Team.allCases {
-            guard let ship = state.ships[team], !ship.isDestroyed,
-                  let previousShipPosition = previousShipPositions[team] else { continue }
+        var earliest: (seat: Seat, fixture: Fixture, t: Double)?
+        for seat in Seat.allCases {
+            guard let ship = state.ships[seat], !ship.isDestroyed,
+                  let previousShipPosition = previousShipPositions[seat] else { continue }
             let axis = SIMD2(cos(ship.angle), sin(ship.angle))
             let fixtures = [
                 Fixture(
@@ -971,12 +1066,12 @@ public struct SimulationEngine: Sendable {
                     radius: state.ball.radius + fixture.radius
                 ) else { continue }
                 if earliest == nil || t < earliest!.t {
-                    earliest = (team, fixture, t)
+                    earliest = (seat, fixture, t)
                 }
             }
         }
 
-        guard let hit = earliest, var ship = state.ships[hit.team] else { return }
+        guard let hit = earliest, var ship = state.ships[hit.seat] else { return }
         let ballContact = previousBallPosition + (ballEnd - previousBallPosition) * hit.t
         let fixtureContact = hit.fixture.previousCenter
             + (hit.fixture.center - hit.fixture.previousCenter) * hit.t
@@ -1000,8 +1095,8 @@ public struct SimulationEngine: Sendable {
             state.ball.velocity += normal
                 * (configuration.minimumBallSeparationSpeed - separationSpeed)
         }
-        state.ships[hit.team] = ship
-        contacts.append(.ballTouchedShip(team: hit.team))
+        state.ships[hit.seat] = ship
+        contacts.append(.ballTouchedShip(team: hit.seat.team))
         effects.append(.collisionEffect(
             position: state.ball.position,
             intensity: abs(inwardSpeed)

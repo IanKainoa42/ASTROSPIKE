@@ -48,11 +48,16 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var status: Status = .signedOut
     private(set) var isMatchReady = false
     private(set) var isAuthoritative = false
-    private(set) var localTeam: Team?
-    private(set) var remoteInput: PlayerInput?
-    /// The hull the peer flies, once their profile arrives. Nil until then,
-    /// so the scene keeps the team default and never shows a wrong hull.
-    private(set) var remoteHull: Hull?
+    private(set) var localSeat: Seat?
+    var localTeam: Team? { localSeat?.team }
+    /// The host's seating plan, Game Center player ID to seat.
+    private(set) var seating: [String: Seat] = [:]
+    var filledSeats: Set<Seat> { Set(seating.values) }
+    /// The latest input from every other pilot, by seat.
+    private(set) var remoteInputs: [Seat: PlayerInput] = [:]
+    /// The hulls the peers fly, once their profiles arrive. A seat missing
+    /// here keeps its default, so the scene never shows a wrong hull.
+    private(set) var remoteHulls: [Seat: Hull] = [:]
     /// Set by the app from the pilot profile; sent with the ready handshake.
     var localHull: Hull = .lancet
     private(set) var pingMilliseconds: Int?
@@ -180,11 +185,19 @@ final class OnlineMatchCoordinator: NSObject,
 
     private var match: GKMatch?
     private var sequence: UInt64 = 0
-    private var inputBuffer = RemoteInputBuffer()
+    private var inputBuffers: [Seat: RemoteInputBuffer] = [:]
     private var snapshotGate = AuthoritativeSnapshotGate()
     private var eventGate = MonotonicSequenceGate()
     private var lifecycle = OnlineMatchLifecycle()
-    private var peerReadyReceived = false
+    /// Game Center IDs of every peer whose `.ready` has arrived.
+    private var readyPeers: Set<String> = []
+    /// True when this device sent the invites, which makes it the host.
+    private var isInviter = false
+    /// Invited pilots who said no (or never answered): seats that will stay
+    /// empty, so the match can start without waiting for them.
+    private var declinedInvites = 0
+    /// The team that walked out, so the forfeit goes to the other side.
+    private var pendingForfeitWinner: Team?
     private var session: OnlineSessionStateMachine?
     private var reconnectTask: Task<Void, Never>?
     private var finishTask: Task<Void, Never>?
@@ -316,22 +329,30 @@ final class OnlineMatchCoordinator: NSObject,
             return
         }
         let request = GKMatchRequest()
+        // One seat per invited pilot, up to four on the court.
+        let partySize = min(4, 1 + (recipients?.count ?? 1))
         request.minPlayers = 2
-        request.maxPlayers = 2
-        request.defaultNumberOfPlayers = 2
-        request.inviteMessage = "Duel me in ASTROSPIKE"
+        request.maxPlayers = partySize
+        request.defaultNumberOfPlayers = partySize
+        request.inviteMessage = partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
         request.recipients = recipients
         let recipientCount = recipients?.count ?? 0
+        isInviter = recipients != nil
+        declinedInvites = 0
         request.recipientResponseHandler = { [weak self] player, response in
             Task { @MainActor in
                 guard let self else { return }
                 let word = Self.describe(response)
                 self.note("INVITE → \(player.displayName): \(word)")
                 self.inviteNotice = "\(player.displayName.uppercased()) · \(word)"
-                // The only pilot we asked said no, so there is nothing to wait for.
-                if response != .accepted, recipientCount <= 1, case .matching = self.status {
+                guard response != .accepted else { return }
+                self.declinedInvites += 1
+                // Everyone we asked said no, so there is nothing to wait for.
+                if self.declinedInvites >= recipientCount, case .matching = self.status, self.match == nil {
                     GKMatchmaker.shared().cancel()
                     self.status = .failed(message: "\(player.displayName): \(word.lowercased())")
+                } else {
+                    self.tryStartAsHost()
                 }
             }
         }
@@ -364,8 +385,8 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     func sendInput(_ input: PlayerInput) {
-        guard let localTeam else { return }
-        send(.input(team: localTeam, value: input), mode: .unreliable)
+        guard let localSeat else { return }
+        send(.input(seat: localSeat, value: input), mode: .unreliable)
     }
 
     func sendSnapshot(_ state: WorldState) {
@@ -415,6 +436,8 @@ final class OnlineMatchCoordinator: NSObject,
         controller.matchmakerDelegate = self
         controller.canStartWithMinimumPlayers = false
         controller.matchmakingMode = inviteOnly ? .inviteOnly : .automatchOnly
+        isInviter = inviteOnly
+        declinedInvites = 0
         note(inviteOnly ? "MATCHMAKER: INVITE PICKER OPEN" : "MATCHMAKER: QUICK MATCH SEARCHING")
         status = .matching
         present(controller)
@@ -438,16 +461,16 @@ final class OnlineMatchCoordinator: NSObject,
     /// then pick the host without asking GameKit at all.
     private func configure(_ match: GKMatch) {
         self.match = match
-        peerReadyReceived = false
+        readyPeers = []
+        seating = [:]
         lifecycle.beginConfiguration()
         match.delegate = self
         status = .matching
-        if match.expectedPlayerCount == 0 {
-            startConfiguredMatch()
-        } else {
+        if match.expectedPlayerCount > 0 {
             note("WAITING FOR \(match.expectedPlayerCount) MORE PILOT(S) TO CONNECT")
-            beginConnectWait()
         }
+        beginConnectWait()
+        tryStartAsHost()
     }
 
     private func beginConnectWait() {
@@ -464,26 +487,44 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    /// Every player is connected. Both ends see the same player list, so the
-    /// lowest Game Center player ID is the host on both devices with no
-    /// negotiation and nothing that can come back nil.
-    private func startConfiguredMatch() {
+    /// Once every seat that is going to fill has filled, the host seats the
+    /// table and tells everyone. The inviter is the host; in a quick match
+    /// both ends see the same player list, so the lowest Game Center player
+    /// ID hosts with no negotiation and nothing that can come back nil.
+    /// Guests do nothing here: their seat arrives in a `.seating` message.
+    private func tryStartAsHost() {
         guard let match, lifecycle.phase == .configuring else { return }
-        handshakeTask?.cancel()
+        guard match.expectedPlayerCount <= declinedInvites else { return }
         let localID = GKLocalPlayer.local.gamePlayerID
-        let candidates = [localID] + match.players.map(\.gamePlayerID)
-        let hostID = candidates.min() ?? localID
-        let hostName = hostID == localID
-            ? GKLocalPlayer.local.displayName
-            : match.players.first { $0.gamePlayerID == hostID }?.displayName ?? "?"
-        isAuthoritative = hostID == localID
-        note("HOST: \(hostName) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST")")
-        localTeam = isAuthoritative ? .cyan : .orange
-        session = OnlineSessionStateMachine(localTeam: localTeam ?? .cyan, ticksPerSecond: 120)
+        let peerIDs = match.players.map(\.gamePlayerID).sorted()
+        let hostID = isInviter ? localID : ([localID] + peerIDs).min() ?? localID
+        guard hostID == localID else {
+            note("WAITING FOR HOST TO SEAT THE TABLE")
+            return
+        }
+        // Leads first, then wings, so three pilots are two against one plus
+        // a bot on the empty wing rather than a lopsided pair.
+        let order: [Seat] = [.cyan, .orange, .cyanWing, .orangeWing]
+        var plan: [String: Seat] = [:]
+        for (index, id) in ([localID] + peerIDs).prefix(order.count).enumerated() {
+            plan[id] = order[index]
+        }
+        seating = plan
+        isAuthoritative = true
+        startConfiguredMatch()
+    }
+
+    private func startConfiguredMatch() {
+        guard lifecycle.phase == .configuring,
+              let seat = seating[GKLocalPlayer.local.gamePlayerID] else { return }
+        handshakeTask?.cancel()
+        localSeat = seat
+        note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
+        session = OnlineSessionStateMachine(localTeam: seat.team, ticksPerSecond: 120)
         lifecycle.beginMatch()
         snapshotGate.reset()
         eventGate.reset()
-        isMatchReady = peerReadyReceived
+        isMatchReady = allPeersReady
         status = isMatchReady ? .connected : .matching
         // Answer any `.ready` that arrived while we were still configuring:
         // the handshake loop below stops at once when the peer is already heard.
@@ -504,7 +545,7 @@ final class OnlineMatchCoordinator: NSObject,
             var elapsed = 0
             while !Task.isCancelled {
                 guard let self, self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
-                if self.peerReadyReceived { return }
+                if self.allPeersReady { return }
                 if elapsed >= Self.handshakeTimeoutSeconds {
                     self.note("HANDSHAKE TIMED OUT: PEER NEVER SENT READY")
                     self.status = .failed(message: "Pilot never answered · try again")
@@ -518,9 +559,17 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// Every peer this match still expects has said `.ready`.
+    private var allPeersReady: Bool {
+        guard let match, lifecycle.phase != .configuring else { return false }
+        return match.expectedPlayerCount <= declinedInvites
+            && match.players.allSatisfy { readyPeers.contains($0.gamePlayerID) }
+    }
+
     private func sendHandshake() {
+        if isAuthoritative, !seating.isEmpty { send(.seating(seating), mode: .reliable) }
         send(.ready, mode: .reliable)
-        send(.profile(team: localTeam ?? .cyan, hull: localHull), mode: .reliable)
+        send(.profile(seat: localSeat ?? .cyan, hull: localHull), mode: .reliable)
     }
 
     private func send(_ payload: WirePayload, mode: GKMatch.SendDataMode) {
@@ -535,12 +584,22 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    private func receive(_ data: Data) {
+    private func receive(_ data: Data, from playerID: String) {
         guard let envelope = try? codec.decode(data) else { return }
         switch envelope.payload {
-        case let .input(_, value):
-            if lifecycle.acceptsGameplayData, inputBuffer.accept(value) {
-                remoteInput = inputBuffer.latest
+        case let .input(seat, value):
+            guard lifecycle.acceptsGameplayData, seat != localSeat else { return }
+            var buffer = inputBuffers[seat] ?? RemoteInputBuffer()
+            if buffer.accept(value) {
+                inputBuffers[seat] = buffer
+                remoteInputs[seat] = value
+            }
+        case let .seating(plan):
+            guard lifecycle.acceptsNetworkMessages else { return }
+            if lifecycle.phase == .configuring, plan[GKLocalPlayer.local.gamePlayerID] != nil {
+                seating = plan
+                isAuthoritative = false
+                startConfiguredMatch()
             }
         case let .snapshot(state):
             if lifecycle.acceptsGameplayData, snapshotGate.accept(tick: state.tick) {
@@ -552,21 +611,22 @@ final class OnlineMatchCoordinator: NSObject,
             }
         case .ready:
             guard lifecycle.acceptsNetworkMessages else { return }
-            let firstHearing = !peerReadyReceived
-            peerReadyReceived = true
+            let firstHearing = readyPeers.insert(playerID).inserted
             guard lifecycle.phase != .configuring else { return }
             // Answer once more now that the peer is provably listening, in
             // case everything we sent before this point was dropped.
             if firstHearing {
-                note("HANDSHAKE: PILOT READY")
+                note("HANDSHAKE: PILOT READY (\(readyPeers.count)/\(match?.players.count ?? 1))")
                 sendHandshake()
             }
-            isMatchReady = true
-            status = .connected
-        case let .profile(team, hull):
-            guard lifecycle.acceptsNetworkMessages, team != localTeam else { return }
-            remoteHull = hull
-            note("PEER FLIES \(hull.spec.name.uppercased())")
+            if allPeersReady {
+                isMatchReady = true
+                status = .connected
+            }
+        case let .profile(seat, hull):
+            guard lifecycle.acceptsNetworkMessages, seat != localSeat else { return }
+            remoteHulls[seat] = hull
+            note("\(seat.label) FLIES \(hull.spec.name.uppercased())")
         case let .ping(sentAt):
             guard lifecycle.acceptsNetworkMessages else { return }
             if pendingPing == sentAt {
@@ -599,7 +659,7 @@ final class OnlineMatchCoordinator: NSObject,
                     self.status = .failed(message: "Opponent forfeited")
                     self.isMatchReady = false
                     self.lifecycle.finish()
-                    if let localTeam = self.localTeam { self.onForfeit?(localTeam) }
+                    if let winner = self.pendingForfeitWinner ?? self.localTeam { self.onForfeit?(winner) }
                     self.disconnectTransport()
                     return
                 }
@@ -640,7 +700,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     func match(_ match: GKMatch, didReceive data: Data, fromRemotePlayer player: GKPlayer) {
         guard self.match === match else { return }
-        receive(data)
+        receive(data, from: player.gamePlayerID)
     }
 
     func match(_ match: GKMatch, player: GKPlayer, didChange state: GKPlayerConnectionState) {
@@ -650,14 +710,14 @@ final class OnlineMatchCoordinator: NSObject,
         case .connected:
             guard lifecycle.acceptConnection() else { return }
             if lifecycle.phase == .configuring {
-                if match.expectedPlayerCount == 0 { startConfiguredMatch() }
+                tryStartAsHost()
                 return
             }
             let wasReconnecting: Bool
             if case .reconnecting = status { wasReconnecting = true } else { wasReconnecting = false }
             reconnectTask?.cancel()
             status = .connected
-            isMatchReady = match.expectedPlayerCount == 0 && peerReadyReceived
+            isMatchReady = allPeersReady
             if wasReconnecting {
                 if var session {
                     _ = session.remoteReconnected(at: 0)
@@ -668,6 +728,8 @@ final class OnlineMatchCoordinator: NSObject,
                 onConnectionPaused?(false)
             }
         case .disconnected:
+            // Whoever left loses it for their side, whichever side that is.
+            pendingForfeitWinner = seating[player.gamePlayerID]?.team.opponent
             beginReconnectWindow()
         case .unknown:
             break
@@ -726,15 +788,19 @@ final class OnlineMatchCoordinator: NSObject,
         lifecycle.reset()
         snapshotGate.reset()
         eventGate.reset()
-        inputBuffer = RemoteInputBuffer()
-        remoteInput = nil
-        remoteHull = nil
+        inputBuffers = [:]
+        remoteInputs = [:]
+        remoteHulls = [:]
         isMatchReady = false
         isAuthoritative = false
-        localTeam = nil
+        localSeat = nil
+        seating = [:]
+        readyPeers = []
+        isInviter = false
+        declinedInvites = 0
+        pendingForfeitWinner = nil
         pingMilliseconds = nil
         pendingPing = nil
-        peerReadyReceived = false
         lastAuthoritativeState = nil
         onSnapshot = nil
         onResync = nil

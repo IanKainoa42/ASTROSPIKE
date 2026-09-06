@@ -351,7 +351,7 @@ struct AIControllerTests {
         team: Team,
         tick: UInt64
     ) -> PlayerInput {
-        guard let ship = state.ships[team] else { return .idle(tick: tick) }
+        guard let ship = state.ships[team: team] else { return .idle(tick: tick) }
         let upright = Double.pi / 2 - ship.angle
         let error = atan2(sin(upright), cos(upright))
         let torque = abs(error) < 0.05 ? 0 : max(-1, min(1, error * 2.4))

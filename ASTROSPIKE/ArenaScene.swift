@@ -15,17 +15,15 @@ final class ArenaScene: SKScene {
     private let plumeLayer = SKNode()
     private let actorLayer = SKNode()
     private let arena = ArenaGeometry.standard
-    private let cyanShip = SKShapeNode()
-    private let orangeShip = SKShapeNode()
-    private let cyanExhaust = SKSpriteNode(texture: ArenaScene.puffTexture, size: CGSize(width: 30, height: 34))
-    private let orangeExhaust = SKSpriteNode(texture: ArenaScene.puffTexture, size: CGSize(width: 30, height: 34))
+    /// One hull and one exhaust per seat, built up front and hidden while
+    /// the seat is empty.
+    private var shipNodes: [Seat: SKShapeNode] = [:]
+    private var exhaustNodes: [Seat: SKSpriteNode] = [:]
     private let ball = SKShapeNode(circleOfRadius: 10)
     private var boltNodes: [UInt64: SKNode] = [:]
     private var ballTrail: [CGPoint] = []
-    private var cyanWakeAnchor: CGPoint?
-    private var orangeWakeAnchor: CGPoint?
-    private var cyanPlumeBudget = 0.0
-    private var orangePlumeBudget = 0.0
+    private var wakeAnchors: [Seat: CGPoint] = [:]
+    private var plumeBudgets: [Seat: Double] = [:]
     private var plumeSeed = 0
     private var didBuild = false
 
@@ -37,8 +35,13 @@ final class ArenaScene: SKScene {
         addChild(trailLayer)
         addChild(plumeLayer)
         addChild(actorLayer)
-        actorLayer.addChild(cyanShip)
-        actorLayer.addChild(orangeShip)
+        for seat in Seat.allCases {
+            let ship = SKShapeNode()
+            let exhaust = SKSpriteNode(texture: ArenaScene.puffTexture, size: CGSize(width: 30, height: 34))
+            shipNodes[seat] = ship
+            exhaustNodes[seat] = exhaust
+            actorLayer.addChild(ship)
+        }
         actorLayer.addChild(ball)
         configureActorNodes()
     }
@@ -99,16 +102,26 @@ final class ArenaScene: SKScene {
         if !reduceMotion { flash(at: position, color: gold, scale: 1.4, life: 0.3) }
     }
 
+    /// Team colour for a seat. Wings are a paler tint of their side so the
+    /// court reads as two teams first and four ships second.
+    static func hullColor(for seat: Seat) -> SKColor {
+        switch seat {
+        case .cyan: .cyan
+        case .orange: .orange
+        case .cyanWing: SKColor(red: 0.62, green: 0.92, blue: 1, alpha: 1)
+        case .orangeWing: SKColor(red: 1, green: 0.80, blue: 0.50, alpha: 1)
+        }
+    }
+
     private func configureActorNodes() {
-        for (ship, exhaust, team) in [
-            (cyanShip, cyanExhaust, Team.cyan),
-            (orangeShip, orangeExhaust, Team.orange),
-        ] {
-            let color: SKColor = team == .cyan ? .cyan : .orange
+        for seat in Seat.allCases {
+            guard let ship = shipNodes[seat], let exhaust = exhaustNodes[seat] else { continue }
+            let color = Self.hullColor(for: seat)
             ship.fillColor = color
             ship.strokeColor = .white
-            ship.lineWidth = 1.5
+            ship.lineWidth = seat.isWing ? 2.5 : 1.5
             ship.glowWidth = 8
+            ship.isHidden = true
             // A soft vapour sprite hung from the tail, anchored at its top so
             // yScale stretches it backwards along the nose axis as throttle rises.
             exhaust.anchorPoint = CGPoint(x: 0.5, y: 1)
@@ -119,7 +132,7 @@ final class ArenaScene: SKScene {
             exhaust.zPosition = -1
             exhaust.isHidden = true
             ship.addChild(exhaust)
-            setHull(Hull.defaultHull(for: team), for: team)
+            setHull(Hull.defaultHull(forSeat: seat), for: seat)
         }
         ball.fillColor = .white
         ball.strokeColor = SKColor(red: 0.65, green: 0.95, blue: 1, alpha: 1)
@@ -390,8 +403,7 @@ final class ArenaScene: SKScene {
     private func renderSnapshot() {
         guard let snapshot else { return }
         if !didBuild { buildArena() }
-        update(shipNode: cyanShip, team: .cyan, state: snapshot.ships[.cyan])
-        update(shipNode: orangeShip, team: .orange, state: snapshot.ships[.orange])
+        for seat in Seat.allCases { update(seat: seat, state: snapshot.ships[seat]) }
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
         let ballScale = CGFloat(snapshot.ball.radius / 0.038)
         ball.setScale(ballScale)
@@ -459,17 +471,18 @@ final class ArenaScene: SKScene {
                         at: point(0, goalCenterY),
                         color: scoringTeam == .cyan ? .cyan : .orange
                     )
-                } else if let destroyed = snapshot?.ships[scoringTeam.opponent] {
+                } else if let destroyed = snapshot?.ships.first(where: { $0.key.team == scoringTeam.opponent && $0.value.isDestroyed })?.value {
                     sparks(at: point(destroyed.position.x, destroyed.position.y), color: scoringTeam.opponent == .cyan ? .cyan : .orange)
                 }
             case let .destruction(team, _):
-                if let ship = snapshot?.ships[team] { sparks(at: point(ship.position.x, ship.position.y), color: team == .cyan ? .cyan : .orange) }
+                for (seat, ship) in snapshot?.ships ?? [:] where seat.team == team && ship.isDestroyed {
+                    sparks(at: point(ship.position.x, ship.position.y), color: team == .cyan ? .cyan : .orange)
+                }
             case let .collisionEffect(position, _):
                 sparks(at: point(position.x, position.y), color: .white)
             case .rallyReset:
                 ballTrail.removeAll()
-                cyanWakeAnchor = nil
-                orangeWakeAnchor = nil
+                wakeAnchors.removeAll()
             case .matchEnded:
                 break
             }
@@ -508,7 +521,8 @@ final class ArenaScene: SKScene {
         }
     }
 
-    private func update(shipNode: SKShapeNode, team: Team, state: ShipState?) {
+    private func update(seat: Seat, state: ShipState?) {
+        guard let shipNode = shipNodes[seat], let exhaust = exhaustNodes[seat] else { return }
         guard let state else { shipNode.isHidden = true; return }
         shipNode.isHidden = state.isDestroyed
         shipNode.position = point(state.position.x, state.position.y)
@@ -516,29 +530,28 @@ final class ArenaScene: SKScene {
         let unit = min(arenaRect.width / 2, arenaRect.height) / 1.7
         shipNode.setScale(unit / 473)
         shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)
-        let exhaust = team == .cyan ? cyanExhaust : orangeExhaust
         exhaust.isHidden = state.thrustLevel <= 0 || state.isDestroyed
         exhaust.yScale = 0.35 + CGFloat(state.thrustLevel / 18) * 1.65
         exhaust.alpha = 0.55 + CGFloat(state.thrustLevel / 18) * 0.45
-        emitPlume(from: shipNode, team: team, state: state)
-        emitWake(from: shipNode, team: team, state: state)
+        emitPlume(from: shipNode, seat: seat, state: state)
+        emitWake(from: shipNode, seat: seat, state: state)
     }
 
     /// A drifting ship leaves vapour rather than a pen line: one soft puff
     /// every few points of travel, laid down where the ship was and left to
     /// swell and fade in place.
-    private func emitWake(from shipNode: SKShapeNode, team: Team, state: ShipState) {
+    private func emitWake(from shipNode: SKShapeNode, seat: Seat, state: ShipState) {
         guard !reduceMotion, !state.isDestroyed else { return }
         let here = shipNode.position
-        let anchor = team == .cyan ? cyanWakeAnchor : orangeWakeAnchor
         let spacing: CGFloat = 5
-        guard let anchor else {
-            if team == .cyan { cyanWakeAnchor = here } else { orangeWakeAnchor = here }
+        guard let anchor = wakeAnchors[seat] else {
+            wakeAnchors[seat] = here
             return
         }
         let travelled = hypot(here.x - anchor.x, here.y - anchor.y)
         guard travelled >= spacing else { return }
-        if team == .cyan { cyanWakeAnchor = here } else { orangeWakeAnchor = here }
+        wakeAnchors[seat] = here
+        let team = seat.team
         plumeSeed &+= 1
         let jitter = Double((plumeSeed &* 7919) % 199) / 199 - 0.5
         let scale = Double(shipNode.xScale)
@@ -596,15 +609,14 @@ final class ArenaScene: SKScene {
 
     /// Spends a thrust-proportional budget so puff density tracks throttle
     /// instead of frame rate, then trails smoke back along the nose axis.
-    private func emitPlume(from shipNode: SKShapeNode, team: Team, state: ShipState) {
+    private func emitPlume(from shipNode: SKShapeNode, seat: Seat, state: ShipState) {
         guard !reduceMotion, !state.isDestroyed, state.thrustLevel > 0 else { return }
-        var budget = (team == .cyan ? cyanPlumeBudget : orangePlumeBudget)
-            + state.thrustLevel * 0.022
+        var budget = (plumeBudgets[seat] ?? 0) + state.thrustLevel * 0.022
         while budget >= 1 {
             budget -= 1
-            spawnPuff(from: shipNode, team: team, state: state)
+            spawnPuff(from: shipNode, team: seat.team, state: state)
         }
-        if team == .cyan { cyanPlumeBudget = budget } else { orangePlumeBudget = budget }
+        plumeBudgets[seat] = budget
     }
 
     private func spawnPuff(from shipNode: SKShapeNode, team: Team, state: ShipState) {
@@ -657,8 +669,7 @@ final class ArenaScene: SKScene {
             trailLayer.removeAllChildren()
             plumeLayer.removeAllChildren()
             ballTrail.removeAll()
-            cyanWakeAnchor = nil
-            orangeWakeAnchor = nil
+            wakeAnchors.removeAll()
             return
         }
         ballTrail.append(point(snapshot.ball.position.x, snapshot.ball.position.y))
@@ -684,9 +695,8 @@ final class ArenaScene: SKScene {
     /// Swaps the drawn silhouette without touching the simulation: every hull
     /// shares one collision envelope. yScale of the exhaust is driven per
     /// frame by thrust, so only its width is set here.
-    func setHull(_ hull: Hull, for team: Team) {
-        let ship = team == .cyan ? cyanShip : orangeShip
-        let exhaust = team == .cyan ? cyanExhaust : orangeExhaust
+    func setHull(_ hull: Hull, for seat: Seat) {
+        guard let ship = shipNodes[seat], let exhaust = exhaustNodes[seat] else { return }
         ship.path = hull.spec.outline.cgPath
         exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
     }

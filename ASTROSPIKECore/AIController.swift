@@ -121,8 +121,16 @@ public struct AIController: InputSource, Sendable {
     }
 
     public mutating func input(for state: WorldState, team: Team, tick: UInt64) -> PlayerInput {
-        guard let ship = state.ships[team] else { return .idle(tick: tick) }
+        input(for: state, seat: .lead(team), tick: tick)
+    }
+
+    /// Flies one seat. In doubles the ship farther from the ball hangs back
+    /// at a support post and leaves the play to its partner, so two bots on
+    /// a side do not race each other to the same ball.
+    public mutating func input(for state: WorldState, seat: Seat, tick: UInt64) -> PlayerInput {
+        guard let ship = state.ships[seat] else { return .idle(tick: tick) }
         let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
+        let supporting = supportsPartner(state: state, seat: seat, ship: ship)
 
         let projectedHomeDistance = (ship.position.x + ship.velocity.x * 1.20) * homeSign
         let crossingDanger = projectedHomeDistance < -(arena.opponentCrossingLimit - 0.12)
@@ -158,7 +166,13 @@ public struct AIController: InputSource, Sendable {
                 planTick = tick
                 remaining = plan.delay
             }
-            cachedAimError = sin(Double(tick &+ (team == .cyan ? 17 : 43)) * 0.17)
+            let salt: UInt64 = switch seat {
+            case .cyan: 17
+            case .orange: 43
+            case .cyanWing: 29
+            case .orangeWing: 61
+            }
+            cachedAimError = sin(Double(tick &+ salt) * 0.17)
                 * difficulty.aimErrorRadians
             cachedHomeSide = ship.homeSide
         }
@@ -196,6 +210,11 @@ public struct AIController: InputSource, Sendable {
             target = clamped(anchor - plannedShot * Self.strikeStandoff, homeSign: homeSign)
             closingVelocity = plannedShot * (difficulty.strikeSpeed * 1.4)
             striking = true
+        }
+        if supporting {
+            target = supportPost(homeSign: homeSign)
+            closingVelocity = .zero
+            striking = false
         }
         if pinnedByNet {
             target = SIMD2(homeSign * 0.34, arena.humpUndersideY - 0.34)
@@ -282,8 +301,24 @@ public struct AIController: InputSource, Sendable {
             : aligned
                 && !climbingAway
                 && simd_dot(need, nose) > configuration.maximumThrustAcceleration * Self.thrustGate
-        let fire = wantsToFire(state: state, ship: ship, nose: nose, homeSign: homeSign)
+        let fire = !supporting && wantsToFire(state: state, ship: ship, nose: nose, homeSign: homeSign)
         return PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire)
+    }
+
+    /// Where the second ship on a side waits: back by its own wall at
+    /// mid-height, out from under the ball and off the lead's run-up.
+    private func supportPost(homeSign: Double) -> SIMD2<Double> {
+        SIMD2(homeSign * 0.76, arena.floorY + 0.34)
+    }
+
+    /// True when the partner is the one who should play this ball. The wing
+    /// yields on anything close to a tie; the lead only yields when it is
+    /// clearly the farther of the two.
+    private func supportsPartner(state: WorldState, seat: Seat, ship: ShipState) -> Bool {
+        guard let partner = state.ships[seat.partner], !partner.isDestroyed else { return false }
+        let mine = simd_distance(ship.position, state.ball.position)
+        let theirs = simd_distance(partner.position, state.ball.position)
+        return seat.isWing ? theirs < mine + 0.06 : theirs + 0.10 < mine
     }
 
     /// Shoot when the ball is out in front, on this half, and the nose is

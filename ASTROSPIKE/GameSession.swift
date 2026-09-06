@@ -5,10 +5,20 @@ import SwiftUI
 
 enum GameMode: Hashable {
     case solo(AIDifficulty)
+    /// Two a side on the same court: you and an AI wingman against two bots.
+    case doubles(AIDifficulty)
     case online
     /// The warm-up bay: a lone pilot, the same court, hoops to pop and a
     /// keep-up streak, while a Game Center invite is out.
     case warmup
+
+    /// Solo and doubles: nothing on the wire, the pilot's own tuning applies.
+    var isOffline: Bool {
+        switch self {
+        case .solo, .doubles: true
+        case .online, .warmup: false
+        }
+    }
 }
 
 @MainActor
@@ -34,8 +44,11 @@ final class GameSession {
     let scene = ArenaScene()
 
     private var engine: SimulationEngine
-    private var ai: AIController?
+    /// One bot per seat the local pilot is not flying. Online, only the host
+    /// runs bots, and only for a seat nobody took.
+    private var pilots: [Seat: AIController] = [:]
     private var demoAI: AIController?
+    let localSeat: Seat
     private weak var online: OnlineMatchCoordinator?
     private var frameDriver: FrameDriver?
     private var accumulator = 0.0
@@ -51,18 +64,36 @@ final class GameSession {
     ) {
         self.mode = mode
         self.online = online
+        let localSeat = mode == .online ? (online?.localSeat ?? .cyan) : .cyan
+        self.localSeat = localSeat
         var initialEngine = SimulationEngine.testing()
         initialEngine.updateConfiguration(configuration)
-        initialEngine.prepareNextRally(mirrored: false)
-        if mode == .warmup {
+        let roster: Set<Seat>
+        var botSeats: [Seat: AIDifficulty] = [:]
+        switch mode {
+        case let .solo(difficulty):
+            roster = Seat.singles
+            botSeats[.orange] = difficulty
+        case let .doubles(difficulty):
+            roster = Seat.doubles
+            for seat in Seat.doubles where seat != localSeat { botSeats[seat] = difficulty }
+        case .warmup:
             // Nobody to defend against, and no ceremony before the first serve.
-            initialEngine.state.ships[.orange] = nil
+            roster = [.cyan]
             countdown = 1
+        case .online:
+            let filled = online?.filledSeats ?? Seat.singles
+            // Three pilots play doubles with the host flying the empty wing.
+            roster = filled.count > 2 ? Seat.doubles : Seat.singles
+            if online?.isAuthoritative == true {
+                for seat in roster.subtracting(filled) { botSeats[seat] = .pilot }
+            }
         }
+        initialEngine.configureRoster(roster)
         engine = initialEngine
         state = initialEngine.state
-        if case let .solo(difficulty) = mode {
-            ai = AIController(difficulty: difficulty, configuration: configuration)
+        for (seat, difficulty) in botSeats {
+            pilots[seat] = AIController(difficulty: difficulty, configuration: configuration)
         }
         if mode != .online, ProcessInfo.processInfo.arguments.contains("--demo") {
             demoAI = AIController(difficulty: .pilot, configuration: configuration)
@@ -70,9 +101,18 @@ final class GameSession {
         scene.scaleMode = .resizeFill
         scene.snapshot = state
         if mode == .warmup { scene.rings = rings.rings }
-        let localTeam = online?.localTeam ?? .cyan
-        scene.setHull(localHull, for: localTeam)
-        scene.setHull(online?.remoteHull ?? rivalHull, for: localTeam.opponent)
+        for seat in Seat.allCases {
+            let hull: Hull = if seat == localSeat {
+                localHull
+            } else if let remote = online?.remoteHulls[seat], mode == .online {
+                remote
+            } else if seat == Seat.lead(localSeat.team.opponent) {
+                rivalHull
+            } else {
+                Hull.defaultHull(forSeat: seat)
+            }
+            scene.setHull(hull, for: seat)
+        }
         installOnlineCallbacks()
     }
 
@@ -106,16 +146,16 @@ final class GameSession {
     }
 
     func applyTuning(_ configuration: SimulationConfiguration) {
-        guard case .solo = mode else { return }
+        guard mode.isOffline else { return }
         engine.updateConfiguration(configuration)
-        ai?.updateConfiguration(configuration)
+        for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
     }
 
     func restartRally(with configuration: SimulationConfiguration) {
-        guard case .solo = mode, state.match.phase != .finished else { return }
+        guard mode.isOffline, state.match.phase != .finished else { return }
         engine.updateConfiguration(configuration)
-        ai?.updateConfiguration(configuration)
+        for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
         engine.prepareNextRally(mirrored: false)
         state = engine.state
@@ -165,30 +205,30 @@ final class GameSession {
 
     private func simulateOneTick() {
         let tick = engine.state.tick
-        let localTeam = online?.localTeam ?? .cyan
         var localInput = PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched)
         fireLatched = false
         if var demoAI {
-            localInput = demoAI.input(for: engine.state, team: localTeam, tick: tick)
+            localInput = demoAI.input(for: engine.state, seat: localSeat, tick: tick)
             self.demoAI = demoAI
         }
-        var inputs: [Team: PlayerInput] = [localTeam: localInput]
+        var inputs: [Seat: PlayerInput] = [localSeat: localInput]
+        for seat in pilots.keys.sorted() {
+            guard var pilot = pilots[seat] else { continue }
+            inputs[seat] = pilot.input(for: engine.state, seat: seat, tick: tick)
+            pilots[seat] = pilot
+        }
 
         switch mode {
-        case .solo:
-            if var ai {
-                inputs[.orange] = ai.input(for: engine.state, team: .orange, tick: tick)
-                self.ai = ai
-            }
-            engine.step(inputs: inputs)
-        case .warmup:
+        case .solo, .doubles, .warmup:
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
             if tick.isMultiple(of: 4) {
                 online.sendInput(localInput)
             }
-            inputs[localTeam.opponent] = online.remoteInput ?? .idle(tick: tick)
+            for seat in engine.state.ships.keys where seat != localSeat && inputs[seat] == nil {
+                inputs[seat] = online.remoteInputs[seat] ?? .idle(tick: tick)
+            }
             engine.step(inputs: inputs)
             if online.isAuthoritative, tick.isMultiple(of: 6) {
                 online.sendSnapshot(engine.state)
@@ -208,7 +248,7 @@ final class GameSession {
             }
         }
         let presentsLocalEvents = switch mode {
-        case .solo, .warmup: true
+        case .solo, .doubles, .warmup: true
         case .online: online?.isAuthoritative == true
         }
         if presentsLocalEvents, !events.isEmpty { scene.present(events) }
@@ -241,10 +281,9 @@ final class GameSession {
         online.onSnapshot = { [weak self] authoritative in
             guard let self, !online.isAuthoritative else { return }
             var resolved = authoritative
-            if let localTeam = online.localTeam,
-               let predicted = self.engine.state.ships[localTeam],
-               let hostShip = authoritative.ships[localTeam] {
-                resolved.ships[localTeam] = StateReconciler().reconcile(
+            if let predicted = self.engine.state.ships[self.localSeat],
+               let hostShip = authoritative.ships[self.localSeat] {
+                resolved.ships[self.localSeat] = StateReconciler().reconcile(
                     predicted: predicted,
                     authoritative: hostShip
                 )

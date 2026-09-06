@@ -15,6 +15,17 @@ public enum Hull: String, Codable, CaseIterable, Sendable, Identifiable {
         team == .cyan ? .lancet : .anvil
     }
 
+    /// Wings default to the other two free hulls so a doubles court reads
+    /// as four different ships at a glance.
+    public static func defaultHull(forSeat seat: Seat) -> Hull {
+        switch seat {
+        case .cyan: .lancet
+        case .orange: .anvil
+        case .cyanWing: .manta
+        case .orangeWing: .kestrel
+        }
+    }
+
     public var spec: HullSpec { HullCatalog.spec(for: self) }
 }
 

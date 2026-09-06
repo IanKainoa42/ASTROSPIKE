@@ -2,12 +2,15 @@ import Foundation
 import simd
 
 public enum WirePayload: Codable, Equatable, Sendable {
-    case input(team: Team, value: PlayerInput)
+    case input(seat: Seat, value: PlayerInput)
     case snapshot(WorldState)
     case event(SimulationEvent)
     case ready
-    /// Which hull the sender flies, so the peer can draw it. Cosmetic only.
-    case profile(team: Team, hull: Hull)
+    /// Which hull the sender flies, so the peers can draw it. Cosmetic only.
+    case profile(seat: Seat, hull: Hull)
+    /// The host's seating plan, Game Center player ID to seat. Guests take
+    /// their seat from this rather than negotiating.
+    case seating([String: Seat])
     case ping(nanoseconds: UInt64)
     case resync(WorldState)
 }
@@ -17,7 +20,8 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 5: WirePayload gained profile(team:hull:).
     // 6: PlayerInput gained fire, ShipState gained fireCooldownTicks,
     //    WorldState gained bolts and nextBoltID.
-    public static let currentVersion: UInt16 = 6
+    // 7: Ships, inputs and profiles keyed by Seat; seating payload for doubles.
+    public static let currentVersion: UInt16 = 7
 
     public var version: UInt16
     public var sequence: UInt64

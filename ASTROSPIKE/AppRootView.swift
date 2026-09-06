@@ -280,7 +280,7 @@ private struct GameView: View {
         self.diagnosticsOverride = diagnosticsOverride
         self.exit = exit
         let configuration = switch mode {
-        case .solo: tuning.configuration
+        case .solo, .doubles: tuning.configuration
         case .online: SimulationConfiguration.online
         case .warmup: SimulationConfiguration.warmup
         }
@@ -383,9 +383,13 @@ private struct GameView: View {
         .onChange(of: tuning.snapshot) { _, _ in
             session.applyTuning(tuning.configuration)
         }
-        .onChange(of: online.remoteHull) { _, hull in
-            // The peer's profile can land after the session is built.
-            if mode == .online, let hull { session.scene.setHull(hull, for: localTeam.opponent) }
+        .onChange(of: online.remoteHulls) { _, hulls in
+            // The peer profiles can land after the session is built.
+            if mode == .online {
+                for (seat, hull) in hulls {
+                    session.scene.setHull(hull, for: seat)
+                }
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             session.setApplicationActive(phase == .active)
@@ -406,20 +410,20 @@ private struct GameView: View {
 
     private var allowedBounces: Int {
         switch mode {
-        case .solo: tuning.allowedBouncesPerHit
+        case .solo, .doubles: tuning.allowedBouncesPerHit
         case .online, .warmup: 3
         }
     }
 
     private var allowedTouches: Int {
         switch mode {
-        case .solo: tuning.allowedTouchesPerSide
+        case .solo, .doubles: tuning.allowedTouchesPerSide
         case .online, .warmup: 3
         }
     }
 
     private var localHomeSide: Team {
-        session.state.ships[localTeam]?.homeSide ?? localTeam
+        session.state.ships[team: localTeam]?.homeSide ?? localTeam
     }
 
     /// Nil while a sheet owns the screen, so Escape closes the sheet instead of
@@ -433,7 +437,7 @@ private struct GameView: View {
     private func handleKeyCommand(_ command: FlightControlCommand) {
         switch command {
         case .pause:
-            if case .solo = mode {
+            if mode.isOffline {
                 session.togglePause()
                 showPause = true
             } else {
@@ -449,7 +453,7 @@ private struct GameView: View {
         switch mode {
         case .online: online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
-        case .solo: break
+        case .solo, .doubles: break
         }
         exit()
     }

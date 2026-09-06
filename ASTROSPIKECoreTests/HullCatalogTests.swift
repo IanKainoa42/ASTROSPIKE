@@ -36,7 +36,7 @@ struct HullCatalogTests {
 
     @Test("Profile payload survives a wire round trip")
     func profileRoundTrip() throws {
-        let envelope = WireEnvelope(sequence: 7, payload: .profile(team: .orange, hull: .wraith))
+        let envelope = WireEnvelope(sequence: 7, payload: .profile(seat: .orange, hull: .wraith))
         let decoded = try WireCodec().decode(WireCodec().encode(envelope))
         #expect(decoded == envelope)
     }

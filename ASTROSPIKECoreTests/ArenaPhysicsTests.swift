@@ -546,15 +546,15 @@ struct ArenaPhysicsTests {
 
         for tick in UInt64(0) ..< 900 {
             // Both players hold station, which is exactly how a ball gets ridden.
-            let inputs = Dictionary(uniqueKeysWithValues: Team.allCases.map { team -> (Team, PlayerInput) in
-                guard let ship = engine.state.ships[team] else { return (team, .idle(tick: tick)) }
+            let inputs = Dictionary(uniqueKeysWithValues: Seat.singles.map { seat -> (Seat, PlayerInput) in
+                guard let ship = engine.state.ships[seat] else { return (seat, .idle(tick: tick)) }
                 let holding = ship.position.y < 0.20 || ship.velocity.y < -0.05
-                return (team, PlayerInput(tick: tick, torque: 0, thrust: holding))
+                return (seat, PlayerInput(tick: tick, torque: 0, thrust: holding))
             })
             engine.step(inputs: inputs)
             guard engine.state.match.phase == .playing else { break }
-            let riding = Team.allCases.contains { team in
-                guard let ship = engine.state.ships[team] else { return false }
+            let riding = Seat.singles.contains { seat in
+                guard let ship = engine.state.ships[seat] else { return false }
                 return simd_distance(engine.state.ball.position, ship.position) < 0.125
             }
             contact = riding ? contact + 1 : 0

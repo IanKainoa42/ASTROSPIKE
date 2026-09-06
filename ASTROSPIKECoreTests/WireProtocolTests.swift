@@ -8,7 +8,7 @@ struct WireProtocolTests {
     func inputRoundTrip() throws {
         let envelope = WireEnvelope(
             sequence: 42,
-            payload: .input(team: .cyan, value: PlayerInput(tick: 91, torque: -0.75, thrust: true))
+            payload: .input(seat: .cyan, value: PlayerInput(tick: 91, torque: -0.75, thrust: true))
         )
 
         let decoded = try WireCodec().decode(WireCodec().encode(envelope))
