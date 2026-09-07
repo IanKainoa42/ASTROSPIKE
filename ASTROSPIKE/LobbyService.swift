@@ -61,8 +61,28 @@ final class LobbyService {
     private var hostedDuelRecord: CKRecord?
     private var presenceRecord: CKRecord?
 
-    private let database = CKContainer(identifier: LobbyService.containerIdentifier).publicCloudDatabase
-    private let container = CKContainer(identifier: LobbyService.containerIdentifier)
+    /// CloudKit is resolved on first use, never at construction.
+    ///
+    /// `CKContainer(identifier:)` raises rather than throws when the app holds
+    /// no entitlement for that container, and an unsigned build has no
+    /// entitlements at all — so building it in a stored property took the whole
+    /// process down at launch instead of merely costing us the lobby. Every
+    /// other CloudKit call already sits behind `start()`, which returns early
+    /// without a signed-in pilot, so deferring this one keeps CloudKit out of a
+    /// build that can never reach it.
+    ///
+    /// Ignored by observation: nothing renders it, and the accessor below
+    /// assigns it from a getter SwiftUI may call mid-update.
+    @ObservationIgnored private var resolvedContainer: CKContainer?
+
+    private var container: CKContainer {
+        if let resolvedContainer { return resolvedContainer }
+        let made = CKContainer(identifier: Self.containerIdentifier)
+        resolvedContainer = made
+        return made
+    }
+
+    private var database: CKDatabase { container.publicCloudDatabase }
     private var heartbeatTask: Task<Void, Never>?
     private var isStarted = false
 
