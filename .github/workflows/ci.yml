@@ -83,9 +83,11 @@ jobs:
             -destination "id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath DerivedData \
             -resultBundlePath TestResults/build.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM=""
 
       - name: Unit tests
