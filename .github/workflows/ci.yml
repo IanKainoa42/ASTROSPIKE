@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -16,7 +14,7 @@ permissions:
 jobs:
   test:
     name: Build and test
-    runs-on: macos-latest
+    runs-on: ${{ vars.CI_RUNNER || 'self-hosted' }}
     timeout-minutes: 60
 
     steps:
@@ -25,8 +23,6 @@ jobs:
 
       - name: Show the toolchain
         env:
-          # Optional repository variable, e.g. /Applications/Xcode_26.6.app, for
-          # pinning a specific Xcode. Unset means the runner image's default.
           XCODE_APP: ${{ vars.XCODE_APP }}
         run: |
           set -euo pipefail
@@ -42,7 +38,7 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
-        run: brew install xcodegen
+        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
 
       - name: Generate the Xcode project
         run: xcodegen generate
@@ -64,7 +60,7 @@ jobs:
             | last
             | .udid // empty')"
           if [ -z "$udid" ]; then
-            echo "::error::No available iPhone simulator on this runner image."
+            echo "::error::No available iPhone simulator on this runner."
             xcrun simctl list devices
             exit 1
           fi
@@ -73,7 +69,6 @@ jobs:
           xcrun simctl boot "$udid" || true
           xcrun simctl bootstatus "$udid" -b
 
-      # Split from the test runs so a compile failure is its own red step.
       - name: Build for testing
         run: |
           set -euo pipefail
@@ -83,9 +78,11 @@ jobs:
             -destination "id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath DerivedData \
             -resultBundlePath TestResults/build.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM=""
 
       - name: Unit tests
@@ -100,6 +97,7 @@ jobs:
             -only-testing:ASTROSPIKECoreTests
 
       - name: UI tests
+        if: vars.SKIP_UI_TESTS != 'true'
         run: |
           set -euo pipefail
           xcodebuild test-without-building \
@@ -118,3 +116,7 @@ jobs:
           path: TestResults
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Clear result bundles
+        if: always()
+        run: rm -rf TestResults
