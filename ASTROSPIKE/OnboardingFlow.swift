@@ -137,12 +137,16 @@ struct OnboardingFlow: View {
     private var fly: some View {
         IntroPage(kicker: "01 • FLY") {
             Text("STEER, THRUST, FIRE.")
-                .font(.system(size: 30, weight: .black, design: .rounded))
+                .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "arrow.left.and.right", tint: .cyan, title: "STEER", text: "Hold left or right to rotate. Let go and the nose stays where it is.")
             IntroLine(icon: "flame.fill", tint: .orange, title: "THRUST", text: "Hold to burn. Gravity pulls you down the whole time, and your exhaust shoves the ball.")
             IntroLine(icon: "bolt.fill", tint: .yellow, title: "FIRE", text: "Tap to shoot a bolt from the nose. It knocks the ball where you point and counts as a touch.")
-            IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W thrusts, space fires. Touch and keys work together.")
+            // Phones almost never have a keyboard and do not have the height
+            // for a fourth line; iPads and Macs get the hint.
+            if UIDevice.current.userInterfaceIdiom != .phone {
+                IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W thrusts, space fires. Touch and keys work together.")
+            }
         } side: {
             ControlsDiagram()
         }
@@ -151,7 +155,7 @@ struct OnboardingFlow: View {
     private var score: some View {
         IntroPage(kicker: "02 • SCORE") {
             Text("THE GOAL IS A PORTAL.")
-                .font(.system(size: 30, weight: .black, design: .rounded))
+                .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "shield.lefthalf.filled", tint: .cyan, title: "DEFEND YOUR FACE", text: "The side of the goal facing you is yours. Ball goes in there, they score.")
             IntroLine(icon: "arrow.up.right", tint: .orange, title: "SPIKE THEIRS", text: "Lift the ball over the net and put it through the far face. Or make them put it in their own.")
@@ -164,7 +168,7 @@ struct OnboardingFlow: View {
     private var rules: some View {
         IntroPage(kicker: "03 • RULES") {
             Text("THREE TOUCHES. ONE BOUNCE.")
-                .font(.system(size: 30, weight: .black, design: .rounded))
+                .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "hand.tap.fill", tint: .cyan, title: "TOUCHES", text: "Your hull may touch the ball three times per trip. A fourth touch is their point.")
             IntroLine(icon: "circle.bottomhalf.filled", tint: .orange, title: "BOUNCES", text: "The ball may bounce on your floor once between touches. Twice and it’s theirs.")
@@ -193,15 +197,22 @@ private struct IntroPage<Content: View, Side: View>: View {
     @ViewBuilder let side: Side
 
     var body: some View {
-        HStack(spacing: 36) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(kicker).font(.caption.monospaced().weight(.black)).tracking(3)
-                    .foregroundStyle(.white.opacity(0.55))
-                content
+        HStack(alignment: .top, spacing: 32) {
+            // A phone in landscape has less height than these pages need, so
+            // the column scrolls rather than losing its last line under the
+            // BACK and NEXT buttons.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(kicker).font(.caption.monospaced().weight(.black)).tracking(3)
+                        .foregroundStyle(.white.opacity(0.55))
+                    content
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 8)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollBounceBehavior(.basedOnSize)
             side
-                .frame(maxWidth: 360)
+                .frame(maxWidth: 340)
         }
         .padding(.horizontal, 28).padding(.top, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -215,7 +226,7 @@ private struct IntroLine: View {
             Image(systemName: icon).font(.title3).foregroundStyle(tint).frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.subheadline.weight(.black)).tracking(1)
-                Text(text).font(.callout).foregroundStyle(.white.opacity(0.72))
+                Text(text).font(.subheadline).foregroundStyle(.white.opacity(0.72))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -265,48 +276,110 @@ private struct ControlsDiagram: View {
     }
 }
 
-/// Roof-hung goal with its two faces and lips, seen from the side.
+/// The goal exactly as the arena builds it: the hump under the roof, the
+/// slim slab hanging from it, a coloured face either side of the mouth, the
+/// hard cap underneath and the two lips that tilt back in. Drawn from
+/// `ArenaGeometry.standard` so it cannot drift from the court.
 private struct GoalDiagram: View {
+    private let arena = ArenaGeometry.standard
+
     var body: some View {
         Canvas { context, size in
-            let w = size.width, h = size.height
-            let midX = w / 2
-            // Roof line.
-            var roof = Path()
-            roof.move(to: CGPoint(x: 0, y: 8)); roof.addLine(to: CGPoint(x: w, y: 8))
-            context.stroke(roof, with: .color(.white.opacity(0.3)), lineWidth: 2)
-            // Floor.
-            var floor = Path()
-            floor.move(to: CGPoint(x: 0, y: h - 8)); floor.addLine(to: CGPoint(x: w, y: h - 8))
-            context.stroke(floor, with: .color(.white.opacity(0.3)), lineWidth: 2)
-            // Goal cap hanging from roof.
-            let capRect = CGRect(x: midX - 34, y: 8, width: 68, height: h * 0.42)
-            context.fill(Path(roundedRect: capRect, cornerRadius: 10), with: .color(.white.opacity(0.08)))
-            context.stroke(Path(roundedRect: capRect, cornerRadius: 10), with: .color(.white.opacity(0.6)), lineWidth: 2)
-            // Faces.
-            var left = Path(); left.move(to: CGPoint(x: capRect.minX, y: capRect.minY + 14)); left.addLine(to: CGPoint(x: capRect.minX, y: capRect.maxY - 6))
-            var right = Path(); right.move(to: CGPoint(x: capRect.maxX, y: capRect.minY + 14)); right.addLine(to: CGPoint(x: capRect.maxX, y: capRect.maxY - 6))
-            context.stroke(left, with: .color(.cyan), lineWidth: 5)
-            context.stroke(right, with: .color(.orange), lineWidth: 5)
-            // Lips.
-            var lipL = Path(); lipL.move(to: CGPoint(x: capRect.minX - 26, y: capRect.maxY + 6)); lipL.addLine(to: CGPoint(x: capRect.minX, y: capRect.maxY - 2))
-            var lipR = Path(); lipR.move(to: CGPoint(x: capRect.maxX + 26, y: capRect.maxY + 6)); lipR.addLine(to: CGPoint(x: capRect.maxX, y: capRect.maxY - 2))
-            context.stroke(lipL, with: .color(.cyan.opacity(0.8)), lineWidth: 3)
-            context.stroke(lipR, with: .color(.orange.opacity(0.8)), lineWidth: 3)
-            // Ball arc from cyan side into orange face.
+            // Show the middle of the court, floor to roof, and fatten the slab
+            // a little so the mouth reads at this size.
+            let viewHalfWidth = 0.62
+            let scale = size.width / (viewHalfWidth * 2)
+            let top = arena.ceilingY, bottom = arena.ceilingY - size.height / scale
+            func pt(_ x: Double, _ y: Double) -> CGPoint {
+                CGPoint(x: (x + viewHalfWidth) * scale, y: (top - y) * scale)
+            }
+            let half = max(arena.netHalfWidth, 0.03)
+            let mouthTop = arena.portalMouthTopY, mouthBottom = arena.netBottomY
+            let slab = Color(white: 0.16)
+
+            // Roof and the hump the net hangs from.
+            var hump = Path()
+            let profile = arena.humpProfile
+            hump.move(to: pt(-viewHalfWidth, top))
+            hump.addLine(to: pt(-profile.last!.x, top))
+            for sample in profile.reversed() { hump.addLine(to: pt(-sample.x, sample.y)) }
+            for sample in profile { hump.addLine(to: pt(sample.x, sample.y)) }
+            hump.addLine(to: pt(viewHalfWidth, top))
+            hump.closeSubpath()
+            context.fill(hump, with: .color(slab))
+            var humpEdge = Path()
+            for (index, sample) in profile.reversed().enumerated() {
+                index == 0 ? humpEdge.move(to: pt(-sample.x, sample.y)) : humpEdge.addLine(to: pt(-sample.x, sample.y))
+            }
+            for sample in profile { humpEdge.addLine(to: pt(sample.x, sample.y)) }
+            context.stroke(humpEdge, with: .color(.white.opacity(0.55)), lineWidth: 2)
+
+            // Collar (solid) and mouth (a dark slot).
+            var collar = Path()
+            collar.addRect(CGRect(x: pt(-half, 0).x, y: pt(0, arena.humpUndersideY).y,
+                                  width: half * 2 * scale, height: (arena.humpUndersideY - mouthTop) * scale))
+            context.fill(collar, with: .color(slab))
+            context.stroke(collar, with: .color(.white.opacity(0.55)), lineWidth: 1.5)
+            var mouth = Path()
+            mouth.addRect(CGRect(x: pt(-half, 0).x, y: pt(0, mouthTop).y,
+                                 width: half * 2 * scale, height: (mouthTop - mouthBottom) * scale))
+            context.fill(mouth, with: .color(.black.opacity(0.85)))
+
+            // Faces: the defender's colour, glowing like the arena.
+            for (sign, color) in [(-1.0, Color.cyan), (1.0, Color.orange)] {
+                var face = Path()
+                face.move(to: pt(sign * half, mouthTop)); face.addLine(to: pt(sign * half, mouthBottom))
+                context.stroke(face, with: .color(color.opacity(0.35)), lineWidth: 12)
+                context.stroke(face, with: .color(color), lineWidth: 4)
+            }
+
+            // Cap: hard and neutral.
+            var cap = Path()
+            cap.move(to: pt(-half, mouthBottom))
+            cap.addQuadCurve(to: pt(half, mouthBottom), control: pt(0, mouthBottom - 0.04))
+            context.stroke(cap, with: .color(.white.opacity(0.95)), lineWidth: 3)
+
+            // Lips: shelves that rise away from the mouth, so a ball rolls in.
+            for sign in [-1.0, 1.0] {
+                let root = arena.lipRoot(sign: sign), tip = arena.lipTip(sign: sign)
+                let rootX = sign * half
+                var lip = Path()
+                lip.move(to: pt(rootX, root.y)); lip.addLine(to: pt(tip.x, tip.y))
+                lip.addLine(to: pt(tip.x, tip.y - 0.014)); lip.addLine(to: pt(rootX, root.y - 0.014))
+                lip.closeSubpath()
+                context.fill(lip, with: .color(slab))
+                context.stroke(lip, with: .color(.white.opacity(0.7)), lineWidth: 1.5)
+            }
+
+            // The spike: cyan lifts the ball from its own side over the cap
+            // and into the far face.
             var arc = Path()
-            arc.move(to: CGPoint(x: w * 0.12, y: h * 0.72))
-            arc.addQuadCurve(to: CGPoint(x: capRect.maxX + 4, y: capRect.midY + 10),
-                             control: CGPoint(x: w * 0.55, y: -h * 0.05))
-            context.stroke(arc, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
-            context.fill(Path(ellipseIn: CGRect(x: w * 0.12 - 6, y: h * 0.72 - 6, width: 12, height: 12)), with: .color(.white))
+            let launch = (x: -0.5, y: max(bottom + 0.06, -0.3))
+            arc.move(to: pt(launch.x, launch.y))
+            arc.addQuadCurve(to: pt(half + 0.03, (mouthTop + mouthBottom) / 2),
+                             control: pt(0.5, mouthBottom - 0.42))
+            context.stroke(arc, with: .color(.white.opacity(0.75)), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+            let ball = pt(launch.x, launch.y)
+            context.fill(Path(ellipseIn: CGRect(x: ball.x - 6, y: ball.y - 6, width: 12, height: 12)), with: .color(.white))
+
+            // A ball on the far lip rolls into the mouth too.
+            let lipTip = arena.lipTip(sign: 1)
+            let lipBall = pt(lipTip.x - 0.03, lipTip.y + 0.03)
+            context.fill(Path(ellipseIn: CGRect(x: lipBall.x - 4, y: lipBall.y - 4, width: 8, height: 8)), with: .color(.white.opacity(0.7)))
+            var roll = Path()
+            roll.move(to: CGPoint(x: lipBall.x - 8, y: lipBall.y + 4))
+            roll.addLine(to: CGPoint(x: pt(half, mouthBottom).x + 6, y: pt(half, mouthBottom).y - 6))
+            context.stroke(roll, with: .color(.white.opacity(0.5)), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+
             // Labels.
             context.draw(Text("YOURS").font(.system(size: 9, weight: .black)).foregroundStyle(.cyan),
-                         at: CGPoint(x: capRect.minX - 30, y: capRect.minY + 22))
+                         at: CGPoint(x: pt(-half, 0).x - 34, y: pt(0, mouthTop).y + 10))
             context.draw(Text("THEIRS").font(.system(size: 9, weight: .black)).foregroundStyle(.orange),
-                         at: CGPoint(x: capRect.maxX + 32, y: capRect.minY + 22))
+                         at: CGPoint(x: pt(half, 0).x + 36, y: pt(0, mouthTop).y + 10))
+            context.draw(Text("LIP").font(.system(size: 8, weight: .black)).foregroundStyle(.white.opacity(0.6)),
+                         at: CGPoint(x: pt(lipTip.x, lipTip.y).x + 14, y: pt(lipTip.x, lipTip.y).y - 2))
         }
-        .frame(height: 190)
+        .frame(height: 200)
         .padding(12)
         .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.12)))
