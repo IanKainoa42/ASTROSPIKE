@@ -40,6 +40,10 @@ final class LobbyService {
     private(set) var availability: Availability = .checking
     private(set) var snapshot = LobbySnapshot()
     private(set) var friends: Set<String> = []
+    /// The `GKPlayer` objects Game Center has already handed us (friends and
+    /// recent opponents), keyed by gamePlayerID. Inviting one of these skips
+    /// the identifier lookup, which returns nothing for some accounts.
+    private var knownPlayers: [String: GKPlayer] = [:]
     private(set) var isRefreshing = false
     private(set) var lastRefresh: Date?
     /// The last thing that went wrong, shown in the lobby. Nil when all is well.
@@ -140,14 +144,25 @@ final class LobbyService {
         }
     }
 
-    private func loadFriends() {
+    private func loadFriends(completion: (@MainActor () -> Void)? = nil) {
         GKLocalPlayer.local.loadFriends { [weak self] players, error in
-            let ids = Set((players ?? []).map(\.gamePlayerID))
+            nonisolated(unsafe) let players = players
             let failure = error.map { $0 as NSError }
             Task { @MainActor in
                 guard let self else { return }
                 if let failure { self.note("FRIENDS: \(self.describe(failure))") }
-                self.friends = ids
+                let friends = players ?? []
+                self.friends = Set(friends.map(\.gamePlayerID))
+                for player in friends { self.knownPlayers[player.gamePlayerID] = player }
+                self.note("FRIENDS: \(friends.count) KNOWN")
+                completion?()
+            }
+        }
+        GKLocalPlayer.local.loadRecentPlayers { [weak self] players, _ in
+            nonisolated(unsafe) let players = players
+            Task { @MainActor in
+                guard let self else { return }
+                for player in players ?? [] { self.knownPlayers[player.gamePlayerID] = player }
             }
         }
     }
@@ -411,7 +426,13 @@ final class LobbyService {
     /// Resolves a lobby pilot to a `GKPlayer` and hands them to Game Center
     /// matchmaking, so the inviter waits in the bay as with any other invite.
     func invite(pilotID: String, name: String, using online: OnlineMatchCoordinator) {
-        note("INVITE: RESOLVING \(name.uppercased())")
+        if let player = knownPlayers[pilotID] {
+            note("INVITE: \(name.uppercased()) FROM FRIEND LIST")
+            notice = nil
+            online.invite([player])
+            return
+        }
+        note("INVITE: RESOLVING \(name.uppercased()) \(pilotID.prefix(6))… (\(knownPlayers.count) KNOWN)")
         GKPlayer.loadPlayers(forIdentifiers: [pilotID]) { [weak self] players, error in
             // GameKit hands these back on its own queue; they are only ever
             // read on the main actor from here on.
@@ -426,8 +447,23 @@ final class LobbyService {
                     return
                 }
                 guard let players, !players.isEmpty else {
-                    self.note("INVITE: \(name.uppercased()) NOT FOUND")
-                    self.notice = "Game Center does not know \(name)"
+                    self.note("INVITE: LOOKUP EMPTY FOR \(name.uppercased()), RELOADING FRIENDS")
+                    // The identifier lookup comes back empty for some accounts
+                    // even when the pilot is a friend. Refresh the friend list
+                    // and try once more from there before giving up.
+                    self.loadFriends { [weak self] in
+                        guard let self else { return }
+                        if let player = self.knownPlayers[pilotID] {
+                            self.note("INVITE: \(name.uppercased()) FOUND ON RELOAD")
+                            self.notice = nil
+                            online.invite([player])
+                        } else {
+                            self.note("INVITE: \(name.uppercased()) NOT IN \(self.friends.count) FRIENDS")
+                            self.notice = self.friends.isEmpty
+                                ? "Allow Game Center friend access in Settings › \(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "ASTROSPIKE") to invite \(name)"
+                                : "\(name) is not on your Game Center friend list. Add them there, or invite from the bay."
+                        }
+                    }
                     return
                 }
                 self.notice = nil

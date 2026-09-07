@@ -61,6 +61,8 @@ final class OnlineMatchCoordinator: NSObject,
     }
     /// The latest input from every other pilot, by seat.
     private(set) var remoteInputs: [Seat: PlayerInput] = [:]
+    /// Peers whose packets carry another wire version, noted once each.
+    private var mismatchedPeers: Set<String> = []
     /// The hulls the peers fly, once their profiles arrive. A seat missing
     /// here keeps its default, so the scene never shows a wrong hull.
     private(set) var remoteHulls: [Seat: Hull] = [:]
@@ -598,11 +600,26 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func receive(_ data: Data, from playerID: String) {
-        guard let envelope = try? codec.decode(data) else { return }
+        let envelope: WireEnvelope
+        do {
+            envelope = try codec.decode(data)
+        } catch WireProtocolError.unsupportedVersion(let version) {
+            // A pilot on another TestFlight build. Every packet they send is
+            // useless to us, so say so once instead of silently sitting still.
+            if mismatchedPeers.insert(playerID).inserted {
+                let name = seatedPilotNames[playerID] ?? "PILOT"
+                note("WIRE MISMATCH: \(name) IS ON WIRE \(version), WE ARE \(WireEnvelope.currentVersion)")
+                inviteNotice = "\(name.uppercased()) IS ON A DIFFERENT BUILD · UPDATE BOTH"
+            }
+            return
+        } catch {
+            return
+        }
         switch envelope.payload {
         case let .input(seat, value):
             guard lifecycle.acceptsGameplayData, seat != localSeat else { return }
             var buffer = inputBuffers[seat] ?? RemoteInputBuffer()
+            if remoteInputs[seat] == nil { note("FIRST INPUT FROM \(seat.label) AT TICK \(value.tick)") }
             if buffer.accept(value) {
                 inputBuffers[seat] = buffer
                 remoteInputs[seat] = value
@@ -853,6 +870,7 @@ final class OnlineMatchCoordinator: NSObject,
         eventGate.reset()
         inputBuffers = [:]
         remoteInputs = [:]
+        mismatchedPeers = []
         remoteHulls = [:]
         isMatchReady = false
         isAuthoritative = false

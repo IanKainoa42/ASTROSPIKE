@@ -88,6 +88,10 @@ struct AppRootView: View {
         }
         .onChange(of: online.isMatchReady) { _, ready in
             if ready {
+                // The invitee is usually sitting in the lobby or the invite
+                // sheet when the match comes up. Drop it, or the arena runs
+                // hidden underneath and their ship sits idle on the host's board.
+                sheet = nil
                 withAnimation { gameMode = .online }
                 if online.isAuthoritative { announceHostedDuel() }
             }
