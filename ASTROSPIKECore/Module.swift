@@ -165,8 +165,9 @@ public struct ShipState: Codable, Equatable, Sendable {
 }
 
 /// A bolt from a ship's nose. It only ever talks to the ball: hulls fly
-/// through it, and it dies at the centre line so nobody can shoot the far
-/// half. Hitting the ball is a touch by the owner, same as a hull would be.
+/// through it, and it flies the whole court. The gate is on the trigger,
+/// not the bolt: a ship can only fire from its own half. Hitting the ball
+/// is a touch by the owner, same as a hull would be.
 public struct BoltState: Codable, Equatable, Sendable {
     public static let radius = 0.012
 
@@ -246,7 +247,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var allowedShipTouches: Int
     /// Bolt muzzle speed, arena units per second.
     public var boltSpeed: Double
-    /// Seconds a bolt flies before it fizzles.
+    /// Seconds a bolt flies before it fizzles. Long enough at `boltSpeed`
+    /// to cross the whole court from a ship's own back wall.
     public var boltLifetime: Double
     /// Seconds between shots.
     public var boltCooldown: Double
@@ -258,8 +260,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// How far behind the ship the exhaust still reaches the ball.
     public var exhaustWashRange: Double
     /// Warm-up bay: nothing is a fault. Touches and bounces are tallied but
-    /// never award a point, a goal simply re-serves, and bolts fly the whole
-    /// court. There is no opponent, so there is nothing to defend.
+    /// never award a point, a goal simply re-serves, and the trigger works
+    /// anywhere. There is no opponent, so there is nothing to defend.
     public var sandbox: Bool
 
     public init(
@@ -279,7 +281,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         allowedFloorBounces: Int = 1,
         allowedShipTouches: Int = 3,
         boltSpeed: Double = 2.6,
-        boltLifetime: Double = 0.55,
+        boltLifetime: Double = 0.8,
         boltCooldown: Double = 0.45,
         boltPunch: Double = 1.15,
         exhaustWashStrength: Double = 0.65,
@@ -395,6 +397,15 @@ public struct SimulationEngine: Sendable {
         rules.updateAllowedShipTouches(configuration.allowedShipTouches)
     }
 
+    /// How many sets take the match: 1 for a single game, 2 for best of
+    /// three, 3 for best of five. Part of the match state rather than the
+    /// configuration, so an engine rebuilt from a host's snapshot keeps the
+    /// host's format without being told again.
+    public mutating func setMatchFormat(setsToWin: Int) {
+        rules.updateSetsToWin(setsToWin)
+        state.match = rules.state
+    }
+
     /// Where a seat starts a rally. Leads sit mid-court, wings sit behind
     /// them nearer the wall, so neither is under the ball when it drops.
     public static func spawnPosition(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
@@ -482,7 +493,11 @@ public struct SimulationEngine: Sendable {
                 effects: &collisionEffects
             )
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
-            if input.fire, ship.fireCooldownTicks == 0, state.match.phase == .playing {
+            // The trigger only works from a ship's own half: over the line
+            // the nose is live for ramming but the bolts stay holstered.
+            let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
+            let onOwnHalf = configuration.sandbox || ship.position.x * homeSign >= 0
+            if input.fire, onOwnHalf, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, owner: seat.team)
             }
             state.ships[seat] = ship
@@ -689,13 +704,11 @@ public struct SimulationEngine: Sendable {
                 continue
             }
 
-            let homeSign = (state.ships[team: bolt.owner]?.homeSide ?? bolt.owner) == .cyan ? -1.0 : 1.0
-            let crossedCentre = !configuration.sandbox && bolt.position.x * homeSign < 0
             let outside = abs(bolt.position.x) > arena.halfWidth
                 || bolt.position.y < arena.floorY
                 || bolt.position.y > arena.ceilingY
             let struckHump = arena.humpContact(position: bolt.position, radius: BoltState.radius) != nil
-            if bolt.ticksRemaining == 0 || crossedCentre || outside || struckHump { continue }
+            if bolt.ticksRemaining == 0 || outside || struckHump { continue }
             survivors.append(bolt)
         }
         state.bolts = survivors

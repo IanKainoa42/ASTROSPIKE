@@ -125,6 +125,6 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 7)
+        #expect(WireEnvelope.currentVersion == 8)
     }
 }

@@ -321,7 +321,7 @@ public struct AIController: InputSource, Sendable {
         return seat.isWing ? theirs < mine + 0.06 : theirs + 0.10 < mine
     }
 
-    /// Shoot when the ball is out in front, on this half, and the nose is
+    /// Shoot when the ball is out in front, from this half, and the nose is
     /// already pointing roughly the way the shot should go -- so a bolt sends
     /// it over rather than into the bot's own face. Too close and the hull
     /// will hit it anyway; too far and the bolt fizzles first.
@@ -336,7 +336,8 @@ public struct AIController: InputSource, Sendable {
         let distance = simd_length(toBall)
         let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
         guard distance > 0.16, distance < reach else { return false }
-        guard state.ball.position.x * homeSign > 0.02 else { return false }
+        // The trigger only works from home ground; the ball may be anywhere.
+        guard ship.position.x * homeSign > 0.02 else { return false }
         guard simd_dot(toBall / distance, nose) > 0.985 else { return false }
         return simd_dot(nose, plannedShot) > alignment
     }

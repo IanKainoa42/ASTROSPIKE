@@ -10,6 +10,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable {
     public var ballDropSpeed: Double
     public var allowedBouncesPerHit: Int
     public var allowedTouchesPerSide: Int
+    /// 1 = single game, 2 = best of three, 3 = best of five.
+    public var setsToWin: Int
 
     public static let defaults = FlightTuningSnapshot(
         gravityMagnitude: 2,
@@ -19,7 +21,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable {
         ballDropHeight: 0.06,
         ballDropSpeed: 0.18,
         allowedBouncesPerHit: 1,
-        allowedTouchesPerSide: 3
+        allowedTouchesPerSide: 3,
+        setsToWin: 1
     )
 }
 
@@ -52,6 +55,9 @@ public final class FlightTuningStore {
     public var allowedTouchesPerSide: Int {
         didSet { defaults.set(allowedTouchesPerSide, forKey: Keys.allowedTouchesPerSide) }
     }
+    public var setsToWin: Int {
+        didSet { defaults.set(setsToWin, forKey: Keys.setsToWin) }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -74,6 +80,7 @@ public final class FlightTuningStore {
             fallback: baked.allowedTouchesPerSide,
             range: 1 ... 6
         )
+        setsToWin = Self.load(defaults, key: Keys.setsToWin, fallback: baked.setsToWin, range: 1 ... 3)
     }
 
     public var snapshot: FlightTuningSnapshot {
@@ -85,7 +92,8 @@ public final class FlightTuningStore {
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
             allowedBouncesPerHit: allowedBouncesPerHit,
-            allowedTouchesPerSide: allowedTouchesPerSide
+            allowedTouchesPerSide: allowedTouchesPerSide,
+            setsToWin: setsToWin
         )
     }
 
@@ -113,6 +121,7 @@ public final class FlightTuningStore {
         ballDropSpeed = baked.ballDropSpeed
         allowedBouncesPerHit = baked.allowedBouncesPerHit
         allowedTouchesPerSide = baked.allowedTouchesPerSide
+        setsToWin = baked.setsToWin
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
 
@@ -149,6 +158,7 @@ public final class FlightTuningStore {
         static let ballDropSpeed = "tuning.ballDropSpeed"
         static let allowedBouncesPerHit = "tuning.allowedBouncesPerHit"
         static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
+        static let setsToWin = "tuning.setsToWin"
         static let all = [
             gravityMagnitude,
             thrustAcceleration,
@@ -158,6 +168,7 @@ public final class FlightTuningStore {
             ballDropSpeed,
             allowedBouncesPerHit,
             allowedTouchesPerSide,
+            setsToWin,
         ]
     }
 }

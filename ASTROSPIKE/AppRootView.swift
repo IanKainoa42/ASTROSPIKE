@@ -345,6 +345,7 @@ private struct GameView: View {
             online: online,
             lobby: lobby,
             configuration: configuration,
+            setsToWin: tuning.setsToWin,
             localHull: profile.selectedHull,
             rivalHull: profile.rivalHull()
         ))
@@ -611,7 +612,8 @@ private struct MatchHUD: View {
             )
             Spacer()
             VStack(spacing: 2) {
-                Text("FIRST TO 7 • WIN BY 2").font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.white.opacity(0.55))
+                Text(formatLabel).font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.white.opacity(0.55))
+                if state.match.setsToWin > 1 { setPips }
                 if let online {
                     Label(online.status.label, systemImage: signalIcon)
                         .font(.caption2.weight(.bold))
@@ -631,6 +633,32 @@ private struct MatchHUD: View {
             .accessibilityLabel(actionLabel).accessibilityIdentifier("match-action-button")
         }
         .padding(.horizontal, 24).padding(.top, 10)
+    }
+
+    private var formatLabel: String {
+        switch state.match.setsToWin {
+        case 2: "BEST OF 3 • SETS TO 7"
+        case 3: "BEST OF 5 • SETS TO 7"
+        default: "FIRST TO 7 • WIN BY 2"
+        }
+    }
+
+    /// One pip per set a side needs, filled as they take them, cyan on the
+    /// left and orange on the right.
+    private var setPips: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 3) {
+                ForEach(0..<state.match.setsToWin, id: \.self) { index in
+                    Circle().fill(index < state.match.sets.cyan ? Color.cyan : .white.opacity(0.18)).frame(width: 6, height: 6)
+                }
+            }
+            HStack(spacing: 3) {
+                ForEach(0..<state.match.setsToWin, id: \.self) { index in
+                    Circle().fill(index < state.match.sets.orange ? Color.orange : .white.opacity(0.18)).frame(width: 6, height: 6)
+                }
+            }
+        }
+        .accessibilityLabel("Sets \(state.match.sets.cyan) to \(state.match.sets.orange)")
     }
 
     private func score(team: Team, value: Int, bounces: Int, touches: Int) -> some View {
@@ -723,7 +751,7 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
-                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and counts as one of your touches. Bolts fizzle at the centre line and never hurt a ship.")
+                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and counts as one of your touches. Bolts fly the whole court but you can only fire from your own half, and they never hurt a ship.")
                     TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip, one bounce a touch.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
@@ -774,7 +802,13 @@ private struct SettingsView: View {
                         value: $tuning.allowedBouncesPerHit,
                         in: 1 ... 5
                     )
-                    Text("Applies to solo matches. Online matches use three touches and three bounces per hit for both players.")
+                    Picker("Match length", selection: $tuning.setsToWin) {
+                        Text("Single game").tag(1)
+                        Text("Best of 3").tag(2)
+                        Text("Best of 5").tag(3)
+                    }
+                    .accessibilityIdentifier("match-length")
+                    Text("Touches and bounces apply to solo matches; online uses three of each. Match length applies to solo matches and to any online match you host.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -903,14 +937,21 @@ private struct ResultsOverlay: View {
         VStack(spacing: 14) {
             Text(didLocalPlayerWin ? "YOU WIN" : "YOU LOSE")
                 .font(.caption.monospaced().bold()).tracking(3)
-            Text("\(state.match.score.cyan)  —  \(state.match.score.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
+            if state.match.setsToWin > 1 {
+                Text("\(state.match.sets.cyan)  —  \(state.match.sets.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
+                Text("SETS · LAST SET \(state.match.score.cyan)–\(state.match.score.orange)")
+                    .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
+            } else {
+                Text("\(state.match.score.cyan)  —  \(state.match.score.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
+            }
             Button("Return to Hangar", action: exit).buttonStyle(.borderedProminent).tint(.cyan)
         }
         .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26)).accessibilityIdentifier("results-screen")
     }
 
     private var didLocalPlayerWin: Bool {
-        state.match.score[localTeam] > state.match.score[localTeam.opponent]
+        if let winner = state.match.winner { return winner == localTeam }
+        return state.match.score[localTeam] > state.match.score[localTeam.opponent]
     }
 }
 

@@ -501,6 +501,13 @@ final class OnlineMatchCoordinator: NSObject,
     private func tryStartAsHost() {
         guard let match, lifecycle.phase == .configuring else { return }
         guard match.expectedPlayerCount <= declinedInvites else { return }
+        // A decline can zero the expected count before the pilot who accepted
+        // has actually connected. Seating the table then puts a bot in their
+        // chair and leaves them knocking on a match that already started.
+        guard !match.players.isEmpty else {
+            note("WAITING FOR A PILOT TO CONNECT BEFORE SEATING")
+            return
+        }
         let localID = GKLocalPlayer.local.gamePlayerID
         let peerIDs = match.players.map(\.gamePlayerID).sorted()
         let hostID = isInviter ? localID : ([localID] + peerIDs).min() ?? localID
@@ -567,7 +574,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     /// Every peer this match still expects has said `.ready`.
     private var allPeersReady: Bool {
-        guard let match, lifecycle.phase != .configuring else { return false }
+        guard let match, lifecycle.phase != .configuring, !match.players.isEmpty else { return false }
         return match.expectedPlayerCount <= declinedInvites
             && match.players.allSatisfy { readyPeers.contains($0.gamePlayerID) }
     }
@@ -730,6 +737,9 @@ final class OnlineMatchCoordinator: NSObject,
                 tryStartAsHost()
                 return
             }
+            if isAuthoritative, seating[playerID] == nil {
+                seatLateArrival(playerID, displayName: displayName)
+            }
             let wasReconnecting: Bool
             if case .reconnecting = status { wasReconnecting = true } else { wasReconnecting = false }
             reconnectTask?.cancel()
@@ -753,6 +763,21 @@ final class OnlineMatchCoordinator: NSObject,
         @unknown default:
             break
         }
+    }
+
+    /// A pilot who connects after the host has kicked off gets the first
+    /// empty chair -- the one a bot has been keeping warm -- and a fresh
+    /// seating plan so their own board can start.
+    private func seatLateArrival(_ playerID: String, displayName: String) {
+        let order: [Seat] = [.cyan, .orange, .cyanWing, .orangeWing]
+        guard let seat = order.first(where: { !filledSeats.contains($0) }) else {
+            note("NO CHAIR LEFT FOR \(displayName)")
+            return
+        }
+        seating[playerID] = seat
+        note("LATE ARRIVAL \(displayName) SEATED AS \(seat.label)")
+        sendHandshake()
+        if let lastAuthoritativeState { sendFullResync(lastAuthoritativeState) }
     }
 
     nonisolated func match(_ match: GKMatch, shouldReinviteDisconnectedPlayer player: GKPlayer) -> Bool {

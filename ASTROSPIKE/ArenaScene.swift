@@ -480,7 +480,7 @@ final class ArenaScene: SKScene {
                 }
             case let .collisionEffect(position, _):
                 sparks(at: point(position.x, position.y), color: .white)
-            case .rallyReset:
+            case .rallyReset, .setEnded:
                 ballTrail.removeAll()
                 wakeAnchors.removeAll()
             case .matchEnded:

@@ -21,7 +21,7 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 6: PlayerInput gained fire, ShipState gained fireCooldownTicks,
     //    WorldState gained bolts and nextBoltID.
     // 7: Ships, inputs and profiles keyed by Seat; seating payload for doubles.
-    public static let currentVersion: UInt16 = 7
+    public static let currentVersion: UInt16 = 8
 
     public var version: UInt16
     public var sequence: UInt64

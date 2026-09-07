@@ -62,6 +62,7 @@ final class GameSession {
         online: OnlineMatchCoordinator? = nil,
         lobby: LobbyService? = nil,
         configuration: SimulationConfiguration = .init(),
+        setsToWin: Int = 1,
         localHull: Hull = .lancet,
         rivalHull: Hull = .anvil
     ) {
@@ -94,6 +95,11 @@ final class GameSession {
             }
         }
         initialEngine.configureRoster(roster)
+        // Whoever runs the rules picks the length. A guest's board takes the
+        // host's format from the first snapshot instead.
+        if mode.isOffline || online?.isAuthoritative == true {
+            initialEngine.setMatchFormat(setsToWin: setsToWin)
+        }
         engine = initialEngine
         state = initialEngine.state
         for (seat, difficulty) in botSeats {
@@ -216,6 +222,13 @@ final class GameSession {
             self.demoAI = demoAI
         }
         var inputs: [Seat: PlayerInput] = [localSeat: localInput]
+        // A pilot who connected after kick-off takes over the bot's chair the
+        // moment the host seats them.
+        if mode == .online, let online, online.isAuthoritative {
+            for seat in pilots.keys where online.filledSeats.contains(seat) {
+                pilots[seat] = nil
+            }
+        }
         for seat in pilots.keys.sorted() {
             guard var pilot = pilots[seat] else { continue }
             inputs[seat] = pilot.input(for: engine.state, seat: seat, tick: tick)
@@ -264,6 +277,10 @@ final class GameSession {
             if case let .point(team, _) = point { FeedbackCenter.shared.point(team: team) }
         } else if presentsLocalEvents, events.contains(.rallyReset) {
             lastPointText = nil
+        }
+        if presentsLocalEvents,
+           let set = events.first(where: { if case .setEnded = $0 { true } else { false } }) {
+            lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces)
         }
         for event in events where presentsLocalEvents {
             if case .collisionEffect = event { FeedbackCenter.shared.impact() }
@@ -319,6 +336,10 @@ final class GameSession {
                 FeedbackCenter.shared.point(team: team)
             case .rallyReset:
                 self.lastPointText = nil
+            case .setEnded:
+                self.lastPointText = event.label(
+                    bounceAllowance: self.engine.configuration.allowedFloorBounces
+                )
             case .collisionEffect:
                 FeedbackCenter.shared.impact()
             case .destruction:
@@ -382,6 +403,9 @@ private final class FrameDriver: NSObject {
 
 private extension SimulationEvent {
     func label(bounceAllowance: Int) -> String {
+        if case let .setEnded(winner, sets) = self {
+            return "\(winner == .cyan ? "CYAN" : "ORANGE") TAKES THE SET · \(sets.cyan)–\(sets.orange)"
+        }
         guard case let .point(team, reason) = self else { return "" }
         let scorer = team == .cyan ? "CYAN" : "ORANGE"
         switch reason {

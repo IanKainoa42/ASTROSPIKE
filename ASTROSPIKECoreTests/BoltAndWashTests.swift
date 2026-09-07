@@ -52,19 +52,43 @@ struct BoltAndWashTests {
         #expect(engine.state.bolts.isEmpty, "a spent bolt is removed")
     }
 
-    @Test("A bolt fizzles at the centre line instead of crossing it")
-    func boltDiesAtCentreLine() {
+    @Test("A bolt crosses the centre line and can hit a ball on the far half")
+    func boltCrossesCentreLine() {
         var engine = playing()
-        engine.state.ball.position = .init(0.6, 0.4)
+        engine.state.ball.position = .init(0.4, 0)
+        engine.state.ball.velocity = .zero
         engine.state.ships[.cyan]!.position = .init(-0.1, 0)
         engine.state.ships[.cyan]!.angle = 0 // nose toward +x
         engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
         #expect(engine.state.bolts.count == 1)
-        for tick in 1 ..< 10 {
+        var hit = false
+        for tick in 1 ..< 60 {
             engine.step(inputs: [.cyan: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false, fire: false)])
+            if engine.state.match.shipTouches[.cyan] == 1 { hit = true; break }
         }
+        #expect(hit, "the bolt fizzled before the far half")
+        #expect(engine.state.ball.velocity.x > 0.9)
+    }
+
+    @Test("A bolt from the back wall reaches the far wall before it fizzles")
+    func boltReachesTheFarWall() {
+        let configuration = SimulationConfiguration()
+        let arena = ArenaGeometry()
+        #expect(configuration.boltSpeed * configuration.boltLifetime >= 2 * arena.halfWidth)
+    }
+
+    @Test("The trigger is dead while the ship is over the centre line")
+    func noFiringFromTheOpponentsHalf() {
+        var engine = playing()
+        engine.state.ball.position = .init(0.8, 0.4)
+        engine.state.ships[.cyan]!.position = .init(0.2, 0)
+        engine.state.ships[.cyan]!.angle = 0
+        engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
         #expect(engine.state.bolts.isEmpty)
-        #expect(engine.state.match.shipTouches[.cyan] == 0)
+        #expect(engine.state.nextBoltID == 0)
+        engine.state.ships[.cyan]!.position = .init(-0.2, 0)
+        engine.step(inputs: [.cyan: PlayerInput(tick: 1, torque: 0, thrust: false, fire: true)])
+        #expect(engine.state.bolts.count == 1)
     }
 
     @Test("Exhaust shoves a ball sitting behind a thrusting ship, and it is not a touch")

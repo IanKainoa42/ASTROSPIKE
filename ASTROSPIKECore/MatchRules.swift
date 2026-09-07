@@ -59,23 +59,39 @@ public struct SideCounts: Codable, Equatable, Sendable {
 public typealias FloorContactCounts = SideCounts
 
 public struct MatchRuleState: Codable, Equatable, Sendable {
+    /// Points in the set being played.
     public var score: Score
     public var floorContacts: SideCounts
     /// Ship touches taken during the current possession. Reset when the ball
     /// crosses the net, so the cap is per trip rather than per rally.
     public var shipTouches: SideCounts
     public var phase: MatchPhase
+    /// Sets already won. A single-game match never gets past 1–0.
+    public var sets: Score
+    /// Sets a side needs for the match: 1 is a single game, 2 is best of
+    /// three, 3 is best of five. Lives in the state so a guest's copy of the
+    /// board carries the format the host is playing to.
+    public var setsToWin: Int
+    /// Who took the match, once it is finished. Set by the last set point or
+    /// by a forfeit, so the result screen never has to infer it from points.
+    public var winner: Team?
 
     public init(
         score: Score = Score(),
         floorContacts: SideCounts = SideCounts(),
         shipTouches: SideCounts = SideCounts(),
-        phase: MatchPhase = .playing
+        phase: MatchPhase = .playing,
+        sets: Score = Score(),
+        setsToWin: Int = 1,
+        winner: Team? = nil
     ) {
         self.score = score
         self.floorContacts = floorContacts
         self.shipTouches = shipTouches
         self.phase = phase
+        self.sets = sets
+        self.setsToWin = min(3, max(1, setsToWin))
+        self.winner = winner
     }
 }
 
@@ -92,6 +108,9 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
     case destruction(team: Team, reason: PointReason)
     case collisionEffect(position: SIMD2<Double>, intensity: Double)
     case rallyReset
+    /// A set went to `winner` and the next one starts from love; `sets` is
+    /// the tally after it. Never sent for the set that ends the match.
+    case setEnded(winner: Team, sets: Score)
     case matchEnded(winner: Team)
 }
 
@@ -112,6 +131,11 @@ public struct MatchRules: Sendable {
 
     public mutating func updateAllowedFloorBounces(_ value: Int) {
         allowedFloorBounces = min(5, max(1, value))
+    }
+
+    /// 1 = single game, 2 = best of three, 3 = best of five.
+    public mutating func updateSetsToWin(_ value: Int) {
+        state.setsToWin = min(3, max(1, value))
     }
 
     public mutating func updateAllowedShipTouches(_ value: Int) {
@@ -138,6 +162,7 @@ public struct MatchRules: Sendable {
         state.floorContacts = SideCounts()
         state.shipTouches = SideCounts()
         state.phase = .finished
+        state.winner = winner
         return [
             .point(scoringTeam: winner, reason: .forfeit),
             .matchEnded(winner: winner),
@@ -201,16 +226,25 @@ public struct MatchRules: Sendable {
         state.floorContacts = SideCounts()
         state.shipTouches = SideCounts()
         var events: [SimulationEvent] = [.point(scoringTeam: team, reason: reason)]
-        if hasWon(team) {
-            state.phase = .finished
-            events.append(.matchEnded(winner: team))
+        if hasWonSet(team) {
+            state.sets[team] += 1
+            if state.sets[team] >= state.setsToWin {
+                state.phase = .finished
+                state.winner = team
+                events.append(.matchEnded(winner: team))
+            } else {
+                // Next set from love, same sides, straight into a serve.
+                events.append(.setEnded(winner: team, sets: state.sets))
+                state.score = Score()
+                state.phase = .serve
+            }
         } else {
             state.phase = .serve
         }
         return events
     }
 
-    private func hasWon(_ team: Team) -> Bool {
+    private func hasWonSet(_ team: Team) -> Bool {
         let points = state.score[team]
         let opponentPoints = state.score[team.opponent]
         return points >= 11 || (points >= 7 && points - opponentPoints >= 2)
