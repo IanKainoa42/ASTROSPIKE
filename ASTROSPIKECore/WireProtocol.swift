@@ -8,9 +8,10 @@ public enum WirePayload: Codable, Equatable, Sendable {
     case ready
     /// Which hull the sender flies, so the peers can draw it. Cosmetic only.
     case profile(seat: Seat, hull: Hull)
-    /// The host's seating plan, Game Center player ID to seat. Guests take
-    /// their seat from this rather than negotiating.
-    case seating([String: Seat])
+    /// The host's seating plan, Game Center player ID to seat, and the format
+    /// the host is playing to. Guests take both from this rather than
+    /// negotiating or reading their own slider.
+    case seating(plan: [String: Seat], setsToWin: Int)
     case ping(nanoseconds: UInt64)
     case resync(WorldState)
 }
@@ -24,7 +25,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 9: Host election is by role (inviter hosts, invitee never). A build 25
     //    invitee with a lower player ID seats itself as host too, so the two
     //    builds must refuse each other instead of silently double-hosting.
-    public static let currentVersion: UInt16 = 9
+    // 10: seating carries setsToWin; a dropped pilot's chair is held for two
+    //     minutes and a surviving guest takes over hosting, so a build 27
+    //     peer would forfeit a match this build is still holding open.
+    public static let currentVersion: UInt16 = 10
 
     public var version: UInt16
     public var sequence: UInt64

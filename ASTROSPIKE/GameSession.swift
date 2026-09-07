@@ -95,10 +95,13 @@ final class GameSession {
             }
         }
         initialEngine.configureRoster(roster)
-        // Whoever runs the rules picks the length. A guest's board takes the
-        // host's format from the first snapshot instead.
+        // Whoever runs the rules picks the length. A guest's board plays to
+        // the host's format, which arrived with the seating plan, never to
+        // its own slider.
         if mode.isOffline || online?.isAuthoritative == true {
             initialEngine.setMatchFormat(setsToWin: setsToWin)
+        } else if let online {
+            initialEngine.setMatchFormat(setsToWin: online.hostSetsToWin)
         }
         engine = initialEngine
         state = initialEngine.state
@@ -123,11 +126,16 @@ final class GameSession {
             }
             scene.setHull(hull, for: seat)
         }
-        installOnlineCallbacks()
     }
 
     func start() {
         guard frameDriver == nil else { return }
+        // Hooked here, not in init. SwiftUI builds a throwaway GameSession
+        // every time the arena's parent re-renders (each status change does
+        // it), and a throwaway that hooks the coordinator leaves every
+        // callback pointing at an object that is already gone: the guest
+        // then never sees a snapshot and plays its own single game.
+        if mode == .online { installOnlineCallbacks() }
         let driver = FrameDriver { [weak self] timestamp in
             self?.frame(timestamp: timestamp)
         }
@@ -313,12 +321,15 @@ final class GameSession {
                     authoritative: hostShip
                 )
             }
-            self.engine = SimulationEngine(state: resolved)
+            // Keep the online physics: a rebuilt engine defaults to the solo
+            // tuning, and the guest's own ship then flies a different game
+            // between snapshots.
+            self.engine = SimulationEngine(state: resolved, configuration: self.engine.configuration)
             self.state = resolved
         }
         online.onResync = { [weak self] authoritative in
             guard let self else { return }
-            self.engine = SimulationEngine(state: authoritative)
+            self.engine = SimulationEngine(state: authoritative, configuration: self.engine.configuration)
             self.state = authoritative
             self.isPaused = false
             self.countdown = 3

@@ -26,7 +26,9 @@ struct WarmupTests {
     @Test("Floor bounces reset the keep-up streak but never award a point")
     func floorIsNotAFault() {
         var engine = bay()
-        engine.state.ball.position = .init(-0.5, -0.2)
+        // Over open floor, clear of the idle ship's spawn column: a drop onto
+        // the ship counts as a touch, which resets the bounce tally.
+        engine.state.ball.position = .init(-0.25, -0.2)
         engine.state.ball.velocity = .zero
         engine.state.match.shipTouches.cyan = 4
         for tick in 0 ..< 900 {

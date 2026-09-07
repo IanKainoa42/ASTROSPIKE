@@ -118,13 +118,16 @@ struct DoublesTests {
         let codec = WireCodec()
         let input = WireEnvelope(sequence: 1, payload: .input(seat: .orangeWing, value: PlayerInput(tick: 5, torque: 0.5, thrust: true, fire: true)))
         let profile = WireEnvelope(sequence: 2, payload: .profile(seat: .cyanWing, hull: .manta))
-        let seating = WireEnvelope(sequence: 3, payload: .seating(["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing]))
+        let seating = WireEnvelope(
+            sequence: 3,
+            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], setsToWin: 3)
+        )
         var snapshotEngine = doublesEngine()
         snapshotEngine.step(inputs: [:])
         let snapshot = WireEnvelope(sequence: 4, payload: .snapshot(snapshotEngine.state))
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 9)
+        #expect(WireEnvelope.currentVersion == 10)
     }
 }

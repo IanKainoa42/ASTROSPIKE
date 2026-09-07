@@ -23,6 +23,14 @@ struct OnlineSessionTests {
         #expect(session.phase == .forfeited(winner: .orange))
     }
 
+    @Test("A longer seat hold moves the forfeit deadline with it")
+    func seatHoldWindowIsConfigurable() {
+        var session = OnlineSessionStateMachine(localTeam: .cyan, ticksPerSecond: 120, reconnectWindowSeconds: 120)
+        #expect(session.remoteDisconnected(at: 0) == [.pause])
+        #expect(session.advance(to: 14_399).isEmpty)
+        #expect(session.advance(to: 14_400) == [.forfeit(winner: .cyan)])
+    }
+
     @Test("A terminal match ignores delayed reconnect callbacks")
     func terminalMatchCannotReconnect() {
         var lifecycle = OnlineMatchLifecycle()
@@ -113,5 +121,33 @@ struct OnlineSeatingTests {
         #expect(everyone)
         #expect(!nobodySeated)
         #expect(!onlyLocal)
+    }
+
+    @Test("The lowest surviving guest takes over hosting, and only when the host dropped")
+    func guestTakesOverWhenHostDrops() {
+        let hostDropped = OnlineSeating.localTakesOverHosting(
+            localID: "b", hostID: "a", droppedID: "a", remainingPeerIDs: ["a"]
+        )
+        let wingDropped = OnlineSeating.localTakesOverHosting(
+            localID: "b", hostID: "a", droppedID: "c", remainingPeerIDs: ["a", "c"]
+        )
+        let hostStays = OnlineSeating.localTakesOverHosting(
+            localID: "a", hostID: "a", droppedID: "b", remainingPeerIDs: ["b"]
+        )
+        let lowerGuestRemains = OnlineSeating.localTakesOverHosting(
+            localID: "c", hostID: "a", droppedID: "a", remainingPeerIDs: ["a", "b"]
+        )
+        let lowestGuest = OnlineSeating.localTakesOverHosting(
+            localID: "b", hostID: "a", droppedID: "a", remainingPeerIDs: ["a", "c"]
+        )
+        let noHostKnown = OnlineSeating.localTakesOverHosting(
+            localID: "b", hostID: nil, droppedID: "a", remainingPeerIDs: ["a"]
+        )
+        #expect(hostDropped)
+        #expect(!wingDropped)
+        #expect(!hostStays)
+        #expect(!lowerGuestRemains)
+        #expect(lowestGuest)
+        #expect(!noHostKnown)
     }
 }

@@ -314,42 +314,20 @@ public struct SimulationConfiguration: Equatable, Sendable {
 
     /// The online feel, with the halfway treacle switched off so a lone pilot
     /// can roam the whole court while the invite is out.
-    public static let warmup = SimulationConfiguration(
-        stepDuration: 1.0 / 120.0,
-        gravity: SIMD2(0, -1.10),
-        initialThrustAcceleration: 2.50,
-        maximumThrustAcceleration: 2.50,
-        thrustRampRate: 0,
-        torqueAcceleration: 6.00,
-        ballGravityMultiplier: 0.54,
-        ballDropHeight: 0.10,
-        ballDropSpeed: 0.06,
-        serveDelay: 0.9,
-        minimumBallSeparationSpeed: 0.45,
-        crossingPushBack: 0,
-        crossingDrag: 0,
-        allowedFloorBounces: 3,
-        allowedShipTouches: 3,
-        sandbox: true
-    )
+    /// The warm-up bay: the shared baseline with nothing counted as a fault.
+    public static let warmup: SimulationConfiguration = {
+        var configuration = online
+        configuration.serveDelay = 0.9
+        configuration.crossingPushBack = 0
+        configuration.crossingDrag = 0
+        configuration.sandbox = true
+        return configuration
+    }()
 
-    public static let online = SimulationConfiguration(
-        stepDuration: 1.0 / 120.0,
-        gravity: SIMD2(0, -1.10),
-        initialThrustAcceleration: 2.50,
-        maximumThrustAcceleration: 2.50,
-        thrustRampRate: 0,
-        torqueAcceleration: 6.00,
-        ballGravityMultiplier: 0.54,
-        ballDropHeight: 0.10,
-        ballDropSpeed: 0.06,
-        serveDelay: 1.35,
-        minimumBallSeparationSpeed: 0.45,
-        crossingPushBack: 30,
-        crossingDrag: 5.0,
-        allowedFloorBounces: 3,
-        allowedShipTouches: 3
-    )
+    /// Every board in a Game Center match runs this and a guest never applies
+    /// its own sliders. Built from the tuning defaults, so the quick game and
+    /// the online game cannot drift apart.
+    public static let online = FlightTuningSnapshot.defaults.configuration
 }
 
 public struct SimulationEngine: Sendable {

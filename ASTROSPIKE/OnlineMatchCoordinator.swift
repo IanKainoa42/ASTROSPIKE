@@ -26,7 +26,8 @@ final class OnlineMatchCoordinator: NSObject,
             case let .ready(name): "ONLINE • \(name)"
             case .matching: "FINDING PILOT…"
             case .connected: "LINK STABLE"
-            case let .reconnecting(seconds): "RECONNECTING \(seconds)"
+            case let .reconnecting(seconds):
+                "LINK LOST · SEAT HELD \(seconds / 60):\(String(format: "%02d", seconds % 60))"
             case let .failed(message): message.uppercased()
             }
         }
@@ -185,7 +186,16 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     var onSnapshot: ((WorldState) -> Void)?
-    var onResync: ((WorldState) -> Void)?
+    var onResync: ((WorldState) -> Void)? {
+        didSet {
+            // A resync that beat the arena onto the screen is delivered the
+            // moment the arena hooks in, instead of being thrown away.
+            if let onResync, let pendingResync {
+                self.pendingResync = nil
+                onResync(pendingResync)
+            }
+        }
+    }
     var onEvent: ((SimulationEvent) -> Void)?
     var onForfeit: ((Team) -> Void)?
     var onConnectionPaused: ((Bool) -> Void)?
@@ -218,6 +228,25 @@ final class OnlineMatchCoordinator: NSObject,
     private static let handshakeTimeoutSeconds = 20
     private static let connectTimeoutSeconds = 30
     private var lastAuthoritativeState: WorldState?
+    private var pendingResync: WorldState?
+    /// Game Center ID of whoever runs the rules. A guest that outlives the
+    /// host takes this over so the chair can be held.
+    private var hostID: String?
+    /// The format the host is playing to, from the seating plan. A guest
+    /// sets its board up from this rather than its own slider.
+    private(set) var hostSetsToWin = 1
+    /// The local slider: what this end plays to when it hosts.
+    var preferredSetsToWin = 1
+    /// Every GKPlayer seen at this table, so a pilot who dropped can be
+    /// invited back into the same match.
+    private var knownPlayers: [String: GKPlayer] = [:]
+    /// An invite arrived while our own link was being held: the arena is
+    /// still up, so it resumes instead of starting over.
+    private var resumingAfterDrop = false
+    /// How long a dropped pilot's chair stays theirs before the forfeit.
+    private static let seatHoldSeconds = 120
+    /// Seconds into the hold before Game Center is asked to call them back.
+    private static let reinviteDelaySeconds = 3
     private var pendingPing: UInt64?
     private let codec = WireCodec()
     private var isListenerRegistered = false
@@ -269,7 +298,14 @@ final class OnlineMatchCoordinator: NSObject,
             pendingMatchmakingIntent = nil
             return
         }
-        status = .ready(playerName: player.displayName)
+        // Game Center runs this handler again whenever the app comes back to
+        // the foreground, which is exactly when an invitee has just tapped
+        // the invite. Overwriting `.matching` here sends them home instead
+        // of into the bay.
+        switch status {
+        case .matching, .connected, .reconnecting: break
+        default: status = .ready(playerName: player.displayName)
+        }
         if let intent = pendingMatchmakingIntent {
             pendingMatchmakingIntent = nil
             switch intent {
@@ -482,6 +518,9 @@ final class OnlineMatchCoordinator: NSObject,
         // transport alive and still pointed at us.
         if let stale = self.match, stale !== match { disconnectTransport() }
         self.match = match
+        for player in match.players { knownPlayers[player.gamePlayerID] = player }
+        hostID = nil
+        hostSetsToWin = 1
         readyPeers = []
         seating = [:]
         mismatchedPeers = []
@@ -543,6 +582,8 @@ final class OnlineMatchCoordinator: NSObject,
             plan[id] = order[index]
         }
         seating = plan
+        hostID = localID
+        hostSetsToWin = preferredSetsToWin
         isAuthoritative = true
         startConfiguredMatch()
     }
@@ -553,12 +594,17 @@ final class OnlineMatchCoordinator: NSObject,
         handshakeTask?.cancel()
         localSeat = seat
         note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
-        session = OnlineSessionStateMachine(localTeam: seat.team, ticksPerSecond: 120)
+        session = OnlineSessionStateMachine(
+            localTeam: seat.team,
+            ticksPerSecond: 120,
+            reconnectWindowSeconds: UInt64(Self.seatHoldSeconds)
+        )
         lifecycle.beginMatch()
         snapshotGate.reset()
         eventGate.reset()
         isMatchReady = allPeersReady
         status = isMatchReady ? .connected : .matching
+        resumeIfBackAtTable()
         // Answer any `.ready` that arrived while we were still configuring:
         // the handshake loop below stops at once when the peer is already heard.
         sendHandshake()
@@ -580,6 +626,12 @@ final class OnlineMatchCoordinator: NSObject,
                 guard let self, self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
                 if self.allPeersReady { return }
                 if elapsed >= Self.handshakeTimeoutSeconds {
+                    if case .reconnecting = self.status {
+                        // A pilot who came back but never seated. The hold
+                        // keeps counting and the forfeit lands on its own.
+                        self.note("HANDSHAKE TIMED OUT: RETURNING PILOT NEVER SENT READY")
+                        return
+                    }
                     self.note("HANDSHAKE TIMED OUT: PEER NEVER SENT READY")
                     self.status = .failed(message: "Pilot never answered · try again")
                     self.leaveMatch(preservingStatus: true)
@@ -613,7 +665,9 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func sendHandshake() {
-        if isAuthoritative, !seating.isEmpty { send(.seating(seating), mode: .reliable) }
+        if isAuthoritative, !seating.isEmpty {
+            send(.seating(plan: seating, setsToWin: hostSetsToWin), mode: .reliable)
+        }
         send(.ready, mode: .reliable)
         send(.profile(seat: localSeat ?? .cyan, hull: localHull), mode: .reliable)
     }
@@ -655,12 +709,19 @@ final class OnlineMatchCoordinator: NSObject,
                 inputBuffers[seat] = buffer
                 remoteInputs[seat] = value
             }
-        case let .seating(plan):
-            guard lifecycle.acceptsNetworkMessages else { return }
-            if lifecycle.phase == .configuring, plan[GKLocalPlayer.local.gamePlayerID] != nil {
+        case let .seating(plan, setsToWin):
+            guard lifecycle.acceptsNetworkMessages, plan[GKLocalPlayer.local.gamePlayerID] != nil else { return }
+            if lifecycle.phase == .configuring {
                 seating = plan
+                hostID = playerID
+                hostSetsToWin = setsToWin
                 isAuthoritative = false
                 startConfiguredMatch()
+            } else if !isAuthoritative {
+                // A guest that took over hosting reseated the table: remember
+                // who runs the rules now, so the next drop is judged right.
+                hostID = playerID
+                hostSetsToWin = setsToWin
             }
         case let .snapshot(state):
             if lifecycle.acceptsGameplayData, snapshotGate.accept(tick: state.tick) {
@@ -680,9 +741,13 @@ final class OnlineMatchCoordinator: NSObject,
                 note("HANDSHAKE: PILOT READY (\(readyPeers.count)/\(match?.players.count ?? 1))")
                 sendHandshake()
             }
-            if allPeersReady {
-                isMatchReady = true
-                status = .connected
+            guard allPeersReady else { return }
+            if case .reconnecting = status {
+                completeReconnect()
+            } else {
+                if !isMatchReady { isMatchReady = true }
+                if status != .connected { status = .connected }
+                resumeIfBackAtTable()
             }
         case let .profile(seat, hull):
             guard lifecycle.acceptsNetworkMessages, seat != localSeat else { return }
@@ -700,23 +765,27 @@ final class OnlineMatchCoordinator: NSObject,
         case let .resync(state):
             if lifecycle.acceptsGameplayData {
                 snapshotGate.reset(to: state.tick)
-                onResync?(state)
+                if let onResync { onResync(state) } else { pendingResync = state }
             }
         }
     }
 
+    /// A pilot dropped. Their chair is held for two minutes: the board
+    /// pauses, Game Center is asked to call them back, and only when the hold
+    /// runs out does the match go to the side that stayed.
     private func beginReconnectWindow() {
         guard lifecycle.beginReconnect(), var session else { return }
         _ = session.remoteDisconnected(at: 0)
         self.session = session
-        status = .reconnecting(seconds: 10)
+        status = .reconnecting(seconds: Self.seatHoldSeconds)
         onConnectionPaused?(true)
         reconnectTask?.cancel()
         reconnectTask = Task { @MainActor [weak self] in
-            for remaining in stride(from: 9, through: 0, by: -1) {
+            for remaining in stride(from: Self.seatHoldSeconds - 1, through: 0, by: -1) {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
                 if remaining == 0 {
+                    self.note("SEAT HOLD EXPIRED · FORFEIT")
                     self.status = .failed(message: "Opponent forfeited")
                     self.isMatchReady = false
                     self.lifecycle.finish()
@@ -725,6 +794,67 @@ final class OnlineMatchCoordinator: NSObject,
                     return
                 }
                 self.status = .reconnecting(seconds: remaining)
+                if remaining == Self.seatHoldSeconds - Self.reinviteDelaySeconds {
+                    self.reinviteDroppedPilots()
+                }
+            }
+        }
+    }
+
+    /// The returning pilot has seated and said `.ready`: the hold is over.
+    /// The host restarts the rally and resyncs everyone from its board.
+    private func completeReconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        handshakeTask?.cancel()
+        handshakeTask = nil
+        if var session {
+            _ = session.remoteReconnected(at: 0)
+            self.session = session
+        }
+        status = .connected
+        isMatchReady = true
+        note("SEAT RECLAIMED · RESUMING")
+        onReconnect?()
+    }
+
+    /// Our own link dropped and the peer called us back into a new match
+    /// with the arena still up. Once everyone is heard, the board unpauses
+    /// and waits for the host's resync.
+    private func resumeIfBackAtTable() {
+        guard resumingAfterDrop, isMatchReady else { return }
+        resumingAfterDrop = false
+        note("BACK AT THE TABLE")
+        onReconnect?()
+    }
+
+    /// Ask Game Center to invite whoever dropped back into this same match.
+    /// Runs on its own a few seconds into the hold, and again from the arena
+    /// button for as long as the chair is held.
+    func reinviteDroppedPilots() {
+        guard let match, case .reconnecting = status else { return }
+        var present = Set(match.players.map(\.gamePlayerID))
+        present.insert(GKLocalPlayer.local.gamePlayerID)
+        let missing = seating.keys.filter { !present.contains($0) }.compactMap { knownPlayers[$0] }
+        guard !missing.isEmpty else {
+            note("NOBODY TO RE-INVITE")
+            return
+        }
+        let request = GKMatchRequest()
+        request.minPlayers = 2
+        request.maxPlayers = 4
+        request.recipients = missing
+        request.inviteMessage = "Your seat is still open. Come back!"
+        note("RE-INVITING \(missing.map(\.displayName).joined(separator: ", "))")
+        GKMatchmaker.shared().addPlayers(to: match, matchRequest: request) { [weak self] error in
+            let detail = error.map { self?.describe($0) ?? "\($0)" }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let detail {
+                    self.note("RE-INVITE FAILED: \(detail)")
+                } else {
+                    self.note("RE-INVITE SENT")
+                }
             }
         }
     }
@@ -770,8 +900,10 @@ final class OnlineMatchCoordinator: NSObject,
     nonisolated func match(_ match: GKMatch, player: GKPlayer, didChange state: GKPlayerConnectionState) {
         let displayName = player.displayName
         let playerID = player.gamePlayerID
+        nonisolated(unsafe) let safePlayer = player
         Task { @MainActor [weak self] in
             guard let self, self.match === match else { return }
+            self.knownPlayers[playerID] = safePlayer
             self.handlePeerConnectionChange(displayName: displayName, playerID: playerID, state: state)
         }
     }
@@ -789,23 +921,34 @@ final class OnlineMatchCoordinator: NSObject,
             if isAuthoritative, seating[playerID] == nil {
                 seatLateArrival(playerID, displayName: displayName)
             }
-            let wasReconnecting: Bool
-            if case .reconnecting = status { wasReconnecting = true } else { wasReconnecting = false }
+            if case .reconnecting = status {
+                // Their chair was held. They come back on a fresh match
+                // object with no seat, so they need the plan again; their
+                // `.ready` is what closes the hold.
+                note("\(displayName) IS BACK · RESEATING")
+                sendHandshake()
+                beginHandshake()
+                return
+            }
             reconnectTask?.cancel()
             status = .connected
             isMatchReady = allPeersReady
-            if wasReconnecting {
-                if var session {
-                    _ = session.remoteReconnected(at: 0)
-                    self.session = session
-                }
-                onReconnect?()
-            } else {
-                onConnectionPaused?(false)
-            }
+            onConnectionPaused?(false)
         case .disconnected:
+            readyPeers.remove(playerID)
             // Whoever left loses it for their side, whichever side that is.
             pendingForfeitWinner = seating[playerID]?.team.opponent
+            let localID = GKLocalPlayer.local.gamePlayerID
+            let remaining = seating.keys.filter { $0 != localID }
+            if OnlineSeating.localTakesOverHosting(
+                localID: localID, hostID: hostID, droppedID: playerID, remainingPeerIDs: remaining
+            ) {
+                // The host walked out of a live match. Somebody has to run
+                // the rules while their chair is held, and it is us.
+                isAuthoritative = true
+                hostID = localID
+                note("HOST \(displayName) DROPPED · LOCAL NOW HOSTS")
+            }
             beginReconnectWindow()
         case .unknown:
             break
@@ -851,11 +994,21 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func handleInviteAccepted(senderDisplayName: String, invite: GKInvite) {
-        guard !lifecycle.acceptsGameplayData else {
+        let rejoining = lifecycle.phase == .reconnecting
+        guard !lifecycle.acceptsGameplayData || rejoining else {
             note("INVITE FROM \(senderDisplayName) IGNORED: MATCH IN PROGRESS")
             return
         }
-        note("INVITE ACCEPTED FROM \(senderDisplayName)")
+        if rejoining {
+            // Our own link died with the arena still up. The peer held our
+            // chair and is calling us back: take the new match and resume.
+            reconnectTask?.cancel()
+            reconnectTask = nil
+            resumingAfterDrop = true
+            note("REJOINING \(senderDisplayName) · SEAT WAS HELD")
+        } else {
+            note("INVITE ACCEPTED FROM \(senderDisplayName)")
+        }
         // Our own search or invite, if one is out, is over: the completion
         // it fires with `.cancelled` belongs to the old generation.
         matchmakingGeneration += 1
@@ -927,6 +1080,11 @@ final class OnlineMatchCoordinator: NSObject,
         pingMilliseconds = nil
         pendingPing = nil
         lastAuthoritativeState = nil
+        pendingResync = nil
+        hostID = nil
+        hostSetsToWin = 1
+        knownPlayers = [:]
+        resumingAfterDrop = false
         onSnapshot = nil
         onResync = nil
         onEvent = nil

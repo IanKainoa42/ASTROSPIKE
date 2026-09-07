@@ -33,10 +33,22 @@ struct FlightTuningTests {
             store.reset()
 
             #expect(store.snapshot == .defaults)
-            #expect(store.configuration == SimulationConfiguration())
+            #expect(store.configuration == SimulationConfiguration.online)
             #expect(defaults.object(forKey: "tuning.gravityMagnitude") == nil)
             #expect(defaults.object(forKey: "tuning.ballDropHeight") == nil)
             #expect(defaults.object(forKey: "tuning.allowedBouncesPerHit") == nil)
+        }
+    }
+
+    @Test("Untouched sliders fly the same physics as an online match")
+    func defaultsMatchOnlinePreset() throws {
+        try withIsolatedDefaults { defaults in
+            let store = FlightTuningStore(defaults: defaults)
+            #expect(store.configuration == SimulationConfiguration.online)
+            // Lighter than the 1.10 the online preset used to bake in on its own.
+            #expect(SimulationConfiguration.online.gravity.y > -1.10)
+            #expect(SimulationConfiguration.warmup.gravity == SimulationConfiguration.online.gravity)
+            #expect(SimulationConfiguration.warmup.sandbox)
         }
     }
 

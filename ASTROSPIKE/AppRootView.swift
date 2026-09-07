@@ -77,11 +77,13 @@ struct AppRootView: View {
         .preferredColorScheme(.dark)
         .task {
             online.localHull = profile.selectedHull
+            online.preferredSetsToWin = tuning.setsToWin
             lobby.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
                 online.authenticate()
             }
         }
+        .onChange(of: tuning.setsToWin) { _, sets in online.preferredSetsToWin = sets }
         .onChange(of: profile.selectedHull) { _, hull in
             online.localHull = hull
             lobby.localHull = hull
@@ -384,6 +386,19 @@ private struct GameView: View {
                         diagnostics: diagnosticsOverride ?? online.diagnosticsSnapshot
                     )
                     .padding(.top, 4)
+                    if case .reconnecting = online.status {
+                        Button {
+                            online.reinviteDroppedPilots()
+                        } label: {
+                            Label("RE-INVITE PILOT", systemImage: "arrow.uturn.backward.circle.fill")
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 6)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.yellow)
+                        .padding(.top, 6)
+                        .accessibilityIdentifier("reinvite-button")
+                    }
                 }
                 if mode != .warmup {
                     HStack {

@@ -13,17 +13,34 @@ public struct FlightTuningSnapshot: Equatable, Sendable {
     /// 1 = single game, 2 = best of three, 3 = best of five.
     public var setsToWin: Int
 
+    /// The one baseline every mode flies. The online preset and the warm-up
+    /// bay are built from these same numbers, so a quick game against a bot
+    /// and a duel over Game Center feel identical until a slider moves.
     public static let defaults = FlightTuningSnapshot(
-        gravityMagnitude: 2,
-        thrustAcceleration: 5.5,
-        rotationAcceleration: 3,
-        ballGravityMultiplier: 0.95,
-        ballDropHeight: 0.06,
-        ballDropSpeed: 0.18,
-        allowedBouncesPerHit: 1,
+        gravityMagnitude: 0.5,
+        thrustAcceleration: 1.75,
+        rotationAcceleration: 5,
+        ballGravityMultiplier: 0.2,
+        ballDropHeight: 0.10,
+        ballDropSpeed: 0.06,
+        allowedBouncesPerHit: 3,
         allowedTouchesPerSide: 3,
         setsToWin: 1
     )
+
+    public var configuration: SimulationConfiguration {
+        SimulationConfiguration(
+            gravity: .init(0, -gravityMagnitude),
+            initialThrustAcceleration: thrustAcceleration,
+            maximumThrustAcceleration: thrustAcceleration,
+            torqueAcceleration: rotationAcceleration,
+            ballGravityMultiplier: ballGravityMultiplier,
+            ballDropHeight: ballDropHeight,
+            ballDropSpeed: ballDropSpeed,
+            allowedFloorBounces: allowedBouncesPerHit,
+            allowedShipTouches: allowedTouchesPerSide
+        )
+    }
 }
 
 @MainActor
@@ -63,7 +80,7 @@ public final class FlightTuningStore {
         self.defaults = defaults
         let baked = FlightTuningSnapshot.defaults
         gravityMagnitude = Self.load(defaults, key: Keys.gravityMagnitude, fallback: baked.gravityMagnitude, range: 0.5 ... 4)
-        thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 2 ... 10)
+        thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 1 ... 10)
         rotationAcceleration = Self.load(defaults, key: Keys.rotationAcceleration, fallback: baked.rotationAcceleration, range: 0.5 ... 8)
         ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
         ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: -0.30 ... 0.10)
@@ -97,19 +114,7 @@ public final class FlightTuningStore {
         )
     }
 
-    public var configuration: SimulationConfiguration {
-        SimulationConfiguration(
-            gravity: .init(0, -gravityMagnitude),
-            initialThrustAcceleration: thrustAcceleration,
-            maximumThrustAcceleration: thrustAcceleration,
-            torqueAcceleration: rotationAcceleration,
-            ballGravityMultiplier: ballGravityMultiplier,
-            ballDropHeight: ballDropHeight,
-            ballDropSpeed: ballDropSpeed,
-            allowedFloorBounces: allowedBouncesPerHit,
-            allowedShipTouches: allowedTouchesPerSide
-        )
-    }
+    public var configuration: SimulationConfiguration { snapshot.configuration }
 
     public func reset() {
         let baked = FlightTuningSnapshot.defaults

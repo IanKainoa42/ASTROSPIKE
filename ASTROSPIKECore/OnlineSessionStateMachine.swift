@@ -19,9 +19,9 @@ public struct OnlineSessionStateMachine: Equatable, Sendable {
     private let localTeam: Team
     private let reconnectWindowTicks: UInt64
 
-    public init(localTeam: Team, ticksPerSecond: UInt64) {
+    public init(localTeam: Team, ticksPerSecond: UInt64, reconnectWindowSeconds: UInt64 = 10) {
         self.localTeam = localTeam
-        reconnectWindowTicks = ticksPerSecond * 10
+        reconnectWindowTicks = ticksPerSecond * reconnectWindowSeconds
     }
 
     public mutating func remoteDisconnected(at tick: UInt64) -> [OnlineSessionAction] {
@@ -142,5 +142,18 @@ public enum OnlineSeating {
     ) -> Bool {
         let peers = seating.keys.filter { $0 != localID }
         return !peers.isEmpty && peers.allSatisfy(readyPeers.contains)
+    }
+
+    /// When the host drops out of a live match somebody still at the table
+    /// has to run the rules while the chair is held. The surviving guest with
+    /// the lowest player ID takes over, on every remaining board at once.
+    public static func localTakesOverHosting(
+        localID: String,
+        hostID: String?,
+        droppedID: String,
+        remainingPeerIDs: some Sequence<String>
+    ) -> Bool {
+        guard let hostID, hostID != localID, droppedID == hostID else { return false }
+        return remainingPeerIDs.allSatisfy { $0 == droppedID || localID < $0 }
     }
 }
