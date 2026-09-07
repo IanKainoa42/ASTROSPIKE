@@ -1,0 +1,98 @@
+DEFINE SCHEMA
+
+    RECORD TYPE Pilot (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        "activity"      STRING QUERYABLE,
+        "hull"          STRING,
+        "matchID"       STRING QUERYABLE,
+        "name"          STRING,
+        "updatedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Duel (
+        "___createTime"       TIMESTAMP,
+        "___createdBy"        REFERENCE,
+        "___etag"             STRING,
+        "___modTime"          TIMESTAMP,
+        "___modifiedBy"       REFERENCE,
+        "___recordID"         REFERENCE QUERYABLE,
+        "cyanID"              STRING QUERYABLE,
+        "cyanName"            STRING,
+        "cyanScore"           INT64,
+        "fixtureRound"        INT64,
+        "fixtureSlot"         INT64,
+        "fixtureTournamentID" STRING QUERYABLE,
+        "hostID"              STRING QUERYABLE,
+        "orangeID"            STRING QUERYABLE,
+        "orangeName"          STRING,
+        "orangeScore"         INT64,
+        "phase"               STRING QUERYABLE,
+        "startedAt"           TIMESTAMP QUERYABLE SORTABLE,
+        "updatedAt"           TIMESTAMP QUERYABLE SORTABLE,
+        "winner"              STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Tournament (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        "createdAt"     TIMESTAMP QUERYABLE SORTABLE,
+        "name"          STRING,
+        "organizerID"   STRING QUERYABLE,
+        "size"          INT64,
+        "startedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        "updatedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE TournamentEntry (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        "hull"          STRING,
+        "name"          STRING,
+        "playerID"      STRING QUERYABLE,
+        "tournamentID"  STRING QUERYABLE,
+        "updatedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE TournamentReport (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        "cyanScore"     INT64,
+        "orangeScore"   INT64,
+        "round"         INT64 QUERYABLE SORTABLE,
+        "slot"          INT64,
+        "tournamentID"  STRING QUERYABLE,
+        "updatedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        "winnerID"      STRING QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );

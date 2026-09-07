@@ -208,7 +208,17 @@ final class LobbyService {
     private func records(ofType type: String, since: Date) async throws -> [CKRecord] {
         let query = CKQuery(recordType: type, predicate: NSPredicate(format: "%K > %@", Records.updatedAt, since as NSDate))
         var found: [CKRecord] = []
-        var (results, cursor) = try await database.records(matching: query, resultsLimit: 200)
+        var results: [(CKRecord.ID, Result<CKRecord, Error>)]
+        var cursor: CKQueryOperation.Cursor?
+        do {
+            (results, cursor) = try await database.records(matching: query, resultsLimit: 200)
+        } catch let error as CKError where error.code == .unknownItem {
+            // The record type does not exist in this environment yet. In
+            // development the first save creates it; in production the
+            // schema has to be imported (CloudKit/ASTROSPIKE.ckdb). Either
+            // way an empty board beats a red banner on every poll.
+            return []
+        }
         while true {
             for (_, result) in results {
                 if case let .success(record) = result { found.append(record) }
@@ -234,6 +244,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("PRESENCE FAILED: \(detail)")
+            notice = detail
             notice = detail
             presenceRecord = nil
         }
