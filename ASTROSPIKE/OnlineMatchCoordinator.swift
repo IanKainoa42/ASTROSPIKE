@@ -199,8 +199,12 @@ final class OnlineMatchCoordinator: NSObject,
     private var lifecycle = OnlineMatchLifecycle()
     /// Game Center IDs of every peer whose `.ready` has arrived.
     private var readyPeers: Set<String> = []
-    /// True when this device sent the invites, which makes it the host.
-    private var isInviter = false
+    /// How this end joined: the inviter hosts, an invitee never does, and an
+    /// automatch takes the lowest player ID on every board at once.
+    private var role: OnlineMatchRole = .automatch
+    /// Bumped on every search, invite, join and cancel, so a completion or
+    /// recipient response from an earlier request cannot touch the current one.
+    private var matchmakingGeneration = 0
     /// Invited pilots who said no (or never answered): seats that will stay
     /// empty, so the match can start without waiting for them.
     private var declinedInvites = 0
@@ -300,6 +304,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     /// Drops a search or an outstanding invite. Safe when nothing is pending.
     func cancelMatchmaking() {
+        matchmakingGeneration += 1
         GKMatchmaker.shared().cancel()
         if case .matching = status {
             note("MATCHMAKING: CANCELLED BY PILOT")
@@ -345,11 +350,13 @@ final class OnlineMatchCoordinator: NSObject,
         request.inviteMessage = partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
         request.recipients = recipients
         let recipientCount = recipients?.count ?? 0
-        isInviter = recipients != nil
+        role = recipients != nil ? .inviter : .automatch
         declinedInvites = 0
+        matchmakingGeneration += 1
+        let generation = matchmakingGeneration
         request.recipientResponseHandler = { [weak self] player, response in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, generation == self.matchmakingGeneration else { return }
                 let word = Self.describe(response)
                 self.note("INVITE → \(player.displayName): \(word)")
                 self.inviteNotice = "\(player.displayName.uppercased()) · \(word)"
@@ -374,7 +381,8 @@ final class OnlineMatchCoordinator: NSObject,
         GKMatchmaker.shared().findMatch(for: request) { [weak self] match, error in
             nonisolated(unsafe) let match = match
             Task { @MainActor in
-                guard let self, case .matching = self.status else { return }
+                guard let self, generation == self.matchmakingGeneration,
+                      case .matching = self.status else { return }
                 if let error {
                     let detail = self.describe(error)
                     self.note("MATCHMAKING FAILED: \(detail)")
@@ -444,8 +452,9 @@ final class OnlineMatchCoordinator: NSObject,
         controller.matchmakerDelegate = self
         controller.canStartWithMinimumPlayers = false
         controller.matchmakingMode = inviteOnly ? .inviteOnly : .automatchOnly
-        isInviter = inviteOnly
+        role = inviteOnly ? .inviter : .automatch
         declinedInvites = 0
+        matchmakingGeneration += 1
         note(inviteOnly ? "MATCHMAKER: INVITE PICKER OPEN" : "MATCHMAKER: QUICK MATCH SEARCHING")
         status = .matching
         present(controller)
@@ -468,15 +477,25 @@ final class OnlineMatchCoordinator: NSObject,
     /// match that is not fully connected. So: wait for every seat to fill,
     /// then pick the host without asking GameKit at all.
     private func configure(_ match: GKMatch) {
+        // A join that lands on top of an earlier match (a failed invite that
+        // never left, an invite accepted mid-search) must not leave the old
+        // transport alive and still pointed at us.
+        if let stale = self.match, stale !== match { disconnectTransport() }
         self.match = match
         readyPeers = []
         seating = [:]
+        mismatchedPeers = []
+        remoteHulls = [:]
+        inputBuffers = [:]
+        remoteInputs = [:]
+        isMatchReady = false
+        isAuthoritative = false
+        localSeat = nil
         lifecycle.beginConfiguration()
         match.delegate = self
         status = .matching
-        if match.expectedPlayerCount > 0 {
-            note("WAITING FOR \(match.expectedPlayerCount) MORE PILOT(S) TO CONNECT")
-        }
+        let names = match.players.map(\.displayName).joined(separator: ", ")
+        note("TABLE: [\(names)] IN · EXPECTING \(match.expectedPlayerCount) · \(roleLabel)")
         beginConnectWait()
         tryStartAsHost()
     }
@@ -512,8 +531,7 @@ final class OnlineMatchCoordinator: NSObject,
         }
         let localID = GKLocalPlayer.local.gamePlayerID
         let peerIDs = match.players.map(\.gamePlayerID).sorted()
-        let hostID = isInviter ? localID : ([localID] + peerIDs).min() ?? localID
-        guard hostID == localID else {
+        guard OnlineSeating.localHosts(localID: localID, peerIDs: peerIDs, role: role) else {
             note("WAITING FOR HOST TO SEAT THE TABLE")
             return
         }
@@ -574,11 +592,24 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    /// Every peer this match still expects has said `.ready`.
+    /// Every pilot in the seating plan has said `.ready`. The plan, not
+    /// GameKit's expected count: a guest's match never learns that a third
+    /// invitee declined, so its count would hold the guest in the bay forever.
     private var allPeersReady: Bool {
-        guard let match, lifecycle.phase != .configuring, !match.players.isEmpty else { return false }
-        return match.expectedPlayerCount <= declinedInvites
-            && match.players.allSatisfy { readyPeers.contains($0.gamePlayerID) }
+        guard match != nil, lifecycle.phase != .configuring else { return false }
+        return OnlineSeating.allPeersReady(
+            seating: seating,
+            localID: GKLocalPlayer.local.gamePlayerID,
+            readyPeers: readyPeers
+        )
+    }
+
+    private var roleLabel: String {
+        switch role {
+        case .inviter: "INVITER HOSTS"
+        case .invitee: "INVITEE, HOST SEATS US"
+        case .automatch: "AUTOMATCH, LOWEST ID HOSTS"
+        }
     }
 
     private func sendHandshake() {
@@ -746,7 +777,8 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func handlePeerConnectionChange(displayName: String, playerID: String, state: GKPlayerConnectionState) {
-        note("PEER \(displayName): \(state == .connected ? "CONNECTED" : state == .disconnected ? "DISCONNECTED" : "UNKNOWN")")
+        let word = state == .connected ? "CONNECTED" : state == .disconnected ? "DISCONNECTED" : "UNKNOWN"
+        note("PEER \(displayName): \(word) · \(match?.players.count ?? 0) IN · EXPECTING \(match?.expectedPlayerCount ?? 0)")
         switch state {
         case .connected:
             guard lifecycle.acceptConnection() else { return }
@@ -819,13 +851,25 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func handleInviteAccepted(senderDisplayName: String, invite: GKInvite) {
+        guard !lifecycle.acceptsGameplayData else {
+            note("INVITE FROM \(senderDisplayName) IGNORED: MATCH IN PROGRESS")
+            return
+        }
         note("INVITE ACCEPTED FROM \(senderDisplayName)")
+        // Our own search or invite, if one is out, is over: the completion
+        // it fires with `.cancelled` belongs to the old generation.
+        matchmakingGeneration += 1
+        let generation = matchmakingGeneration
+        GKMatchmaker.shared().cancel()
+        role = .invitee
+        declinedInvites = 0
         inviteNotice = "JOINING \(senderDisplayName.uppercased())"
         status = .matching
         GKMatchmaker.shared().match(for: invite) { [weak self] match, error in
             nonisolated(unsafe) let match = match
             Task { @MainActor in
-                guard let self, case .matching = self.status else { return }
+                guard let self, generation == self.matchmakingGeneration,
+                      case .matching = self.status else { return }
                 if let error {
                     let detail = self.describe(error)
                     self.note("INVITE JOIN FAILED: \(detail)")
@@ -877,7 +921,7 @@ final class OnlineMatchCoordinator: NSObject,
         localSeat = nil
         seating = [:]
         readyPeers = []
-        isInviter = false
+        role = .automatch
         declinedInvites = 0
         pendingForfeitWinner = nil
         pingMilliseconds = nil

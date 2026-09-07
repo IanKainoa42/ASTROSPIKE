@@ -79,3 +79,39 @@ struct OnlineSessionTests {
         #expect(lifecycle.phase == .configuring)
     }
 }
+
+@Suite("Online seating")
+struct OnlineSeatingTests {
+    @Test("The inviter hosts even when a guest has the lower player ID")
+    func inviterHosts() {
+        let hosts = OnlineSeating.localHosts(localID: "A:_9", peerIDs: ["A:_1"], role: .inviter)
+        #expect(hosts)
+    }
+
+    @Test("An invitee never hosts, even with the lowest player ID")
+    func inviteeNeverHosts() {
+        let hosts = OnlineSeating.localHosts(localID: "A:_1", peerIDs: ["A:_9"], role: .invitee)
+        #expect(!hosts)
+    }
+
+    @Test("Automatch ends agree on the lowest player ID as host")
+    func automatchElectsLowestID() {
+        let low = OnlineSeating.localHosts(localID: "A:_1", peerIDs: ["A:_5", "A:_9"], role: .automatch)
+        let high = OnlineSeating.localHosts(localID: "A:_9", peerIDs: ["A:_1", "A:_5"], role: .automatch)
+        #expect(low)
+        #expect(!high)
+    }
+
+    @Test("Ready means every seated peer has answered, whatever GameKit expects")
+    func readinessFollowsTheSeatingPlan() {
+        let seating: [String: Seat] = ["host": .cyan, "guest": .orange, "wing": .cyanWing]
+        let oneMissing = OnlineSeating.allPeersReady(seating: seating, localID: "host", readyPeers: ["guest"])
+        let everyone = OnlineSeating.allPeersReady(seating: seating, localID: "host", readyPeers: ["guest", "wing"])
+        let nobodySeated = OnlineSeating.allPeersReady(seating: [:], localID: "host", readyPeers: ["guest"])
+        let onlyLocal = OnlineSeating.allPeersReady(seating: ["host": .cyan], localID: "host", readyPeers: [])
+        #expect(!oneMissing)
+        #expect(everyone)
+        #expect(!nobodySeated)
+        #expect(!onlyLocal)
+    }
+}

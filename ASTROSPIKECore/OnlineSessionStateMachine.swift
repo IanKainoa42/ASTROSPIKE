@@ -103,3 +103,44 @@ public struct OnlineMatchLifecycle: Equatable, Sendable {
         phase = .idle
     }
 }
+
+/// How this end came to be in a Game Center match. It settles who hosts
+/// without asking GameKit, whose own host choice returns nil on a match that
+/// is not fully connected yet.
+public enum OnlineMatchRole: Equatable, Sendable {
+    /// Sent the invitations, so this end hosts.
+    case inviter
+    /// Accepted an invitation: the inviter hosts, whatever the player IDs say.
+    case invitee
+    /// Automatch: every end sees the same player list, so the lowest
+    /// Game Center player ID hosts on every board at once.
+    case automatch
+}
+
+/// The two decisions the table needs that must come out the same on every
+/// phone: who seats it, and when everyone seated has answered.
+public enum OnlineSeating {
+    public static func localHosts(
+        localID: String,
+        peerIDs: some Sequence<String>,
+        role: OnlineMatchRole
+    ) -> Bool {
+        switch role {
+        case .inviter: true
+        case .invitee: false
+        case .automatch: peerIDs.allSatisfy { localID < $0 }
+        }
+    }
+
+    /// True once every pilot in the seating plan other than the local one
+    /// has sent `.ready`. Goes by the plan, not GameKit's expected count,
+    /// which a guest's match never decrements for a declined third invitee.
+    public static func allPeersReady(
+        seating: [String: Seat],
+        localID: String,
+        readyPeers: Set<String>
+    ) -> Bool {
+        let peers = seating.keys.filter { $0 != localID }
+        return !peers.isEmpty && peers.allSatisfy(readyPeers.contains)
+    }
+}
