@@ -701,10 +701,19 @@ final class ArenaScene: SKScene {
         exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
     }
 
+    /// Aspect-fit (not stretch-to-fill): the court keeps the same on-screen
+    /// proportions on every device, so a wide Mac window and a tall iPhone
+    /// screen show the same shape instead of independently squashed axes.
     private var arenaRect: CGRect {
         let inset = min(size.width, size.height) * 0.055
-        return CGRect(x: -size.width / 2 + inset, y: -size.height / 2 + inset,
-                      width: size.width - inset * 2, height: size.height - inset * 2)
+        let availableWidth = size.width - inset * 2
+        let availableHeight = size.height - inset * 2
+        let worldWidth = arena.halfWidth * 2
+        let worldHeight = arena.ceilingY - arena.floorY
+        let scale = min(availableWidth / CGFloat(worldWidth), availableHeight / CGFloat(worldHeight))
+        let width = CGFloat(worldWidth) * scale
+        let height = CGFloat(worldHeight) * scale
+        return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
     }
 
     /// Derived from the geometry rather than hardcoded, so shortening the
