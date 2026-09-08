@@ -49,6 +49,7 @@ struct TouchControls: View {
                     tint: .cyan,
                     active: leftPressed,
                     chrome: steeringChrome,
+                    edgeOffset: steeringEdgeOffset,
                     pressChanged: nil
                 )
                 ControlZone(
@@ -58,6 +59,7 @@ struct TouchControls: View {
                     tint: .cyan,
                     active: rightPressed,
                     chrome: steeringChrome,
+                    edgeOffset: steeringEdgeOffset,
                     pressChanged: nil
                 )
             }
@@ -107,18 +109,13 @@ struct TouchControls: View {
         }
     }
 
-    /// The engine side is split: the outer half (nearest the screen edge) is
-    /// thrust, the inner half fires. Both are held with the same thumb, so the
+    /// Fire sits above thrust so the same resting thumb pushes down to fly and
+    /// lifts slightly to fire. Both are held with the same thumb, so the
     /// hint chrome sits low where it rests.
     private var thrustZone: some View {
-        HStack(spacing: 0) {
-            if leftHanded {
-                thrustPad
-                firePad
-            } else {
-                firePad
-                thrustPad
-            }
+        VStack(spacing: 0) {
+            firePad
+            thrustPad
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -131,6 +128,7 @@ struct TouchControls: View {
             tint: .orange,
             active: thrustPressed,
             chrome: thrustChrome,
+            edgeOffset: thrustEdgeOffset,
             pressChanged: setThrustPressed
         )
     }
@@ -143,6 +141,7 @@ struct TouchControls: View {
             tint: .yellow,
             active: firePressed,
             chrome: fireChrome,
+            edgeOffset: thrustEdgeOffset,
             pressChanged: setFirePressed
         )
     }
@@ -156,6 +155,13 @@ struct TouchControls: View {
     private var fireChrome: CGSize {
         largeControls ? CGSize(width: 104, height: 118) : CGSize(width: 84, height: 96)
     }
+
+    /// Nudges the drawn chrome (not the touch zone, which stays full-bleed)
+    /// a little further toward the screen's physical edge so the arena in
+    /// the middle stays clearer.
+    private let edgeNudge: CGFloat = 14
+    private var steeringEdgeOffset: CGFloat { leftHanded ? edgeNudge : -edgeNudge }
+    private var thrustEdgeOffset: CGFloat { leftHanded ? -edgeNudge : edgeNudge }
 
     private func setThrustPressed(_ pressed: Bool) {
         thrustPressed = pressed
@@ -185,6 +191,7 @@ private struct ControlZone: View {
     let tint: Color
     let active: Bool
     let chrome: CGSize
+    var edgeOffset: CGFloat = 0
     let pressChanged: ((Bool) -> Void)?
 
     var body: some View {
@@ -205,6 +212,7 @@ private struct ControlZone: View {
                         .foregroundStyle(tint.opacity(active ? 0.82 : 0.28))
                 )
                 .frame(width: chrome.width, height: chrome.height)
+                .offset(x: edgeOffset)
                 .padding(.bottom, 14)
             if let pressChanged {
                 // Fills the zone, so this is what actually receives the touch.
