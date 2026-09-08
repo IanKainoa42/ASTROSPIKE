@@ -77,13 +77,13 @@ struct AppRootView: View {
         .preferredColorScheme(.dark)
         .task {
             online.localHull = profile.selectedHull
-            online.preferredSetsToWin = tuning.setsToWin
+            online.preferredTuning = tuning.snapshot
             lobby.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
                 online.authenticate()
             }
         }
-        .onChange(of: tuning.setsToWin) { _, sets in online.preferredSetsToWin = sets }
+        .onChange(of: tuning.snapshot) { _, snapshot in online.preferredTuning = snapshot }
         .onChange(of: profile.selectedHull) { _, hull in
             online.localHull = hull
             lobby.localHull = hull
@@ -343,8 +343,10 @@ private struct GameView: View {
         self.exit = exit
         let configuration = switch mode {
         case .solo, .doubles: tuning.configuration
-        case .online: SimulationConfiguration.online
-        case .warmup: SimulationConfiguration.warmup
+        // The host's sliders reach the guest with the seating plan; the host
+        // seeded them from its own store, so both read the same numbers.
+        case .online: online.hostTuning.configuration
+        case .warmup: SimulationConfiguration.warmup(from: tuning.configuration)
         }
         _session = State(initialValue: GameSession(
             mode: mode,

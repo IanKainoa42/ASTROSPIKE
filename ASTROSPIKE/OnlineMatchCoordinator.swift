@@ -232,11 +232,12 @@ final class OnlineMatchCoordinator: NSObject,
     /// Game Center ID of whoever runs the rules. A guest that outlives the
     /// host takes this over so the chair can be held.
     private var hostID: String?
-    /// The format the host is playing to, from the seating plan. A guest
-    /// sets its board up from this rather than its own slider.
-    private(set) var hostSetsToWin = 1
-    /// The local slider: what this end plays to when it hosts.
-    var preferredSetsToWin = 1
+    /// The host's sliders, from the seating plan. A guest sets its board up
+    /// from these rather than its own settings.
+    private(set) var hostTuning = FlightTuningSnapshot.defaults
+    var hostSetsToWin: Int { hostTuning.setsToWin }
+    /// The local sliders: what every board flies when this end hosts.
+    var preferredTuning = FlightTuningSnapshot.defaults
     /// Every GKPlayer seen at this table, so a pilot who dropped can be
     /// invited back into the same match.
     private var knownPlayers: [String: GKPlayer] = [:]
@@ -520,7 +521,7 @@ final class OnlineMatchCoordinator: NSObject,
         self.match = match
         for player in match.players { knownPlayers[player.gamePlayerID] = player }
         hostID = nil
-        hostSetsToWin = 1
+        hostTuning = .defaults
         readyPeers = []
         seating = [:]
         mismatchedPeers = []
@@ -583,7 +584,7 @@ final class OnlineMatchCoordinator: NSObject,
         }
         seating = plan
         hostID = localID
-        hostSetsToWin = preferredSetsToWin
+        hostTuning = preferredTuning
         isAuthoritative = true
         startConfiguredMatch()
     }
@@ -666,7 +667,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     private func sendHandshake() {
         if isAuthoritative, !seating.isEmpty {
-            send(.seating(plan: seating, setsToWin: hostSetsToWin), mode: .reliable)
+            send(.seating(plan: seating, tuning: hostTuning), mode: .reliable)
         }
         send(.ready, mode: .reliable)
         send(.profile(seat: localSeat ?? .cyan, hull: localHull), mode: .reliable)
@@ -709,19 +710,19 @@ final class OnlineMatchCoordinator: NSObject,
                 inputBuffers[seat] = buffer
                 remoteInputs[seat] = value
             }
-        case let .seating(plan, setsToWin):
+        case let .seating(plan, tuning):
             guard lifecycle.acceptsNetworkMessages, plan[GKLocalPlayer.local.gamePlayerID] != nil else { return }
             if lifecycle.phase == .configuring {
                 seating = plan
                 hostID = playerID
-                hostSetsToWin = setsToWin
+                hostTuning = tuning
                 isAuthoritative = false
                 startConfiguredMatch()
             } else if !isAuthoritative {
                 // A guest that took over hosting reseated the table: remember
                 // who runs the rules now, so the next drop is judged right.
                 hostID = playerID
-                hostSetsToWin = setsToWin
+                hostTuning = tuning
             }
         case let .snapshot(state):
             if lifecycle.acceptsGameplayData, snapshotGate.accept(tick: state.tick) {
@@ -1082,7 +1083,7 @@ final class OnlineMatchCoordinator: NSObject,
         lastAuthoritativeState = nil
         pendingResync = nil
         hostID = nil
-        hostSetsToWin = 1
+        hostTuning = .defaults
         knownPlayers = [:]
         resumingAfterDrop = false
         onSnapshot = nil

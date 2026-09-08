@@ -312,21 +312,23 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.sandbox = sandbox
     }
 
-    /// The online feel, with the halfway treacle switched off so a lone pilot
-    /// can roam the whole court while the invite is out.
-    /// The warm-up bay: the shared baseline with nothing counted as a fault.
-    public static let warmup: SimulationConfiguration = {
-        var configuration = online
+    /// The warm-up bay: the pilot's own sliders with the halfway treacle
+    /// switched off and nothing counted as a fault, so a lone pilot can roam
+    /// the whole court while the invite is out.
+    public static func warmup(from base: SimulationConfiguration) -> SimulationConfiguration {
+        var configuration = base
         configuration.serveDelay = 0.9
         configuration.crossingPushBack = 0
         configuration.crossingDrag = 0
         configuration.sandbox = true
         return configuration
-    }()
+    }
 
-    /// Every board in a Game Center match runs this and a guest never applies
-    /// its own sliders. Built from the tuning defaults, so the quick game and
-    /// the online game cannot drift apart.
+    public static let warmup = warmup(from: online)
+
+    /// The baked baseline. In a Game Center match every board runs the
+    /// host's sliders, which arrive with the seating plan; this is what a
+    /// fresh install flies until a slider moves.
     public static let online = FlightTuningSnapshot.defaults.configuration
 }
 

@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-public struct FlightTuningSnapshot: Equatable, Sendable {
+public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public var gravityMagnitude: Double
     public var thrustAcceleration: Double
     public var rotationAcceleration: Double

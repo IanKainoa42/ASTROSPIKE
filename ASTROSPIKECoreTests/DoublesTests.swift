@@ -120,7 +120,7 @@ struct DoublesTests {
         let profile = WireEnvelope(sequence: 2, payload: .profile(seat: .cyanWing, hull: .manta))
         let seating = WireEnvelope(
             sequence: 3,
-            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], setsToWin: 3)
+            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], tuning: FlightTuningSnapshot.defaults)
         )
         var snapshotEngine = doublesEngine()
         snapshotEngine.step(inputs: [:])
@@ -128,6 +128,6 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 10)
+        #expect(WireEnvelope.currentVersion == 11)
     }
 }

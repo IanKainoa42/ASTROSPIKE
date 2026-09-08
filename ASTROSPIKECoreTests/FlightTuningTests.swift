@@ -49,6 +49,13 @@ struct FlightTuningTests {
             #expect(SimulationConfiguration.online.gravity.y > -1.10)
             #expect(SimulationConfiguration.warmup.gravity == SimulationConfiguration.online.gravity)
             #expect(SimulationConfiguration.warmup.sandbox)
+            // A moved slider follows the pilot into the bay and, via the
+            // seating plan, onto every guest board.
+            store.gravityMagnitude = 0.9
+            let bay = SimulationConfiguration.warmup(from: store.configuration)
+            #expect(bay.gravity.y == -0.9)
+            #expect(bay.sandbox)
+            #expect(store.snapshot.configuration == store.configuration)
         }
     }
 
