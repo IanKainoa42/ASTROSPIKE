@@ -19,6 +19,11 @@ struct TouchControls: View {
     @State private var thrustPressed = false
     @State private var firePressed = false
     @State private var tractorPressed = false
+    /// Ian places the pads himself: Settings → Arrange pads, then drag them
+    /// in the bay. Offsets from the drawn default, in points, per pad.
+    @AppStorage("arrangePads") private var arranging = false
+    @AppStorage("padOffsets") private var padOffsetsData = Data()
+    @State private var dragging: [String: CGSize] = [:]
 
     /// A margin narrower than this cannot hold a pad; the old full-bleed
     /// split (steer left, engine right) takes over, as on a portrait phone.
@@ -62,8 +67,8 @@ struct TouchControls: View {
         let fire = fireChrome
 
         // Measured outward from the wall (positive = away from the court).
-        let thrustOut = thrust.width / 2 - wallOverlap
-        var tractorOut = fire.width / 2 - wallOverlap
+        let thrustOut = thrust.width / 2 + edge
+        var tractorOut = fire.width / 2 + edge
         var fireOut = tractorOut + fire.width + gap
         let farthest = engineWidth - edge - fire.width / 2
         if fireOut > farthest {
@@ -80,31 +85,90 @@ struct TouchControls: View {
         let tractorY = thrustTop - gap - (fire.height + slop) / 2
         let fireY = thrustTop + 12 - (fire.height + slop) / 2
 
-        let steeringSpan = steeringWidth + wallOverlap
+        let steeringSpan = steeringWidth + steeringReach
         let steeringX = leftHanded ? local.width - steeringSpan : 0
 
         return ZStack(alignment: .topLeading) {
-            steeringColumn(width: steeringSpan, height: local.height)
-                .frame(width: steeringSpan, height: local.height)
-                .offset(x: steeringX)
-            tractorPad(chrome: fire)
+            placeable("steering") {
+                steeringColumn(width: steeringSpan, height: local.height)
+                    .frame(width: steeringSpan, height: local.height)
+            }
+            .offset(x: steeringX)
+            placeable("tractor") {
+                tractorPad(chrome: fire)
+                    .frame(width: fire.width + slop, height: fire.height + slop)
+            }
+            .position(x: tractorX, y: tractorY)
+            placeable("fire") {
+                ControlZone(
+                    icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                    active: firePressed, chrome: fire, bottomPadding: 0,
+                    pressChanged: setFirePressed
+                )
                 .frame(width: fire.width + slop, height: fire.height + slop)
-                .position(x: tractorX, y: tractorY)
-            ControlZone(
-                icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
-                active: firePressed, chrome: fire, bottomPadding: 0,
-                pressChanged: setFirePressed
-            )
-            .frame(width: fire.width + slop, height: fire.height + slop)
+            }
             .position(x: fireX, y: fireY)
-            ControlZone(
-                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
-                active: thrustPressed, chrome: thrust, bottomPadding: 0,
-                pressChanged: setThrustPressed
-            )
-            .frame(width: thrust.width + slop, height: thrust.height + slop)
+            placeable("thrust") {
+                ControlZone(
+                    icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
+                    active: thrustPressed, chrome: thrust, bottomPadding: 0,
+                    pressChanged: setThrustPressed
+                )
+                .frame(width: thrust.width + slop, height: thrust.height + slop)
+            }
             .position(x: thrustX, y: thrustY)
+            if arranging {
+                Text("DRAG THE PADS · SETTINGS TURNS THIS OFF")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 8)
+                    .allowsHitTesting(false)
+            }
         }
+    }
+
+    // MARK: Placing pads by hand
+
+    private var padOffsets: [String: CGSize] {
+        get {
+            guard let raw = try? JSONDecoder().decode([String: [Double]].self, from: padOffsetsData) else { return [:] }
+            return raw.compactMapValues { $0.count == 2 ? CGSize(width: $0[0], height: $0[1]) : nil }
+        }
+        nonmutating set {
+            let raw = newValue.mapValues { [Double($0.width), Double($0.height)] }
+            padOffsetsData = (try? JSONEncoder().encode(raw)) ?? Data()
+        }
+    }
+
+    /// While arranging, the pad stops taking presses and can be dragged
+    /// anywhere; its offset from the drawn default persists.
+    private func placeable<Pad: View>(_ id: String, @ViewBuilder _ pad: () -> Pad) -> some View {
+        let saved = padOffsets[id] ?? .zero
+        let live = dragging[id] ?? .zero
+        return pad()
+            .allowsHitTesting(!arranging)
+            .overlay {
+                if arranging {
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.white.opacity(0.7), style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture()
+                                .onChanged { dragging[id] = $0.translation }
+                                .onEnded { value in
+                                    var offsets = padOffsets
+                                    offsets[id] = CGSize(
+                                        width: saved.width + value.translation.width,
+                                        height: saved.height + value.translation.height
+                                    )
+                                    padOffsets = offsets
+                                    dragging[id] = nil
+                                }
+                        )
+                }
+            }
+            .offset(x: saved.width + live.width, y: saved.height + live.height)
     }
 
     /// The whole outer strip is the steering surface: press or drag on its
@@ -119,8 +183,8 @@ struct TouchControls: View {
         .contentShape(Rectangle())
     }
 
-    /// How far thrust, tractor and steering reach back over the wall into the court.
-    private let wallOverlap: CGFloat = 30
+    /// How far the steering strip reaches back over the wall into the court.
+    private let steeringReach: CGFloat = 30
 
     private func steeringPad(chrome: CGSize) -> some View {
         ZStack {

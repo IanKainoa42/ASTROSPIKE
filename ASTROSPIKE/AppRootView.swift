@@ -825,11 +825,14 @@ private struct SettingsView: View {
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
+    @AppStorage("arrangePads") private var arrangePads = false
     var body: some View {
         NavigationStack {
             Form {
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
+                Toggle("Arrange pads (drag them in the bay)", isOn: $arrangePads)
+                Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
                 Section("Match Rules") {
