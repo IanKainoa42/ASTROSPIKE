@@ -496,18 +496,20 @@ public struct SimulationEngine: Sendable {
                 effects: &collisionEffects
             )
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
-            // The trigger only works from a ship's own half: over the line
-            // the nose is live for ramming but the bolts stay holstered.
+            // The trigger works from a ship's own half plus a short reach past
+            // center, out to the base of the hump — past that the nose is
+            // live for ramming but the bolts stay holstered.
             let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-            let onOwnHalf = configuration.sandbox || ship.position.x * homeSign >= 0
+            let onOwnHalf = configuration.sandbox
+                || ship.position.x * homeSign >= -arena.humpBaseX
             if input.fire, onOwnHalf, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, owner: seat.team)
             }
-            state.ships[seat] = ship
-        }
             // Same holster rule as the cannon: the beam only works from home.
             ship.tractorActive = input.tractor && onOwnHalf
                 && (state.match.phase == .playing || configuration.sandbox)
+            state.ships[seat] = ship
+        }
         resolveShipShipCollisions(
             previousPositions: previousShipPositions,
             effects: &collisionEffects
@@ -523,9 +525,9 @@ public struct SimulationEngine: Sendable {
         let previousBallPosition = state.ball.position
         state.ball.velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
         applyExhaustWash(dt: dt)
+        applyTractorBeam(dt: dt)
         state.ball.position += state.ball.velocity * dt
         advanceBolts(contacts: &contacts, effects: &collisionEffects)
-        applyTractorBeam(dt: dt)
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,
             previousShipPositions: previousShipPositions,
@@ -679,8 +681,6 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    private mutating func advanceBolts(
-        contacts: inout [RuleContact],
     /// The tractor beam is the cannon's opposite: a cone ahead of the nose
     /// that draws the ball in and bleeds its speed off, strongest at the
     /// nose and gone at `tractorRange`. Like the wash it is not a touch, so
@@ -709,6 +709,8 @@ public struct SimulationEngine: Sendable {
         }
     }
 
+    private mutating func advanceBolts(
+        contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
         guard !state.bolts.isEmpty else { return }
