@@ -47,61 +47,80 @@ struct TouchControls: View {
 
     // MARK: Margin layout
 
-    /// One row of pads along the bottom, each hand anchored in its screen
-    /// corner: thrust sits right in the corner, fire next to it overlapping
-    /// the court's edge from outside, and the tractor pad just inside the
-    /// court. Steering does the same on the other side, straddling that edge.
+    /// Ian's drawing. Steering owns the whole strip outside the far wall,
+    /// L and R halves, full height. On the engine side a thumb cluster
+    /// climbs from the bottom corner: thrust sits on the ground with its
+    /// inner edge on the wall, the tractor pad directly above it straddling
+    /// the wall, and fire up and out toward the screen corner.
     private func marginLayout(local: CGRect, steeringWidth: CGFloat, engineWidth: CGFloat) -> some View {
+        let wall = leftHanded ? arenaFrame.minX - local.minX : arenaFrame.maxX - local.minX
         let edge: CGFloat = 6
-        let gap: CGFloat = 8
+        let gap: CGFloat = 10
         let slop: CGFloat = 16
         let bottom = local.height - edge
-
         let thrust = thrustChrome
         let fire = fireChrome
-        let steering = CGSize(
-            width: max(steeringChrome.width, steeringWidth + steeringOverlap - edge),
-            height: steeringChrome.height
-        )
 
-        // Right-handed: engine pads march inward from the right corner.
-        var thrustX = local.width - edge - thrust.width / 2
-        var fireX = thrustX - thrust.width / 2 - gap - fire.width / 2
-        var tractorX = fireX - fire.width / 2 - gap - fire.width / 2
-        var steeringX = edge + steering.width / 2
-        if leftHanded {
-            thrustX = local.width - thrustX
-            fireX = local.width - fireX
-            tractorX = local.width - tractorX
-            steeringX = local.width - steeringX
+        // Measured outward from the wall (positive = away from the court).
+        let thrustOut = thrust.width / 2 - wallOverlap
+        var tractorOut = fire.width / 2 - wallOverlap
+        var fireOut = tractorOut + fire.width + gap
+        let farthest = engineWidth - edge - fire.width / 2
+        if fireOut > farthest {
+            fireOut = farthest
+            tractorOut = min(tractorOut, fireOut - fire.width - gap)
         }
+        let sign: CGFloat = leftHanded ? -1 : 1
+        let thrustX = wall + sign * thrustOut
+        let tractorX = wall + sign * tractorOut
+        let fireX = wall + sign * fireOut
+
+        let thrustY = bottom - (thrust.height + slop) / 2
+        let thrustTop = bottom - thrust.height
+        let tractorY = thrustTop - gap - (fire.height + slop) / 2
+        let fireY = thrustTop + 12 - (fire.height + slop) / 2
+
+        let steeringSpan = steeringWidth + wallOverlap
+        let steeringX = leftHanded ? local.width - steeringSpan : 0
 
         return ZStack(alignment: .topLeading) {
-            steeringPad(chrome: steering)
-                .frame(width: steering.width + slop, height: steering.height + slop)
-                .position(x: steeringX, y: bottom - (steering.height + slop) / 2)
+            steeringColumn(width: steeringSpan, height: local.height)
+                .frame(width: steeringSpan, height: local.height)
+                .offset(x: steeringX)
             tractorPad(chrome: fire)
                 .frame(width: fire.width + slop, height: fire.height + slop)
-                .position(x: tractorX, y: bottom - (fire.height + slop) / 2)
+                .position(x: tractorX, y: tractorY)
             ControlZone(
                 icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
                 active: firePressed, chrome: fire, bottomPadding: 0,
                 pressChanged: setFirePressed
             )
             .frame(width: fire.width + slop, height: fire.height + slop)
-            .position(x: fireX, y: bottom - (fire.height + slop) / 2)
+            .position(x: fireX, y: fireY)
             ControlZone(
                 icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
                 active: thrustPressed, chrome: thrust, bottomPadding: 0,
                 pressChanged: setThrustPressed
             )
             .frame(width: thrust.width + slop, height: thrust.height + slop)
-            .position(x: thrustX, y: bottom - (thrust.height + slop) / 2)
+            .position(x: thrustX, y: thrustY)
         }
     }
 
-    /// How far the steering pad reaches past the court's edge into the play.
-    private let steeringOverlap: CGFloat = 28
+    /// The whole outer strip is the steering surface: press or drag on its
+    /// left half to rotate left, right half to rotate right.
+    private func steeringColumn(width: CGFloat, height: CGFloat) -> some View {
+        let chrome = CGSize(width: max(44, width - 12), height: min(170, height * 0.42))
+        return ZStack {
+            Rectangle().fill(Color.cyan.opacity(leftPressed || rightPressed ? 0.06 : 0))
+            steeringPad(chrome: chrome)
+                .offset(y: height * 0.12)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// How far thrust, tractor and steering reach back over the wall into the court.
+    private let wallOverlap: CGFloat = 30
 
     private func steeringPad(chrome: CGSize) -> some View {
         ZStack {
@@ -116,11 +135,11 @@ struct TouchControls: View {
                     VStack(spacing: 10) {
                         HStack(spacing: 4) {
                             Image(systemName: "rotate.left")
-                                .font(.system(size: leftPressed ? 26 : 22, weight: .semibold))
+                                .font(.system(size: leftPressed ? 34 : 30, weight: .semibold))
                                 .foregroundStyle(Color.cyan.opacity(leftPressed ? 0.82 : 0.28))
                             Spacer(minLength: 0)
                             Image(systemName: "rotate.right")
-                                .font(.system(size: rightPressed ? 26 : 22, weight: .semibold))
+                                .font(.system(size: rightPressed ? 34 : 30, weight: .semibold))
                                 .foregroundStyle(Color.cyan.opacity(rightPressed ? 0.82 : 0.28))
                         }
                         .padding(.horizontal, 10)

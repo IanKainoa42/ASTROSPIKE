@@ -777,7 +777,7 @@ final class ArenaScene: SKScene {
     /// Share of the window width kept clear of the court on each side in
     /// landscape, safe area included. Sized so a pad still fits beside an
     /// iPhone's rounded corners.
-    static let controlMarginFraction: CGFloat = 0.17
+    static let controlMarginFraction: CGFloat = 0.20
 
     /// Derived from the geometry rather than hardcoded, so shortening the
     /// court cannot silently desync the render from the simulation.
