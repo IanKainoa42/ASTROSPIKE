@@ -9,8 +9,10 @@
 /* Begin PBXBuildFile section */
 		03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */; };
 		077E31AEAA3268F71CF606CB /* Hulls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 828D26A07A966607CF8F1287 /* Hulls.swift */; };
+		0B193428AC54E680033CB925 /* thrusterOrange.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */; };
 		0E4F35B9E15BE39946916228 /* HullCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */; };
 		0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */; };
+		15FB0F19392BF65EE8A502AB /* TrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2140A496C623DA691A00885F /* TrackView.swift */; };
 		189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD95C0514B3196435647AEC /* WireProtocol.swift */; };
 		195BC54E2CD59D12BC8DDE90 /* TouchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */; };
 		1AE0E523C4361D72455C1C5A /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -22,24 +24,34 @@
 		3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4405102C04B2CE798F18AD89 /* WarmupTests.swift */; };
 		3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */; };
 		422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */; };
+		480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */; };
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		4ABE3DC27EA7E0AA4E79BA2D /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */; };
 		58B4CF56A2EA0B283E718739 /* HullShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8F43E674683CFA8668873B /* HullShapes.swift */; };
 		594C28054C252A6E6577D9EC /* Lobby.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC83DD77126E7FA513D2942 /* Lobby.swift */; };
+		5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */; };
+		5E6A28DD8A98ABAAEB45CCA4 /* CourtVariantTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */; };
+		6BFC46911FCD2C139BD46B83 /* CACHEDIR.TAG in Resources */ = {isa = PBXBuildFile; fileRef = 822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */; };
 		73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */; };
 		767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACCBC1253D91A47299D2645 /* DoublesTests.swift */; };
 		769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07221F436E712100C50841C1 /* LobbyTests.swift */; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
+		7B0A96B4A21AAAFDED620A63 /* SoundBank.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A34F8A0F4853AB40D1C40B /* SoundBank.swift */; };
+		80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */; };
+		81CFFE5928F7D9BC1B3CB1F3 /* thrusterCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 3642C970AB86552313466CC5 /* thrusterCyan.mp3 */; };
 		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
 		8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */; };
 		8D4415BEF5D274D18341CD57 /* LobbyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D734BE128C9E77556BF0D012 /* LobbyService.swift */; };
 		90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */; };
 		92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CD4F97738D5A2F620398EBF /* Assets.xcassets */; };
+		98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */; };
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
 		A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */; };
+		A8A27D1780F192AA000EECBC /* TrackSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */; };
 		A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */; };
+		A9CC6A505E6B540052A930D6 /* goal.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 2C3D25E49598037842E7D41C /* goal.mp3 */; };
 		AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */; };
 		ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */; };
 		B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */; };
@@ -48,11 +60,13 @@
 		BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */; };
 		C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2938C10E066FBAEF95E3652B /* GameSession.swift */; };
 		C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */; };
+		C4C375DE7E2456727D003347 /* TrackScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B581A251E3DC103CDFB31F3 /* TrackScene.swift */; };
 		C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */; };
 		CB4E58A55B21C45474313E95 /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5488DBEBDCDC52A967D49F5A /* AppRootView.swift */; };
 		CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */; };
 		D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AED5437E5592EACB25579F /* ArenaScene.swift */; };
+		DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088700D916D7C71D0559E240 /* TrackEngine.swift */; };
 		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
 		EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9B354B5E4A268F1331755 /* AIController.swift */; };
 		EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */; };
@@ -114,21 +128,28 @@
 /* Begin PBXFileReference section */
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
+		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
+		0B581A251E3DC103CDFB31F3 /* TrackScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackScene.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
 		1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
 		2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsTests.swift; sourceTree = "<group>"; };
 		213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaPhysicsTests.swift; sourceTree = "<group>"; };
+		2140A496C623DA691A00885F /* TrackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackView.swift; sourceTree = "<group>"; };
 		26AED5437E5592EACB25579F /* ArenaScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaScene.swift; sourceTree = "<group>"; };
 		2938C10E066FBAEF95E3652B /* GameSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameSession.swift; sourceTree = "<group>"; };
 		2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaGeometry.swift; sourceTree = "<group>"; };
+		2C3D25E49598037842E7D41C /* goal.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = goal.mp3; sourceTree = "<group>"; };
 		2CD4F97738D5A2F620398EBF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2CD95C0514B3196435647AEC /* WireProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocol.swift; sourceTree = "<group>"; };
 		2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightControlMappingTests.swift; sourceTree = "<group>"; };
 		3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceAndSoakTests.swift; sourceTree = "<group>"; };
+		34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideOrange.mp3; sourceTree = "<group>"; };
+		3642C970AB86552313466CC5 /* thrusterCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterCyan.mp3; sourceTree = "<group>"; };
 		376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEUITests.swift; sourceTree = "<group>"; };
 		384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulationMotionTests.swift; sourceTree = "<group>"; };
+		38A34F8A0F4853AB40D1C40B /* SoundBank.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundBank.swift; sourceTree = "<group>"; };
 		394FFF2162051CDBC12CE239 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionStateMachine.swift; sourceTree = "<group>"; };
 		3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltAndWashTests.swift; sourceTree = "<group>"; };
@@ -148,11 +169,16 @@
 		64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControlTests.swift; sourceTree = "<group>"; };
 		6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocolTests.swift; sourceTree = "<group>"; };
 		6E6C209D8015028776DDD2A2 /* MatchRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRules.swift; sourceTree = "<group>"; };
+		74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterOrange.mp3; sourceTree = "<group>"; };
 		802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothingTests.swift; sourceTree = "<group>"; };
+		812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackGeometry.swift; sourceTree = "<group>"; };
+		822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */ = {isa = PBXFileReference; path = CACHEDIR.TAG; sourceTree = "<group>"; };
 		828D26A07A966607CF8F1287 /* Hulls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hulls.swift; sourceTree = "<group>"; };
 		83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineMatchCoordinator.swift; sourceTree = "<group>"; };
 		859573897DB0229481CD4EC8 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionTests.swift; sourceTree = "<group>"; };
+		8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtVariantTests.swift; sourceTree = "<group>"; };
+		8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTests.swift; sourceTree = "<group>"; };
 		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
@@ -161,10 +187,13 @@
 		A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothing.swift; sourceTree = "<group>"; };
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
 		B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioCenter.swift; sourceTree = "<group>"; };
+		BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideCyan.mp3; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
 		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
+		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
+		EDB7E77E05F615E80F9752BF /* .buildSystem_debug */ = {isa = PBXFileReference; path = .buildSystem_debug; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
 		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -189,6 +218,27 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6CBB4D5813D40E75ACB5897D /* Sounds */ = {
+			isa = PBXGroup;
+			children = (
+				2C3D25E49598037842E7D41C /* goal.mp3 */,
+				BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */,
+				34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */,
+				3642C970AB86552313466CC5 /* thrusterCyan.mp3 */,
+				74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */,
+			);
+			path = Sounds;
+			sourceTree = "<group>";
+		};
+		7A9B5A367198D665A66DFAA1 /* .build */ = {
+			isa = PBXGroup;
+			children = (
+				EDB7E77E05F615E80F9752BF /* .buildSystem_debug */,
+				822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */,
+			);
+			path = .build;
+			sourceTree = "<group>";
+		};
 		9604EA1A48B705AA26BE6021 /* ASTROSPIKECore */ = {
 			isa = PBXGroup;
 			children = (
@@ -203,8 +253,11 @@
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
+				088700D916D7C71D0559E240 /* TrackEngine.swift */,
+				812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */,
 				5637738B4E3686D57BD33184 /* WarmupRings.swift */,
 				2CD95C0514B3196435647AEC /* WireProtocol.swift */,
+				7A9B5A367198D665A66DFAA1 /* .build */,
 			);
 			path = ASTROSPIKECore;
 			sourceTree = "<group>";
@@ -247,8 +300,13 @@
 				415B202192D985A9E29E73E1 /* LobbyView.swift */,
 				1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */,
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
+				38A34F8A0F4853AB40D1C40B /* SoundBank.swift */,
 				B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */,
 				1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */,
+				0B581A251E3DC103CDFB31F3 /* TrackScene.swift */,
+				EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */,
+				2140A496C623DA691A00885F /* TrackView.swift */,
+				6CBB4D5813D40E75ACB5897D /* Sounds */,
 			);
 			path = ASTROSPIKE;
 			sourceTree = "<group>";
@@ -270,6 +328,7 @@
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
 				3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */,
+				8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */,
 				BACCBC1253D91A47299D2645 /* DoublesTests.swift */,
 				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
@@ -283,6 +342,7 @@
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
+				8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */,
 				FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */,
 				4405102C04B2CE798F18AD89 /* WarmupTests.swift */,
 				6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */,
@@ -298,6 +358,7 @@
 			buildConfigurationList = 98248C9108EBB61D65AE2857 /* Build configuration list for PBXNativeTarget "ASTROSPIKECore" */;
 			buildPhases = (
 				0D1E0B236D8E1CF0B0FAC751 /* Sources */,
+				BFAA7DC483BFD744238051A2 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -425,6 +486,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */,
+				A9CC6A505E6B540052A930D6 /* goal.mp3 in Resources */,
+				480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */,
+				98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */,
+				81CFFE5928F7D9BC1B3CB1F3 /* thrusterCyan.mp3 in Resources */,
+				0B193428AC54E680033CB925 /* thrusterOrange.mp3 in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFAA7DC483BFD744238051A2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6BFC46911FCD2C139BD46B83 /* CACHEDIR.TAG in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -446,6 +520,8 @@
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
+				DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */,
+				80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */,
 				FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */,
 				189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */,
 			);
@@ -468,8 +544,12 @@
 				F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */,
 				73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */,
 				C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */,
+				7B0A96B4A21AAAFDED620A63 /* SoundBank.swift in Sources */,
 				3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */,
 				195BC54E2CD59D12BC8DDE90 /* TouchControls.swift in Sources */,
+				C4C375DE7E2456727D003347 /* TrackScene.swift in Sources */,
+				A8A27D1780F192AA000EECBC /* TrackSession.swift in Sources */,
+				15FB0F19392BF65EE8A502AB /* TrackView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -480,6 +560,7 @@
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
 				BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */,
+				5E6A28DD8A98ABAAEB45CCA4 /* CourtVariantTests.swift in Sources */,
 				767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */,
 				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
@@ -493,6 +574,7 @@
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
+				5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */,
 				31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */,
 				3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */,
 				422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */,
@@ -655,7 +737,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -715,7 +797,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

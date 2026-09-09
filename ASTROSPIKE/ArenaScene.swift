@@ -14,7 +14,16 @@ final class ArenaScene: SKScene {
     private let trailLayer = SKNode()
     private let plumeLayer = SKNode()
     private let actorLayer = SKNode()
-    private let arena = ArenaGeometry.standard
+    /// The court this scene draws. Set before the view appears; changing it
+    /// tears the arena layer down and rebuilds it, so the drawn court can
+    /// never disagree with the one the simulation is colliding against.
+    var arena = ArenaGeometry.standard {
+        didSet {
+            guard arena != oldValue else { return }
+            didBuild = false
+            buildArena()
+        }
+    }
     /// One hull and one exhaust per seat, built up front and hidden while
     /// the seat is empty.
     private var shipNodes: [Seat: SKShapeNode] = [:]
@@ -213,8 +222,122 @@ final class ArenaScene: SKScene {
         floorNode.glowWidth = 3
         arenaLayer.addChild(floorNode)
 
-        addHump()
-        addPortalNet()
+        if arena.hasHump { addHump() }
+        switch arena.netStyle {
+        case .roofPortal: addPortalNet()
+        case .floorWall: addStandingNet()
+        case .none: addHoop()
+        }
+    }
+
+    /// Volleyball's net: one slab standing up out of the middle of the floor,
+    /// covering the bottom half of the arena, with a bright tape across the
+    /// top. Nothing about it is team coloured -- it belongs to neither side,
+    /// and it is not a target, it is the thing in your way.
+    private func addStandingNet() {
+        let half = arena.netHalfWidth
+        let top = arena.netTopY
+
+        let slab = CGMutablePath()
+        slab.move(to: point(-half, arena.floorY))
+        slab.addLine(to: point(-half, top))
+        slab.addLine(to: point(half, top))
+        slab.addLine(to: point(half, arena.floorY))
+        slab.closeSubpath()
+        let body = SKShapeNode(path: slab)
+        body.fillColor = SKColor(white: 0.10, alpha: 0.92)
+        body.strokeColor = .white.withAlphaComponent(0.45)
+        body.lineWidth = 2
+        body.zPosition = -1
+        arenaLayer.addChild(body)
+
+        // The mesh. Cheap horizontal rungs rather than a real weave: at this
+        // width a diagonal lattice reads as noise.
+        let mesh = CGMutablePath()
+        var y = arena.floorY + 0.02
+        while y < top {
+            mesh.move(to: point(-half, y))
+            mesh.addLine(to: point(half, y))
+            y += 0.038
+        }
+        let meshNode = SKShapeNode(path: mesh)
+        meshNode.strokeColor = .white.withAlphaComponent(0.22)
+        meshNode.lineWidth = 1
+        arenaLayer.addChild(meshNode)
+
+        // The tape: the rounded cap the ball actually rebounds off, drawn as
+        // the half-round the simulation treats it as.
+        let tape = CGMutablePath()
+        tape.addArc(
+            center: point(0, top),
+            radius: abs(point(half, top).x - point(0, top).x),
+            startAngle: 0,
+            endAngle: .pi,
+            clockwise: false
+        )
+        let tapeNode = SKShapeNode(path: tape)
+        tapeNode.strokeColor = .white.withAlphaComponent(0.95)
+        tapeNode.lineWidth = 4
+        tapeNode.glowWidth = 8
+        tapeNode.fillColor = .clear
+        arenaLayer.addChild(tapeNode)
+
+        addSideLabel("NET", team: .cyan, at: point(0, top + 0.055))
+    }
+
+    /// Basketball's hoop: one rim at centre court that both halves shoot at.
+    /// The posts are solid -- clip one and the shot is off -- and the window
+    /// between them is the whole target.
+    private func addHoop() {
+        guard let hoop = arena.hoop else { return }
+        let rimY = hoop.centerY
+
+        // The mesh hanging under the rim. Purely decorative: the ball passes
+        // through it untouched, the way it does through the window above.
+        let mesh = CGMutablePath()
+        let bottomHalf = hoop.innerHalfWidth * 0.55
+        for step in 0 ... 4 {
+            let t = Double(step) / 4
+            let topX = -hoop.innerHalfWidth + 2 * hoop.innerHalfWidth * t
+            let bottomX = -bottomHalf + 2 * bottomHalf * t
+            mesh.move(to: point(topX, rimY))
+            mesh.addLine(to: point(bottomX, rimY - hoop.netDepth))
+        }
+        for step in 1 ... 3 {
+            let t = Double(step) / 4
+            let halfAt = hoop.innerHalfWidth + (bottomHalf - hoop.innerHalfWidth) * t
+            mesh.move(to: point(-halfAt, rimY - hoop.netDepth * t))
+            mesh.addLine(to: point(halfAt, rimY - hoop.netDepth * t))
+        }
+        let meshNode = SKShapeNode(path: mesh)
+        meshNode.strokeColor = .white.withAlphaComponent(0.35)
+        meshNode.lineWidth = 1.5
+        meshNode.zPosition = -1
+        arenaLayer.addChild(meshNode)
+
+        // The window: the line a ball has to drop through.
+        let window = CGMutablePath()
+        window.move(to: point(-hoop.innerHalfWidth, rimY))
+        window.addLine(to: point(hoop.innerHalfWidth, rimY))
+        let windowNode = SKShapeNode(path: window)
+        windowNode.strokeColor = SKColor(red: 1, green: 0.62, blue: 0.24, alpha: 0.55)
+        windowNode.lineWidth = 3
+        windowNode.glowWidth = 10
+        arenaLayer.addChild(windowNode)
+
+        for sign in [-1.0, 1.0] {
+            let center = hoop.postCenter(sign: sign)
+            let radius = abs(point(hoop.rimRadius, 0).x - point(0, 0).x)
+            let post = SKShapeNode(circleOfRadius: radius)
+            post.position = point(center.x, center.y)
+            post.fillColor = SKColor(red: 1, green: 0.45, blue: 0.12, alpha: 1)
+            post.strokeColor = .white.withAlphaComponent(0.9)
+            post.lineWidth = 2
+            post.glowWidth = 8
+            arenaLayer.addChild(post)
+        }
+
+        addSideLabel("HOOP", team: .orange, at: point(0, rimY + 0.075))
     }
 
     /// The playable boundary, with the same flattened corner arcs the

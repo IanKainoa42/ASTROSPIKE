@@ -25,6 +25,28 @@ final class SpatialAudioCenter {
         try? engine.start()
     }
 
+    /// The format everything on this graph speaks. Handed out so recorded
+    /// clips can be converted to it once, at load, instead of per playback.
+    var mixFormat: AVAudioFormat {
+        AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
+            ?? engine.mainMixerNode.outputFormat(forBus: 0)
+    }
+
+    func ensureRunning() {
+        if !engine.isRunning { try? engine.start() }
+    }
+
+    /// Another player node on the same environment, so a caller can hold its
+    /// own voice rather than fighting for the shared one.
+    func makeVoice(format: AVAudioFormat) -> AVAudioPlayerNode {
+        let voice = AVAudioPlayerNode()
+        engine.attach(voice)
+        engine.connect(voice, to: environment, format: format)
+        voice.renderingAlgorithm = .HRTF
+        ensureRunning()
+        return voice
+    }
+
     func play(frequency: Double, duration: Double, positionX: Float) {
         if !engine.isRunning { try? engine.start() }
         guard engine.isRunning else { return }

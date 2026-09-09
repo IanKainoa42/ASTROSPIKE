@@ -214,6 +214,11 @@ public struct WorldState: Codable, Equatable, Sendable {
     /// Bolts in flight, oldest first.
     public var bolts: [BoltState]
     public var nextBoltID: UInt64
+    /// Who touched the ball last -- by hull or by bolt, whichever came most
+    /// recently. Basketball is decided on it: the bucket belongs to whoever
+    /// put the ball through, not to whichever half it fell from. Cleared on
+    /// every serve so a stale touch cannot claim a shot nobody took.
+    public var lastBallToucher: Team?
 
     public init(
         tick: UInt64 = 0,
@@ -223,7 +228,8 @@ public struct WorldState: Codable, Equatable, Sendable {
         serveTicksRemaining: UInt64 = 0,
         serveDriftSign: Double = -1,
         bolts: [BoltState] = [],
-        nextBoltID: UInt64 = 0
+        nextBoltID: UInt64 = 0,
+        lastBallToucher: Team? = nil
     ) {
         self.tick = tick
         self.ships = ships
@@ -233,6 +239,7 @@ public struct WorldState: Codable, Equatable, Sendable {
         self.serveDriftSign = serveDriftSign
         self.bolts = bolts
         self.nextBoltID = nextBoltID
+        self.lastBallToucher = lastBallToucher
     }
 }
 
@@ -321,7 +328,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.minimumBallSeparationSpeed = max(0, minimumBallSeparationSpeed)
         self.crossingPushBack = max(0, crossingPushBack)
         self.crossingDrag = max(0, crossingDrag)
-        self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
+        self.allowedFloorBounces = min(5, max(0, allowedFloorBounces))
         self.allowedShipTouches = min(6, max(1, allowedShipTouches))
         self.boltSpeed = max(0, boltSpeed)
         self.boltLifetime = max(0, boltLifetime)
@@ -348,6 +355,27 @@ public struct SimulationConfiguration: Equatable, Sendable {
     }
 
     public static let warmup = warmup(from: online)
+
+    /// Volleyball. The net is a wall now, so the ball is served from high
+    /// above it, and the floor is live: the first touch of the ground ends
+    /// the rally rather than the second.
+    public static func volleyball(from base: SimulationConfiguration) -> SimulationConfiguration {
+        var configuration = base
+        configuration.ballDropHeight = 0.34
+        configuration.allowedFloorBounces = 0
+        configuration.allowedShipTouches = 3
+        return configuration
+    }
+
+    /// Basketball. The ball is put in play well under the rim so a serve can
+    /// never drop through it on its own, and the bounce and touch caps are
+    /// moot -- the hoop court keeps its own book, where nothing is a fault.
+    public static func basketball(from base: SimulationConfiguration) -> SimulationConfiguration {
+        var configuration = base
+        configuration.ballDropHeight = -0.20
+        configuration.serveDelay = 1.1
+        return configuration
+    }
 
     /// The baked baseline. In a Game Center match every board runs the
     /// host's sliders, which arrive with the seating plan; this is what a
@@ -392,6 +420,14 @@ public struct SimulationEngine: Sendable {
             .cyan: ShipState(position: SIMD2(-0.55, -0.45), angle: .pi / 2),
             .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
         ]))
+    }
+
+    /// Swaps the court under a live engine. The arena is the whole of what
+    /// makes a mode: the hump, the lips, the portal, the standing net and the
+    /// hoop all live on it, and every collision routine reads it rather than
+    /// a constant.
+    public mutating func updateArena(_ arena: ArenaGeometry) {
+        self.arena = arena
     }
 
     public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
@@ -536,8 +572,21 @@ public struct SimulationEngine: Sendable {
         )
         resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
 
+        // Whoever put a hand on it most recently owns whatever happens next.
+        // Only the hoop court decides anything on it, but every court keeps
+        // it so the board can name who touched last.
+        for contact in contacts {
+            if case let .ballTouchedShip(team) = contact { state.lastBallToucher = team }
+        }
+
         if configuration.sandbox {
             resolveSandbox(contacts: contacts, effects: collisionEffects)
+            state.tick += 1
+            return
+        }
+
+        if arena.hoop != nil {
+            resolveHoopCourt(contacts: contacts, effects: collisionEffects)
             state.tick += 1
             return
         }
@@ -561,6 +610,10 @@ public struct SimulationEngine: Sendable {
         SIMD2(state.serveDriftSign * 0.45, -configuration.ballDropSpeed)
     }
 
+    /// True when the engine keeps its own book instead of handing contacts
+    /// to `MatchRules`: the warm-up bay and the hoop court both do.
+    private var usesEngineRules: Bool { configuration.sandbox || arena.hoop != nil }
+
     private mutating func stageServe(on team: Team?) {
         // The ball reappears dead centre, just under the cap of the goal, and
         // drifts out to the side that just conceded. It cannot score by
@@ -576,6 +629,8 @@ public struct SimulationEngine: Sendable {
             radius: state.ball.radius
         )
         state.bolts.removeAll()
+        // A fresh ball has nobody's fingerprints on it.
+        state.lastBallToucher = nil
         state.serveTicksRemaining = max(
             1,
             UInt64((configuration.serveDelay / configuration.stepDuration).rounded())
@@ -590,10 +645,11 @@ public struct SimulationEngine: Sendable {
         guard state.serveTicksRemaining == 0 else { return }
         respawnDestroyedShips()
         state.ball.velocity = serveVelocity
-        if configuration.sandbox {
+        if usesEngineRules {
             state.match.phase = .playing
             state.match.floorContacts = SideCounts()
             state.match.shipTouches = SideCounts()
+            state.lastBallToucher = nil
             return
         }
         rules.beginNextRally()
@@ -612,6 +668,8 @@ public struct SimulationEngine: Sendable {
             case let .ballTouchedFloor(side):
                 state.match.floorContacts[side] += 1
                 state.match.shipTouches = SideCounts()
+            case .ballEnteredHoop:
+                break
             case .ballEnteredGoal:
                 let pilot = state.ships.keys.min()?.team ?? .cyan
                 if pilot == .cyan { state.match.score.cyan += 1 } else { state.match.score.orange += 1 }
@@ -621,6 +679,42 @@ public struct SimulationEngine: Sendable {
             case .ballCrossedCenter, .shipDestroyed:
                 break
             }
+        }
+        lastEvents = events
+    }
+
+    /// The hoop court's rulebook, and it is nearly all absence: there is no
+    /// ladder of points to climb and nothing is a fault. A bounce is just a
+    /// bounce, a wrecked hull is a re-serve rather than a concession, and the
+    /// first ball to drop through the rim ends the match on the spot -- for
+    /// whoever touched it last, whichever half it fell from.
+    private mutating func resolveHoopCourt(contacts: [RuleContact], effects: [SimulationEvent]) {
+        var events = effects
+        var destroyed: Set<Team> = []
+        for contact in contacts {
+            switch contact {
+            case let .ballTouchedShip(team):
+                state.match.shipTouches[team] += 1
+            case let .ballTouchedFloor(side):
+                state.match.floorContacts[side] += 1
+            case .ballEnteredHoop:
+                guard state.match.phase == .playing,
+                      let scorer = state.lastBallToucher else { continue }
+                state.match.score[scorer] += 1
+                state.match.phase = .finished
+                state.match.winner = scorer
+                events.append(.point(scoringTeam: scorer, reason: .goal))
+                events.append(.matchEnded(winner: scorer))
+            case let .shipDestroyed(team, _):
+                destroyed.insert(team)
+            case .ballCrossedCenter, .ballEnteredGoal:
+                break
+            }
+        }
+        if state.match.phase == .playing, !destroyed.isEmpty {
+            events.append(.rallyReset)
+            state.match.phase = .serve
+            stageServe(on: nil)
         }
         lastEvents = events
     }
@@ -744,8 +838,20 @@ public struct SimulationEngine: Sendable {
             let outside = abs(bolt.position.x) > arena.halfWidth
                 || bolt.position.y < arena.floorY
                 || bolt.position.y > arena.ceilingY
-            let struckHump = arena.humpContact(position: bolt.position, radius: BoltState.radius) != nil
-            if bolt.ticksRemaining == 0 || outside || struckHump { continue }
+            // Whatever stands in the middle of this court eats a bolt: the
+            // roof hump, the standing net, or a rim post.
+            let struckMiddle = arena.humpContact(
+                position: bolt.position,
+                radius: BoltState.radius
+            ) != nil || arena.floorNetContact(
+                position: bolt.position,
+                radius: BoltState.radius,
+                preferredSide: bolt.velocity.x
+            ) != nil || arena.hoopRimContact(
+                position: bolt.position,
+                radius: BoltState.radius
+            ) != nil
+            if bolt.ticksRemaining == 0 || outside || struckMiddle { continue }
             survivors.append(bolt)
         }
         state.bolts = survivors
@@ -844,6 +950,26 @@ public struct SimulationEngine: Sendable {
             }
         }
 
+        // The standing net is solid for hulls too -- unlike the portal goal,
+        // which you are meant to be able to fly into and defend.
+        if let wall = arena.floorNetContact(
+            from: previousPosition,
+            to: ship.position,
+            radius: radius
+        ) {
+            ship.position = wall.position
+            let inwardSpeed = simd_dot(ship.velocity, wall.normal)
+            if inwardSpeed < 0 {
+                ship.velocity -= wall.normal * ((1 + 0.12) * inwardSpeed)
+                if inwardSpeed < -Self.effectImpactSpeed {
+                    effects.append(.collisionEffect(
+                        position: ship.position,
+                        intensity: abs(inwardSpeed)
+                    ))
+                }
+            }
+        }
+
         if let corner = arena.cornerContact(position: ship.position, radius: radius) {
             ship.position = corner.position
             let inwardSpeed = simd_dot(ship.velocity, corner.normal)
@@ -876,11 +1002,48 @@ public struct SimulationEngine: Sendable {
     ) {
         let r = state.ball.radius
         var struckNet = false
+
+        // The floor-mounted net: one solid slab standing up out of the middle
+        // of the court, capped with a half-round. Nothing goes through it, so
+        // there is no scoring here at all -- it is simply in the way, and the
+        // only route to the other half is over the top.
+        if let wall = arena.floorNetContact(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r
+        ) {
+            state.ball.position = wall.position
+            let inwardSpeed = simd_dot(state.ball.velocity, wall.normal)
+            if inwardSpeed < 0 {
+                state.ball.velocity -= wall.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+            }
+            struckNet = true
+        }
+
+        // The hoop. The bucket is judged before the rim, because a ball that
+        // dropped cleanly through the window never touched a post -- and a
+        // ball that clipped one on the way in still counts, same as the real
+        // game.
+        if arena.hoopScored(from: previousPosition, to: state.ball.position) {
+            contacts.append(.ballEnteredHoop)
+        }
+        if let rim = arena.hoopRimContact(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r
+        ) {
+            state.ball.position = rim.position
+            let inwardSpeed = simd_dot(state.ball.velocity, rim.normal)
+            if inwardSpeed < 0 {
+                state.ball.velocity -= rim.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+            }
+        }
+
         // Cap first: the rounded bottom of the net is hard and neutral, so
         // clipping it from below is a rebound rather than a score. Only the two
         // faces above it are the portal, and a ball that reaches one is gone --
         // whoever drove it in takes the point.
-        if let capHit = sweptNetCapHit(
+        if arena.netStyle == .roofPortal, let capHit = sweptNetCapHit(
             from: previousPosition,
             to: state.ball.position,
             radius: r,
@@ -892,7 +1055,7 @@ public struct SimulationEngine: Sendable {
                 state.ball.velocity -= capHit.normal * (2 * inwardSpeed)
             }
             struckNet = true
-        } else if let netHit = sweptNetHit(
+        } else if arena.netStyle == .roofPortal, let netHit = sweptNetHit(
             from: previousPosition,
             to: state.ball.position,
             radius: r,

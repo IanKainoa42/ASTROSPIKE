@@ -100,6 +100,10 @@ public enum RuleContact: Codable, Equatable, Sendable {
     case ballTouchedShip(team: Team)
     case ballCrossedCenter(into: Team)
     case ballEnteredGoal(defending: Team)
+    /// The ball dropped through the centre hoop. Who it belongs to is not
+    /// carried here -- it is whoever touched the ball last, which the engine
+    /// tracks on the world state.
+    case ballEnteredHoop
     case shipDestroyed(team: Team, reason: PointReason)
 }
 
@@ -125,12 +129,14 @@ public struct MatchRules: Sendable {
         allowedShipTouches: Int = 3
     ) {
         self.state = state
-        self.allowedFloorBounces = min(5, max(1, allowedFloorBounces))
+        // Zero is a legal setting: volleyball ends the rally on the first
+        // touch of the floor rather than the second.
+        self.allowedFloorBounces = min(5, max(0, allowedFloorBounces))
         self.allowedShipTouches = min(6, max(1, allowedShipTouches))
     }
 
     public mutating func updateAllowedFloorBounces(_ value: Int) {
-        allowedFloorBounces = min(5, max(1, value))
+        allowedFloorBounces = min(5, max(0, value))
     }
 
     /// 1 = single game, 2 = best of three, 3 = best of five.
@@ -199,7 +205,7 @@ public struct MatchRules: Sendable {
                 if state.floorContacts[side] > allowedFloorBounces {
                     return awardPoint(to: side.opponent, reason: .thirdBounce)
                 }
-            case .ballEnteredGoal, .shipDestroyed:
+            case .ballEnteredGoal, .ballEnteredHoop, .shipDestroyed:
                 break
             }
         }

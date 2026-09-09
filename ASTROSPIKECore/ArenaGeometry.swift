@@ -22,6 +22,51 @@ public struct BallState: Codable, Equatable, Sendable {
     }
 }
 
+/// What stands in the middle of the court. The shipped arena hangs a portal
+/// goal from the roof; the alternate courts either stand a solid net up off
+/// the floor or clear the middle entirely for a hoop.
+public enum NetStyle: String, Codable, Equatable, Sendable {
+    /// One slab hanging from the roof hump, its faces a portal you shoot
+    /// through. The original ASTROSPIKE court.
+    case roofPortal
+    /// A solid slab standing up from the floor, capped with a half-round.
+    /// Nothing passes through it -- you play over it. Volleyball.
+    case floorWall
+    /// Nothing in the middle at all. Basketball puts a hoop there instead.
+    case none
+}
+
+/// A rim hanging in the middle of the court: two posts with a window between
+/// them. A ball that drops through the window from above is a bucket.
+public struct HoopGeometry: Equatable, Sendable {
+    /// The height of the rim line -- where a ball is judged to have gone in.
+    public var centerY: Double
+    /// Half the window between the posts. Comfortably wider than a ball, so
+    /// a clean shot drops rather than wedging.
+    public var innerHalfWidth: Double
+    /// Radius of each rim post. The posts are hard: clipping one is a miss.
+    public var rimRadius: Double
+    /// How far the mesh hangs below the rim. Cosmetic; nothing collides.
+    public var netDepth: Double
+
+    public init(
+        centerY: Double = 0.16,
+        innerHalfWidth: Double = 0.072,
+        rimRadius: Double = 0.014,
+        netDepth: Double = 0.11
+    ) {
+        self.centerY = centerY
+        self.innerHalfWidth = innerHalfWidth
+        self.rimRadius = rimRadius
+        self.netDepth = netDepth
+    }
+
+    /// Centre of the post on the `sign` side.
+    public func postCenter(sign: Double) -> SIMD2<Double> {
+        SIMD2(sign * (innerHalfWidth + rimRadius), centerY)
+    }
+}
+
 public struct ArenaGeometry: Equatable, Sendable {
     public var halfWidth: Double
     public var floorY: Double
@@ -46,6 +91,15 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// tilt is the whole point of the lip: a ball that lands on it rolls
     /// back down into the mouth instead of sitting there.
     public var lipRise: Double
+    /// What stands in the middle. Switching this switches the court: the
+    /// hump, the lips and the portal all belong to `.roofPortal` and are
+    /// simply absent from the others.
+    public var netStyle: NetStyle
+    /// Top of the floor-mounted slab, and the centre of the half-round that
+    /// caps it. Only read when `netStyle` is `.floorWall`.
+    public var netTopY: Double
+    /// The rim, when there is one. Only read when `netStyle` is `.none`.
+    public var hoop: HoopGeometry?
 
     public init(
         halfWidth: Double = 0.96,
@@ -62,7 +116,12 @@ public struct ArenaGeometry: Equatable, Sendable {
         // a little under the mouth, small enough that it is still the mouth,
         // not the lip, that you are shooting at.
         lipLength: Double = 0.11,
-        lipRise: Double = 0.035
+        lipRise: Double = 0.035,
+        netStyle: NetStyle = .roofPortal,
+        // Dead level with the middle of the court, so the slab covers exactly
+        // the bottom half of the arena.
+        netTopY: Double = 0,
+        hoop: HoopGeometry? = nil
     ) {
         self.halfWidth = halfWidth
         self.floorY = floorY
@@ -73,9 +132,33 @@ public struct ArenaGeometry: Equatable, Sendable {
         self.cornerRadiusY = cornerRadiusY
         self.lipLength = lipLength
         self.lipRise = lipRise
+        self.netStyle = netStyle
+        self.netTopY = netTopY
+        self.hoop = hoop
     }
 
     public static let standard = ArenaGeometry()
+
+    /// Volleyball: the net comes down off the roof and stands up out of the
+    /// floor, covering the bottom half of the arena. Nothing passes through
+    /// it, so the middle is a wall you have to lift the ball over -- and the
+    /// roof goes flat, because the hump only ever existed to hang a goal.
+    public static let volleyball = ArenaGeometry(
+        netStyle: .floorWall,
+        netTopY: 0
+    )
+
+    /// Basketball: the middle is cleared entirely and a single rim hangs at
+    /// centre court. Both halves shoot at the same hoop.
+    public static let basketball = ArenaGeometry(
+        netStyle: .none,
+        hoop: HoopGeometry()
+    )
+
+    /// The hump and the lips are parts of the roof-hung goal. Without one
+    /// the roof is flat and the middle is clear.
+    public var hasHump: Bool { netStyle == .roofPortal }
+    public var hasLips: Bool { netStyle == .roofPortal }
 
     public var opponentCrossingLimit: Double { halfWidth / 2 }
 
@@ -134,6 +217,7 @@ public struct ArenaGeometry: Equatable, Sendable {
         position: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard hasLips else { return nil }
         let mirrored = SIMD2(abs(position.x), position.y)
         let root = lipRoot(sign: 1)
         let tip = lipTip(sign: 1)
@@ -215,6 +299,7 @@ public struct ArenaGeometry: Equatable, Sendable {
         position: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard hasHump else { return nil }
         let mirrored = SIMD2(abs(position.x), position.y)
         guard mirrored.x <= humpBaseX + radius, mirrored.y >= humpUndersideY - radius else {
             return nil
@@ -342,5 +427,125 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// left face -- from the cyan half -- is a point for orange.
     public func portalScorer(enteredFromLeft: Bool) -> Team {
         enteredFromLeft ? .orange : .cyan
+    }
+
+    // MARK: - The floor-mounted net
+
+    /// The top of the slab, as a point. The cap is a half-round centred here
+    /// with the slab's own half-thickness for a radius, so the net is a
+    /// capsule: a rectangle from the floor up, rounded off at the top. The
+    /// bottom of that capsule is buried in the floor, where nothing can reach
+    /// it, which is why one shape does for the whole net.
+    public var netCapCenter: SIMD2<Double> { SIMD2(0, netTopY) }
+
+    /// Pushes a body of `radius` off the floor-mounted slab. `preferredSide`
+    /// breaks the tie for a body that has ended up dead centre inside the
+    /// net, where "away" has no direction of its own -- pass the side it came
+    /// from, or either side if it came from neither.
+    public func floorNetContact(
+        position: SIMD2<Double>,
+        radius: Double,
+        preferredSide: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard netStyle == .floorWall else { return nil }
+        let combined = netHalfWidth + radius
+        // Closest point on the slab's spine: the segment from the floor up to
+        // the cap centre.
+        let spineY = min(netTopY, max(floorY, position.y))
+        let closest = SIMD2(0, spineY)
+        let away = position - closest
+        let distance = simd_length(away)
+        guard distance < combined else { return nil }
+
+        let normal: SIMD2<Double>
+        if distance > 0.000_001 {
+            normal = away / distance
+        } else {
+            normal = SIMD2(preferredSide < 0 ? -1 : 1, 0)
+        }
+        return (closest + normal * combined, normal)
+    }
+
+    /// Swept version. The slab is thin and a driven ball crosses several of
+    /// its own radii a tick, so left unswept it simply teleports through.
+    public func floorNetContact(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard netStyle == .floorWall else { return nil }
+        let preferredSide: Double = if abs(start.x) > 0.000_001 {
+            start.x
+        } else if abs(end.x) > 0.000_001 {
+            -end.x
+        } else {
+            1
+        }
+        let travel = simd_distance(start, end)
+        let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
+        for step in 1 ... steps {
+            let sample = start + (end - start) * (Double(step) / Double(steps))
+            if let contact = floorNetContact(
+                position: sample,
+                radius: radius,
+                preferredSide: preferredSide
+            ) {
+                return contact
+            }
+        }
+        return nil
+    }
+
+    // MARK: - The hoop
+
+    /// Pushes a body of `radius` off whichever rim post it is touching. The
+    /// posts are the only solid part of the hoop; the window between them is
+    /// open, and so is everything below.
+    public func hoopRimContact(
+        position: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard let hoop else { return nil }
+        let combined = hoop.rimRadius + radius
+        let sign: Double = position.x < 0 ? -1 : 1
+        let center = hoop.postCenter(sign: sign)
+        let away = position - center
+        let distance = simd_length(away)
+        guard distance < combined, distance > 0.000_001 else { return nil }
+        let normal = away / distance
+        return (center + normal * combined, normal)
+    }
+
+    /// Swept version, for the same reason everything else in the middle of
+    /// the court has one.
+    public func hoopRimContact(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard hoop != nil else { return nil }
+        let travel = simd_distance(start, end)
+        let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
+        for step in 1 ... steps {
+            let sample = start + (end - start) * (Double(step) / Double(steps))
+            if let contact = hoopRimContact(position: sample, radius: radius) {
+                return contact
+            }
+        }
+        return nil
+    }
+
+    /// Did the ball drop through the rim on this tick? Downward only: coming
+    /// up through the hoop from underneath is not a bucket, same as the real
+    /// game. Judged on the centre of the ball, and the window is wide enough
+    /// that a ball whose centre clears it was never touching a post.
+    public func hoopScored(from start: SIMD2<Double>, to end: SIMD2<Double>) -> Bool {
+        guard let hoop else { return false }
+        guard start.y > hoop.centerY, end.y <= hoop.centerY else { return false }
+        let drop = start.y - end.y
+        guard drop > 0.000_000_1 else { return false }
+        let t = (start.y - hoop.centerY) / drop
+        let crossingX = start.x + (end.x - start.x) * t
+        return abs(crossingX) <= hoop.innerHalfWidth
     }
 }

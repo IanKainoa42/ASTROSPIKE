@@ -11,12 +11,42 @@ enum GameMode: Hashable {
     /// The warm-up bay: a lone pilot, the same court, hoops to pop and a
     /// keep-up streak, while a Game Center invite is out.
     case warmup
+    /// The net comes off the roof and stands up out of the floor, covering
+    /// the bottom half of the arena. Play it over the top; the floor is live.
+    case volleyball(AIDifficulty)
+    /// One rim at centre court that both halves shoot at. First ball through
+    /// it takes the match, for whoever touched it last.
+    case basketball(AIDifficulty)
 
-    /// Solo and doubles: nothing on the wire, the pilot's own tuning applies.
+    /// Everything but a Game Center match: nothing on the wire, the pilot's
+    /// own tuning applies.
     var isOffline: Bool {
         switch self {
-        case .solo, .doubles: true
+        case .solo, .doubles, .volleyball, .basketball: true
         case .online, .warmup: false
+        }
+    }
+
+    /// The court this mode is played on. The arena carries the whole of what
+    /// makes a mode different -- the hump, the net, the hoop -- so the engine
+    /// and the renderer only have to agree on this one value.
+    var court: ArenaGeometry {
+        switch self {
+        case .volleyball: .volleyball
+        case .basketball: .basketball
+        case .solo, .doubles, .online, .warmup: .standard
+        }
+    }
+
+    /// What the board should call it.
+    var title: String {
+        switch self {
+        case .solo: "SOLO FLIGHT"
+        case .doubles: "DOUBLES"
+        case .online: "ONLINE DUEL"
+        case .warmup: "WARM-UP BAY"
+        case .volleyball: "VOLLEYBALL"
+        case .basketball: "BASKETBALL"
         }
     }
 }
@@ -49,6 +79,12 @@ final class GameSession {
     /// runs bots, and only for a seat nobody took.
     private var pilots: [Seat: AIController] = [:]
     private var demoAI: AIController?
+    /// Which ships were past their MAX CROSS line last frame, so the call
+    /// fires once on the way over instead of every frame they spend there.
+    private var offsideLastFrame: Set<Seat> = []
+    /// Which teams had an engine lit last frame, so the thruster bed starts
+    /// and stops on the edges rather than restarting sixty times a second.
+    private var thrustingLastFrame: Set<Team> = []
     let localSeat: Seat
     private weak var online: OnlineMatchCoordinator?
     /// The host mirrors the score to the lobby; guests leave it alone.
@@ -89,6 +125,9 @@ final class GameSession {
         case let .doubles(difficulty):
             roster = Seat.doubles
             for seat in Seat.doubles where seat != localSeat { botSeats[seat] = difficulty }
+        case let .volleyball(difficulty), let .basketball(difficulty):
+            roster = Seat.singles
+            botSeats[.orange] = difficulty
         case .warmup:
             // Nobody to defend against, and no ceremony before the first serve.
             roster = [.cyan]
@@ -101,6 +140,9 @@ final class GameSession {
                 for seat in roster.subtracting(filled) { botSeats[seat] = .pilot }
             }
         }
+        // The court goes on before the roster: the opening ball is staged as
+        // part of seating, and it is staged into this arena.
+        initialEngine.updateArena(mode.court)
         initialEngine.configureRoster(roster)
         // Whoever runs the rules picks the length. A guest's board plays to
         // the host's format, which arrived with the seating plan, never to
@@ -119,6 +161,7 @@ final class GameSession {
             demoAI = AIController(difficulty: .pilot, configuration: configuration)
         }
         scene.scaleMode = .resizeFill
+        scene.arena = mode.court
         scene.snapshot = state
         if mode == .warmup { scene.rings = rings.rings }
         for seat in Seat.allCases {
@@ -143,6 +186,7 @@ final class GameSession {
         // callback pointing at an object that is already gone: the guest
         // then never sees a snapshot and plays its own single game.
         if mode == .online { installOnlineCallbacks() }
+        SoundBank.shared.warm()
         let driver = FrameDriver { [weak self] timestamp in
             self?.frame(timestamp: timestamp)
         }
@@ -154,6 +198,11 @@ final class GameSession {
         frameDriver?.stop()
         frameDriver = nil
         previousTimestamp = nil
+        // The thruster bed loops. Leaving the arena with the throttle down
+        // must not leave it droning under the menu.
+        SoundBank.shared.stopEverything()
+        thrustingLastFrame = []
+        offsideLastFrame = []
     }
 
     func togglePause() {
@@ -253,7 +302,7 @@ final class GameSession {
         }
 
         switch mode {
-        case .solo, .doubles, .warmup:
+        case .solo, .doubles, .warmup, .volleyball, .basketball:
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
@@ -275,6 +324,7 @@ final class GameSession {
 
         state = engine.state
         events = engine.lastEvents
+        announceShipCues(inputs: inputs)
         if mode == .warmup {
             bestKeepUp = max(bestKeepUp, state.match.shipTouches.cyan)
             let burst = rings.observe(state)
@@ -286,7 +336,7 @@ final class GameSession {
             }
         }
         let presentsLocalEvents = switch mode {
-        case .solo, .doubles, .warmup: true
+        case .solo, .doubles, .warmup, .volleyball, .basketball: true
         case .online: online?.isAuthoritative == true
         }
         if presentsLocalEvents, !events.isEmpty { scene.present(events) }
@@ -295,7 +345,9 @@ final class GameSession {
             lastPointText = point.label(
                 bounceAllowance: engine.configuration.allowedFloorBounces
             )
-            if case let .point(team, _) = point { FeedbackCenter.shared.point(team: team) }
+            if case let .point(team, reason) = point {
+                FeedbackCenter.shared.point(team: team, reason: reason)
+            }
         } else if presentsLocalEvents, events.contains(.rallyReset) {
             lastPointText = nil
         }
@@ -320,6 +372,48 @@ final class GameSession {
                 }
             }
         }
+    }
+
+    /// The two sounds that come from the ships rather than from the rulebook:
+    /// scraping past your own MAX CROSS line, and holding the throttle down.
+    /// Both are edge-triggered -- a cue that retriggers every frame the
+    /// condition holds is not a cue, it is a buzz.
+    private func announceShipCues(inputs: [Seat: PlayerInput]) {
+        let limit = mode.court.opponentCrossingLimit
+        var offsideNow: Set<Seat> = []
+        var thrustingNow: Set<Team> = []
+        var thrustCenter: [Team: Double] = [:]
+
+        for (seat, ship) in state.ships {
+            let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
+            if ship.position.x * intrusionSign > limit {
+                offsideNow.insert(seat)
+                if !offsideLastFrame.contains(seat) {
+                    FeedbackCenter.shared.crossedOffside(
+                        team: ship.homeSide,
+                        positionX: ship.position.x
+                    )
+                }
+            }
+            if inputs[seat]?.thrust == true, state.match.phase == .playing {
+                thrustingNow.insert(ship.homeSide)
+                thrustCenter[ship.homeSide] = ship.position.x
+            }
+        }
+        offsideLastFrame = offsideNow
+
+        for team in Team.allCases {
+            let cue = SoundBank.Cue.thruster(team)
+            if thrustingNow.contains(team) {
+                SoundBank.shared.startLoop(
+                    cue,
+                    positionX: Float(thrustCenter[team] ?? 0)
+                )
+            } else if thrustingLastFrame.contains(team) {
+                SoundBank.shared.stopLoop(cue)
+            }
+        }
+        thrustingLastFrame = thrustingNow
     }
 
     private func installOnlineCallbacks() {
@@ -374,11 +468,11 @@ final class GameSession {
             self.events = [event]
             self.scene.present([event])
             switch event {
-            case let .point(team, _):
+            case let .point(team, reason):
                 self.lastPointText = event.label(
                     bounceAllowance: self.engine.configuration.allowedFloorBounces
                 )
-                FeedbackCenter.shared.point(team: team)
+                FeedbackCenter.shared.point(team: team, reason: reason)
             case .rallyReset:
                 self.lastPointText = nil
             case .setEnded:
@@ -421,7 +515,9 @@ final class GameSession {
 }
 
 @MainActor
-private final class FrameDriver: NSObject {
+/// A display link that hands its timestamp back on the main actor. Shared by
+/// the arena and the circuit -- both want the same fixed-step pump.
+final class FrameDriver: NSObject {
     private let onFrame: @MainActor (CFTimeInterval) -> Void
     private var displayLink: CADisplayLink?
 

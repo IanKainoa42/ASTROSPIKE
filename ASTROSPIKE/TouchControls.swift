@@ -3,6 +3,11 @@ import SwiftUI
 import UIKit
 
 struct TouchControls: View {
+    enum Loadout: Equatable {
+        case ship
+        case car
+    }
+
     @Binding var torque: Double
     @Binding var thrust: Bool
     @Binding var fire: Bool
@@ -13,6 +18,10 @@ struct TouchControls: View {
     /// either side of it: a thumb never has to reach past the court's edge
     /// and never covers the play.
     let arenaFrame: CGRect
+    /// What the pads are flying. The circuit has no cannon and its beam pad is
+    /// a brake, so the same four thumb positions serve both without the driver
+    /// hunting for a trigger that does nothing.
+    var loadout: Loadout = .ship
 
     @State private var leftPressed = false
     @State private var rightPressed = false
@@ -108,15 +117,17 @@ struct TouchControls: View {
                     .frame(width: fire.width + slop, height: fire.height + slop)
             }
             .position(x: tractorX, y: tractorY)
-            placeable("fire") {
-                ControlZone(
-                    icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
-                    active: firePressed, chrome: fire, bottomPadding: 0,
-                    pressChanged: setFirePressed
-                )
-                .frame(width: fire.width + slop, height: fire.height + slop)
+            if loadout == .ship {
+                placeable("fire") {
+                    ControlZone(
+                        icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                        active: firePressed, chrome: fire, bottomPadding: 0,
+                        pressChanged: setFirePressed
+                    )
+                    .frame(width: fire.width + slop, height: fire.height + slop)
+                }
+                .position(x: fireX, y: fireY)
             }
-            .position(x: fireX, y: fireY)
             placeable("thrust") {
                 ControlZone(
                     icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
@@ -235,8 +246,11 @@ struct TouchControls: View {
 
     private func tractorPad(chrome: CGSize) -> some View {
         ControlZone(
-            icon: "arrow.down.to.line.compact", label: "Tractor beam", identifier: "tractor-control",
-            tint: .purple, active: tractorPressed, chrome: chrome, bottomPadding: 12,
+            icon: loadout == .car ? "minus.circle.fill" : "arrow.down.to.line.compact",
+            label: loadout == .car ? "Brake" : "Tractor beam",
+            identifier: "tractor-control",
+            tint: loadout == .car ? .red : .purple,
+            active: tractorPressed, chrome: chrome, bottomPadding: 12,
             pressChanged: setTractorPressed
         )
     }
@@ -290,10 +304,12 @@ struct TouchControls: View {
     private var thrustZone: some View {
         VStack(spacing: 0) {
             tractorPad(chrome: fireChrome)
-            ControlZone(
-                icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
-                active: firePressed, chrome: fireChrome, pressChanged: setFirePressed
-            )
+            if loadout == .ship {
+                ControlZone(
+                    icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                    active: firePressed, chrome: fireChrome, pressChanged: setFirePressed
+                )
+            }
             ControlZone(
                 icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
                 active: thrustPressed, chrome: thrustChrome, pressChanged: setThrustPressed

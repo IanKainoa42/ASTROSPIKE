@@ -10,6 +10,9 @@ struct AppRootView: View {
     @State private var entitlements = HullEntitlements()
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
+    /// The track runs on its own engine and its own scene -- no ball, no
+    /// teams, no rulebook -- so it sits beside `gameMode` rather than in it.
+    @State private var showTrack = false
     @State private var showOnboarding: Bool
     @Environment(\.scenePhase) private var scenePhase
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
@@ -46,7 +49,10 @@ struct AppRootView: View {
     var body: some View {
         ZStack {
             CosmicBackground()
-            if let gameMode {
+            if showTrack {
+                TrackView { withAnimation(.easeOut(duration: 0.25)) { showTrack = false } }
+                    .transition(.opacity)
+            } else if let gameMode {
                 GameView(
                     mode: gameMode,
                     online: online,
@@ -137,6 +143,15 @@ struct AppRootView: View {
             case .lobby:
                 LobbyView(lobby: lobby, online: online)
                     .presentationDetents([.large])
+            case .modes:
+                ModePicker { mode in
+                    sheet = nil
+                    withAnimation(.easeOut(duration: 0.25)) { gameMode = mode }
+                } startTrack: {
+                    sheet = nil
+                    withAnimation(.easeOut(duration: 0.25)) { showTrack = true }
+                }
+                .presentationDetents([.large])
             case .invite:
                 InviteSheet(online: online) {
                     sheet = nil
@@ -157,7 +172,7 @@ struct AppRootView: View {
         let activity: PilotActivity = switch gameMode {
         case .online: .playing
         case .warmup: .matching
-        case .solo, .doubles: .solo
+        case .solo, .doubles, .volleyball, .basketball: .solo
         case nil: if case .matching = online.status { .matching } else { .idle }
         }
         lobby.setActivity(activity, matchID: activity == .playing ? lobby.hostedDuel?.id : nil)
@@ -179,7 +194,7 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, tutorial, settings, hangar, invite, lobby
+    case difficulty, tutorial, settings, hangar, invite, lobby, modes
     var id: String { rawValue }
 }
 
@@ -283,6 +298,7 @@ private struct HomeView: View {
                     MenuButton(title: "SOLO FLIGHT", subtitle: "ROOKIE • PILOT • ACE", icon: "person.fill") { sheet = .difficulty }
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
                     MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
+                    MenuButton(title: "GAME MODES", subtitle: "VOLLEYBALL • BASKETBALL • TIME TRIAL", icon: "square.grid.2x2.fill") { sheet = .modes }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
                         SmallMenuButton(title: "INVITE", icon: "person.2.wave.2.fill") { sheet = .invite }
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
@@ -343,6 +359,8 @@ private struct GameView: View {
         self.exit = exit
         let configuration = switch mode {
         case .solo, .doubles: tuning.configuration
+        case .volleyball: SimulationConfiguration.volleyball(from: tuning.configuration)
+        case .basketball: SimulationConfiguration.basketball(from: tuning.configuration)
         // The host's sliders reach the guest with the seating plan; the host
         // seeded them from its own store, so both read the same numbers.
         case .online: online.hostTuning.configuration
@@ -510,14 +528,17 @@ private struct GameView: View {
     private var allowedBounces: Int {
         switch mode {
         case .solo, .doubles: tuning.allowedBouncesPerHit
-        case .online, .warmup: 3
+        // Volleyball's floor is live and the hoop court has no faults at all;
+        // both come off `SimulationConfiguration`, not the pilot's sliders.
+        case .volleyball: 0
+        case .basketball, .online, .warmup: 3
         }
     }
 
     private var allowedTouches: Int {
         switch mode {
         case .solo, .doubles: tuning.allowedTouchesPerSide
-        case .online, .warmup: 3
+        case .volleyball, .basketball, .online, .warmup: 3
         }
     }
 
@@ -554,7 +575,7 @@ private struct GameView: View {
             lobby.hostDuelAbandoned()
             online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
-        case .solo, .doubles: break
+        case .solo, .doubles, .volleyball, .basketball: break
         }
         exit()
     }
@@ -749,7 +770,7 @@ private struct MatchHUD: View {
     }
 }
 
-private struct CountdownView: View {
+struct CountdownView: View {
     let value: Int
     var body: some View {
         VStack(spacing: 8) {
@@ -757,6 +778,80 @@ private struct CountdownView: View {
             Text("NEUTRAL CENTER DROP").font(.caption.monospaced().weight(.bold)).tracking(2).foregroundStyle(.white.opacity(0.6))
         }
         .accessibilityElement(children: .combine).accessibilityIdentifier("countdown")
+    }
+}
+
+/// The alternate courts, and the track. Volleyball and basketball still want
+/// a rival, so the difficulty is chosen here rather than behind another sheet.
+private struct ModePicker: View {
+    let start: (GameMode) -> Void
+    let startTrack: () -> Void
+    @State private var difficulty: AIDifficulty = .pilot
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("GAME MODES").font(.title.bold())
+
+                Picker("Rival", selection: $difficulty) {
+                    ForEach(AIDifficulty.allCases, id: \.self) { level in
+                        Text(level.rawValue.uppercased()).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("mode-difficulty")
+
+                ModeCard(
+                    title: "VOLLEYBALL",
+                    icon: "volleyball.fill",
+                    tint: .cyan,
+                    detail: "The net stands up out of the floor and covers the bottom half of the arena. Nothing goes through it — play it over the top. Three touches a trip, and the first time the ball touches the ground the rally is over."
+                ) { start(.volleyball(difficulty)) }
+
+                ModeCard(
+                    title: "BASKETBALL",
+                    icon: "basketball.fill",
+                    tint: .orange,
+                    detail: "One rim at centre court and both halves shoot at it. Clip a post and the shot is off. First ball to drop through wins the match outright — for whoever touched it last, whichever side it fell from."
+                ) { start(.basketball(difficulty)) }
+
+                ModeCard(
+                    title: "TIME TRIAL",
+                    icon: "flag.checkered",
+                    tint: .green,
+                    detail: "A tight circuit with a live railing. Steer and throttle the same way you fly. Touch a rail and you are penalised: the car is stunned, the throttle goes dead, and a second goes on your lap."
+                ) { startTrack() }
+            }
+            .padding(28)
+        }
+        .accessibilityIdentifier("mode-picker")
+    }
+}
+
+private struct ModeCard: View {
+    let title: String, icon: String, tint: Color, detail: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 16) {
+                Image(systemName: icon).font(.largeTitle).frame(width: 46).foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.headline.weight(.black)).tracking(1.4)
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(tint.opacity(0.35)))
+            .contentShape(RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mode-\(title.lowercased().replacingOccurrences(of: " ", with: "-"))")
     }
 }
 
