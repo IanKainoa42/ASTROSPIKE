@@ -22,7 +22,16 @@ struct TouchControls: View {
     /// Ian places the pads himself: Settings → Arrange pads, then drag them
     /// in the bay. Offsets from the drawn default, in points, per pad.
     @AppStorage("arrangePads") private var arranging = false
-    @AppStorage("padOffsets") private var padOffsetsData = Data()
+    @AppStorage("padOffsets2") private var padOffsetsData = Data()
+
+    /// Where Ian dragged the pads on the Mac window (build 34); the layout math below is the
+    /// anchor, these ride on top. Saved drags stack on these.
+    private static let bakedOffsets: [String: CGSize] = [
+        "steering": CGSize(width: 129, height: -38),
+        "tractor": CGSize(width: -109, height: -303),
+        "fire": CGSize(width: -49, height: -280),
+        "thrust": CGSize(width: -123, height: -246),
+    ]
     @State private var dragging: [String: CGSize] = [:]
 
     /// A margin narrower than this cannot hold a pad; the old full-bleed
@@ -144,6 +153,7 @@ struct TouchControls: View {
     /// While arranging, the pad stops taking presses and can be dragged
     /// anywhere; its offset from the drawn default persists.
     private func placeable<Pad: View>(_ id: String, @ViewBuilder _ pad: () -> Pad) -> some View {
+        let baked = Self.bakedOffsets[id] ?? .zero
         let saved = padOffsets[id] ?? .zero
         let live = dragging[id] ?? .zero
         return pad()
@@ -168,7 +178,7 @@ struct TouchControls: View {
                         )
                 }
             }
-            .offset(x: saved.width + live.width, y: saved.height + live.height)
+            .offset(x: baked.width + saved.width + live.width, y: baked.height + saved.height + live.height)
     }
 
     /// The whole outer strip is the steering surface: press or drag on its

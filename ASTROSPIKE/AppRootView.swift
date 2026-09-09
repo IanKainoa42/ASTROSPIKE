@@ -832,7 +832,7 @@ private struct SettingsView: View {
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
                 Toggle("Arrange pads (drag them in the bay)", isOn: $arrangePads)
-                Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets") }
+                Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
                 Section("Match Rules") {
