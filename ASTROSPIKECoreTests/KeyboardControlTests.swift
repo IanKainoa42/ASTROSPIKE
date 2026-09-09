@@ -5,7 +5,7 @@ import Testing
 struct KeyboardControlTests {
     @Test("Both hands can fly: the letter cluster and the arrows agree")
     func lettersAndArrowsMatch() {
-        for action in [FlightControlAction.left, .right, .thrust] {
+        for action in [FlightControlAction.left, .right, .thrust, .tractor] {
             let codes = KeyboardControlMapping.keyCodes(for: action)
             #expect(codes.count >= 2, "every action needs more than one key")
             for code in codes {

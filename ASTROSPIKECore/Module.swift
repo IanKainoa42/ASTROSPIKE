@@ -69,12 +69,16 @@ public struct PlayerInput: Codable, Equatable, Sendable {
     /// Asks for a bolt. Held down it repeats at the cooldown rate, so a
     /// thumb mashing the pad and a thumb resting on it behave the same.
     public var fire: Bool
+    /// Holds the tractor beam on: the ball ahead of the nose is drawn in
+    /// toward the ship while this is held. Continuous, no cooldown.
+    public var tractor: Bool
 
-    public init(tick: UInt64, torque: Double, thrust: Bool, fire: Bool = false) {
+    public init(tick: UInt64, torque: Double, thrust: Bool, fire: Bool = false, tractor: Bool = false) {
         self.tick = tick
         self.torque = max(-1, min(1, torque))
         self.thrust = thrust
         self.fire = fire
+        self.tractor = tractor
     }
 
     public static func idle(tick: UInt64) -> PlayerInput {
@@ -100,11 +104,12 @@ public enum FlightControlMapping {
         leftPressed: Bool,
         rightPressed: Bool,
         thrustPressed: Bool,
-        firePressed: Bool = false
+        firePressed: Bool = false,
+        tractorPressed: Bool = false
     ) -> PlayerInput {
         let torque = (leftPressed ? torque(for: .left) : 0)
             + (rightPressed ? torque(for: .right) : 0)
-        return PlayerInput(tick: tick, torque: torque, thrust: thrustPressed, fire: firePressed)
+        return PlayerInput(tick: tick, torque: torque, thrust: thrustPressed, fire: firePressed, tractor: tractorPressed)
     }
 }
 
@@ -142,6 +147,8 @@ public struct ShipState: Codable, Equatable, Sendable {
     public var homeSide: Team
     /// Ticks until the cannon can fire again. Zero means ready.
     public var fireCooldownTicks: UInt64
+    /// The tractor beam is on this tick, so every board can draw it.
+    public var tractorActive: Bool
 
     public init(
         position: SIMD2<Double>,
@@ -151,7 +158,8 @@ public struct ShipState: Codable, Equatable, Sendable {
         isDestroyed: Bool = false,
         thrustLevel: Double = 0,
         homeSide: Team? = nil,
-        fireCooldownTicks: UInt64 = 0
+        fireCooldownTicks: UInt64 = 0,
+        tractorActive: Bool = false
     ) {
         self.position = position
         self.velocity = velocity
@@ -161,6 +169,7 @@ public struct ShipState: Codable, Equatable, Sendable {
         self.thrustLevel = thrustLevel
         self.homeSide = homeSide ?? (position.x < 0 ? .cyan : .orange)
         self.fireCooldownTicks = fireCooldownTicks
+        self.tractorActive = tractorActive
     }
 }
 
@@ -259,6 +268,14 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var exhaustWashStrength: Double
     /// How far behind the ship the exhaust still reaches the ball.
     public var exhaustWashRange: Double
+    /// How hard the tractor beam draws the ball in, at the nose. Fades to
+    /// nothing at `tractorRange`.
+    public var tractorStrength: Double
+    /// How far ahead of the nose the beam reaches.
+    public var tractorRange: Double
+    /// Velocity bled off the ball each second while it is in the beam, so
+    /// it settles toward the ship instead of slingshotting past.
+    public var tractorDrag: Double
     /// Warm-up bay: nothing is a fault. Touches and bounces are tallied but
     /// never award a point, a goal simply re-serves, and the trigger works
     /// anywhere. There is no opponent, so there is nothing to defend.
@@ -286,6 +303,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
         boltPunch: Double = 1.15,
         exhaustWashStrength: Double = 0.65,
         exhaustWashRange: Double = 0.36,
+        tractorStrength: Double = 1.6,
+        tractorRange: Double = 0.55,
+        tractorDrag: Double = 2.0,
         sandbox: Bool = false
     ) {
         self.stepDuration = stepDuration
@@ -309,6 +329,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.boltPunch = max(0, boltPunch)
         self.exhaustWashStrength = max(0, exhaustWashStrength)
         self.exhaustWashRange = max(0, exhaustWashRange)
+        self.tractorStrength = max(0, tractorStrength)
+        self.tractorRange = max(0, tractorRange)
+        self.tractorDrag = max(0, tractorDrag)
         self.sandbox = sandbox
     }
 
@@ -482,6 +505,9 @@ public struct SimulationEngine: Sendable {
             }
             state.ships[seat] = ship
         }
+            // Same holster rule as the cannon: the beam only works from home.
+            ship.tractorActive = input.tractor && onOwnHalf
+                && (state.match.phase == .playing || configuration.sandbox)
         resolveShipShipCollisions(
             previousPositions: previousShipPositions,
             effects: &collisionEffects
@@ -499,6 +525,7 @@ public struct SimulationEngine: Sendable {
         applyExhaustWash(dt: dt)
         state.ball.position += state.ball.velocity * dt
         advanceBolts(contacts: &contacts, effects: &collisionEffects)
+        applyTractorBeam(dt: dt)
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,
             previousShipPositions: previousShipPositions,
@@ -654,6 +681,34 @@ public struct SimulationEngine: Sendable {
 
     private mutating func advanceBolts(
         contacts: inout [RuleContact],
+    /// The tractor beam is the cannon's opposite: a cone ahead of the nose
+    /// that draws the ball in and bleeds its speed off, strongest at the
+    /// nose and gone at `tractorRange`. Like the wash it is not a touch, so
+    /// reeling a ball in never counts against the touch limit -- the touch
+    /// comes when it lands on the hull.
+    private static let tractorCone = 0.45
+
+    private mutating func applyTractorBeam(dt: Double) {
+        let range = configuration.tractorRange
+        guard range > 0, configuration.tractorStrength > 0 else { return }
+        for seat in Seat.allCases {
+            guard let ship = state.ships[seat], !ship.isDestroyed, ship.tractorActive else { continue }
+            let nose = SIMD2(cos(ship.angle), sin(ship.angle))
+            let offset = state.ball.position - ship.position
+            let distance = simd_length(offset)
+            guard distance > 0.000_001, distance < range else { continue }
+            let toward = offset / distance
+            let along = simd_dot(toward, nose)
+            guard along > Self.tractorCone else { continue }
+            let falloff = 1 - distance / range
+            let centring = (along - Self.tractorCone) / (1 - Self.tractorCone)
+            let grip = falloff * centring
+            let pull = configuration.tractorStrength * grip
+            state.ball.velocity -= toward * (pull * dt)
+            state.ball.velocity *= max(0, 1 - configuration.tractorDrag * grip * dt)
+        }
+    }
+
         effects: inout [SimulationEvent]
     ) {
         guard !state.bolts.isEmpty else { return }

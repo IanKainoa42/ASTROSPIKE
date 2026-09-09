@@ -21,6 +21,8 @@ final class ArenaScene: SKScene {
     private var exhaustNodes: [Seat: SKSpriteNode] = [:]
     private let ball = SKShapeNode(circleOfRadius: 10)
     private var boltNodes: [UInt64: SKNode] = [:]
+    /// The tractor cone ahead of each nose, redrawn every frame it is on.
+    private var beamNodes: [Seat: SKShapeNode] = [:]
     private var ballTrail: [CGPoint] = []
     private var wakeAnchors: [Seat: CGPoint] = [:]
     private var plumeBudgets: [Seat: Double] = [:]
@@ -43,8 +45,22 @@ final class ArenaScene: SKScene {
             actorLayer.addChild(ship)
         }
         actorLayer.addChild(ball)
+        for seat in Seat.allCases {
+            let beam = SKShapeNode()
+            beam.fillColor = Self.beamColor.withAlphaComponent(0.16)
+            beam.strokeColor = Self.beamColor.withAlphaComponent(0.55)
+            beam.lineWidth = 1.5
+            beam.glowWidth = 6
+            beam.blendMode = .add
+            beam.zPosition = 3
+            beam.isHidden = true
+            beamNodes[seat] = beam
+            actorLayer.addChild(beam)
+        }
         configureActorNodes()
     }
+
+    static let beamColor = SKColor(red: 0.70, green: 0.42, blue: 1.0, alpha: 1)
 
     required init?(coder aDecoder: NSCoder) { nil }
 
@@ -535,6 +551,32 @@ final class ArenaScene: SKScene {
         exhaust.alpha = 0.55 + CGFloat(state.thrustLevel / 18) * 0.45
         emitPlume(from: shipNode, seat: seat, state: state)
         emitWake(from: shipNode, seat: seat, state: state)
+        updateBeam(seat: seat, state: state)
+    }
+
+    /// The beam is drawn as the cone the engine actually uses, tip at the
+    /// nose, so what a pilot sees is exactly what can grab the ball.
+    private func updateBeam(seat: Seat, state: ShipState) {
+        guard let beam = beamNodes[seat] else { return }
+        guard state.tractorActive, !state.isDestroyed, let snapshot else { beam.isHidden = true; return }
+        let range = 0.55
+        let halfAngle = acos(0.45)
+        let nose = state.angle
+        let tip = state.position
+        let left = tip + SIMD2(cos(nose + halfAngle), sin(nose + halfAngle)) * range
+        let mid = tip + SIMD2(cos(nose), sin(nose)) * (range * 1.08)
+        let right = tip + SIMD2(cos(nose - halfAngle), sin(nose - halfAngle)) * range
+        let path = CGMutablePath()
+        path.move(to: point(tip.x, tip.y))
+        path.addLine(to: point(left.x, left.y))
+        path.addQuadCurve(to: point(right.x, right.y), control: point(mid.x, mid.y))
+        path.closeSubpath()
+        beam.path = path
+        beam.isHidden = false
+        // Brightens as the ball comes into its grip.
+        let distance = simd_length(snapshot.ball.position - tip)
+        let grip = max(0, 1 - distance / range)
+        beam.alpha = 0.55 + CGFloat(grip) * 0.45
     }
 
     /// A drifting ship leaves vapour rather than a pen line: one soft puff
@@ -705,7 +747,12 @@ final class ArenaScene: SKScene {
     /// look) so the court still fills more of a tall/wide view instead of
     /// full letterboxing. `stretchAmount` 0 = pure aspect-fit, 1 = old
     /// independently-scaled stretch; tuned closer to the iPhone side.
-    private var arenaRect: CGRect {
+    private var arenaRect: CGRect { Self.arenaRect(in: size, arena: arena) }
+
+    /// Centred on the scene origin. Also used by the touch controls to find
+    /// the margins either side of the court, so the pads and the drawn
+    /// court can never disagree about where its edge is.
+    static func arenaRect(in size: CGSize, arena: ArenaGeometry = .standard) -> CGRect {
         let inset = min(size.width, size.height) * 0.055
         let availableWidth = size.width - inset * 2
         let availableHeight = size.height - inset * 2
@@ -717,10 +764,20 @@ final class ArenaScene: SKScene {
         let stretchAmount: CGFloat = 0.6
         let blendedScaleX = uniform + (scaleX - uniform) * stretchAmount
         let blendedScaleY = uniform + (scaleY - uniform) * stretchAmount
-        let width = CGFloat(worldWidth) * blendedScaleX
+        // In landscape the outer strips are the thumb pads' home: the court
+        // never grows into them, so a thumb in the corner reaches the pads
+        // without ever having to cross the court's edge.
+        let landscape = size.width > size.height
+        let sideInset = landscape ? max(inset, size.width * controlMarginFraction) : inset
+        let width = min(CGFloat(worldWidth) * blendedScaleX, size.width - sideInset * 2)
         let height = CGFloat(worldHeight) * blendedScaleY
         return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
     }
+
+    /// Share of the window width kept clear of the court on each side in
+    /// landscape, safe area included. Sized so a pad still fits beside an
+    /// iPhone's rounded corners.
+    static let controlMarginFraction: CGFloat = 0.17
 
     /// Derived from the geometry rather than hardcoded, so shortening the
     /// court cannot silently desync the render from the simulation.

@@ -136,16 +136,17 @@ struct OnboardingFlow: View {
 
     private var fly: some View {
         IntroPage(kicker: "01 • FLY") {
-            Text("STEER, THRUST, FIRE.")
+            Text("STEER, THRUST, FIRE, PULL.")
                 .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "arrow.left.and.right", tint: .cyan, title: "STEER", text: "Hold left or right to rotate. Let go and the nose stays where it is.")
             IntroLine(icon: "flame.fill", tint: .orange, title: "THRUST", text: "Hold to burn. Gravity pulls you down the whole time, and your exhaust shoves the ball.")
             IntroLine(icon: "bolt.fill", tint: .yellow, title: "FIRE", text: "Tap to shoot a bolt from the nose. It knocks the ball where you point and counts as a touch.")
+            IntroLine(icon: "arrow.down.to.line.compact", tint: .purple, title: "PULL", text: "Hold to reel the ball in with the tractor beam. Not a touch until it lands on your hull.")
             // Phones almost never have a keyboard and do not have the height
             // for a fourth line; iPads and Macs get the hint.
             if UIDevice.current.userInterfaceIdiom != .phone {
-                IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W thrusts, space fires. Touch and keys work together.")
+                IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W thrusts, space fires, S pulls. Touch and keys work together.")
             }
         } side: {
             ControlsDiagram()
@@ -255,6 +256,7 @@ private struct ControlsDiagram: View {
                 pad("arrow.counterclockwise", "LEFT", .cyan)
                 pad("arrow.clockwise", "RIGHT", .cyan)
                 Spacer(minLength: 20)
+                pad("arrow.down.to.line.compact", "PULL", .purple)
                 pad("bolt.fill", "FIRE", .yellow)
                 pad("flame.fill", "THRUST", .orange)
             }

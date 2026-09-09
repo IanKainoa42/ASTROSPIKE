@@ -39,6 +39,7 @@ final class GameSession {
     /// press latches until the next tick consumes it.
     var fire = false { didSet { if fire { fireLatched = true } } }
     private var fireLatched = false
+    var tractor = false
 
     let mode: GameMode
     let scene = ArenaScene()
@@ -185,6 +186,7 @@ final class GameSession {
         thrust = false
         fire = false
         fireLatched = false
+        tractor = false
     }
 
     private func frame(timestamp: CFTimeInterval) {
@@ -223,7 +225,7 @@ final class GameSession {
 
     private func simulateOneTick() {
         let tick = engine.state.tick
-        var localInput = PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched)
+        var localInput = PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched, tractor: tractor)
         fireLatched = false
         if var demoAI {
             localInput = demoAI.input(for: engine.state, seat: localSeat, tick: tick)

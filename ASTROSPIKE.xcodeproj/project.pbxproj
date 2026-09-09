@@ -16,6 +16,7 @@
 		1AE0E523C4361D72455C1C5A /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		1D659B5B59B22184796127C4 /* ASTROSPIKEUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */; };
 		1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */; };
+		31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */; };
 		3A4D0B7ACDA79D239BD06DDB /* ASTROSPIKEApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */; };
 		3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859573897DB0229481CD4EC8 /* KeyboardControls.swift */; };
 		3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4405102C04B2CE798F18AD89 /* WarmupTests.swift */; };
@@ -161,6 +162,7 @@
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
+		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -275,6 +277,7 @@
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
+				FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */,
 				4405102C04B2CE798F18AD89 /* WarmupTests.swift */,
 				6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */,
 			);
@@ -482,6 +485,7 @@
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
+				31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */,
 				3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */,
 				422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */,
 			);
@@ -643,7 +647,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -703,7 +707,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

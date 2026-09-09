@@ -360,6 +360,7 @@ private struct GameView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
         ZStack {
             SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
                 .ignoresSafeArea().accessibilityHidden(true)
@@ -412,7 +413,9 @@ private struct GameView: View {
                     .padding(.top, 4)
                 }
                 TouchControls(torque: $session.torque, thrust: $session.thrust, fire: $session.fire,
-                              largeControls: largeControls, leftHanded: leftHanded)
+                              tractor: $session.tractor,
+                              largeControls: largeControls, leftHanded: leftHanded,
+                              arenaFrame: Self.arenaFrame(in: geometry))
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
             // the ship without displacing the thumb controls.
@@ -420,6 +423,7 @@ private struct GameView: View {
                 torque: $session.torque,
                 thrust: $session.thrust,
                 fire: $session.fire,
+                tractor: $session.tractor,
                 onCommand: keyCommandHandler
             )
             .frame(width: 0, height: 0)
@@ -483,6 +487,22 @@ private struct GameView: View {
             .presentationDetents([.large])
             .interactiveDismissDisabled()
         }
+        }
+    }
+
+    /// Where the court sits on screen, in global coordinates. The scene
+    /// fills the whole window (it ignores the safe area), so its size is
+    /// this safe-area frame grown back out by the insets.
+    private static func arenaFrame(in geometry: GeometryProxy) -> CGRect {
+        let safe = geometry.frame(in: .global)
+        let insets = geometry.safeAreaInsets
+        let window = CGRect(
+            x: safe.minX - insets.leading, y: safe.minY - insets.top,
+            width: safe.width + insets.leading + insets.trailing,
+            height: safe.height + insets.top + insets.bottom
+        )
+        let centred = ArenaScene.arenaRect(in: window.size)
+        return centred.offsetBy(dx: window.midX, dy: window.midY)
     }
 
     private var localTeam: Team { online.localTeam ?? .cyan }

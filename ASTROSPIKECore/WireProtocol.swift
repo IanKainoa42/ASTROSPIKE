@@ -30,7 +30,8 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     peer would forfeit a match this build is still holding open.
     // 11: seating carries the host's whole FlightTuningSnapshot, not just
     //     setsToWin, so every board flies the host's sliders.
-    public static let currentVersion: UInt16 = 11
+    // 12: PlayerInput gained tractor, ShipState gained tractorActive.
+    public static let currentVersion: UInt16 = 12
 
     public var version: UInt16
     public var sequence: UInt64

@@ -7,6 +7,7 @@ public enum FlightControlAction: String, Codable, Hashable, Sendable {
     case right
     case thrust
     case fire
+    case tractor
 }
 
 /// Keys that act on the match rather than the ship. Separate from
@@ -29,6 +30,8 @@ public enum KeyboardControlMapping {
     static let keyA = 4
     static let keyD = 7
     static let keyW = 26
+    static let keyS = 22
+    static let downArrow = 81
     static let spacebar = 44
     static let rightArrow = 79
     static let leftArrow = 80
@@ -47,6 +50,7 @@ public enum KeyboardControlMapping {
         case keyD, rightArrow: .right
         case keyW, upArrow: .thrust
         case spacebar: .fire
+        case keyS, downArrow: .tractor
         default: nil
         }
     }
@@ -76,6 +80,7 @@ public enum KeyboardControlMapping {
         case .right: [keyD, rightArrow]
         case .thrust: [keyW, upArrow]
         case .fire: [spacebar]
+        case .tractor: [keyS, downArrow]
         }
     }
 
@@ -88,7 +93,8 @@ public enum KeyboardControlMapping {
             leftPressed: held.contains(.left),
             rightPressed: held.contains(.right),
             thrustPressed: held.contains(.thrust),
-            firePressed: held.contains(.fire)
+            firePressed: held.contains(.fire),
+            tractorPressed: held.contains(.tractor)
         )
     }
 }

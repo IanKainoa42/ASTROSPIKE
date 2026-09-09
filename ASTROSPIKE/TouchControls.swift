@@ -6,18 +6,143 @@ struct TouchControls: View {
     @Binding var torque: Double
     @Binding var thrust: Bool
     @Binding var fire: Bool
+    @Binding var tractor: Bool
     let largeControls: Bool
     let leftHanded: Bool
+    /// The court's frame in global coordinates. The pads live in the margins
+    /// either side of it: a thumb never has to reach past the court's edge
+    /// and never covers the play.
+    let arenaFrame: CGRect
 
     @State private var leftPressed = false
     @State private var rightPressed = false
     @State private var thrustPressed = false
     @State private var firePressed = false
+    @State private var tractorPressed = false
 
-    // The live area is the whole side of the screen, not the drawn button. A thumb
-    // anywhere on the right thrusts; anywhere on the left steers. The chrome is
-    // only a hint about where the thumb usually rests.
+    /// A margin narrower than this cannot hold a pad; the old full-bleed
+    /// split (steer left, engine right) takes over, as on a portrait phone.
+    private let minimumMargin: CGFloat = 60
+
     var body: some View {
+        GeometryReader { geometry in
+            let local = geometry.frame(in: .global)
+            let leftMargin = max(0, arenaFrame.minX - local.minX)
+            let rightMargin = max(0, local.maxX - arenaFrame.maxX)
+            let steeringWidth = leftHanded ? rightMargin : leftMargin
+            let engineWidth = leftHanded ? leftMargin : rightMargin
+            if steeringWidth >= minimumMargin, engineWidth >= minimumMargin {
+                marginLayout(
+                    local: local,
+                    steeringWidth: steeringWidth,
+                    engineWidth: engineWidth
+                )
+            } else {
+                fullBleedLayout
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .onDisappear { clearInput() }
+    }
+
+    // MARK: Margin layout
+
+    /// Steering down the whole outer margin on one side; fire over thrust
+    /// down the other, thrust in the bottom corner where the thumb rests.
+    /// The tractor pad tucks just inside the court's edge above fire.
+    private func marginLayout(local: CGRect, steeringWidth: CGFloat, engineWidth: CGFloat) -> some View {
+        let arenaMinX = arenaFrame.minX - local.minX
+        let arenaMaxX = arenaFrame.maxX - local.minX
+        let arenaMinY = arenaFrame.minY - local.minY
+        let steeringX = leftHanded ? arenaMaxX : 0
+        let engineX = leftHanded ? 0 : arenaMaxX
+        let tractorSize = fitted(fireChrome, in: engineWidth)
+        let tractorX = leftHanded
+            ? arenaMinX + tractorSize.width / 2 + 8
+            : arenaMaxX - tractorSize.width / 2 - 8
+        let tractorY = arenaMinY + arenaFrame.height * 0.36
+        return ZStack(alignment: .topLeading) {
+            steeringColumn(width: steeringWidth, height: local.height)
+                .frame(width: steeringWidth, height: local.height)
+                .offset(x: steeringX)
+            engineColumn(width: engineWidth)
+                .frame(width: engineWidth, height: local.height)
+                .offset(x: engineX)
+            tractorPad(chrome: tractorSize)
+                .frame(width: tractorSize.width + 24, height: tractorSize.height + 24)
+                .position(x: tractorX, y: tractorY)
+        }
+    }
+
+    private func steeringColumn(width: CGFloat, height: CGFloat) -> some View {
+        let chrome = CGSize(width: max(44, width - 10), height: min(steeringChrome.height, height * 0.42))
+        return ZStack {
+            Rectangle().fill(Color.cyan.opacity(leftPressed || rightPressed ? 0.06 : 0))
+            RoundedRectangle(cornerRadius: 20)
+                .fill(leftPressed || rightPressed ? Color.cyan.opacity(0.13) : .black.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.cyan.opacity(leftPressed || rightPressed ? 0.34 : 0.10),
+                                lineWidth: leftPressed || rightPressed ? 2 : 1)
+                )
+                .overlay(
+                    VStack(spacing: 10) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "rotate.left")
+                                .font(.system(size: leftPressed ? 26 : 22, weight: .semibold))
+                                .foregroundStyle(Color.cyan.opacity(leftPressed ? 0.82 : 0.28))
+                            Spacer(minLength: 0)
+                            Image(systemName: "rotate.right")
+                                .font(.system(size: rightPressed ? 26 : 22, weight: .semibold))
+                                .foregroundStyle(Color.cyan.opacity(rightPressed ? 0.82 : 0.28))
+                        }
+                        .padding(.horizontal, 10)
+                        trimSliderIndicator(width: chrome.width - 24)
+                    }
+                )
+                .frame(width: chrome.width, height: chrome.height)
+            SteeringCapture(
+                onTorque: { torque = $0 },
+                onActive: { left, right in leftPressed = left; rightPressed = right }
+            )
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Steer")
+        .accessibilityValue(leftPressed ? "Rotating left" : rightPressed ? "Rotating right" : "Idle")
+        .accessibilityIdentifier("steering-control")
+    }
+
+    private func engineColumn(width: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            ControlZone(
+                icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                active: firePressed, chrome: fitted(fireChrome, in: width),
+                pressChanged: setFirePressed
+            )
+            ControlZone(
+                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
+                active: thrustPressed, chrome: fitted(thrustChrome, in: width),
+                pressChanged: setThrustPressed
+            )
+        }
+    }
+
+    private func tractorPad(chrome: CGSize) -> some View {
+        ControlZone(
+            icon: "arrow.down.to.line.compact", label: "Tractor beam", identifier: "tractor-control",
+            tint: .purple, active: tractorPressed, chrome: chrome, bottomPadding: 12,
+            pressChanged: setTractorPressed
+        )
+    }
+
+    private func fitted(_ chrome: CGSize, in margin: CGFloat) -> CGSize {
+        CGSize(width: max(44, min(chrome.width, margin - 8)), height: chrome.height)
+    }
+
+    // MARK: Full-bleed fallback
+
+    private var fullBleedLayout: some View {
         HStack(spacing: 0) {
             if leftHanded {
                 thrustZone
@@ -30,8 +155,6 @@ struct TouchControls: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
-        .onDisappear { clearInput() }
     }
 
     /// A dead strip down the middle so a stray thumb over the arena does nothing.
@@ -43,107 +166,63 @@ struct TouchControls: View {
         ZStack(alignment: .bottom) {
             HStack(spacing: 0) {
                 ControlZone(
-                    icon: "rotate.left",
-                    label: "Rotate left",
-                    identifier: "rotate-left-control",
-                    tint: .cyan,
-                    active: leftPressed,
-                    chrome: steeringChrome,
-                    edgeOffset: steeringEdgeOffset,
-                    pressChanged: nil
+                    icon: "rotate.left", label: "Rotate left", identifier: "rotate-left-control",
+                    tint: .cyan, active: leftPressed, chrome: steeringChrome, pressChanged: nil
                 )
                 ControlZone(
-                    icon: "rotate.right",
-                    label: "Rotate right",
-                    identifier: "rotate-right-control",
-                    tint: .cyan,
-                    active: rightPressed,
-                    chrome: steeringChrome,
-                    edgeOffset: steeringEdgeOffset,
-                    pressChanged: nil
+                    icon: "rotate.right", label: "Rotate right", identifier: "rotate-right-control",
+                    tint: .cyan, active: rightPressed, chrome: steeringChrome, pressChanged: nil
                 )
             }
-
-            // Trim slider needle indicator across the bottom chrome
-            trimSliderIndicator
+            trimSliderIndicator(width: steeringChrome.width * 2 - 36)
                 .padding(.bottom, 16)
                 .allowsHitTesting(false)
-
-            // Touch capture for continuous slide/trim and pegged edge hold
             SteeringCapture(
-                onTorque: { newTorque in
-                    torque = newTorque
-                },
-                onActive: { left, right in
-                    leftPressed = left
-                    rightPressed = right
-                }
+                onTorque: { torque = $0 },
+                onActive: { left, right in leftPressed = left; rightPressed = right }
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var trimSliderIndicator: some View {
-        let totalWidth: CGFloat = (steeringChrome.width * 2) - 36
-        let maxOffset: CGFloat = totalWidth / 2 - 20
+    /// Fire over thrust, and the beam over fire, all for the one thumb.
+    private var thrustZone: some View {
+        VStack(spacing: 0) {
+            tractorPad(chrome: fireChrome)
+            ControlZone(
+                icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                active: firePressed, chrome: fireChrome, pressChanged: setFirePressed
+            )
+            ControlZone(
+                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
+                active: thrustPressed, chrome: thrustChrome, pressChanged: setThrustPressed
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Shared
+
+    private func trimSliderIndicator(width totalWidth: CGFloat) -> some View {
+        let maxOffset: CGFloat = totalWidth / 2 - 12
         // Torque: +1 is left, -1 is right
         let currentOffset: CGFloat = CGFloat(-torque) * maxOffset
         let isPegged = abs(torque) >= 0.98
 
         return ZStack {
-            // Track
             Capsule()
                 .fill(Color.white.opacity(0.08))
                 .frame(width: totalWidth, height: 4)
-            // Center detent
             Rectangle()
                 .fill(Color.white.opacity(0.35))
                 .frame(width: 2, height: 8)
-            // Sliding needle
             Capsule()
                 .fill(Color.cyan.opacity(abs(torque) > 0 ? (isPegged ? 1.0 : 0.85) : 0.25))
-                .frame(width: isPegged ? 28 : 20, height: 6)
+                .frame(width: isPegged ? 24 : 16, height: 6)
                 .shadow(color: .cyan.opacity(abs(torque) > 0 ? 0.8 : 0), radius: isPegged ? 6 : 3)
                 .offset(x: currentOffset)
                 .animation(.easeOut(duration: 0.08), value: torque)
         }
-    }
-
-    /// Fire sits above thrust so the same resting thumb pushes down to fly and
-    /// lifts slightly to fire. Both are held with the same thumb, so the
-    /// hint chrome sits low where it rests.
-    private var thrustZone: some View {
-        VStack(spacing: 0) {
-            firePad
-            thrustPad
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var thrustPad: some View {
-        ControlZone(
-            icon: "flame.fill",
-            label: "Thrust",
-            identifier: "thrust-control",
-            tint: .orange,
-            active: thrustPressed,
-            chrome: thrustChrome,
-            edgeOffset: thrustEdgeOffset,
-            pressChanged: setThrustPressed
-        )
-    }
-
-    private var firePad: some View {
-        ControlZone(
-            icon: "bolt.fill",
-            label: "Fire",
-            identifier: "fire-control",
-            tint: .yellow,
-            active: firePressed,
-            chrome: fireChrome,
-            edgeOffset: thrustEdgeOffset,
-            pressChanged: setFirePressed
-        )
     }
 
     private var steeringChrome: CGSize {
@@ -156,13 +235,6 @@ struct TouchControls: View {
         largeControls ? CGSize(width: 104, height: 118) : CGSize(width: 84, height: 96)
     }
 
-    /// Nudges the drawn chrome (not the touch zone, which stays full-bleed)
-    /// a little further toward the screen's physical edge so the arena in
-    /// the middle stays clearer.
-    private let edgeNudge: CGFloat = 14
-    private var steeringEdgeOffset: CGFloat { leftHanded ? edgeNudge : -edgeNudge }
-    private var thrustEdgeOffset: CGFloat { leftHanded ? -edgeNudge : edgeNudge }
-
     private func setThrustPressed(_ pressed: Bool) {
         thrustPressed = pressed
         thrust = pressed
@@ -173,14 +245,21 @@ struct TouchControls: View {
         fire = pressed
     }
 
+    private func setTractorPressed(_ pressed: Bool) {
+        tractorPressed = pressed
+        tractor = pressed
+    }
+
     private func clearInput() {
         leftPressed = false
         rightPressed = false
         thrustPressed = false
         firePressed = false
+        tractorPressed = false
         torque = 0
         thrust = false
         fire = false
+        tractor = false
     }
 }
 
@@ -191,7 +270,7 @@ private struct ControlZone: View {
     let tint: Color
     let active: Bool
     let chrome: CGSize
-    var edgeOffset: CGFloat = 0
+    var bottomPadding: CGFloat = 14
     let pressChanged: ((Bool) -> Void)?
 
     var body: some View {
@@ -212,8 +291,7 @@ private struct ControlZone: View {
                         .foregroundStyle(tint.opacity(active ? 0.82 : 0.28))
                 )
                 .frame(width: chrome.width, height: chrome.height)
-                .offset(x: edgeOffset)
-                .padding(.bottom, 14)
+                .padding(.bottom, bottomPadding)
             if let pressChanged {
                 // Fills the zone, so this is what actually receives the touch.
                 PressCapture(pressChanged: pressChanged)
