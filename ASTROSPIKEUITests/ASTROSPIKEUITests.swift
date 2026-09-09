@@ -118,3 +118,35 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Leave Match"].exists)
     }
 }
+
+extension ASTROSPIKEUITests {
+    /// Settings → Arrange pads: a drag moves the pad and the offset persists.
+    func testArrangePadsDragMovesThrustPad() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--warmup", "--skip-onboarding", "-arrangePads", "YES"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let thrust = app.descendants(matching: .any)["thrust-control"]
+        if !thrust.waitForExistence(timeout: 8) {
+            let tree = app.debugDescription
+            XCTFail("no thrust-control; tree: \(tree.prefix(3000))")
+            return
+        }
+        XCTAssertTrue(app.staticTexts["DRAG THE PADS · SETTINGS TURNS THIS OFF"].exists, "arrange mode not on")
+        let before = thrust.frame
+        let start = thrust.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let end = start.withOffset(CGVector(dx: -160, dy: -80))
+        start.press(forDuration: 0.2, thenDragTo: end)
+        let moved = NSPredicate { _, _ in abs(thrust.frame.midX - before.midX) > 40 }
+        let expectation = XCTNSPredicateExpectation(predicate: moved, object: nil)
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 3), .completed,
+                       "thrust pad did not move: \(before) → \(thrust.frame)")
+        let after = thrust.frame
+        app.terminate()
+        app.launch()
+        let again = app.descendants(matching: .any)["thrust-control"]
+        XCTAssertTrue(again.waitForExistence(timeout: 8))
+        XCTAssertEqual(again.frame.midX, after.midX, accuracy: 2, "offset did not persist: \(after) vs \(again.frame)")
+        XCTAssertEqual(again.frame.midY, after.midY, accuracy: 2)
+    }
+}
