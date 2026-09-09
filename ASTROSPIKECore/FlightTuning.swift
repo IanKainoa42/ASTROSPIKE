@@ -18,7 +18,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// and a duel over Game Center feel identical until a slider moves.
     public static let defaults = FlightTuningSnapshot(
         gravityMagnitude: 0.5,
-        thrustAcceleration: 2.25,
+        thrustAcceleration: 2.75,
         rotationAcceleration: 5.5,
         ballGravityMultiplier: 0.2,
         ballDropHeight: 0.10,

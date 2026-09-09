@@ -57,6 +57,12 @@ final class GameSession {
     private var accumulator = 0.0
     private var previousTimestamp: CFTimeInterval?
     private var countdownAccumulator = 0.0
+    /// The guest's own recent inputs by tick, so a snapshot that lands behind
+    /// the local clock can be rolled forward through what the thumb did since.
+    private var localInputHistory: [UInt64: PlayerInput] = [:]
+    private var smoothing = GuestSmoothing()
+    /// How many ticks a late snapshot may be re-simulated before it just snaps.
+    private static let maximumRollForward: UInt64 = 24
 
     init(
         mode: GameMode,
@@ -219,7 +225,8 @@ final class GameSession {
             break
         }
 
-        scene.snapshot = state
+        smoothing.decay(dt: elapsed)
+        scene.snapshot = smoothing.apply(to: state)
         scene.reduceMotion = UIAccessibility.isReduceMotionEnabled
     }
 
@@ -250,8 +257,12 @@ final class GameSession {
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
-            if tick.isMultiple(of: 4) {
+            if tick.isMultiple(of: 2) {
                 online.sendInput(localInput)
+            }
+            if !online.isAuthoritative {
+                localInputHistory[tick] = localInput
+                if tick > 64 { localInputHistory[tick - 64] = nil }
             }
             for seat in engine.state.ships.keys where seat != localSeat && inputs[seat] == nil {
                 inputs[seat] = online.remoteInputs[seat] ?? .idle(tick: tick)
@@ -315,23 +326,44 @@ final class GameSession {
         guard let online else { return }
         online.onSnapshot = { [weak self] authoritative in
             guard let self, !online.isAuthoritative else { return }
-            var resolved = authoritative
-            if let predicted = self.engine.state.ships[self.localSeat],
-               let hostShip = authoritative.ships[self.localSeat] {
-                resolved.ships[self.localSeat] = StateReconciler().reconcile(
-                    predicted: predicted,
-                    authoritative: hostShip
-                )
-            }
+            let displayed = self.smoothing.apply(to: self.state)
+            let predicted = self.engine.state
             // Keep the online physics: a rebuilt engine defaults to the solo
             // tuning, and the guest's own ship then flies a different game
             // between snapshots.
+            var rolled = SimulationEngine(state: authoritative, configuration: self.engine.configuration)
+            // The snapshot left the host a ping ago. Re-run the ticks the guest
+            // has already flown since, with the inputs it actually gave, so the
+            // world never steps backwards on arrival.
+            let behind = predicted.tick > authoritative.tick ? predicted.tick - authoritative.tick : 0
+            if behind <= Self.maximumRollForward, [.serve, .playing].contains(self.state.match.phase) {
+                while rolled.state.tick < predicted.tick {
+                    let tick = rolled.state.tick
+                    var inputs: [Seat: PlayerInput] = [
+                        self.localSeat: self.localInputHistory[tick] ?? .idle(tick: tick),
+                    ]
+                    for seat in rolled.state.ships.keys where seat != self.localSeat {
+                        inputs[seat] = online.remoteInputs[seat] ?? .idle(tick: tick)
+                    }
+                    rolled.step(inputs: inputs)
+                }
+            }
+            var resolved = rolled.state
+            if let mine = predicted.ships[self.localSeat], let hostShip = resolved.ships[self.localSeat] {
+                resolved.ships[self.localSeat] = StateReconciler().reconcile(
+                    predicted: mine,
+                    authoritative: hostShip
+                )
+            }
             self.engine = SimulationEngine(state: resolved, configuration: self.engine.configuration)
+            self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.localSeat)
             self.state = resolved
         }
         online.onResync = { [weak self] authoritative in
             guard let self else { return }
             self.engine = SimulationEngine(state: authoritative, configuration: self.engine.configuration)
+            self.smoothing.reset()
+            self.localInputHistory = [:]
             self.state = authoritative
             self.isPaused = false
             self.countdown = 3

@@ -47,37 +47,64 @@ struct TouchControls: View {
 
     // MARK: Margin layout
 
-    /// Steering down the whole outer margin on one side; fire over thrust
-    /// down the other, thrust in the bottom corner where the thumb rests.
-    /// The tractor pad tucks just inside the court's edge above fire.
+    /// One row of pads along the bottom, each hand anchored in its screen
+    /// corner: thrust sits right in the corner, fire next to it overlapping
+    /// the court's edge from outside, and the tractor pad just inside the
+    /// court. Steering does the same on the other side, straddling that edge.
     private func marginLayout(local: CGRect, steeringWidth: CGFloat, engineWidth: CGFloat) -> some View {
-        let arenaMinX = arenaFrame.minX - local.minX
-        let arenaMaxX = arenaFrame.maxX - local.minX
-        let arenaMinY = arenaFrame.minY - local.minY
-        let steeringX = leftHanded ? arenaMaxX : 0
-        let engineX = leftHanded ? 0 : arenaMaxX
-        let tractorSize = fitted(fireChrome, in: engineWidth)
-        let tractorX = leftHanded
-            ? arenaMinX + tractorSize.width / 2 + 8
-            : arenaMaxX - tractorSize.width / 2 - 8
-        let tractorY = arenaMinY + arenaFrame.height * 0.36
+        let edge: CGFloat = 6
+        let gap: CGFloat = 8
+        let slop: CGFloat = 16
+        let bottom = local.height - edge
+
+        let thrust = thrustChrome
+        let fire = fireChrome
+        let steering = CGSize(
+            width: max(steeringChrome.width, steeringWidth + steeringOverlap - edge),
+            height: steeringChrome.height
+        )
+
+        // Right-handed: engine pads march inward from the right corner.
+        var thrustX = local.width - edge - thrust.width / 2
+        var fireX = thrustX - thrust.width / 2 - gap - fire.width / 2
+        var tractorX = fireX - fire.width / 2 - gap - fire.width / 2
+        var steeringX = edge + steering.width / 2
+        if leftHanded {
+            thrustX = local.width - thrustX
+            fireX = local.width - fireX
+            tractorX = local.width - tractorX
+            steeringX = local.width - steeringX
+        }
+
         return ZStack(alignment: .topLeading) {
-            steeringColumn(width: steeringWidth, height: local.height)
-                .frame(width: steeringWidth, height: local.height)
-                .offset(x: steeringX)
-            engineColumn(width: engineWidth)
-                .frame(width: engineWidth, height: local.height)
-                .offset(x: engineX)
-            tractorPad(chrome: tractorSize)
-                .frame(width: tractorSize.width + 24, height: tractorSize.height + 24)
-                .position(x: tractorX, y: tractorY)
+            steeringPad(chrome: steering)
+                .frame(width: steering.width + slop, height: steering.height + slop)
+                .position(x: steeringX, y: bottom - (steering.height + slop) / 2)
+            tractorPad(chrome: fire)
+                .frame(width: fire.width + slop, height: fire.height + slop)
+                .position(x: tractorX, y: bottom - (fire.height + slop) / 2)
+            ControlZone(
+                icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                active: firePressed, chrome: fire, bottomPadding: 0,
+                pressChanged: setFirePressed
+            )
+            .frame(width: fire.width + slop, height: fire.height + slop)
+            .position(x: fireX, y: bottom - (fire.height + slop) / 2)
+            ControlZone(
+                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
+                active: thrustPressed, chrome: thrust, bottomPadding: 0,
+                pressChanged: setThrustPressed
+            )
+            .frame(width: thrust.width + slop, height: thrust.height + slop)
+            .position(x: thrustX, y: bottom - (thrust.height + slop) / 2)
         }
     }
 
-    private func steeringColumn(width: CGFloat, height: CGFloat) -> some View {
-        let chrome = CGSize(width: max(44, width - 10), height: min(steeringChrome.height, height * 0.42))
-        return ZStack {
-            Rectangle().fill(Color.cyan.opacity(leftPressed || rightPressed ? 0.06 : 0))
+    /// How far the steering pad reaches past the court's edge into the play.
+    private let steeringOverlap: CGFloat = 28
+
+    private func steeringPad(chrome: CGSize) -> some View {
+        ZStack {
             RoundedRectangle(cornerRadius: 20)
                 .fill(leftPressed || rightPressed ? Color.cyan.opacity(0.13) : .black.opacity(0.08))
                 .overlay(
@@ -113,31 +140,12 @@ struct TouchControls: View {
         .accessibilityIdentifier("steering-control")
     }
 
-    private func engineColumn(width: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            ControlZone(
-                icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
-                active: firePressed, chrome: fitted(fireChrome, in: width),
-                pressChanged: setFirePressed
-            )
-            ControlZone(
-                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
-                active: thrustPressed, chrome: fitted(thrustChrome, in: width),
-                pressChanged: setThrustPressed
-            )
-        }
-    }
-
     private func tractorPad(chrome: CGSize) -> some View {
         ControlZone(
             icon: "arrow.down.to.line.compact", label: "Tractor beam", identifier: "tractor-control",
             tint: .purple, active: tractorPressed, chrome: chrome, bottomPadding: 12,
             pressChanged: setTractorPressed
         )
-    }
-
-    private func fitted(_ chrome: CGSize, in margin: CGFloat) -> CGSize {
-        CGSize(width: max(44, min(chrome.width, margin - 8)), height: chrome.height)
     }
 
     // MARK: Full-bleed fallback
