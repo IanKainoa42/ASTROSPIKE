@@ -701,18 +701,24 @@ final class ArenaScene: SKScene {
         exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
     }
 
-    /// Aspect-fit (not stretch-to-fill): the court keeps the same on-screen
-    /// proportions on every device, so a wide Mac window and a tall iPhone
-    /// screen show the same shape instead of independently squashed axes.
+    /// Mostly aspect-fit, blended toward stretch-to-fill (the old iPhone
+    /// look) so the court still fills more of a tall/wide view instead of
+    /// full letterboxing. `stretchAmount` 0 = pure aspect-fit, 1 = old
+    /// independently-scaled stretch; tuned closer to the iPhone side.
     private var arenaRect: CGRect {
         let inset = min(size.width, size.height) * 0.055
         let availableWidth = size.width - inset * 2
         let availableHeight = size.height - inset * 2
         let worldWidth = arena.halfWidth * 2
         let worldHeight = arena.ceilingY - arena.floorY
-        let scale = min(availableWidth / CGFloat(worldWidth), availableHeight / CGFloat(worldHeight))
-        let width = CGFloat(worldWidth) * scale
-        let height = CGFloat(worldHeight) * scale
+        let scaleX = availableWidth / CGFloat(worldWidth)
+        let scaleY = availableHeight / CGFloat(worldHeight)
+        let uniform = min(scaleX, scaleY)
+        let stretchAmount: CGFloat = 0.6
+        let blendedScaleX = uniform + (scaleX - uniform) * stretchAmount
+        let blendedScaleY = uniform + (scaleY - uniform) * stretchAmount
+        let width = CGFloat(worldWidth) * blendedScaleX
+        let height = CGFloat(worldHeight) * blendedScaleY
         return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
     }
 
