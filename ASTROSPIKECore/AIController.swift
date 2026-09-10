@@ -71,7 +71,7 @@ public struct AIController: InputSource, Sendable {
     private static let turnGain = 4.0
     private static let turnDeadzone = 0.06
     /// Ship centre to ball centre for a nose-on contact.
-    private static let strikeStandoff = 0.107
+    static let strikeStandoff = 0.107
     /// Room kept behind the ball so the ship can build speed into the strike.
     private static let strikeRunup = 0.18
     /// Seconds before contact that the run-in begins.
@@ -92,6 +92,9 @@ public struct AIController: InputSource, Sendable {
         var point: SIMD2<Double>
         var delay: Double
         var shot: SIMD2<Double>
+        /// Speed to carry through the ball. Not every shot wants full power:
+        /// a lob into a hoop wants very little.
+        var strike: Double
     }
 
     public let difficulty: AIDifficulty
@@ -100,6 +103,7 @@ public struct AIController: InputSource, Sendable {
     private var planTick: UInt64?
     private var plannedTarget: SIMD2<Double>?
     private var plannedShot = SIMD2(-1.0, 0)
+    private var plannedStrike = 0.0
     private var plannedDelay = 9.0
     private var hasIntercept = false
     private var cachedAimError = 0.0
@@ -114,6 +118,7 @@ public struct AIController: InputSource, Sendable {
         self.difficulty = difficulty
         self.configuration = configuration
         self.arena = arena
+        self.plannedStrike = difficulty.strikeSpeed
     }
 
     public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
@@ -137,8 +142,11 @@ public struct AIController: InputSource, Sendable {
         let recovering = recoveryIsUrgent(for: ship)
         // The net never traps anyone -- hulls fly straight through it. What
         // can pin them is the hump above it, so the escape check keys off the
-        // underside of the hump rather than the net.
-        let pinnedByNet = ship.position.y > arena.humpUndersideY - 0.20
+        // underside of the hump rather than the net. A court with no hump has
+        // nothing overhead to be pinned against, and shoving the ship out of
+        // a clear middle would only take it away from the play.
+        let pinnedByNet = arena.hasHump
+            && ship.position.y > arena.humpUndersideY - 0.20
             && abs(ship.position.x) < arena.humpBaseX
             && ship.position.x * homeSign < 0.20
 
@@ -158,11 +166,13 @@ public struct AIController: InputSource, Sendable {
                 && simd_distance(plan.point, plannedTarget ?? plan.point) < 0.12
             if agrees {
                 plannedShot = plan.shot
+                plannedStrike = plan.strike
             } else {
                 hasIntercept = plan.hasIntercept
                 plannedTarget = plan.point
                 plannedDelay = plan.delay
                 plannedShot = plan.shot
+                plannedStrike = plan.strike
                 planTick = tick
                 remaining = plan.delay
             }
@@ -201,14 +211,14 @@ public struct AIController: InputSource, Sendable {
                 anchor - plannedShot * (Self.strikeStandoff + Self.strikeRunup * lead),
                 homeSign: homeSign
             )
-            closingVelocity = plannedShot * (difficulty.strikeSpeed * (1 - lead))
+            closingVelocity = plannedShot * (plannedStrike * (1 - lead))
             striking = lead < 0.5
         } else {
             target = plannedPoint                       // ready position
         }
         if forcedSwat {
             target = clamped(anchor - plannedShot * Self.strikeStandoff, homeSign: homeSign)
-            closingVelocity = plannedShot * (difficulty.strikeSpeed * 1.4)
+            closingVelocity = plannedShot * (plannedStrike * 1.4)
             striking = true
         }
         if supporting {
@@ -273,7 +283,21 @@ public struct AIController: InputSource, Sendable {
         }
 
         var desiredAngle = atan2(need.y, need.x)
-        if !crossingDanger, !striking, !recovering {
+        // A hull only pushes the ball along the line joining their centres, so
+        // the only contact that sends it where the plan aimed is a nose-on
+        // one -- and the standoff the run-up is measured against is to the
+        // nose fixture, 0.044 out along the ship's axis. Point anywhere else
+        // and the ship arrives at a range where nothing is touching, closes
+        // anyway, and shoves the ball off some arbitrary flank. So for the
+        // last half of the drive the nose goes down the shot line and nothing
+        // else steers it. The motor points that way too, which is exactly the
+        // drive-through the plan asked for. Only on the hoop court: the goal
+        // hanging off the roof is a wide target played with flat, hard shots,
+        // and pointing the nose down one of those lines drops the lift the
+        // ship needs to stay in the play at all.
+        if arena.hoop != nil, striking, !recovering, !crossingDanger, altitudeMargin > 0.12 {
+            desiredAngle = atan2(plannedShot.y, plannedShot.x) + cachedAimError
+        } else if !crossingDanger, !striking, !recovering {
             desiredAngle += cachedAimError
         }
         let angleError = normalizedAngle(desiredAngle - ship.angle)
@@ -370,17 +394,24 @@ public struct AIController: InputSource, Sendable {
         homeSign: Double
     ) -> Plan {
         // Just under the hump: the goal hangs from the roof, so the useful
-        // part of the court runs right up to the collar.
-        let ceiling = arena.ceilingY - 0.275
-        let floor = arena.floorY + 0.21
+        // part of the court runs right up to the collar. With nothing hanging
+        // up there the ball stays playable to the roof itself.
+        let ceiling = arena.hasHump ? arena.ceilingY - 0.275 : arena.ceilingY - 0.09
+        // A hoop shot is a lift from underneath and this court keeps the ball
+        // low -- it is served under the rim and every bounce takes energy out
+        // of it -- so the playable band has to run much closer to the deck
+        // than on a court where every shot is a drive across.
+        let floor = arena.floorY + (arena.hoop == nil ? 0.21 : 0.10)
         let radius = state.ball.radius
         let ballGravity = configuration.gravity.y * configuration.ballGravityMultiplier
         let shipSpeed = simd_length(ship.velocity)
         var position = state.ball.position
         var velocity = state.ball.velocity
         var earliestArrival: Plan?
+        var firstReachable: Plan?
 
         for step in 1 ... Self.predictionSteps {
+            let previous = position
             velocity.y += ballGravity * Self.predictionStep
             position += velocity * Self.predictionStep
             if position.x - radius <= -arena.halfWidth {
@@ -399,12 +430,6 @@ public struct AIController: InputSource, Sendable {
                 position.y = arena.floorY + radius
                 velocity.y = abs(velocity.y) * SimulationEngine.floorRestitution
             }
-            // The net is a portal, not a wall. A rollout that reaches the open
-            // mouth is a ball already through and gone, so stop projecting
-            // rather than bouncing it off something that is not there. The
-            // cap, the collar above the mouth, and the hump are all still
-            // solid. The lips are left out: they only matter to a ball that
-            // is already at the mouth, which is a ball this side has lost.
             if let hump = arena.humpContact(position: position, radius: radius) {
                 position = hump.position
                 let inward = simd_dot(velocity, hump.normal)
@@ -412,59 +437,232 @@ public struct AIController: InputSource, Sendable {
                     velocity -= hump.normal * ((1 + SimulationEngine.ballRestitution) * inward)
                 }
             }
-            if abs(position.x) <= arena.netHalfWidth + radius {
-                if position.y <= arena.portalMouthTopY, position.y + radius >= arena.netBottomY {
-                    break
+            // Whatever stands in the middle of this court -- and only that.
+            // Rolling the ball through the wrong one is how a bot ends up
+            // playing around a barrier that is not there.
+            var gone = false
+            switch arena.netStyle {
+            case .roofPortal:
+                // The net is a portal, not a wall. A rollout that reaches the
+                // open mouth is a ball already through and gone, so stop
+                // projecting rather than bouncing it off something that is not
+                // there. The cap, the collar above the mouth, and the hump are
+                // all still solid. The lips are left out: they only matter to a
+                // ball that is already at the mouth, which is a ball this side
+                // has lost.
+                if abs(position.x) <= arena.netHalfWidth + radius {
+                    if position.y <= arena.portalMouthTopY, position.y + radius >= arena.netBottomY {
+                        gone = true
+                    } else if position.y > arena.portalMouthTopY {
+                        // Solid collar above the mouth: it shoves the ball back
+                        // out along the slope it came down.
+                        let sign: Double = position.x < 0 ? -1 : 1
+                        position.x = sign * (arena.netHalfWidth + radius)
+                        velocity.x = sign * abs(velocity.x)
+                    } else if position.y + radius >= arena.netBottomY - radius {
+                        position.y = arena.netBottomY - radius * 2
+                        velocity.y = -abs(velocity.y)
+                    }
                 }
-                if position.y > arena.portalMouthTopY {
-                    // Solid collar above the mouth: it shoves the ball back
-                    // out along the slope it came down.
-                    let sign: Double = position.x < 0 ? -1 : 1
-                    position.x = sign * (arena.netHalfWidth + radius)
-                    velocity.x = sign * abs(velocity.x)
-                } else if position.y + radius >= arena.netBottomY - radius {
-                    position.y = arena.netBottomY - radius * 2
-                    velocity.y = -abs(velocity.y)
+            case .floorWall:
+                // A slab standing out of the floor: solid up to the tape, open
+                // above it, and thin enough that an unswept rollout would step
+                // the ball straight through it.
+                if let wall = arena.floorNetContact(from: previous, to: position, radius: radius) {
+                    position = wall.position
+                    let inward = simd_dot(velocity, wall.normal)
+                    if inward < 0 {
+                        velocity -= wall.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                    }
+                }
+            case .none:
+                // Nothing in the middle but the rim, and the window between
+                // its posts ends the rally outright -- a ball on its way down
+                // through it is not one anybody is still going to play.
+                if arena.hoopScored(from: previous, to: position) {
+                    gone = true
+                } else if let rim = arena.hoopRimContact(
+                    from: previous,
+                    to: position,
+                    radius: radius
+                ) {
+                    position = rim.position
+                    let inward = simd_dot(velocity, rim.normal)
+                    if inward < 0 {
+                        velocity -= rim.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                    }
                 }
             }
+            if gone { break }
             guard position.x * homeSign > 0.06,
                   position.y <= ceiling,
                   position.y >= floor else { continue }
 
-            let shot = shotDirection(from: position, homeSign: homeSign)
+            let (shot, strike) = shotPlan(
+                from: position,
+                ballVelocity: velocity,
+                homeSign: homeSign
+            )
             // Every shot is a lift now, so the run-up sits under the ball and
             // a low ball has its run-up on the floor. That is fine -- the
             // ground is survivable and `clamped` lifts the run-up off it --
             // as long as the contact itself is not down in the deck.
             let contact = position - shot * Self.strikeStandoff
-            guard contact.y >= arena.floorY + 0.10 else { continue }
+            guard contact.y >= arena.floorY + (arena.hoop == nil ? 0.10 : 0.045) else { continue }
             let runup = position - shot * (Self.strikeStandoff + Self.strikeRunup)
 
             let delay = Double(step) * Self.predictionStep
-            let candidate = Plan(hasIntercept: true, point: position, delay: delay, shot: shot)
+            let candidate = Plan(
+                hasIntercept: true,
+                point: position,
+                delay: delay,
+                shot: shot,
+                strike: strike
+            )
             if earliestArrival == nil { earliestArrival = candidate }
             let travel = simd_length(clamped(runup, homeSign: homeSign) - ship.position)
             // A lander goes nowhere until its nose points the right way, so
             // the first quarter second of any plan buys no distance at all.
             let burn = max(0, delay - Self.turnLatency)
             let reach = 0.45 * shipSpeed * delay + 1.6 * burn * burn
-            if travel + 0.05 <= reach { return candidate }
+            guard travel + 0.05 <= reach else { continue }
+            // On a hoop court not every reachable ball is a ball worth
+            // playing at the rim: the shot is a lift from underneath, and it
+            // only works from a band of this half where the ship can get
+            // under the ball and the arc is short. Take the first arrival
+            // inside that band if the ball is going to give the bot one, and
+            // settle for the first reachable arrival if it is not.
+            if let hoop = arena.hoop {
+                if firstReachable == nil { firstReachable = candidate }
+                if isShootingPocket(position, hoop: hoop) { return candidate }
+            } else {
+                return candidate
+            }
         }
 
+        if let firstReachable { return firstReachable }
         // Nothing is comfortably reachable, so chase the first arrival anyway.
         if let earliestArrival { return earliestArrival }
         let post = guardPost(homeSign: homeSign)
-        return Plan(
-            hasIntercept: false,
-            point: post,
-            delay: 9,
-            shot: shotDirection(from: post, homeSign: homeSign)
-        )
+        let (shot, strike) = shotPlan(from: post, ballVelocity: .zero, homeSign: homeSign)
+        return Plan(hasIntercept: false, point: post, delay: 9, shot: shot, strike: strike)
     }
 
     /// Ready position while the ball is on the far side of the net.
     private func guardPost(homeSign: Double) -> SIMD2<Double> {
         SIMD2(homeSign * 0.42, arena.floorY + 0.50)
+    }
+
+    /// The shot to play from `point`: which way to send the ball, and how
+    /// hard to drive through it to do that. A court with a hoop in the middle
+    /// is a different game from one with a goal hung off the roof, and this is
+    /// where that difference lives.
+    func shotPlan(
+        from point: SIMD2<Double>,
+        ballVelocity: SIMD2<Double>,
+        homeSign: Double
+    ) -> (shot: SIMD2<Double>, strike: Double) {
+        guard let hoop = arena.hoop else {
+            return (shotDirection(from: point, homeSign: homeSign), difficulty.strikeSpeed)
+        }
+        // From the pocket, go at the rim. From anywhere else -- pinned on a
+        // wall, up in the roof, down in a corner -- the shot is not on, so
+        // set the ball into the pocket and take it from there next touch.
+        let target = isShootingPocket(point, hoop: hoop)
+            ? SIMD2(0, hoop.centerY)
+            : SIMD2(homeSign * 0.30, hoop.centerY - 0.20)
+        return lob(from: point, to: target, ballVelocity: ballVelocity)
+    }
+
+    /// The band of its own half the bot will shoot from: close enough to the
+    /// rim that the arc is short, far enough out that the run-up underneath
+    /// the ball is not inside a post, and low enough that there is room to
+    /// get under it at all.
+    private func isShootingPocket(_ point: SIMD2<Double>, hoop: HoopGeometry) -> Bool {
+        abs(point.x) >= 0.12
+            && abs(point.x) <= 0.52
+            && point.y >= hoop.centerY - 0.46
+            && point.y <= hoop.centerY + 0.30
+    }
+
+    /// The arc that drops the ball onto `target`. Only a descending ball
+    /// scores, so a hoop shot has to arc, and this court is short while the
+    /// ball is heavy: a full-power strike would have the arc through the roof
+    /// long before it ever came back down over the window. So the shot is
+    /// solved the other way round -- take the gentlest arc that reaches the
+    /// target at all, the one whose launch angle bisects the vertical and the
+    /// line to it, and carry only the speed that arc needs. That arc is also
+    /// the flattest in angle: right at the minimum the range barely moves as
+    /// the launch angle does, so the bot's aim error costs it almost nothing.
+    private func lob(
+        from point: SIMD2<Double>,
+        to target: SIMD2<Double>,
+        ballVelocity: SIMD2<Double>
+    ) -> (shot: SIMD2<Double>, strike: Double) {
+        let delta = target - point
+        let gravity = max(
+            0.001,
+            -configuration.gravity.y * configuration.ballGravityMultiplier
+        )
+        let horizontal = abs(delta.x)
+        let direction: SIMD2<Double>
+        let launch: Double
+        if horizontal < 0.01 {
+            // Dead in line with the target. Straight up if it is overhead --
+            // through an open rim, rising is not a bucket but the fall back
+            // down through it is -- and straight down if it is below.
+            let rising = delta.y >= 0
+            direction = SIMD2(0, rising ? 1 : -1)
+            // Just enough to arrive, plus a little: short drops the ball on
+            // the near post, and the near post at least keeps it in play.
+            launch = rising ? (2 * gravity * delta.y).squareRoot() * 1.06 : 0.9
+        } else {
+            let span = simd_length(delta)
+            let angle = (atan2(delta.y, horizontal) + .pi / 2) / 2
+            let sign: Double = delta.x < 0 ? -1 : 1
+            direction = SIMD2(sign * cos(angle), sin(angle))
+            launch = (gravity * (delta.y + span)).squareRoot() * 1.04
+        }
+        return drive(sending: ballVelocity, to: direction * launch)
+    }
+
+    /// Turns a wanted ball velocity into the drive that produces it: which way
+    /// the ship comes in, and how fast it has to be going through the ball.
+    ///
+    /// The hull can only push the ball along the line between their centres,
+    /// and only the ball's speed along that line changes -- whatever it had
+    /// across the line comes through the contact untouched. So the line the
+    /// ship arrives on is not the line the ball leaves on. It is the line of
+    /// the *change*, and driving straight down the flight path instead is
+    /// what puts a lob wide whenever the ball came in with any drift on it.
+    private func drive(
+        sending ballVelocity: SIMD2<Double>,
+        to wanted: SIMD2<Double>
+    ) -> (shot: SIMD2<Double>, strike: Double) {
+        let change = wanted - ballVelocity
+        let magnitude = simd_length(change)
+        guard magnitude > 0.001 else {
+            // Already doing what it was about to be told to do.
+            let along = simd_length(wanted) > 0.001 ? simd_normalize(wanted) : SIMD2(0, 1.0)
+            return (along, 0.30)
+        }
+        let approach = change / magnitude
+        // Closing speed that lands the wanted change on the ball. Every contact
+        // is also popped apart by `minimumBallSeparationSpeed`, and on a soft
+        // touch that kick is most of the outgoing velocity -- so when it is
+        // going to fire, solve for the change with it included rather than be
+        // surprised by it afterwards.
+        var closing = magnitude / SimulationEngine.strikeGain
+        if SimulationEngine.shipBallRestitution * closing
+            < configuration.minimumBallSeparationSpeed {
+            closing = (magnitude - configuration.minimumBallSeparationSpeed)
+                / (SimulationEngine.strikeGain - SimulationEngine.shipBallRestitution)
+        }
+        // A hull slower than the ball is running away from never touches it,
+        // so the floor here is a real closing speed, not a fixed number.
+        let slowest = simd_dot(ballVelocity, approach) + 0.05
+        let needed = simd_dot(ballVelocity, approach) + closing
+        return (approach, max(slowest, min(difficulty.strikeSpeed, needed)))
     }
 
     /// Direction to send the ball from `point`. The face on this side is the
@@ -485,14 +683,17 @@ public struct AIController: InputSource, Sendable {
     /// Keeps a flight target on this side of the net and clear of the hazards.
     private func clamped(_ point: SIMD2<Double>, homeSign: Double) -> SIMD2<Double> {
         var result = point
-        let minimumX = result.y > arena.humpUndersideY - 0.30 ? 0.12 : 0.03
+        // The extra standoff up high is room for the hump. Without one there
+        // is nothing up there to stand off from.
+        let minimumX = arena.hasHump && result.y > arena.humpUndersideY - 0.30 ? 0.12 : 0.03
         if result.x * homeSign < minimumX {
             result.x = homeSign * minimumX
         }
         if abs(result.x) > arena.halfWidth - 0.10 {
             result.x = homeSign * (arena.halfWidth - 0.10)
         }
-        result.y = max(arena.floorY + 0.115, min(arena.ceilingY - 0.082, result.y))
+        let deck = arena.floorY + (arena.hoop == nil ? 0.115 : 0.085)
+        result.y = max(deck, min(arena.ceilingY - 0.082, result.y))
         return result
     }
 

@@ -155,10 +155,10 @@ final class GameSession {
         engine = initialEngine
         state = initialEngine.state
         for (seat, difficulty) in botSeats {
-            pilots[seat] = AIController(difficulty: difficulty, configuration: configuration)
+            pilots[seat] = AIController(difficulty: difficulty, configuration: configuration, arena: mode.court)
         }
         if mode != .online, ProcessInfo.processInfo.arguments.contains("--demo") {
-            demoAI = AIController(difficulty: .pilot, configuration: configuration)
+            demoAI = AIController(difficulty: .pilot, configuration: configuration, arena: mode.court)
         }
         scene.scaleMode = .resizeFill
         scene.arena = mode.court

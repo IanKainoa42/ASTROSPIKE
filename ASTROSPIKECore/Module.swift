@@ -414,6 +414,19 @@ public struct SimulationEngine: Sendable {
     static let effectImpactSpeed = 0.25
     /// The floor takes a little more out of it than the walls do.
     static let floorRestitution = 0.78
+    /// Speed the hoop court's ball always comes back off the deck with. It is
+    /// a basketball there: it never lies down. Well short of the rim, so a
+    /// loose ball can never bounce itself in.
+    static let hoopDribbleSpeed = 1.35
+    /// What a hull and the ball weigh against each other, and how lively the
+    /// knock between them is.
+    static let ballMass = 0.45
+    static let shipMass = 1.60
+    static let shipBallRestitution = 0.95
+    /// Ball speed out of a nose-on strike, per unit of closing speed. Falls
+    /// out of the impulse below; the guidance needs it to know how hard to
+    /// drive through a ball to send it a given distance.
+    static let strikeGain = (1 + shipBallRestitution) / (1 + ballMass / shipMass)
 
     public static func testing() -> SimulationEngine {
         SimulationEngine(state: WorldState(ships: [
@@ -1141,7 +1154,14 @@ public struct SimulationEngine: Sendable {
             state.ball.velocity.y = abs(state.ball.velocity.y) * Self.floorRestitution
             if !floorRegistered {
                 contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
+                floorRegistered = true
             }
+        }
+        // Nothing on the hoop court ends a rally except the rim, so a ball
+        // that runs out of bounce just lies there and the match never
+        // finishes. It comes off the deck live instead.
+        if floorRegistered, arena.hoop != nil {
+            state.ball.velocity.y = max(state.ball.velocity.y, Self.hoopDribbleSpeed)
         }
         if state.ball.position.y + r >= arena.ceilingY {
             state.ball.position.y = arena.ceilingY - r
@@ -1296,9 +1316,10 @@ public struct SimulationEngine: Sendable {
         let relativeVelocity = state.ball.velocity - ship.velocity
         let inwardSpeed = simd_dot(relativeVelocity, normal)
         guard inwardSpeed < 0 else { return }
-        let inverseBallMass = 1.0 / 0.45
-        let inverseShipMass = 1.0 / 1.60
-        let impulse = -(1 + 0.95) * inwardSpeed / (inverseBallMass + inverseShipMass)
+        let inverseBallMass = 1.0 / Self.ballMass
+        let inverseShipMass = 1.0 / Self.shipMass
+        let impulse = -(1 + Self.shipBallRestitution) * inwardSpeed
+            / (inverseBallMass + inverseShipMass)
         state.ball.velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
         // Every contact pops the ball clear of the hull. Without this a ship can

@@ -163,3 +163,101 @@ struct BasketballCourtTests {
         #expect(engine.state.match.phase != .finished)
     }
 }
+
+@Suite("Basketball bots")
+struct BasketballBotTests {
+    private static let config = SimulationConfiguration.basketball(from: SimulationConfiguration())
+
+    /// Drops a ship onto a resting ball exactly as the bot's plan asks, then
+    /// reads where the ball's flight would cross the rim's height. The gap is
+    /// small on purpose: the plan is solved for the ball where it is, so any
+    /// fall before contact is the harness lying to the bot, not the bot missing.
+    private func rimCrossing(from point: SIMD2<Double>, homeSign: Double) -> Double? {
+        let hoop = ArenaGeometry.basketball.hoop!
+        let gravity = 1.9
+        let bot = AIController(
+            difficulty: .ace,
+            configuration: Self.config,
+            arena: .basketball
+        )
+        let plan = bot.shotPlan(from: point, ballVelocity: .zero, homeSign: homeSign)
+
+        var engine = SimulationEngine.testing()
+        engine.updateArena(.basketball)
+        engine.updateConfiguration(Self.config)
+        engine.configureRoster([.cyan, .orange])
+        engine.beginPlay()
+        for _ in 0 ..< 200 { engine.step(inputs: [:]) }   // let the serve delay run out
+
+        engine.state.ball = BallState(position: point, velocity: .zero)
+        let shooter: Seat = homeSign < 0 ? .cyan : .orange
+        engine.state.ships[shooter] = ShipState(
+            position: point - plan.shot * (AIController.strikeStandoff + 0.015),
+            velocity: plan.shot * plan.strike,
+            angle: atan2(plan.shot.y, plan.shot.x)
+        )
+        engine.state.ships[shooter == .cyan ? .orange : .cyan]?.position
+            = SIMD2(homeSign * -0.9, 0.5)
+
+        var velocity = engine.state.ball.velocity
+        for _ in 0 ..< 10 {
+            engine.step(inputs: [:])
+            if simd_length(engine.state.ball.velocity - velocity) > 0.3 { break }
+            velocity = engine.state.ball.velocity
+        }
+        velocity = engine.state.ball.velocity
+        let ball = engine.state.ball.position
+        let discriminant = velocity.y * velocity.y - 2 * gravity * (hoop.centerY - ball.y)
+        guard discriminant >= 0 else { return nil }       // never gets up to the rim
+        let time = (velocity.y + discriminant.squareRoot()) / gravity
+        guard time > 0 else { return nil }                // already past it, going away
+        return ball.x + velocity.x * time
+    }
+
+    @Test("From anywhere in the shooting pocket the bot's shot comes down through the rim")
+    func shotsFallThroughTheRim() throws {
+        let hoop = try #require(ArenaGeometry.basketball.hoop)
+        for homeSign in [-1.0, 1.0] {
+            for step in 0 ..< 8 {
+                let point = SIMD2(
+                    homeSign * (0.16 + Double(step) * 0.045),
+                    hoop.centerY - 0.30 + Double(step % 4) * 0.14
+                )
+                let crossing = try #require(
+                    rimCrossing(from: point, homeSign: homeSign),
+                    "no shot at all from \(point)"
+                )
+                #expect(
+                    abs(crossing) <= hoop.innerHalfWidth,
+                    "from \(point) the ball crosses the rim at \(crossing)"
+                )
+            }
+        }
+    }
+
+    @Test("Two bots left alone on the hoop court finish the match")
+    func botsFinishAMatch() {
+        var engine = SimulationEngine.testing()
+        engine.updateArena(.basketball)
+        engine.updateConfiguration(Self.config)
+        engine.configureRoster([.cyan, .orange])
+        engine.beginPlay()
+        var bots: [Seat: AIController] = [
+            .cyan: AIController(difficulty: .pilot, configuration: Self.config, arena: .basketball),
+            .orange: AIController(difficulty: .pilot, configuration: Self.config, arena: .basketball),
+        ]
+
+        var finished = false
+        // Forty seconds at 120Hz. The duel below lands at about twenty-four.
+        for tick in 0 ..< 4_800 {
+            var inputs: [Seat: PlayerInput] = [:]
+            for seat in [Seat.cyan, .orange] {
+                inputs[seat] = bots[seat]!.input(for: engine.state, seat: seat, tick: UInt64(tick))
+            }
+            engine.step(inputs: inputs)
+            if engine.state.match.phase == .finished { finished = true; break }
+        }
+        #expect(finished)
+        #expect(engine.state.match.winner != nil)
+    }
+}
