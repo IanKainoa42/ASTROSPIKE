@@ -29,6 +29,7 @@ final class TrackScene: SKScene {
         didSet {
             guard hulls != oldValue else { return }
             for node in carNodes.values { node.path = nil }
+            hullExtents.removeAll()
             renderSnapshot()
         }
     }
@@ -37,6 +38,9 @@ final class TrackScene: SKScene {
     private let skidLayer = SKNode()
     private let actorLayer = SKNode()
     private var carNodes: [TrackSeat: SKShapeNode] = [:]
+    /// How wide each hull actually came out, in points, so the glow and the
+    /// lightning fit the ship that was drawn rather than a nominal one.
+    private var hullExtents: [TrackSeat: CGFloat] = [:]
     private var glowNodes: [TrackSeat: SKShapeNode] = [:]
     private var didBuild = false
 
@@ -54,6 +58,11 @@ final class TrackScene: SKScene {
         self.track = track
         self.hulls = hulls
         super.init(size: size)
+        // The scene resizes to the window instead of being stretched into it.
+        // Left on the default the corridor is laid out for 960x540 and then
+        // squeezed into a 956x440 phone, which widens every hull by a fifth --
+        // a ship drawn as an ellipse is not the ship you picked in the hangar.
+        scaleMode = .resizeFill
         backgroundColor = SKColor(red: 0.015, green: 0.025, blue: 0.07, alpha: 1)
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         addChild(trackLayer)
@@ -79,6 +88,13 @@ final class TrackScene: SKScene {
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
         didBuild = false
+        // The hulls are scaled once, when their path is cut, against the track
+        // rect of the moment. A new size means a new rect, so the paths go too
+        // -- otherwise the corridor redraws and the ships in it keep the size
+        // they had for a window that no longer exists.
+        for node in carNodes.values { node.path = nil }
+        for glow in glowNodes.values { glow.path = nil }
+        hullExtents.removeAll()
         buildTrack()
         renderSnapshot()
     }
@@ -198,27 +214,32 @@ final class TrackScene: SKScene {
     private func renderSnapshot() {
         guard let snapshot else { return }
         buildTrack()
-        let length = shipLengthInPoints
+        let scale = hullScale
         for seat in TrackSeat.allCases {
             guard let car = snapshot.cars[seat],
                   let node = carNodes[seat],
                   let glow = glowNodes[seat] else { continue }
             let tint = Self.tint(for: seat)
             if node.path == nil {
-                // The circuit flies the match's ships, so it draws the match's
-                // hulls: the same outline, sized to sit exactly inside the
-                // collision circle it is flying. Scaling off the tarmac would
-                // have drawn a ship that bounces off a rail it never touched.
+                // The circuit flies the match's ships, so it draws them the
+                // match's way: same outline, same scale, off the same arena
+                // rect. A hull a third bigger than the one in the hangar is a
+                // different ship however faithful its outline, and scaling off
+                // the tarmac instead would have grown every ship the moment
+                // the pilot widened the lane.
                 let hull = hulls[seat] ?? Hull.defaultHull(for: seat == .player ? .cyan : .orange)
                 let outline = hull.spec.outline
                 node.path = outline.cgPath
-                node.setScale(length / 2 / Self.radius(of: outline))
+                node.setScale(scale)
+                let length = Self.radius(of: outline) * scale * 2
+                hullExtents[seat] = length
                 glow.path = CGPath(
                     ellipseIn: CGRect(x: -length * 0.7, y: -length * 0.7,
                                       width: length * 1.4, height: length * 1.4),
                     transform: nil
                 )
             }
+            let length = hullExtents[seat] ?? 0
             node.position = point(car.position)
             // The hull outlines point up; the engine's heading points right.
             node.zRotation = CGFloat(car.heading) - .pi / 2
@@ -317,14 +338,13 @@ final class TrackScene: SKScene {
         return CGFloat(track.halfWidth * 2 / (ArenaGeometry.standard.halfWidth * 2)) * rect.width
     }
 
-    /// The ship is drawn at the size it actually collides at, not at a
-    /// fraction of the tarmac. The corridor is more than twice as wide as it
-    /// used to be, and a hull scaled off it would have grown with it -- what
-    /// flies round here is the same 0.048-radius hull a match flies.
-    private var shipLengthInPoints: CGFloat {
-        let arena = ArenaGeometry.standard
-        let hull = TrackConfiguration().shipRadius * 2
-        return CGFloat(hull / (arena.halfWidth * 2)) * trackRect.width
+    /// The match's own hull scale, to the character. `ArenaScene` sizes a
+    /// ship as `unit / 473` off the same arena rect; the circuit uses the very
+    /// same number so the hull the pilot chose is the hull they see, at the
+    /// size they chose it at.
+    private var hullScale: CGFloat {
+        let rect = trackRect
+        return min(rect.width / 2, rect.height) / 1.7 / 473
     }
 
     private func point(_ world: SIMD2<Double>) -> CGPoint {
