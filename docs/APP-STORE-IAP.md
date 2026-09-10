@@ -19,27 +19,80 @@ anything else.
 identifiers are pinned by a test (`HullStoreTests.productIDsArePinned`) and
 must match byte for byte:
 
-| Product ID | Reference name | Display name |
-|---|---|---|
-| `com.iankainoa.ASTROSPIKE.hull.bulwark` | ASTROSPIKE Bulwark Hull | Bulwark Hull |
-| `com.iankainoa.ASTROSPIKE.hull.wraith` | ASTROSPIKE Wraith Hull | Wraith Hull |
-| `com.iankainoa.ASTROSPIKE.hull.hornet` | ASTROSPIKE Hornet Hull | Hornet Hull |
-| `com.iankainoa.ASTROSPIKE.hull.comet` | ASTROSPIKE Comet Hull | Comet Hull |
+| Product ID | Reference name |
+|---|---|
+| `com.iankainoa.ASTROSPIKE.hull.bulwark` | ASTROSPIKE Bulwark Hull |
+| `com.iankainoa.ASTROSPIKE.hull.wraith` | ASTROSPIKE Wraith Hull |
+| `com.iankainoa.ASTROSPIKE.hull.hornet` | ASTROSPIKE Hornet Hull |
+| `com.iankainoa.ASTROSPIKE.hull.comet` | ASTROSPIKE Comet Hull |
 
-Each one needs, or it parks in *Missing Metadata*:
+### Localization — English (U.S.), copy-paste
+
+App Store Connect caps the IAP **display name at 30 characters** and the
+**description at 45**, so these are not the longer blurbs in
+`ASTROSPIKE/ASTROSPIKE.storekit`. The cosmetic-only claim does not fit in 45
+characters; it lives in the review notes and the app description instead.
+
+**Bulwark Hull** (12/30, 41/45)
+
+```
+Bulwark Hull
+```
+
+```
+Cosmetic skin. Shield nose, engine skids.
+```
+
+**Wraith Hull** (11/30, 42/45)
+
+```
+Wraith Hull
+```
+
+```
+Cosmetic skin. Faceted diamond, no curves.
+```
+
+**Hornet Hull** (11/30, 40/45)
+
+```
+Hornet Hull
+```
+
+```
+Cosmetic skin. Twin booms, porthole pod.
+```
+
+**Comet Hull** (10/30, 39/45)
+
+```
+Comet Hull
+```
+
+```
+Cosmetic skin. Round pod on three fins.
+```
+
+### Review notes — paste the same block into all four
+
+```
+Cosmetic ship skin. Hulls change the ship's appearance only: they do not
+change flight, thrust, collision or scoring. The simulation uses one shared
+collision fixture for every hull, so online play is unaffected by what the
+player owns. Every game mode and every rule is available without any purchase.
+
+To reach it: launch the app, tap HANGAR on the main menu, tap a padlocked
+hull in the grid, then tap the UNLOCK button under the preview. RESTORE
+PURCHASES sits at the bottom of the same screen.
+```
+
+Each product also needs, or it parks in *Missing Metadata*:
 
 - **Price** — the local config assumes $1.99 each, but the code never hardcodes
   a price; it renders `product.displayPrice`, so ASC is free to disagree.
 - **Availability** — all territories.
-- **Localization** (English (U.S.)) — display name and description. Use the
-  copy in `ASTROSPIKE/ASTROSPIKE.storekit`; every description ends with
-  "Cosmetic only — every hull flies and bounces identically," which is both
-  true and the answer to the obvious review question.
 - **Review screenshot** — 640×920 or larger. Take it from the Hangar with the
   hull previewed and the UNLOCK button visible.
-- **Review notes** — "Cosmetic ship skin. Hulls do not change flight,
-  collision or scoring; the simulation uses one shared collision fixture for
-  every hull, so online play is unaffected."
 
 **Family Sharing: off.** The code treats a revocation as a lock, so turning it
 on later is safe, but it is not tested.
@@ -51,13 +104,33 @@ their own. Attach all four to the 1.0 submission.
 
 - **App Store ▸ Pricing** — the app itself stays **Free**. The IAPs make the
   listing read "Free · Offers In-App Purchases" on their own.
-- **Description** — say what the purchases are and are not. Suggested closing
-  paragraph: "Optional: four cosmetic hulls are available as one-time
-  purchases. They change how your ship looks and nothing else — every hull
-  flies, bounces and scores identically, online and solo."
-- **App Review notes** — repeat the cosmetic-only claim and point the reviewer
-  at Hangar ▸ any locked hull ▸ UNLOCK, and at **RESTORE PURCHASES** in the
-  same screen.
+
+### Description — closing paragraph, copy-paste
+
+```
+Optional: four cosmetic hulls are available as one-time purchases. They change
+how your ship looks and nothing else — every hull flies, bounces and scores
+identically, online and solo. Every mode and every rule in ASTROSPIKE is free.
+```
+
+### App Review notes — copy-paste
+
+```
+ASTROSPIKE is free to play in full. There is no gated content, no consumable
+currency and no subscription.
+
+The four in-app purchases are cosmetic ship skins (Bulwark, Wraith, Hornet,
+Comet). They change the ship's appearance only — not flight, thrust, collision
+or scoring. The physics simulation uses one shared collision fixture for every
+hull, so a player who buys nothing is never at a disadvantage online.
+
+To test a purchase: launch the app, tap HANGAR on the main menu, tap a
+padlocked hull in the grid, then tap UNLOCK under the preview. RESTORE
+PURCHASES is at the bottom of the same screen and works without an account.
+
+No sign-in is required to play. Online duels use Game Center; solo play,
+practice and the hangar all work signed out.
+```
 
 ## 4. Manual verification — required, not optional
 

@@ -17,7 +17,7 @@
       "internalID": "A82445F5-C84B-5B93-A6B0-D3E774E40CC4",
       "localizations": [
         {
-          "description": "A shield plate for a nose, welded seams down the hull and skids for engines. Cosmetic only — every hull flies and bounces identically.",
+          "description": "Cosmetic skin. Shield nose, engine skids.",
           "displayName": "Bulwark Hull",
           "locale": "en_US"
         }
@@ -32,7 +32,7 @@
       "internalID": "567C0CFC-EB25-5AEC-BF03-B2EDB7B68A89",
       "localizations": [
         {
-          "description": "Faceted diamond planform with a chevron canopy. Cosmetic only — every hull flies and bounces identically.",
+          "description": "Cosmetic skin. Faceted diamond, no curves.",
           "displayName": "Wraith Hull",
           "locale": "en_US"
         }
@@ -47,7 +47,7 @@
       "internalID": "071FB85F-0BC2-5039-84ED-C879C598898A",
       "localizations": [
         {
-          "description": "A short central pod slung between two long engine booms. Cosmetic only — every hull flies and bounces identically.",
+          "description": "Cosmetic skin. Twin booms, porthole pod.",
           "displayName": "Hornet Hull",
           "locale": "en_US"
         }
@@ -62,7 +62,7 @@
       "internalID": "41950C10-4D44-5379-A05C-3B4D90E608E3",
       "localizations": [
         {
-          "description": "Round pressure pod on three raked fins. Cosmetic only — every hull flies and bounces identically.",
+          "description": "Cosmetic skin. Round pod on three fins.",
           "displayName": "Comet Hull",
           "locale": "en_US"
         }
