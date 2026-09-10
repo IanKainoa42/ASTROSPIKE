@@ -239,14 +239,15 @@ struct TouchControls: View {
                                         height: saved.height + value.translation.height
                                     )
                                     var offsets = padOffsets
-                                    offsets[id] = onGlass(proposed, id: id, baked: baked, applied: applied)
+                                    offsets[id] = onGlass(proposed, id: id, baked: baked)
                                     padOffsets = offsets
                                     dragging[id] = nil
                                 }
                         )
                 }
             }
-            .offset(x: applied.width, y: applied.height)
+            // Measured before the offset goes on, so this is the pad's anchor:
+            // where it sits with no offset at all.
             .background {
                 GeometryReader { proxy in
                     Color.clear
@@ -255,17 +256,17 @@ struct TouchControls: View {
                         }
                 }
             }
+            .offset(x: applied.width, y: applied.height)
     }
 
     /// Pulls a proposed offset back until the pad sits inside the window.
-    /// The measured frame already has `applied` in it, so subtracting that
-    /// recovers where the pad would sit with no offset at all -- everything
-    /// else is arithmetic on that anchor. A pad larger than the window (the
-    /// steering strip on a small phone) is held covering it rather than
-    /// squeezed inside it.
-    private func onGlass(_ proposed: CGSize, id: String, baked: CGSize, applied: CGSize) -> CGSize {
+    /// `padFrames` holds the pad's anchor -- its frame with no offset on --
+    /// so everything here is arithmetic on that. A pad larger than the
+    /// window (the steering strip on a small phone) is held covering it
+    /// rather than squeezed inside it.
+    private func onGlass(_ proposed: CGSize, id: String, baked: CGSize) -> CGSize {
         guard let measured = padFrames[id], !windowFrame.isEmpty else { return proposed }
-        let anchor = CGPoint(x: measured.minX - applied.width, y: measured.minY - applied.height)
+        let anchor = CGPoint(x: measured.minX, y: measured.minY)
         let lowX = windowFrame.maxX - measured.width
         let lowY = windowFrame.maxY - measured.height
         let x = min(

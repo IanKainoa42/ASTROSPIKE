@@ -26,6 +26,11 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["SETTINGS"].tap()
         XCTAssertTrue(app.switches["Large controls"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["Swap controls for left-handed play"].exists)
+        let settingsForm = app.collectionViews.firstMatch
+        XCTAssertTrue(settingsForm.exists)
+        // Match Rules sits below the fold on a landscape phone, and a cell
+        // scrolled past no longer exists either: nudge the form until the
+        // stepper is on screen.
         let bounceIncrement = app.buttons.matching(
             NSPredicate(
                 format: "label BEGINSWITH %@ AND label CONTAINS %@",
@@ -33,10 +38,10 @@ final class ASTROSPIKEUITests: XCTestCase {
                 "Increment"
             )
         ).firstMatch
-        XCTAssertTrue(bounceIncrement.exists)
-        let settingsForm = app.collectionViews.firstMatch
-        XCTAssertTrue(settingsForm.exists)
-        settingsForm.swipeUp()
+        for _ in 0 ..< 4 where !bounceIncrement.exists {
+            settingsForm.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(bounceIncrement.waitForExistence(timeout: 2))
         let flightTuning = app.buttons["Flight Tuning"]
         XCTAssertTrue(flightTuning.waitForExistence(timeout: 3))
         flightTuning.tap()
@@ -64,14 +69,12 @@ final class ASTROSPIKEUITests: XCTestCase {
         let thrustControl = app.buttons["Thrust"]
         XCTAssertFalse(torqueControl.exists)
         XCTAssertTrue(thrustControl.exists)
-        let rotateLeft = app.buttons["Rotate left"]
-        let rotateRight = app.buttons["Rotate right"]
-        XCTAssertTrue(rotateLeft.exists)
-        XCTAssertTrue(rotateRight.exists)
-        XCTAssertGreaterThanOrEqual(rotateLeft.frame.width, 96)
-        XCTAssertGreaterThanOrEqual(rotateLeft.frame.height, 96)
-        XCTAssertGreaterThanOrEqual(rotateRight.frame.width, 96)
-        XCTAssertGreaterThanOrEqual(rotateRight.frame.height, 96)
+        // Landscape phones get the margin layout: one steering strip, not
+        // separate rotate buttons.
+        let steering = app.descendants(matching: .any)["steering-control"]
+        XCTAssertTrue(steering.waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(steering.frame.width, 96)
+        XCTAssertGreaterThanOrEqual(steering.frame.height, 96)
         XCTAssertGreaterThanOrEqual(thrustControl.frame.width, 112)
         XCTAssertGreaterThanOrEqual(thrustControl.frame.height, 96)
         XCTAssertTrue(app.staticTexts["Your side: Cyan"].exists)
@@ -167,10 +170,12 @@ extension ASTROSPIKEUITests {
         let corner = app.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.999))
         start.press(forDuration: 0.2, thenDragTo: corner)
 
-        let landed = NSPredicate { _, _ in thrust.frame.maxX > 0 }
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: landed, object: nil)], timeout: 2)
-
         let window = app.frame
+        let landed = NSPredicate { _, _ in
+            let f = thrust.frame
+            return f.maxX <= window.maxX + 1 && f.maxY <= window.maxY + 1
+        }
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: landed, object: nil)], timeout: 3)
         let pad = thrust.frame
         XCTAssertLessThanOrEqual(pad.maxX, window.maxX + 1, "pad ran off the right edge: \(pad) in \(window)")
         XCTAssertLessThanOrEqual(pad.maxY, window.maxY + 1, "pad ran off the bottom: \(pad) in \(window)")
