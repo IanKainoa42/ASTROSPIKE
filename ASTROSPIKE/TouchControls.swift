@@ -18,6 +18,12 @@ struct TouchControls: View {
     /// either side of it: a thumb never has to reach past the court's edge
     /// and never covers the play.
     let arenaFrame: CGRect
+    /// The whole window in global coordinates, safe-area insets included.
+    /// The steering strip is laid out against this rather than against the
+    /// view's own bounds: the pads sit inside the safe area and under the
+    /// HUD, which put the strip's outer and bottom edges 60-odd points in
+    /// from the screen's -- dead space right where a landscape thumb rests.
+    let windowFrame: CGRect
     /// What the pads are flying. Both fly the same ship; the circuit just has
     /// no cannon, and its beam pad burns out of the tail instead. The same
     /// four thumb positions serve both, so nobody hunts for a trigger that
@@ -38,8 +44,10 @@ struct TouchControls: View {
     /// margin); the layout math below is the anchor, these ride on top after scaling to the
     /// current window (x by engine-margin width, y by height). Saved drags stack on these.
     private static let bakedReference = CGSize(width: 262, height: 1000)
+    /// Steering is deliberately absent: its baked drag pushed the strip 129 pt
+    /// inboard, which vacated the outer bottom corner -- exactly where a
+    /// landscape thumb rests. The strip is anchored to that corner instead.
     private static let bakedOffsets: [String: CGSize] = [
-        "steering": CGSize(width: 129, height: -38),
         "tractor": CGSize(width: -109, height: -303),
         "fire": CGSize(width: -49, height: -280),
         "thrust": CGSize(width: -123, height: -246),
@@ -49,6 +57,18 @@ struct TouchControls: View {
     /// A margin narrower than this cannot hold a pad; the old full-bleed
     /// split (steer left, engine right) takes over, as on a portrait phone.
     private let minimumMargin: CGFloat = 60
+
+    /// The window a `GeometryReader` sits in, insets added back on.
+    static func windowFrame(in geometry: GeometryProxy) -> CGRect {
+        let safe = geometry.frame(in: .global)
+        let insets = geometry.safeAreaInsets
+        return CGRect(
+            x: safe.minX - insets.leading,
+            y: safe.minY - insets.top,
+            width: safe.width + insets.leading + insets.trailing,
+            height: safe.height + insets.top + insets.bottom
+        )
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -111,15 +131,22 @@ struct TouchControls: View {
         let tractorY = thrustTop - gap - (fire.height + slop) / 2
         let fireY = thrustTop + 12 - (fire.height + slop) / 2
 
-        let steeringSpan = steeringWidth + steeringReach
-        let steeringX = leftHanded ? local.width - steeringSpan : 0
+        // Steering owns the screen's outer bottom corner. A third of the screen
+        // wide is the floor whatever the margin happens to be, and it stands
+        // better than half the screen tall, with its outer and bottom edges on
+        // the screen's own edges -- not on the safe area's.
+        let window = windowFrame.isEmpty ? local : windowFrame
+        let steeringSpan = max(steeringWidth + steeringReach, window.width / 3)
+        let steeringHeight = max(190, window.height * 0.60)
+        let steeringX = (leftHanded ? window.maxX - steeringSpan : window.minX) - local.minX
+        let steeringY = window.maxY - local.minY - steeringHeight
 
         return ZStack(alignment: .topLeading) {
             placeable("steering", scale: bakedScale) {
-                steeringColumn(width: steeringSpan, height: local.height)
-                    .frame(width: steeringSpan, height: local.height)
+                steeringPad(chrome: CGSize(width: steeringSpan - 8, height: steeringHeight - 8))
+                    .frame(width: steeringSpan, height: steeringHeight)
             }
-            .offset(x: steeringX)
+            .offset(x: steeringX, y: steeringY)
             placeable("tractor", scale: bakedScale) {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
@@ -199,18 +226,6 @@ struct TouchControls: View {
                 }
             }
             .offset(x: baked.width + saved.width + live.width, y: baked.height + saved.height + live.height)
-    }
-
-    /// The whole outer strip is the steering surface: press or drag on its
-    /// left half to rotate left, right half to rotate right.
-    private func steeringColumn(width: CGFloat, height: CGFloat) -> some View {
-        let chrome = CGSize(width: max(44, width - 12), height: min(170, height * 0.42))
-        return ZStack {
-            Rectangle().fill(Color.cyan.opacity(leftPressed || rightPressed ? 0.06 : 0))
-            steeringPad(chrome: chrome)
-                .offset(y: height * 0.12)
-        }
-        .contentShape(Rectangle())
     }
 
     /// How far the steering strip reaches back over the wall into the court.

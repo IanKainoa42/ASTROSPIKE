@@ -39,6 +39,7 @@ struct TrackView: View {
                         largeControls: largeControls,
                         leftHanded: leftHanded,
                         arenaFrame: Self.arenaFrame(in: geometry),
+                        windowFrame: TouchControls.windowFrame(in: geometry),
                         loadout: .racer
                     )
                 }

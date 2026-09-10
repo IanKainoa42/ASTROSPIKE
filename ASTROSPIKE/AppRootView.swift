@@ -440,7 +440,8 @@ private struct GameView: View {
                 TouchControls(torque: $session.torque, thrust: $session.thrust, fire: $session.fire,
                               tractor: $session.tractor,
                               largeControls: largeControls, leftHanded: leftHanded,
-                              arenaFrame: Self.arenaFrame(in: geometry))
+                              arenaFrame: Self.arenaFrame(in: geometry),
+                              windowFrame: TouchControls.windowFrame(in: geometry))
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
             // the ship without displacing the thumb controls.
