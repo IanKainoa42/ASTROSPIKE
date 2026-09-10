@@ -213,7 +213,12 @@ struct TouchControls: View {
     }
 
     /// How far the steering strip reaches back over the wall into the court.
-    private let steeringReach: CGFloat = 30
+    /// The margin alone is a narrow ribbon on a phone -- about 150 pt of pad --
+    /// and a thumb rolling left and right wants a much broader landing area
+    /// than that, so the strip reaches well past the wall. It is the faintest
+    /// pad on the screen and sits in the bottom corner, so the court it covers
+    /// is court the ball is rarely in.
+    private let steeringReach: CGFloat = 190
 
     private func steeringPad(chrome: CGSize) -> some View {
         ZStack {
