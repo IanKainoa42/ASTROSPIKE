@@ -83,53 +83,73 @@ public struct TrackGeometry: Equatable, Sendable {
         totalLength = running
     }
 
-    /// The circuit: a long left-hand loop drawn to the widest corridor the
-    /// arena box will take. It is a stadium rather than a chicane because the
-    /// tarmac is now nearly a third of the arena's height -- there is no room
-    /// left for a kink that a ship the size of a hull could thread, and a
-    /// corner tighter than the tarmac is wide is not a corner, it is a wall
-    /// with a gap in it. The two ends are deliberately different radii, so
-    /// one is a hairpin the ships have to lift for and the other a sweeper
-    /// they can carry speed through.
-    ///
-    /// Every corner is drawn to a radius the flight model can hold: the
-    /// tightest is about 0.32 against a corridor half-width of 0.19, and a
-    /// ship pulling its whole thrust sideways at that radius holds roughly
-    /// 0.7 arena units per second. The outer rail stays inside the arena
-    /// walls on all four sides.
-    public static let circuit = TrackGeometry(
-        controlPoints: [
-            SIMD2(0.072, -0.413),
-            SIMD2(0.266, -0.420),
-            SIMD2(0.387, -0.406),
-            SIMD2(0.499, -0.358),
-            SIMD2(0.593, -0.280),
-            SIMD2(0.660, -0.178),
-            SIMD2(0.696, -0.061),
-            SIMD2(0.696, 0.061),
-            SIMD2(0.660, 0.178),
-            SIMD2(0.593, 0.280),
-            SIMD2(0.499, 0.358),
-            SIMD2(0.387, 0.406),
-            SIMD2(0.266, 0.420),
-            SIMD2(0.072, 0.413),
-            SIMD2(-0.121, 0.406),
-            SIMD2(-0.314, 0.400),
-            SIMD2(-0.423, 0.380),
-            SIMD2(-0.524, 0.332),
-            SIMD2(-0.606, 0.257),
-            SIMD2(-0.665, 0.163),
-            SIMD2(-0.696, 0.056),
-            SIMD2(-0.696, -0.056),
-            SIMD2(-0.665, -0.163),
-            SIMD2(-0.606, -0.257),
-            SIMD2(-0.524, -0.332),
-            SIMD2(-0.423, -0.380),
-            SIMD2(-0.314, -0.400),
-            SIMD2(-0.121, -0.406),
-        ],
-        halfWidth: 0.19
-    )
+    /// The loop, drawn once at unit scale. Everything the circuit does with
+    /// width is done by scaling these: the shape is a smooth continuous oval
+    /// with no straight-to-arc joins in it, which is what keeps the tightest
+    /// measured corner near its nominal radius instead of spiking at a
+    /// junction. A stadium built from two straights and two caps reads a
+    /// third tighter at the joins and fails the corner rule at any useful
+    /// width -- this was measured, not assumed.
+    public static let loopControlPoints: [SIMD2<Double>] = [
+        SIMD2(0.072, -0.413),
+        SIMD2(0.266, -0.420),
+        SIMD2(0.387, -0.406),
+        SIMD2(0.499, -0.358),
+        SIMD2(0.593, -0.280),
+        SIMD2(0.660, -0.178),
+        SIMD2(0.696, -0.061),
+        SIMD2(0.696, 0.061),
+        SIMD2(0.660, 0.178),
+        SIMD2(0.593, 0.280),
+        SIMD2(0.499, 0.358),
+        SIMD2(0.387, 0.406),
+        SIMD2(0.266, 0.420),
+        SIMD2(0.072, 0.413),
+        SIMD2(-0.121, 0.406),
+        SIMD2(-0.314, 0.400),
+        SIMD2(-0.423, 0.380),
+        SIMD2(-0.524, 0.332),
+        SIMD2(-0.606, 0.257),
+        SIMD2(-0.665, 0.163),
+        SIMD2(-0.696, 0.056),
+        SIMD2(-0.696, -0.056),
+        SIMD2(-0.665, -0.163),
+        SIMD2(-0.606, -0.257),
+        SIMD2(-0.524, -0.332),
+        SIMD2(-0.423, -0.380),
+        SIMD2(-0.314, -0.400),
+        SIMD2(-0.121, -0.406),
+    ]
+
+    /// The corridor the pilot gets by default. Wide enough to carry a slide
+    /// through a corner and still have road on the far side of it: a hull is
+    /// 0.096 across, so this is four and a half hulls of daylight, against
+    /// three before.
+    public static let defaultHalfWidth = 0.26
+    /// Narrower than this and the loop grows past the arena walls; wider and
+    /// the tightest corner stops being wide enough to hold the corridor.
+    public static let halfWidthLimits = (minimum: 0.17, maximum: 0.26)
+
+    /// The circuit at a given corridor width. The loop shrinks as the tarmac
+    /// widens, because both are pinned to the same arena box: the outer rail
+    /// stays just inside the walls whatever width is asked for, and the
+    /// centreline gives up the room the corridor takes.
+    public static func circuit(halfWidth: Double) -> TrackGeometry {
+        let width = min(halfWidthLimits.maximum, max(halfWidthLimits.minimum, halfWidth))
+        // The loop's own extents are 0.696 by 0.420. Height is the binding
+        // wall -- the arena is half again as wide as it is tall -- so the
+        // vertical scale is set by it and the horizontal follows, capped so
+        // the ends never reach a side wall either.
+        let vertical = (0.628 - width) / 0.420
+        let horizontal = min(vertical * 1.023, (0.938 - width) / 0.696)
+        return TrackGeometry(
+            controlPoints: loopControlPoints.map { SIMD2($0.x * horizontal, $0.y * vertical) },
+            halfWidth: width
+        )
+    }
+
+    /// The circuit as raced unless the pilot has moved the lane slider.
+    public static let circuit = TrackGeometry.circuit(halfWidth: defaultHalfWidth)
 
     /// Where the ship is relative to the tarmac. `offset` is signed: positive
     /// is left of the direction of travel, so its sign says which rail.

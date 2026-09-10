@@ -8,8 +8,8 @@ import SwiftUI
 /// flies is the match's ship, under the match's gravity and off the match's
 /// tuning sliders -- what the circuit drops is the ball, the net, the teams
 /// and the rulebook, not the flight model. There is still no online path
-/// here: the race is a local three-lapper against one pace ship, and nothing
-/// it produces has ever crossed the wire.
+/// here: the race is a local run against one pace ship, and nothing it
+/// produces has ever crossed the wire.
 @MainActor
 @Observable
 final class TrackSession {
@@ -29,26 +29,39 @@ final class TrackSession {
     private var tick: UInt64 = 0
 
     private let flight: FlightTuningSnapshot
+    /// The circuit's own sliders. Lane width and lap count live here and only
+    /// here -- passing either alongside the snapshot would let the two
+    /// disagree, and a slider that moves nothing is worse than no slider.
+    private(set) var tuning: TrackTuningSnapshot
+    private let hulls: [TrackSeat: Hull]
 
     init(
-        track: TrackGeometry = .circuit,
         flight: FlightTuningSnapshot = .defaults,
-        lapsToWin: Int = 3
+        tuning: TrackTuningSnapshot = .defaults,
+        hulls: [TrackSeat: Hull] = [:]
     ) {
         self.flight = flight
+        self.tuning = tuning
+        self.hulls = hulls
         let engine = TrackEngine(
-            track: track,
-            configuration: TrackConfiguration(flight: flight),
-            lapsToWin: lapsToWin
+            track: tuning.track,
+            configuration: TrackConfiguration(flight: flight, track: tuning),
+            lapsToWin: tuning.laps
         )
         self.engine = engine
         state = engine.state
-        scene = TrackScene(track: track)
+        scene = TrackScene(track: tuning.track, hulls: hulls)
         scene.snapshot = engine.state
     }
 
     var countdownSecondsRemaining: Double { engine.countdownSecondsRemaining }
     var lapsToWin: Int { state.lapsToWin }
+    var isEndless: Bool { state.isEndless }
+    /// Seconds of arcing left on the pilot's hull, for the badge that tells
+    /// them why the ship is down on power.
+    var damageSecondsRemaining: Double {
+        Double(player?.damageTicksRemaining ?? 0) * engine.configuration.stepDuration
+    }
     var player: CarState? { state.cars[.player] }
     var rival: CarState? { state.cars[.rival] }
 
@@ -76,13 +89,22 @@ final class TrackSession {
 
     func resume() { isPaused = false }
 
+    /// Takes the sliders and drops back onto the grid. Everything the race
+    /// runs on is rebuilt from the snapshot, so a lane the pilot just widened
+    /// is the lane they line up on and the lane the railing measures.
+    func apply(_ tuning: TrackTuningSnapshot) {
+        self.tuning = tuning
+        restart()
+    }
+
     func restart() {
         engine = TrackEngine(
-            track: engine.track,
-            configuration: TrackConfiguration(flight: flight),
-            lapsToWin: state.lapsToWin
+            track: tuning.track,
+            configuration: TrackConfiguration(flight: flight, track: tuning),
+            lapsToWin: tuning.laps
         )
         state = engine.state
+        scene.track = tuning.track
         scene.snapshot = engine.state
         accumulator = 0
         tick = 0
@@ -130,9 +152,10 @@ final class TrackSession {
             scene.present(events)
             announce(events)
         }
-        // The thruster note follows the burn, not the button: a ship sliding
-        // through a penalty makes no noise, because its engine is out.
-        let driving = thrust && state.phase == .racing && player?.isStunned == false
+        // The thruster note follows the burn, not the button. A damaged ship
+        // is still burning -- weakly -- so it still sounds like one: silence
+        // while the pads answer would read as the audio breaking.
+        let driving = thrust && state.phase == .racing
         if driving {
             SoundBank.shared.startLoop(
                 .thrusterCyan,

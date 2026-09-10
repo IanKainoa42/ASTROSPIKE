@@ -12,8 +12,8 @@ public enum RacePhase: String, Equatable, Sendable {
     case finished
 }
 
-/// Why a ship is being held up. Shown on the ship itself, because a penalty
-/// the pilot cannot see is just the controls going wrong.
+/// Why a ship is hurt. Shown on the ship itself, because damage the pilot
+/// cannot see is just the controls going wrong.
 public enum PenaltyReason: String, Equatable, Sendable {
     case railing
 }
@@ -33,12 +33,11 @@ public struct CarState: Equatable, Sendable {
     /// The burn currently coming out of the nose, so a ramped thrust curve
     /// behaves here exactly as it does in a match.
     public var thrustLevel: Double
-    /// Ticks left on the stun. Torque and thrust are dead while it runs;
-    /// gravity is not.
-    public var stunTicksRemaining: UInt64
+    /// Ticks left on the damage. The ship still answers the pads while this
+    /// runs -- it just answers weakly, because the engine and the attitude
+    /// thrusters are arcing. Nothing is taken away from the pilot.
+    public var damageTicksRemaining: UInt64
     public var penaltyReason: PenaltyReason?
-    /// Seconds added to this lap for hitting the railing.
-    public var penaltySeconds: Double
     /// Laps completed, as a real number. Counted from the distance actually
     /// flown round the loop, so drifting back over the line does not add one
     /// and cutting back across it does not either.
@@ -56,9 +55,8 @@ public struct CarState: Equatable, Sendable {
         heading: Double,
         velocity: SIMD2<Double> = .zero,
         thrustLevel: Double = 0,
-        stunTicksRemaining: UInt64 = 0,
+        damageTicksRemaining: UInt64 = 0,
         penaltyReason: PenaltyReason? = nil,
-        penaltySeconds: Double = 0,
         lapProgress: Double = 0,
         lapsCompleted: Int = 0,
         lapClock: Double = 0,
@@ -70,9 +68,8 @@ public struct CarState: Equatable, Sendable {
         self.heading = heading
         self.velocity = velocity
         self.thrustLevel = thrustLevel
-        self.stunTicksRemaining = stunTicksRemaining
+        self.damageTicksRemaining = damageTicksRemaining
         self.penaltyReason = penaltyReason
-        self.penaltySeconds = penaltySeconds
         self.lapProgress = lapProgress
         self.lapsCompleted = lapsCompleted
         self.lapClock = lapClock
@@ -84,7 +81,8 @@ public struct CarState: Equatable, Sendable {
     /// How fast it is going, whichever way it happens to be pointing.
     public var speed: Double { simd_length(velocity) }
 
-    public var isStunned: Bool { stunTicksRemaining > 0 }
+    /// Arcing, and down on power. Not frozen: see `damageTicksRemaining`.
+    public var isDamaged: Bool { damageTicksRemaining > 0 }
 }
 
 public struct TrackState: Equatable, Sendable {
@@ -93,7 +91,11 @@ public struct TrackState: Equatable, Sendable {
     public var phase: RacePhase
     public var elapsed: Double
     public var winner: TrackSeat?
+    /// Laps to take the flag, or zero for a loop that never ends.
     public var lapsToWin: Int
+
+    /// Nothing to reach, so nothing to lose: the pilot laps until they leave.
+    public var isEndless: Bool { lapsToWin <= 0 }
 
     public init(
         tick: UInt64 = 0,
@@ -101,7 +103,7 @@ public struct TrackState: Equatable, Sendable {
         phase: RacePhase = .countdown,
         elapsed: Double = 0,
         winner: TrackSeat? = nil,
-        lapsToWin: Int = 3
+        lapsToWin: Int = 0
     ) {
         self.tick = tick
         self.cars = cars
@@ -135,10 +137,14 @@ public struct TrackConfiguration: Equatable, Sendable {
     public var retroAcceleration: Double
     /// How much of the ship's speed survives a scrape along the railing.
     public var railSpeedKept: Double
-    /// How long the controls stay dead after a scrape.
-    public var railStunSeconds: Double
-    /// What a scrape costs on the lap clock.
-    public var railPenaltySeconds: Double
+    /// How long the hull stays damaged after a scrape.
+    public var damageSeconds: Double
+    /// The share of engine power a damaged hull still has. Thrust and retro
+    /// only -- steering is deliberately untouched. The rail costs power,
+    /// never control: a ship that cannot turn out of the wall it just hit
+    /// grinds along it and strikes again the tick its damage clears, which is
+    /// being grabbed and stuck by another name.
+    public var damagePowerKept: Double
     /// The hull's own radius, the same 0.048 the arena collides against. It
     /// touches the railing this far from it.
     public var shipRadius: Double
@@ -159,9 +165,9 @@ public struct TrackConfiguration: Equatable, Sendable {
         thrustRampRate: Double = 0,
         torqueAcceleration: Double = 5.5,
         retroAcceleration: Double = 1.8,
-        railSpeedKept: Double = 0.30,
-        railStunSeconds: Double = 0.6,
-        railPenaltySeconds: Double = 1.0,
+        railSpeedKept: Double = 0.55,
+        damageSeconds: Double = 2.5,
+        damagePowerKept: Double = 0.45,
         shipRadius: Double = 0.048,
         countdownSeconds: Double = 3,
         paceTopSpeed: Double = 1.30,
@@ -175,8 +181,8 @@ public struct TrackConfiguration: Equatable, Sendable {
         self.torqueAcceleration = torqueAcceleration
         self.retroAcceleration = retroAcceleration
         self.railSpeedKept = max(0, min(1, railSpeedKept))
-        self.railStunSeconds = max(0, railStunSeconds)
-        self.railPenaltySeconds = max(0, railPenaltySeconds)
+        self.damageSeconds = max(0, damageSeconds)
+        self.damagePowerKept = max(0.05, min(1, damagePowerKept))
         self.shipRadius = shipRadius
         self.countdownSeconds = max(0, countdownSeconds)
         self.paceTopSpeed = max(0.2, paceTopSpeed)
@@ -187,13 +193,17 @@ public struct TrackConfiguration: Equatable, Sendable {
     /// slider and the circuit moves with it, because the pilot asked for the
     /// same ship in the same arena and a race tuned separately would not be
     /// that.
-    public init(flight: FlightTuningSnapshot) {
+    public init(flight: FlightTuningSnapshot, track: TrackTuningSnapshot = .defaults) {
         self.init(
             gravity: SIMD2(0, -flight.gravityMagnitude),
             initialThrustAcceleration: flight.thrustAcceleration,
             maximumThrustAcceleration: flight.thrustAcceleration,
             torqueAcceleration: flight.rotationAcceleration,
-            retroAcceleration: flight.thrustAcceleration * 0.65
+            retroAcceleration: flight.thrustAcceleration * 0.65,
+            railSpeedKept: track.railSpeedKept,
+            damageSeconds: track.damageSeconds,
+            damagePowerKept: track.damagePowerKept,
+            rivalPace: track.rivalPace
         )
     }
 }
@@ -213,7 +223,7 @@ public struct TrackEngine: Sendable {
     public init(
         track: TrackGeometry = .circuit,
         configuration: TrackConfiguration = TrackConfiguration(),
-        lapsToWin: Int = 3
+        lapsToWin: Int = 0
     ) {
         self.track = track
         self.configuration = configuration
@@ -237,7 +247,7 @@ public struct TrackEngine: Sendable {
                 .player: gridShip(playerPoint, playerHeading),
                 .rival: gridShip(rivalPoint, rivalHeading),
             ],
-            lapsToWin: max(1, lapsToWin)
+            lapsToWin: max(0, lapsToWin)
         )
     }
 
@@ -274,7 +284,10 @@ public struct TrackEngine: Sendable {
             state.cars[seat] = car
         }
 
-        if let winner = state.cars.first(where: { $0.value.lapsCompleted >= state.lapsToWin })?.key {
+        // An endless loop has no flag to take, so nothing here ever ends it.
+        // The pilot leaves when they are done, which is the whole point of it.
+        if !state.isEndless,
+           let winner = state.cars.first(where: { $0.value.lapsCompleted >= state.lapsToWin })?.key {
             state.phase = .finished
             state.winner = winner
             events.append(.raceFinished(winner: winner))
@@ -292,36 +305,35 @@ public struct TrackEngine: Sendable {
         let dt = configuration.stepDuration
         car.lapClock += dt
 
-        if car.stunTicksRemaining > 0 {
-            car.stunTicksRemaining -= 1
-            if car.stunTicksRemaining == 0 { car.penaltyReason = nil }
+        if car.damageTicksRemaining > 0 {
+            car.damageTicksRemaining -= 1
+            if car.damageTicksRemaining == 0 { car.penaltyReason = nil }
         }
 
-        // A stunned ship answers nothing: no torque, no thrust, no retro.
-        // That is the penalty -- you are a passenger for six tenths of a
-        // second, and gravity is the only thing still flying you.
-        let listening = !car.isStunned
+        // Damage costs power, not control. A hurt ship burns weaker for a few
+        // seconds and steers exactly as well as it always did -- steering is
+        // how you get off the wall, and taking it away is what makes a
+        // penalty feel like the game breaking in your hands.
+        let power = car.isDamaged ? configuration.damagePowerKept : 1
 
         // The match's flight model, line for line: torque sets the turn rate,
         // gravity is always on, and thrust pushes along the nose.
-        if listening {
-            car.heading += control.torque * configuration.torqueAcceleration * dt
-        }
+        car.heading += control.torque * configuration.torqueAcceleration * dt
         var acceleration = configuration.gravity
         let nose = SIMD2(cos(car.heading), sin(car.heading))
-        if listening, control.thrust {
+        if control.thrust {
             car.thrustLevel = car.thrustLevel > 0
                 ? min(
                     configuration.maximumThrustAcceleration,
                     car.thrustLevel + configuration.thrustRampRate * dt
                 )
                 : configuration.initialThrustAcceleration
-            acceleration += nose * car.thrustLevel
+            acceleration += nose * car.thrustLevel * power
         } else {
             car.thrustLevel = 0
         }
-        if listening, control.tractor {
-            acceleration -= nose * configuration.retroAcceleration
+        if control.tractor {
+            acceleration -= nose * configuration.retroAcceleration * power
         }
         car.velocity += acceleration * dt
         car.position += car.velocity * dt
@@ -345,16 +357,15 @@ public struct TrackEngine: Sendable {
             // the instant the stun lifts, which turns a penalty into a pin.
             let into = simd_dot(car.velocity, outward)
             if into > 0 { car.velocity -= outward * into }
-            // One strike per contact, and the scrape is charged once. A ship
-            // already serving a stun is sliding along the railing; billing it
-            // for every tick of that slide is the same pin by another route.
-            if !car.isStunned {
+            // One strike per contact, and the damage is dealt once. A ship
+            // already arcing is sliding along the railing; billing it for
+            // every tick of that slide is a pin by another route.
+            if !car.isDamaged {
                 car.velocity *= configuration.railSpeedKept
-                car.stunTicksRemaining = UInt64(
-                    (configuration.railStunSeconds / configuration.stepDuration).rounded()
+                car.damageTicksRemaining = UInt64(
+                    (configuration.damageSeconds / configuration.stepDuration).rounded()
                 )
                 car.penaltyReason = .railing
-                car.penaltySeconds += configuration.railPenaltySeconds
                 events.append(.railStrike(seat: seat, position: struckAt, speed: impactSpeed))
             }
             placement = track.placement(of: car.position)
@@ -372,17 +383,18 @@ public struct TrackEngine: Sendable {
         car.lastProgress = placement.progress
         if wasBeforeLine, car.lapProgress >= 0 {
             car.lapClock = 0
-            car.penaltySeconds = 0
         }
+        // The clock is the whole penalty now. A scrape costs the seconds it
+        // costs, because a slow ship takes longer round -- nothing is added
+        // to the lap on top of that.
         while car.lapProgress >= Double(car.lapsCompleted + 1) {
             car.lapsCompleted += 1
-            let lapTime = car.lapClock + car.penaltySeconds
+            let lapTime = car.lapClock
             if car.bestLapSeconds == nil || lapTime < car.bestLapSeconds! {
                 car.bestLapSeconds = lapTime
             }
             events.append(.lapCompleted(seat: seat, lap: car.lapsCompleted, seconds: lapTime))
             car.lapClock = 0
-            car.penaltySeconds = 0
         }
     }
 

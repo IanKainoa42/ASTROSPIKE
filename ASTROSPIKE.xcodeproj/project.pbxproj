@@ -46,6 +46,7 @@
 		90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */; };
 		92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CD4F97738D5A2F620398EBF /* Assets.xcassets */; };
 		98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */; };
+		9D240A566AA6F14812EB8F8C /* RaceTuningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */; };
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
 		A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */; };
@@ -55,6 +56,7 @@
 		AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */; };
 		ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */; };
 		B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */; };
+		B4C588645F32130C5896505D /* TrackTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0229900C8172E2E47EE8513F /* TrackTuning.swift */; };
 		B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */; };
 		BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF5E91B39BF78BC48AAE5C2 /* Module.swift */; };
 		BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */; };
@@ -126,6 +128,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0229900C8172E2E47EE8513F /* TrackTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTuning.swift; sourceTree = "<group>"; };
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
 		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
@@ -191,6 +194,7 @@
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
 		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
+		E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaceTuningView.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
 		EDB7E77E05F615E80F9752BF /* .buildSystem_debug */ = {isa = PBXFileReference; path = .buildSystem_debug; sourceTree = "<group>"; };
@@ -255,6 +259,7 @@
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
 				088700D916D7C71D0559E240 /* TrackEngine.swift */,
 				812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */,
+				0229900C8172E2E47EE8513F /* TrackTuning.swift */,
 				5637738B4E3686D57BD33184 /* WarmupRings.swift */,
 				2CD95C0514B3196435647AEC /* WireProtocol.swift */,
 				7A9B5A367198D665A66DFAA1 /* .build */,
@@ -300,6 +305,7 @@
 				415B202192D985A9E29E73E1 /* LobbyView.swift */,
 				1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */,
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
+				E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */,
 				38A34F8A0F4853AB40D1C40B /* SoundBank.swift */,
 				B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */,
 				1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */,
@@ -522,6 +528,7 @@
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
 				DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */,
 				80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */,
+				B4C588645F32130C5896505D /* TrackTuning.swift in Sources */,
 				FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */,
 				189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */,
 			);
@@ -544,6 +551,7 @@
 				F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */,
 				73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */,
 				C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */,
+				9D240A566AA6F14812EB8F8C /* RaceTuningView.swift in Sources */,
 				7B0A96B4A21AAAFDED620A63 /* SoundBank.swift in Sources */,
 				3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */,
 				195BC54E2CD59D12BC8DDE90 /* TouchControls.swift in Sources */,
@@ -737,7 +745,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -797,7 +805,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

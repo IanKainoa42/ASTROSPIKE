@@ -6,7 +6,11 @@ struct AppRootView: View {
     @State private var online = OnlineMatchCoordinator()
     @State private var lobby = LobbyService()
     @State private var tuning = FlightTuningStore()
+    @State private var trackTuning = TrackTuningStore()
     @State private var profile = PilotProfileStore()
+    /// Drawn once and kept: the pace ship should not change hulls every time
+    /// the pilot restarts a race.
+    @State private var rivalHull = PilotProfileStore().rivalHull()
     @State private var entitlements = HullEntitlements()
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
@@ -55,7 +59,13 @@ struct AppRootView: View {
         ZStack {
             CosmicBackground()
             if showTrack {
-                TrackView(flight: tuning.snapshot) {
+                TrackView(
+                    flight: tuning.snapshot,
+                    tuning: trackTuning,
+                    // The circuit flies the hull the pilot picked in the
+                    // hangar, against the same pace hull a solo match faces.
+                    hulls: [.player: profile.selectedHull, .rival: rivalHull]
+                ) {
                     withAnimation(.easeOut(duration: 0.25)) { showTrack = false }
                 }
                     .transition(.opacity)
@@ -141,7 +151,7 @@ struct AppRootView: View {
             case .tutorial:
                 FlightTutorial()
             case .settings:
-                SettingsView(tuning: tuning, replayIntro: {
+                SettingsView(tuning: tuning, trackTuning: trackTuning, replayIntro: {
                     sheet = nil
                     showOnboarding = true
                 }).presentationDetents([.large])
@@ -924,6 +934,7 @@ private struct TutorialCard: View {
 
 private struct SettingsView: View {
     @Bindable var tuning: FlightTuningStore
+    @Bindable var trackTuning: TrackTuningStore
     var replayIntro: (() -> Void)?
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
@@ -963,6 +974,10 @@ private struct SettingsView: View {
                     NavigationLink("Flight Tuning") {
                         FlightTuningView(tuning: tuning)
                     }
+                    NavigationLink("Race Tuning") {
+                        RaceTuningView(tuning: trackTuning)
+                    }
+                    .accessibilityIdentifier("race-tuning-link")
                 }
                 if let replayIntro {
                     Section("Intro") {
@@ -1032,7 +1047,8 @@ private struct FlightTuningView: View {
     }
 }
 
-private struct TuningSlider: View {
+/// Shared with the circuit's own sliders, which live in `RaceTuningView`.
+struct TuningSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>

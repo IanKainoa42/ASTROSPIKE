@@ -3,11 +3,12 @@ import SpriteKit
 import SwiftUI
 
 /// The mini circuit. The same ship, the same arena box and the same gravity
-/// as a match -- a very different job: three laps down a wide corridor
-/// against one pace ship, with the railing as the only opponent that never
-/// makes a mistake.
+/// as a match -- a very different job: a wide corridor flown against one pace
+/// ship, with the railing as the only opponent that never makes a mistake.
+/// By default the loop never ends, so the pilot leaves when they are done.
 struct TrackView: View {
     let flight: FlightTuningSnapshot
+    @Bindable var tuning: TrackTuningStore
     let exit: () -> Void
 
     @State private var session: TrackSession
@@ -17,10 +18,22 @@ struct TrackView: View {
     @AppStorage("haptics") private var haptics = true
     @Environment(\.scenePhase) private var scenePhase
 
-    init(flight: FlightTuningSnapshot, exit: @escaping () -> Void) {
+    init(
+        flight: FlightTuningSnapshot,
+        tuning: TrackTuningStore,
+        hulls: [TrackSeat: Hull],
+        exit: @escaping () -> Void
+    ) {
         self.flight = flight
+        self.tuning = tuning
         self.exit = exit
-        _session = State(initialValue: TrackSession(flight: flight))
+        _session = State(
+            initialValue: TrackSession(
+                flight: flight,
+                tuning: tuning.snapshot,
+                hulls: hulls
+            )
+        )
     }
 
     var body: some View {
@@ -30,7 +43,11 @@ struct TrackView: View {
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
                 VStack(spacing: 0) {
-                    TrackHUD(session: session) { showLeaveConfirmation = true }
+                    TrackHUD(
+                        session: session,
+                        pause: { if !session.isPaused { session.togglePause() } },
+                        leave: { showLeaveConfirmation = true }
+                    )
                     TouchControls(
                         torque: $session.torque,
                         thrust: $session.thrust,
@@ -63,6 +80,14 @@ struct TrackView: View {
                         exit: exit
                     )
                 }
+                if session.isPaused, session.state.phase != .finished {
+                    RacePauseOverlay(
+                        tuning: tuning,
+                        resume: applyAndResume,
+                        restart: { session.apply(tuning.snapshot) },
+                        leave: { showLeaveConfirmation = true }
+                    )
+                }
             }
             .accessibilityIdentifier("track-screen")
             .confirmationDialog(
@@ -78,9 +103,23 @@ struct TrackView: View {
                 session.start()
             }
             .onDisappear { session.stop() }
+            .accessibilityAction(named: "Pause race") {
+                if !session.isPaused { session.togglePause() }
+            }
             .onChange(of: scenePhase) { _, phase in
                 session.setApplicationActive(phase == .active)
             }
+        }
+    }
+
+    /// Sliders only bite on a fresh grid: the corridor's width decides where
+    /// the grid is and where the railing sits, so changing it mid-lap would
+    /// put ships inside walls. Untouched sliders just resume.
+    private func applyAndResume() {
+        if tuning.snapshot == session.tuning {
+            session.resume()
+        } else {
+            session.apply(tuning.snapshot)
         }
     }
 
@@ -107,6 +146,7 @@ struct TrackView: View {
 
 private struct TrackHUD: View {
     let session: TrackSession
+    let pause: () -> Void
     let leave: () -> Void
 
     var body: some View {
@@ -117,10 +157,25 @@ private struct TrackHUD: View {
                     .frame(width: 34, height: 34)
                     .background(.black.opacity(0.45), in: Circle())
                     .overlay(Circle().stroke(.white.opacity(0.25)))
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Leave race")
             .accessibilityIdentifier("leave-race")
+
+            // An endless loop has no finish to reach, so the way out and the
+            // way into the settings both have to be on screen the whole time.
+            Button(action: pause) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(width: 34, height: 34)
+                    .background(.black.opacity(0.45), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.25)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Pause and open race settings")
+            .accessibilityIdentifier("pause-race")
 
             carColumn(seat: .player, name: "YOU", tint: .cyan)
             Spacer(minLength: 0)
@@ -139,7 +194,7 @@ private struct TrackHUD: View {
             Text(name)
                 .font(.system(size: 10, weight: .heavy, design: .rounded)).tracking(1.5)
                 .foregroundStyle(tint)
-            Text("LAP \(min(session.lapsToWin, (car?.lapsCompleted ?? 0) + 1))/\(session.lapsToWin)")
+            Text(lapLabel(for: car))
                 .font(.system(size: 17, weight: .black, design: .rounded))
                 .monospacedDigit()
             Text(Self.clock(car?.bestLapSeconds))
@@ -149,20 +204,66 @@ private struct TrackHUD: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Only on screen while it is costing something, so the driver connects it
-    /// to the scrape that caused it.
+    /// An endless loop counts up; a flagged one counts down to the flag.
+    private func lapLabel(for car: CarState?) -> String {
+        let onLap = (car?.lapsCompleted ?? 0) + 1
+        guard !session.isEndless else { return "LAP \(onLap)" }
+        return "LAP \(min(session.lapsToWin, onLap))/\(session.lapsToWin)"
+    }
+
+    /// Only on screen while the hull is actually arcing, so the pilot connects
+    /// the lost power to the scrape that caused it rather than to a bug. The
+    /// pads still answer the whole time -- that is the point of the badge.
     @ViewBuilder private var penaltyBadge: some View {
-        if let car = session.state.cars[.player], car.isStunned {
-            Text("RAIL · +\(String(format: "%.1f", car.penaltySeconds))s")
-                .font(.system(size: 13, weight: .black, design: .rounded)).tracking(1)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(.red.opacity(0.8), in: Capsule())
+        if let car = session.state.cars[.player], car.isDamaged {
+            Label(
+                "HULL DAMAGED · \(String(format: "%.1f", session.damageSecondsRemaining))s",
+                systemImage: "bolt.fill"
+            )
+            .font(.system(size: 13, weight: .black, design: .rounded)).tracking(1)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(.blue.opacity(0.75), in: Capsule())
+            .accessibilityIdentifier("damage-badge")
         }
     }
 
     static func clock(_ seconds: Double?) -> String {
         guard let seconds else { return "BEST --.--" }
         return String(format: "BEST %.2f", seconds)
+    }
+}
+
+/// Paused, on the circuit. This is also the only way into the race sliders
+/// mid-run and -- on an endless loop, where no flag ever falls -- one of the
+/// two ways out, so it is reachable from the HUD at all times.
+private struct RacePauseOverlay: View {
+    @Bindable var tuning: TrackTuningStore
+    let resume: () -> Void
+    let restart: () -> Void
+    let leave: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.65).ignoresSafeArea()
+            NavigationStack {
+                RaceTuningView(tuning: tuning, restart: restart)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Resume", action: resume)
+                                .accessibilityIdentifier("resume-race")
+                        }
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Leave", role: .destructive, action: leave)
+                                .accessibilityIdentifier("leave-race-paused")
+                        }
+                    }
+            }
+            .frame(maxWidth: 620, maxHeight: 460)
+            .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.25)))
+            .padding(20)
+        }
+        .accessibilityIdentifier("race-pause")
     }
 }
 
@@ -179,7 +280,7 @@ private struct RaceResultsOverlay: View {
                 .foregroundStyle(won ? .cyan : .orange)
             VStack(spacing: 4) {
                 Text(TrackHUD.clock(session.player?.bestLapSeconds))
-                Text("PENALTIES \(String(format: "%.1f", session.player?.penaltySeconds ?? 0))s")
+                Text("LAPS \(session.player?.lapsCompleted ?? 0)")
             }
             .font(.system(size: 13, weight: .semibold, design: .monospaced))
             .foregroundStyle(.white.opacity(0.75))

@@ -35,7 +35,62 @@ struct TrackGeometryTests {
             guard abs(turn) > 1e-9 else { continue }
             tightest = min(tightest, span / abs(turn))
         }
-        #expect(tightest > track.halfWidth * 2)
+        // A radius of twice the half-width is a comfort margin, not a
+        // correctness one; holding to it capped the corridor at 0.208 and the
+        // ask was wider than that. What actually has to hold is that the
+        // inner rail never folds through itself, which `innerRailIsConvex`
+        // checks directly below.
+        #expect(tightest > track.halfWidth * 1.35)
+    }
+
+    @Test("Widening the corridor never folds the inner rail through itself")
+    func innerRailNeverFolds() {
+        // The failure a tight apex produces is a rail that doubles back: two
+        // consecutive rail points that run against the direction of travel.
+        // That is the real limit on lane width, so it is checked at the
+        // widest lane the sliders can ask for, not just the default.
+        for halfWidth in [
+            TrackGeometry.halfWidthLimits.minimum,
+            TrackGeometry.defaultHalfWidth,
+            TrackGeometry.halfWidthLimits.maximum,
+        ] {
+            let track = TrackGeometry.circuit(halfWidth: halfWidth)
+            let count = track.samples.count
+            for sign in [1.0, -1.0] {
+                let rail = track.rail(sign: sign)
+                for index in 0 ..< count {
+                    let step = rail[(index + 1) % count] - rail[index]
+                    let along = simd_dot(step, track.samples[index].tangent)
+                    #expect(along > 0, "rail folds at \(index), half-width \(halfWidth)")
+                }
+            }
+        }
+    }
+
+    @Test("The lane slider's whole range stays inside the arena and takes a hull")
+    func everyLaneWidthIsFlyable() {
+        let arena = ArenaGeometry.standard
+        let hull = TrackConfiguration().shipRadius
+        let limits = TrackGeometry.halfWidthLimits
+        #expect(limits.minimum < limits.maximum)
+        #expect(TrackGeometry.defaultHalfWidth == limits.maximum)
+        for step in 0 ... 8 {
+            let width = limits.minimum
+                + (limits.maximum - limits.minimum) * Double(step) / 8
+            let track = TrackGeometry.circuit(halfWidth: width)
+            #expect(abs(track.halfWidth - width) < 1e-9)
+            #expect(track.halfWidth - hull > hull)
+            for sign in [1.0, -1.0] {
+                for point in track.rail(sign: sign) {
+                    #expect(abs(point.x) < arena.halfWidth)
+                    #expect(point.y > arena.floorY)
+                    #expect(point.y < arena.ceilingY)
+                }
+            }
+        }
+        // Asking past either end is clamped, never honoured.
+        #expect(TrackGeometry.circuit(halfWidth: 5).halfWidth == limits.maximum)
+        #expect(TrackGeometry.circuit(halfWidth: 0).halfWidth == limits.minimum)
     }
 
     @Test("The offset is signed, and the sign says which rail")
@@ -111,7 +166,7 @@ struct TrackEngineTests {
         #expect(engine.state.elapsed == 0)
     }
 
-    @Test("Hitting the railing costs speed, control and a second on the clock")
+    @Test("Hitting the railing costs speed and power -- never the controls")
     func railingIsAPenalty() throws {
         var engine = afterTheLights()
         #expect(engine.state.phase == .racing)
@@ -137,68 +192,114 @@ struct TrackEngineTests {
         let configuration = TrackConfiguration()
         // Speed is clamped to a fraction of what arrived at the rail.
         #expect(hit.after.speed <= hit.before.speed * configuration.railSpeedKept + 0.01)
-        // Stunned for the full penalty, and paying a second on the lap.
-        #expect(hit.after.isStunned)
+        // Damaged for the full window, with the reason on the ship so the
+        // renderer can show it. Nothing is added to the lap clock: the time
+        // the scrape costs is the time a slower ship takes to get round.
+        #expect(hit.after.isDamaged)
         #expect(hit.after.penaltyReason == .railing)
-        #expect(hit.after.stunTicksRemaining == UInt64(
-            (configuration.railStunSeconds / configuration.stepDuration).rounded()
+        #expect(hit.after.damageTicksRemaining == UInt64(
+            (configuration.damageSeconds / configuration.stepDuration).rounded()
         ))
-        #expect(hit.after.penaltySeconds >= configuration.railPenaltySeconds)
+        #expect(hit.after.lapClock == hit.before.lapClock + configuration.stepDuration)
         // And put back on the tarmac, with daylight, so it does not re-trigger.
         #expect(abs(hit.after.railOffset) < TrackGeometry.circuit.halfWidth - configuration.shipRadius)
     }
 
-    @Test("A stunned ship answers nothing, but gravity still has hold of it")
-    func stunIgnoresTheControls() {
+    @Test("A damaged ship still answers every pad -- it just burns weaker")
+    func damageCostsPowerNotControl() {
         var engine = afterTheLights()
         for tick in 0 ..< 1_200 {
             engine.step(input: PlayerInput(
                 tick: UInt64(tick), torque: 1, thrust: true, fire: false, tractor: false
             ))
-            if engine.state.cars[.player]!.isStunned { break }
+            if engine.state.cars[.player]!.isDamaged { break }
         }
-        let stunned = engine.state.cars[.player]!
-        #expect(stunned.isStunned)
-        let heading = stunned.heading
-        // Full lock, throttle open: a ship that is listening would turn and
-        // would light its engine.
+        let hurt = engine.state.cars[.player]!
+        #expect(hurt.isDamaged)
+        let heading = hurt.heading
+
+        let configuration = TrackConfiguration()
         engine.step(input: PlayerInput(tick: 999, torque: 1, thrust: true, fire: false, tractor: false))
         let after = engine.state.cars[.player]!
-        #expect(after.heading == heading)
-        #expect(after.thrustLevel == 0)
-        // Not frozen, though: the penalty takes the controls away, not the
-        // physics. Six tenths of a second as a passenger under gravity.
-        #expect(after.velocity != stunned.velocity)
+        // Steering is untouched. A ship that cannot turn out of the wall it
+        // just hit grinds along it and is struck again the tick its damage
+        // clears -- which is being pinned, by another route.
+        #expect(abs(
+            (after.heading - heading)
+                - configuration.torqueAcceleration * configuration.stepDuration
+        ) < 1e-9)
+        // The engine lights, so the pilot is never left holding dead pads.
+        #expect(after.thrustLevel > 0)
+
+        // What it costs is power. Take the tick's velocity change, subtract
+        // gravity, and what is left is the burn: exactly `damagePowerKept` of
+        // the burn a whole ship would have got out of the same throttle.
+        let nose = SIMD2(cos(after.heading), sin(after.heading))
+        let burn = simd_dot(
+            after.velocity - hurt.velocity - configuration.gravity * configuration.stepDuration,
+            nose
+        )
+        let whole = after.thrustLevel * configuration.stepDuration
+        #expect(abs(burn - whole * configuration.damagePowerKept) < 1e-9)
+        #expect(burn < whole)
     }
 
     @Test("One strike per contact, not one per tick of the slide")
     func strikesAreEdgeTriggered() {
         var engine = afterTheLights()
         var strikes = 0
-        var stunTicksSeen = 0
-        for tick in 0 ..< 1_400 {
+        var damagedTicksSeen = 0
+        // The damage window is 2.5s -- 300 ticks -- so the loop has to be
+        // long enough to see several of them expire, or "one strike per
+        // window" passes without a single window ever closing.
+        for tick in 0 ..< 6_000 {
             engine.step(input: PlayerInput(
                 tick: UInt64(tick), torque: 1, thrust: true, fire: false, tractor: false
             ))
             strikes += engine.lastEvents.filter {
                 if case .railStrike(.player, _, _) = $0 { true } else { false }
             }.count
-            if engine.state.cars[.player]!.isStunned { stunTicksSeen += 1 }
+            if engine.state.cars[.player]!.isDamaged { damagedTicksSeen += 1 }
         }
-        // A ship pinned against the railing for tens of ticks must not be
+        // A ship sliding along the railing for tens of ticks must not be
         // charged for every one of them. The hard invariant is one strike per
-        // stun window and no more: full lock into a rail, over and over, can
-        // only bill as often as the stun expires.
+        // damage window and no more: full lock into a rail, over and over,
+        // can only bill as often as the damage clears.
         let configuration = TrackConfiguration()
-        let stunLength = Int((configuration.railStunSeconds / configuration.stepDuration).rounded())
+        let window = Int((configuration.damageSeconds / configuration.stepDuration).rounded())
         #expect(strikes >= 1)
-        #expect(stunTicksSeen > strikes)
-        #expect(strikes <= stunTicksSeen / stunLength + 1)
+        #expect(damagedTicksSeen > strikes)
+        #expect(strikes <= damagedTicksSeen / window + 1)
     }
 
-    @Test("The pace ship flies three clean laps and takes the flag")
+    @Test("Zero laps is a loop that never ends")
+    func endlessLoopNeverTakesTheFlag() {
+        var engine = TrackEngine(lapsToWin: 0)
+        #expect(engine.state.isEndless)
+        var laps = 0
+        for tick in 0 ..< 20_000 {
+            engine.step(input: .idle(tick: UInt64(tick)))
+            for event in engine.lastEvents {
+                if case .lapCompleted(.rival, _, _) = event { laps += 1 }
+                // Nothing may ever end an endless race.
+                if case .raceFinished = event {
+                    Issue.record("an endless loop emitted raceFinished")
+                }
+            }
+        }
+        // The pace ship keeps lapping, well past any flag it would have taken.
+        #expect(laps > 3)
+        #expect(engine.state.phase == .racing)
+        #expect(engine.state.winner == nil)
+    }
+
+    @Test("The pace ship flies three clean laps of the wide corridor and takes the flag")
     func paceCarFinishes() {
-        var engine = TrackEngine()
+        // Deliberately lap-based even though the shipped default is endless:
+        // this is the check that the widened corridor is still a line the
+        // pace controller can actually drive. On an endless loop a rival that
+        // ground down the rails would just flounder forever, unnoticed.
+        var engine = TrackEngine(lapsToWin: 3)
         var railStrikes = 0
         var lapTimes: [Double] = []
         var winner: TrackSeat?
@@ -284,7 +385,9 @@ struct TrackEngineTests {
 
     @Test("The race stops at the flag")
     func finishedRaceIsFrozen() {
-        var engine = TrackEngine()
+        // A flag has to be asked for now -- the shipped default is endless --
+        // so this asks for three laps to have one to stop at.
+        var engine = TrackEngine(lapsToWin: 3)
         for tick in 0 ..< 20_000 {
             engine.step(input: .idle(tick: UInt64(tick)))
             if engine.state.phase == .finished { break }

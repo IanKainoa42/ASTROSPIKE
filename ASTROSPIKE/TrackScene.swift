@@ -1,6 +1,7 @@
 import ASTROSPIKECore
 import SpriteKit
 import UIKit
+import simd
 
 /// The circuit, drawn. It shares the arena's screen box so the track fills the
 /// window exactly where the court would, and the ships on it are drawn at the
@@ -10,7 +11,28 @@ import UIKit
 final class TrackScene: SKScene {
     var snapshot: TrackState? { didSet { renderSnapshot() } }
 
-    let track: TrackGeometry
+    /// The corridor, live. Widening it from the pause overlay has to redraw
+    /// the tarmac, or the road the driver sees and the railing that hits them
+    /// are two different roads.
+    var track: TrackGeometry {
+        didSet {
+            guard track != oldValue else { return }
+            didBuild = false
+            buildTrack()
+            renderSnapshot()
+        }
+    }
+
+    /// The hulls on the grid -- the pilot's own ship and the pace ship, the
+    /// same two hulls a match would put on court.
+    var hulls: [TrackSeat: Hull] {
+        didSet {
+            guard hulls != oldValue else { return }
+            for node in carNodes.values { node.path = nil }
+            renderSnapshot()
+        }
+    }
+
     private let trackLayer = SKNode()
     private let skidLayer = SKNode()
     private let actorLayer = SKNode()
@@ -21,9 +43,16 @@ final class TrackScene: SKScene {
     private static let tarmac = SKColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
     private static let railColor = SKColor(red: 0.55, green: 0.90, blue: 1.0, alpha: 1)
     private static let kerbColor = SKColor(red: 1.0, green: 0.33, blue: 0.30, alpha: 1)
+    /// The colour of a hull arcing after a scrape.
+    private static let arcColor = SKColor(red: 0.72, green: 0.92, blue: 1.0, alpha: 1)
 
-    init(track: TrackGeometry = .circuit, size: CGSize = CGSize(width: 960, height: 540)) {
+    init(
+        track: TrackGeometry = .circuit,
+        hulls: [TrackSeat: Hull] = [:],
+        size: CGSize = CGSize(width: 960, height: 540)
+    ) {
         self.track = track
+        self.hulls = hulls
         super.init(size: size)
         backgroundColor = SKColor(red: 0.015, green: 0.025, blue: 0.07, alpha: 1)
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
@@ -176,7 +205,14 @@ final class TrackScene: SKScene {
                   let glow = glowNodes[seat] else { continue }
             let tint = Self.tint(for: seat)
             if node.path == nil {
-                node.path = Self.wedge(length: length)
+                // The circuit flies the match's ships, so it draws the match's
+                // hulls: the same outline, sized to sit exactly inside the
+                // collision circle it is flying. Scaling off the tarmac would
+                // have drawn a ship that bounces off a rail it never touched.
+                let hull = hulls[seat] ?? Hull.defaultHull(for: seat == .player ? .cyan : .orange)
+                let outline = hull.spec.outline
+                node.path = outline.cgPath
+                node.setScale(length / 2 / Self.radius(of: outline))
                 glow.path = CGPath(
                     ellipseIn: CGRect(x: -length * 0.7, y: -length * 0.7,
                                       width: length * 1.4, height: length * 1.4),
@@ -184,24 +220,61 @@ final class TrackScene: SKScene {
                 )
             }
             node.position = point(car.position)
-            node.zRotation = CGFloat(car.heading)
+            // The hull outlines point up; the engine's heading points right.
+            node.zRotation = CGFloat(car.heading) - .pi / 2
             glow.position = node.position
 
-            if car.isStunned {
-                // A penalised car is visibly a passenger: it flashes and the
-                // glow goes red, so a driver who suddenly has no controls can
-                // see why rather than assuming the game broke.
-                let flash = (snapshot.tick / 6).isMultiple(of: 2)
-                node.fillColor = flash ? Self.kerbColor : tint.withAlphaComponent(0.35)
-                node.strokeColor = Self.kerbColor
-                glow.fillColor = Self.kerbColor.withAlphaComponent(0.22)
+            if car.isDamaged {
+                // A damaged ship arcs. It is still the pilot's ship -- it
+                // answers every pad, it is just down on power -- so it keeps
+                // its own colour and gets lightning over it rather than the
+                // red of a car that has been taken away from its driver.
+                let arcing = (snapshot.tick / 4).isMultiple(of: 2)
+                node.fillColor = tint.withAlphaComponent(0.85)
+                node.strokeColor = arcing ? Self.arcColor : .white
+                node.glowWidth = arcing ? 2.5 : 0
+                glow.fillColor = Self.arcColor.withAlphaComponent(arcing ? 0.30 : 0.12)
+                if (snapshot.tick % 7) == 0 {
+                    arc(at: node.position, reach: length * 0.9)
+                }
             } else {
                 node.fillColor = tint.withAlphaComponent(0.85)
                 node.strokeColor = .white
+                node.glowWidth = 0
                 let heat = CGFloat(min(1, car.speed / TrackConfiguration().paceTopSpeed))
                 glow.fillColor = tint.withAlphaComponent(0.05 + 0.16 * heat)
             }
         }
+    }
+
+    /// One lightning fork off a damaged hull. Short-lived and cheap: the point
+    /// is that the ship visibly reads as hurt, not that it is on fire.
+    private func arc(at position: CGPoint, reach: CGFloat) {
+        let path = CGMutablePath()
+        let start = Double.random(in: 0 ..< 2 * .pi)
+        path.move(to: position)
+        var tip = position
+        for step in 1 ... 3 {
+            let angle = start + Double.random(in: -0.7 ... 0.7)
+            let hop = reach * CGFloat(step) / 3
+            tip = CGPoint(x: position.x + cos(angle) * hop, y: position.y + sin(angle) * hop)
+            path.addLine(to: tip)
+        }
+        let bolt = SKShapeNode(path: path)
+        bolt.strokeColor = Self.arcColor
+        bolt.lineWidth = 1.2
+        bolt.glowWidth = 2
+        bolt.zPosition = 25
+        skidLayer.addChild(bolt)
+        bolt.run(.sequence([.fadeOut(withDuration: 0.12), .removeFromParent()]))
+    }
+
+    /// The outline's own circumscribed radius, in the units it is drawn in.
+    /// Dividing the collision radius by this inscribes the drawn hull exactly
+    /// in the circle the engine bounces off.
+    private static func radius(of outline: HullOutline) -> CGFloat {
+        let longest = outline.silhouette.reduce(0.0) { max($0, simd_length($1)) }
+        return CGFloat(max(1, longest))
     }
 
     func present(_ events: [TrackEvent]) {
@@ -281,16 +354,6 @@ final class TrackScene: SKScene {
         guard let first = points.first else { return path }
         path.move(to: first)
         for point in points.dropFirst() { path.addLine(to: point) }
-        path.closeSubpath()
-        return path
-    }
-
-    private static func wedge(length: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: length * 0.62, y: 0))
-        path.addLine(to: CGPoint(x: -length * 0.42, y: length * 0.36))
-        path.addLine(to: CGPoint(x: -length * 0.24, y: 0))
-        path.addLine(to: CGPoint(x: -length * 0.42, y: -length * 0.36))
         path.closeSubpath()
         return path
     }
