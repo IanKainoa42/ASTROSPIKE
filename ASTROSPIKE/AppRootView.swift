@@ -696,11 +696,19 @@ private struct MatchHUD: View {
                 team: .cyan,
                 value: state.match.score.cyan,
                 bounces: state.match.floorContacts.cyan,
-                touches: state.match.shipTouches.cyan
+                touches: state.match.shipTouches.cyan,
+                stake: state.match.stake(for: .cyan)
             )
             Spacer()
             VStack(spacing: 2) {
-                Text(formatLabel).font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.white.opacity(0.55))
+                // The format line steps aside when a point is actually on
+                // the line -- that is the one moment the middle of the HUD
+                // has something urgent to say.
+                if let headline = state.match.headlineStake {
+                    stakeCallout(headline)
+                } else {
+                    Text(formatLabel).font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.white.opacity(0.55))
+                }
                 if state.match.setsToWin > 1 { setPips }
                 if let online {
                     Label(online.status.label, systemImage: signalIcon)
@@ -713,7 +721,8 @@ private struct MatchHUD: View {
                 team: .orange,
                 value: state.match.score.orange,
                 bounces: state.match.floorContacts.orange,
-                touches: state.match.shipTouches.orange
+                touches: state.match.shipTouches.orange,
+                stake: state.match.stake(for: .orange)
             )
             Button(action: action) {
                 Image(systemName: actionIcon).frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
@@ -749,11 +758,38 @@ private struct MatchHUD: View {
         .accessibilityLabel("Sets \(state.match.sets.cyan) to \(state.match.sets.orange)")
     }
 
-    private func score(team: Team, value: Int, bounces: Int, touches: Int) -> some View {
+    /// Names the side and what the next point takes. Carries the team tint
+    /// as a filled capsule so it reads from across the room mid-rally.
+    private func stakeCallout(_ headline: (team: Team, stake: Stake)) -> some View {
+        let tint = headline.team == .cyan ? Color.cyan : Color.orange
+        let word = headline.stake == .matchPoint ? "MATCH POINT" : "SET POINT"
+        let side = headline.team == .cyan ? "CYAN" : "ORANGE"
+        return Text("\(side) · \(word)")
+            .font(.caption2.monospaced().weight(.black))
+            .tracking(1.4)
+            .foregroundStyle(.black)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background(tint, in: Capsule())
+            .accessibilityLabel("\(side) \(word.lowercased())")
+            .accessibilityIdentifier("stake-callout")
+    }
+
+    private func score(team: Team, value: Int, bounces: Int, touches: Int, stake: Stake) -> some View {
         let tint = team == .cyan ? Color.cyan : .orange
         return HStack(spacing: 12) {
             Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
-            Text(value.formatted()).font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
+            Text(value.formatted())
+                .font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
+                // A ring on the number itself, so the side that is serving
+                // for it is obvious even when the eye never leaves the score.
+                .padding(stake == .none ? 0 : 5)
+                .background {
+                    if stake != .none {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(tint, lineWidth: stake == .matchPoint ? 3 : 1.5)
+                    }
+                }
             // Touches are the harder limit, so they read as bars above the
             // softer bounce dots rather than competing with them.
             VStack(alignment: .leading, spacing: 4) {
@@ -777,6 +813,7 @@ private struct MatchHUD: View {
         .accessibilityLabel(
             "\(team.rawValue) score \(value), \(touches) of \(allowedTouches) touches used, "
                 + "\(bounces) of \(allowedBounces) bounces used"
+                + (stake == .none ? "" : stake == .matchPoint ? ", match point" : ", set point")
         )
     }
 

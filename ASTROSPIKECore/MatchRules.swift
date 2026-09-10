@@ -95,6 +95,44 @@ public struct MatchRuleState: Codable, Equatable, Sendable {
     }
 }
 
+/// How much a side has riding on the next point. Derived from the score
+/// every time it is asked for -- it is deliberately not stored on
+/// `MatchRuleState`, so it can never go stale on a guest's copy of the board
+/// and it costs nothing on the wire.
+public enum Stake: Int, Codable, Equatable, Sendable, Comparable {
+    case none = 0
+    /// One more point takes the set.
+    case setPoint = 1
+    /// One more point takes the match.
+    case matchPoint = 2
+
+    public static func < (lhs: Stake, rhs: Stake) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
+public extension MatchRuleState {
+    /// What `team` is playing for. `.none` unless the very next point ends
+    /// something. Both sides can be at set point at once (10-10 under the
+    /// ceiling), which is the whole reason this is per-team.
+    func stake(for team: Team) -> Stake {
+        guard winner == nil, phase == .playing || phase == .serve else { return .none }
+        guard MatchRules.winsSet(points: score[team] + 1, against: score[team.opponent]) else { return .none }
+        return sets[team] + 1 >= setsToWin ? .matchPoint : .setPoint
+    }
+
+    /// The higher of the two stakes, and who holds it. Nil when nobody is
+    /// serving for anything. Ties (both at set point) resolve to the side
+    /// that is ahead, and to cyan when the score is level.
+    var headlineStake: (team: Team, stake: Stake)? {
+        let cyan = stake(for: .cyan)
+        let orange = stake(for: .orange)
+        guard cyan != .none || orange != .none else { return nil }
+        if cyan == orange {
+            return (score.orange > score.cyan ? .orange : .cyan, cyan)
+        }
+        return cyan > orange ? (.cyan, cyan) : (.orange, orange)
+    }
+}
+
 public enum RuleContact: Codable, Equatable, Sendable {
     case ballTouchedFloor(side: Team)
     case ballTouchedShip(team: Team)
@@ -251,8 +289,22 @@ public struct MatchRules: Sendable {
     }
 
     private func hasWonSet(_ team: Team) -> Bool {
-        let points = state.score[team]
-        let opponentPoints = state.score[team.opponent]
-        return points >= 11 || (points >= 7 && points - opponentPoints >= 2)
+        MatchRules.winsSet(points: state.score[team], against: state.score[team.opponent])
+    }
+}
+
+public extension MatchRules {
+    /// First to this many points, if they are two clear.
+    static let setTarget = 7
+    /// The set cannot run past this. At `setCeiling - 1` all the way up the
+    /// next point takes it, which is the one score where the two-clear rule
+    /// does not hold.
+    static let setCeiling = 11
+
+    /// The single win condition for a set. The HUD asks the same question of
+    /// a hypothetical `score + 1` to decide whether a side is at set point,
+    /// so it has to live somewhere both can reach.
+    static func winsSet(points: Int, against opponentPoints: Int) -> Bool {
+        points >= setCeiling || (points >= setTarget && points - opponentPoints >= 2)
     }
 }

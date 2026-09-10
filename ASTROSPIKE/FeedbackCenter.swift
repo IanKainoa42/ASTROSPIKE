@@ -43,6 +43,20 @@ final class FeedbackCenter {
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.5)
     }
 
+    /// A side just came to set or match point. Panned to their end of the
+    /// court and pitched by how much is riding on it, so a pilot who never
+    /// looks up at the HUD still knows the next rally ends something.
+    func stakeRaised(team: Team, stake: Stake) {
+        guard stake != .none else { return }
+        SpatialAudioCenter.shared.play(
+            frequency: stake == .matchPoint ? 990 : 780,
+            duration: 0.26,
+            positionX: team == .cyan ? -1 : 1
+        )
+        guard hapticsEnabled else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
+
     func win() {
         SpatialAudioCenter.shared.play(frequency: 880, duration: 0.34, positionX: 0)
         guard hapticsEnabled else { return }

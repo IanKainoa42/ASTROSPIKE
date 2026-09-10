@@ -160,3 +160,86 @@ struct MatchRulesTests {
         ])
     }
 }
+
+@Suite("Stakes")
+struct MatchStakeTests {
+    @Test("Nobody is at stake from love")
+    func loveIsQuiet() {
+        let state = MatchRuleState()
+        #expect(state.stake(for: .cyan) == .none)
+        #expect(state.stake(for: .orange) == .none)
+        #expect(state.headlineStake == nil)
+    }
+
+    @Test("Six-four is set point, and only for the leader")
+    func setPointNeedsTwoClear() {
+        // Best of three, or the single-set default would make this match point.
+        let state = MatchRuleState(score: Score(cyan: 6, orange: 4), setsToWin: 2)
+        #expect(state.stake(for: .cyan) == .setPoint)
+        #expect(state.stake(for: .orange) == .none)
+        #expect(state.headlineStake?.team == .cyan)
+    }
+
+    @Test("Six-all is nobody's set point: seven-six is not two clear")
+    func oneClearIsNotSetPoint() {
+        let state = MatchRuleState(score: Score(cyan: 6, orange: 6), setsToWin: 2)
+        #expect(state.stake(for: .cyan) == .none)
+        #expect(state.stake(for: .orange) == .none)
+    }
+
+    @Test("At the ceiling both sides are at set point")
+    func ceilingPutsBothAtStake() {
+        let state = MatchRuleState(score: Score(cyan: 10, orange: 10), setsToWin: 2)
+        #expect(state.stake(for: .cyan) == .setPoint)
+        #expect(state.stake(for: .orange) == .setPoint)
+        // Level, so the tie resolves to cyan rather than to nothing.
+        #expect(state.headlineStake?.team == .cyan)
+    }
+
+    @Test("A single-set match makes every set point a match point")
+    func singleSetIsAlwaysMatchPoint() {
+        let state = MatchRuleState(score: Score(cyan: 6, orange: 4))
+        #expect(state.stake(for: .cyan) == .matchPoint)
+    }
+
+    @Test("The set that would take the match reads as match point")
+    func lastSetIsMatchPoint() {
+        let state = MatchRuleState(
+            score: Score(cyan: 6, orange: 0),
+            sets: Score(cyan: 1, orange: 0),
+            setsToWin: 2
+        )
+        #expect(state.stake(for: .cyan) == .matchPoint)
+    }
+
+    @Test("A set point in a best of three is only a set point")
+    func earlierSetIsNotMatchPoint() {
+        let state = MatchRuleState(score: Score(cyan: 6, orange: 0), setsToWin: 2)
+        #expect(state.stake(for: .cyan) == .setPoint)
+    }
+
+    @Test("A finished match has nothing left on the line")
+    func finishedMatchHasNoStake() {
+        let state = MatchRuleState(
+            score: Score(cyan: 6, orange: 4),
+            phase: .finished,
+            winner: .cyan
+        )
+
+        #expect(state.stake(for: .cyan) == .none)
+        #expect(state.headlineStake == nil)
+    }
+
+    @Test("The HUD's question and the rule that ends the set are the same one")
+    func stakeAgreesWithTheWinCondition() {
+        for cyan in 0...12 {
+            for orange in 0...12 {
+                var rules = MatchRules(state: MatchRuleState(score: Score(cyan: cyan, orange: orange)))
+                let predicted = rules.state.stake(for: .cyan) != .none
+                _ = rules.resolve([.ballEnteredGoal(defending: .orange)])
+                let actuallyEnded = rules.state.phase == .finished || rules.state.score == Score()
+                #expect(predicted == actuallyEnded, "cyan \(cyan)-\(orange)")
+            }
+        }
+    }
+}

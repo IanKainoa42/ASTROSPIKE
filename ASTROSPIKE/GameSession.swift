@@ -58,6 +58,9 @@ final class GameSession {
     private(set) var events: [SimulationEvent] = []
     private(set) var countdown = 3
     private(set) var lastPointText: String?
+    /// What the last cue said, so the sound fires on the way up and not on
+    /// every frame the score sits there.
+    private var announcedStakes: (cyan: Stake, orange: Stake) = (.none, .none)
     private(set) var isPaused = false
     private(set) var ringsPopped = 0
     private(set) var bestKeepUp = 0
@@ -263,6 +266,7 @@ final class GameSession {
             if countdown == 0 {
                 engine.beginPlay()
                 state = engine.state
+                announceStakes()
             }
         case .serve, .playing:
             accumulator += elapsed
@@ -323,6 +327,7 @@ final class GameSession {
         }
 
         state = engine.state
+        announceStakes()
         events = engine.lastEvents
         announceShipCues(inputs: inputs)
         if mode == .warmup {
@@ -378,6 +383,20 @@ final class GameSession {
     /// scraping past your own MAX CROSS line, and holding the throttle down.
     /// Both are edge-triggered -- a cue that retriggers every frame the
     /// condition holds is not a cue, it is a buzz.
+    /// Edge-triggered, like the ship cues below: only the moment a side comes
+    /// to set or match point gets a sound. A stake that has been standing for
+    /// three rallies is not news.
+    private func announceStakes() {
+        let now = (cyan: state.match.stake(for: .cyan), orange: state.match.stake(for: .orange))
+        if now.cyan > announcedStakes.cyan {
+            FeedbackCenter.shared.stakeRaised(team: .cyan, stake: now.cyan)
+        }
+        if now.orange > announcedStakes.orange {
+            FeedbackCenter.shared.stakeRaised(team: .orange, stake: now.orange)
+        }
+        announcedStakes = now
+    }
+
     private func announceShipCues(inputs: [Seat: PlayerInput]) {
         let limit = mode.court.opponentCrossingLimit
         var offsideNow: Set<Seat> = []
@@ -452,6 +471,7 @@ final class GameSession {
             self.engine = SimulationEngine(state: resolved, configuration: self.engine.configuration)
             self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.localSeat)
             self.state = resolved
+            self.announceStakes()
         }
         online.onResync = { [weak self] authoritative in
             guard let self else { return }
@@ -459,6 +479,7 @@ final class GameSession {
             self.smoothing.reset()
             self.localInputHistory = [:]
             self.state = authoritative
+            self.announceStakes()
             self.isPaused = false
             self.countdown = 3
             self.countdownAccumulator = 0
