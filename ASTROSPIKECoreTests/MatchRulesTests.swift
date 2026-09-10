@@ -3,6 +3,46 @@ import Testing
 
 @Suite("Match rules")
 struct MatchRulesTests {
+    @Test("A rattle against the wall spends one touch, not the whole allowance")
+    func uncountedTouchesDoNotSpendTheAllowance() {
+        var rules = MatchRules(allowedFloorBounces: 2, allowedShipTouches: 3)
+        _ = rules.resolve([.ballTouchedShip(team: .cyan, counted: true)])
+        // The same hull, re-hit on the next few steps because the ball is
+        // pinned on the wall. Four more contacts, still one hit.
+        for _ in 0 ..< 4 {
+            #expect(rules.resolve([.ballTouchedShip(team: .cyan, counted: false)]).isEmpty)
+        }
+
+        #expect(rules.state.shipTouches[.cyan] == 1)
+        #expect(rules.state.score == Score())
+    }
+
+    @Test("A free contact still refreshes the bounce allowance")
+    func uncountedTouchStillClearsFloorContacts() {
+        var rules = MatchRules(allowedFloorBounces: 2, allowedShipTouches: 3)
+        _ = rules.resolve([.ballTouchedFloor(side: .cyan)])
+        _ = rules.resolve([.ballTouchedFloor(side: .cyan)])
+
+        _ = rules.resolve([.ballTouchedShip(team: .cyan, counted: false)])
+
+        // Otherwise the debounce would just move the unfair loss from
+        // touchLimit onto the next floor bounce.
+        #expect(rules.state.floorContacts == FloorContactCounts())
+        #expect(rules.resolve([.ballTouchedFloor(side: .cyan)]).isEmpty)
+        #expect(rules.state.score == Score())
+    }
+
+    @Test("Three deliberate touches still concede the rally")
+    func countedTouchesStillReachTheLimit() {
+        var rules = MatchRules(allowedFloorBounces: 2, allowedShipTouches: 3)
+        for _ in 0 ..< 3 {
+            #expect(rules.resolve([.ballTouchedShip(team: .cyan, counted: true)]).isEmpty)
+        }
+        let events = rules.resolve([.ballTouchedShip(team: .cyan, counted: true)])
+
+        #expect(events == [.point(scoringTeam: .orange, reason: .touchLimit)])
+    }
+
     @Test("Third floor contact concedes a point")
     func thirdBounceScores() {
         var rules = MatchRules(allowedFloorBounces: 2)
@@ -22,7 +62,7 @@ struct MatchRulesTests {
         _ = rules.resolve([.ballTouchedFloor(side: .cyan)])
         _ = rules.resolve([.ballTouchedFloor(side: .cyan)])
 
-        _ = rules.resolve([.ballTouchedShip(team: .cyan)])
+        _ = rules.resolve([.ballTouchedShip(team: .cyan, counted: true)])
 
         #expect(rules.state.floorContacts == FloorContactCounts())
         #expect(rules.resolve([.ballTouchedFloor(side: .cyan)]).isEmpty)

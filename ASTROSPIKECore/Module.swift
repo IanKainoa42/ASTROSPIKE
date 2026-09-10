@@ -149,6 +149,11 @@ public struct ShipState: Codable, Equatable, Sendable {
     public var fireCooldownTicks: UInt64
     /// The tractor beam is on this tick, so every board can draw it.
     public var tractorActive: Bool
+    /// Ticks until this hull's next contact counts as a touch again. A ball
+    /// pinned between a hull and a wall re-collides on every single step; the
+    /// physics still fires each time, but only the first of a burst is
+    /// scored, so a rattle costs one touch instead of the whole allowance.
+    public var ballTouchCooldownTicks: UInt64
 
     public init(
         position: SIMD2<Double>,
@@ -159,7 +164,8 @@ public struct ShipState: Codable, Equatable, Sendable {
         thrustLevel: Double = 0,
         homeSide: Team? = nil,
         fireCooldownTicks: UInt64 = 0,
-        tractorActive: Bool = false
+        tractorActive: Bool = false,
+        ballTouchCooldownTicks: UInt64 = 0
     ) {
         self.position = position
         self.velocity = velocity
@@ -170,6 +176,7 @@ public struct ShipState: Codable, Equatable, Sendable {
         self.homeSide = homeSide ?? (position.x < 0 ? .cyan : .orange)
         self.fireCooldownTicks = fireCooldownTicks
         self.tractorActive = tractorActive
+        self.ballTouchCooldownTicks = ballTouchCooldownTicks
     }
 }
 
@@ -255,6 +262,11 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var ballDropSpeed: Double
     public var serveDelay: Double
     public var minimumBallSeparationSpeed: Double
+    /// Seconds after a counted hull touch during which further contacts by the
+    /// same hull are free. Sized off the measured gap between a rattle (the
+    /// ball trapped on a wall, re-hitting within a handful of ticks) and a
+    /// deliberate second hit, whose median gap is 20 ticks near the wall.
+    public var ballTouchDebounce: Double
     /// Spring that pushes a ship back once it is past the halfway marker.
     public var crossingPushBack: Double
     /// Drag applied past the marker, ramping in with depth.
@@ -300,6 +312,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
         minimumBallSeparationSpeed: Double = 0.45,
+        ballTouchDebounce: Double = 0.1,
         crossingPushBack: Double = 30,
         crossingDrag: Double = 5.0,
         allowedFloorBounces: Int = 1,
@@ -326,6 +339,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.ballDropSpeed = ballDropSpeed
         self.serveDelay = max(0, serveDelay)
         self.minimumBallSeparationSpeed = max(0, minimumBallSeparationSpeed)
+        self.ballTouchDebounce = max(0, ballTouchDebounce)
         self.crossingPushBack = max(0, crossingPushBack)
         self.crossingDrag = max(0, crossingDrag)
         self.allowedFloorBounces = min(5, max(0, allowedFloorBounces))
@@ -545,6 +559,7 @@ public struct SimulationEngine: Sendable {
                 effects: &collisionEffects
             )
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
+            if ship.ballTouchCooldownTicks > 0 { ship.ballTouchCooldownTicks -= 1 }
             // The trigger works from a ship's own half plus a short reach past
             // center, out to the base of the hump — past that the nose is
             // live for ramming but the bolts stay holstered.
@@ -589,7 +604,7 @@ public struct SimulationEngine: Sendable {
         // Only the hoop court decides anything on it, but every court keeps
         // it so the board can name who touched last.
         for contact in contacts {
-            if case let .ballTouchedShip(team) = contact { state.lastBallToucher = team }
+            if case let .ballTouchedShip(team, _) = contact { state.lastBallToucher = team }
         }
 
         if configuration.sandbox {
@@ -642,8 +657,11 @@ public struct SimulationEngine: Sendable {
             radius: state.ball.radius
         )
         state.bolts.removeAll()
-        // A fresh ball has nobody's fingerprints on it.
+        // A fresh ball has nobody's fingerprints on it -- and no hull is still
+        // holding a debounce from the rally that just ended, which would eat
+        // the first touch of this one.
         state.lastBallToucher = nil
+        for seat in state.ships.keys { state.ships[seat]?.ballTouchCooldownTicks = 0 }
         state.serveTicksRemaining = max(
             1,
             UInt64((configuration.serveDelay / configuration.stepDuration).rounded())
@@ -676,8 +694,8 @@ public struct SimulationEngine: Sendable {
         var events = effects
         for contact in contacts {
             switch contact {
-            case let .ballTouchedShip(team):
-                state.match.shipTouches[team] += 1
+            case let .ballTouchedShip(team, counted):
+                if counted { state.match.shipTouches[team] += 1 }
             case let .ballTouchedFloor(side):
                 state.match.floorContacts[side] += 1
                 state.match.shipTouches = SideCounts()
@@ -706,8 +724,8 @@ public struct SimulationEngine: Sendable {
         var destroyed: Set<Team> = []
         for contact in contacts {
             switch contact {
-            case let .ballTouchedShip(team):
-                state.match.shipTouches[team] += 1
+            case let .ballTouchedShip(team, counted):
+                if counted { state.match.shipTouches[team] += 1 }
             case let .ballTouchedFloor(side):
                 state.match.floorContacts[side] += 1
             case .ballEnteredHoop:
@@ -840,7 +858,9 @@ public struct SimulationEngine: Sendable {
                 let speed = simd_length(bolt.velocity)
                 let direction = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
                 state.ball.velocity += direction * configuration.boltPunch
-                contacts.append(.ballTouchedShip(team: bolt.owner))
+                // A bolt is not a hull, and the cannon's own cooldown already
+                // rations these -- no debounce.
+                contacts.append(.ballTouchedShip(team: bolt.owner, counted: true))
                 effects.append(.collisionEffect(
                     position: state.ball.position,
                     intensity: configuration.boltPunch
@@ -1329,8 +1349,16 @@ public struct SimulationEngine: Sendable {
             state.ball.velocity += normal
                 * (configuration.minimumBallSeparationSpeed - separationSpeed)
         }
+        // The physics above always runs -- a rattling ball still gets shoved
+        // clear every step. Only the scoring counts a burst as one hit.
+        let counted = ship.ballTouchCooldownTicks == 0
+        if counted {
+            ship.ballTouchCooldownTicks = UInt64(
+                (configuration.ballTouchDebounce / configuration.stepDuration).rounded()
+            )
+        }
         state.ships[hit.seat] = ship
-        contacts.append(.ballTouchedShip(team: hit.seat.team))
+        contacts.append(.ballTouchedShip(team: hit.seat.team, counted: counted))
         effects.append(.collisionEffect(
             position: state.ball.position,
             intensity: abs(inwardSpeed)

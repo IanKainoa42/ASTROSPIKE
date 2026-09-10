@@ -3,6 +3,104 @@ import Testing
 
 @Suite("Rally lifecycle")
 struct RallyLifecycleTests {
+    /// A ball pinned between a hull and the left wall, taken from a sweep of
+    /// randomised near-wall situations: on the old engine this hull is struck
+    /// three separate times inside seven ticks, which is the entire touch
+    /// allowance gone in under 60ms.
+    private func rattleAgainstTheWall(debounce: Double? = nil) -> SimulationEngine {
+        var configuration = SimulationConfiguration()
+        if let debounce { configuration.ballTouchDebounce = debounce }
+        return SimulationEngine(
+            state: WorldState(
+                ships: [
+                    .cyan: ShipState(
+                        position: SIMD2(-0.849872, -0.460041),
+                        velocity: SIMD2(1.125247, -0.726516),
+                        angle: 0.507198
+                    ),
+                    .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
+                ],
+                ball: BallState(
+                    position: SIMD2(-0.925343, -0.544544),
+                    velocity: SIMD2(1.871315, -0.579135)
+                ),
+                match: MatchRuleState(phase: .playing)
+            ),
+            configuration: configuration
+        )
+    }
+
+    private func flyTheRattle(_ engine: inout SimulationEngine, ticks: Int) -> Int {
+        var collisions = 0
+        for _ in 0 ..< ticks {
+            engine.step(inputs: [
+                .cyan: PlayerInput(tick: engine.state.tick, torque: 0.83083, thrust: false)
+            ])
+            if engine.lastEvents.contains(where: {
+                if case .collisionEffect = $0 { true } else { false }
+            }) { collisions += 1 }
+        }
+        return collisions
+    }
+
+    @Test("A ball rattling on a hull spends one touch, not three")
+    func rattleCountsOnce() {
+        var engine = rattleAgainstTheWall()
+        let collisions = flyTheRattle(&engine, ticks: 20)
+
+        // The hull is struck three times and still shoves the ball clear each
+        // time -- the physics is untouched. Only the scoring collapses it.
+        #expect(collisions == 3, "the scenario has to actually rattle to prove anything")
+        #expect(engine.state.match.shipTouches[.cyan] == 1)
+    }
+
+    @Test("Without the buffer that same rattle burns the whole allowance")
+    func rattleWithoutTheBufferCostsThree() {
+        var engine = rattleAgainstTheWall(debounce: 0)
+        _ = flyTheRattle(&engine, ticks: 20)
+
+        #expect(engine.state.match.shipTouches[.cyan] == 3)
+    }
+
+    @Test("The buffer expires, so a real second hit still counts")
+    func debounceExpires() {
+        var engine = rattleAgainstTheWall()
+        // The first strike lands on the fourth step of this scenario.
+        _ = flyTheRattle(&engine, ticks: 4)
+        let armed = engine.state.ships[.cyan]!.ballTouchCooldownTicks
+        #expect(armed == 12, "0.1s at the 120Hz fixed step")
+
+        _ = flyTheRattle(&engine, ticks: Int(armed))
+
+        #expect(engine.state.ships[.cyan]!.ballTouchCooldownTicks == 0)
+    }
+
+    @Test("A conceded point never leaves a touch owed on the next rally")
+    func serveClearsTheDebounce() {
+        // A point leaves the hulls where they are and only re-stages the ball,
+        // so a live buffer would ride into the next rally and swallow its
+        // first touch. A long buffer guarantees one is still running when the
+        // rally ends, which is the case the reset exists for.
+        var engine = rattleAgainstTheWall()
+        var tuning = engine.configuration
+        tuning.ballTouchDebounce = 1.0
+        engine.updateConfiguration(tuning)
+
+        var armed = false
+        var conceded = false
+        for _ in 0 ..< 120 {
+            _ = flyTheRattle(&engine, ticks: 1)
+            if engine.state.ships[.cyan]!.ballTouchCooldownTicks > 0 { armed = true }
+            if engine.lastEvents.contains(where: {
+                if case .point = $0 { true } else { false }
+            }) { conceded = true; break }
+        }
+
+        #expect(armed, "the hull has to arm a buffer for this to prove anything")
+        #expect(conceded, "the rally has to actually end for this to prove anything")
+        #expect(engine.state.ships[.cyan]!.ballTouchCooldownTicks == 0)
+    }
+
     @Test("A fresh rally stages the ball under the centre goal")
     func freshRallyUsesHigherDrop() {
         let engine = SimulationEngine.testing()

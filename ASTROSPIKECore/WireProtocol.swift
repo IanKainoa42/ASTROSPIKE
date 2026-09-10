@@ -31,7 +31,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 11: seating carries the host's whole FlightTuningSnapshot, not just
     //     setsToWin, so every board flies the host's sliders.
     // 12: PlayerInput gained tractor, ShipState gained tractorActive.
-    public static let currentVersion: UInt16 = 12
+    // 13: ShipState gained ballTouchCooldownTicks -- a ball rattling between a
+    //     hull and a wall now spends one touch instead of the whole allowance,
+    //     so a build 51 peer would call a fault this build plays through.
+    public static let currentVersion: UInt16 = 13
 
     public var version: UInt16
     public var sequence: UInt64
@@ -146,7 +149,8 @@ public struct StateReconciler: Sendable {
             isDestroyed: authoritative.isDestroyed,
             thrustLevel: authoritative.thrustLevel,
             homeSide: authoritative.homeSide,
-            fireCooldownTicks: authoritative.fireCooldownTicks
+            fireCooldownTicks: authoritative.fireCooldownTicks,
+            ballTouchCooldownTicks: authoritative.ballTouchCooldownTicks
         )
     }
 }

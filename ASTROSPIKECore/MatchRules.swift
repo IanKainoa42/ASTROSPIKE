@@ -135,7 +135,11 @@ public extension MatchRuleState {
 
 public enum RuleContact: Codable, Equatable, Sendable {
     case ballTouchedFloor(side: Team)
-    case ballTouchedShip(team: Team)
+    /// `counted` is false for the follow-up contacts of a single rattle --
+    /// the ball pinned on a wall, re-hitting the same hull within a few
+    /// ticks. Those still refresh the bounce allowance, they just don't
+    /// spend a touch.
+    case ballTouchedShip(team: Team, counted: Bool)
     case ballCrossedCenter(into: Team)
     case ballEnteredGoal(defending: Team)
     /// The ball dropped through the centre hoop. Who it belongs to is not
@@ -225,14 +229,18 @@ public struct MatchRules: Sendable {
 
         for contact in contacts {
             switch contact {
-            case let .ballTouchedShip(team):
+            case let .ballTouchedShip(team, counted):
                 // A hit still refreshes the bounce allowance -- but the touch
                 // tally does not reset, so touch/bounce/touch/bounce is no
-                // longer an unlimited way to stall on your own half.
+                // longer an unlimited way to stall on your own half. The
+                // refresh happens even on a free contact: a rattle that does
+                // not spend a touch must not spend a bounce either.
                 state.floorContacts = SideCounts()
-                state.shipTouches[team] += 1
-                if state.shipTouches[team] > allowedShipTouches {
-                    return awardPoint(to: team.opponent, reason: .touchLimit)
+                if counted {
+                    state.shipTouches[team] += 1
+                    if state.shipTouches[team] > allowedShipTouches {
+                        return awardPoint(to: team.opponent, reason: .touchLimit)
+                    }
                 }
             case let .ballCrossedCenter(team):
                 state.floorContacts[team] = 0
