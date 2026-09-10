@@ -33,8 +33,10 @@ struct TouchControls: View {
     @AppStorage("arrangePads") private var arranging = false
     @AppStorage("padOffsets2") private var padOffsetsData = Data()
 
-    /// Where Ian dragged the pads on the Mac window (build 34); the layout math below is the
-    /// anchor, these ride on top. Saved drags stack on these.
+    /// Where Ian dragged the pads on the Mac window (build 34, ~1323x1000 pt, 262 pt engine
+    /// margin); the layout math below is the anchor, these ride on top after scaling to the
+    /// current window (x by engine-margin width, y by height). Saved drags stack on these.
+    private static let bakedReference = CGSize(width: 262, height: 1000)
     private static let bakedOffsets: [String: CGSize] = [
         "steering": CGSize(width: 129, height: -38),
         "tractor": CGSize(width: -109, height: -303),
@@ -81,6 +83,11 @@ struct TouchControls: View {
         let gap: CGFloat = 10
         let slop: CGFloat = 16
         let bottom = local.height - edge
+        let bakedScale = CGSize(
+            width: min(1, engineWidth / Self.bakedReference.width),
+            // Phones (~430 pt tall) keep the pads on the floor; the lift grows with the window.
+            height: min(1, max(0, local.height - 400) / (Self.bakedReference.height - 400))
+        )
         let thrust = thrustChrome
         let fire = fireChrome
 
@@ -107,18 +114,18 @@ struct TouchControls: View {
         let steeringX = leftHanded ? local.width - steeringSpan : 0
 
         return ZStack(alignment: .topLeading) {
-            placeable("steering") {
+            placeable("steering", scale: bakedScale) {
                 steeringColumn(width: steeringSpan, height: local.height)
                     .frame(width: steeringSpan, height: local.height)
             }
             .offset(x: steeringX)
-            placeable("tractor") {
+            placeable("tractor", scale: bakedScale) {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
             }
             .position(x: tractorX, y: tractorY)
             if loadout == .ship {
-                placeable("fire") {
+                placeable("fire", scale: bakedScale) {
                     ControlZone(
                         icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
                         active: firePressed, chrome: fire, bottomPadding: 0,
@@ -128,7 +135,7 @@ struct TouchControls: View {
                 }
                 .position(x: fireX, y: fireY)
             }
-            placeable("thrust") {
+            placeable("thrust", scale: bakedScale) {
                 ControlZone(
                     icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
                     active: thrustPressed, chrome: thrust, bottomPadding: 0,
@@ -163,8 +170,9 @@ struct TouchControls: View {
 
     /// While arranging, the pad stops taking presses and can be dragged
     /// anywhere; its offset from the drawn default persists.
-    private func placeable<Pad: View>(_ id: String, @ViewBuilder _ pad: () -> Pad) -> some View {
-        let baked = Self.bakedOffsets[id] ?? .zero
+    private func placeable<Pad: View>(_ id: String, scale: CGSize, @ViewBuilder _ pad: () -> Pad) -> some View {
+        let raw = Self.bakedOffsets[id] ?? .zero
+        let baked = CGSize(width: raw.width * scale.width, height: raw.height * scale.height)
         let saved = padOffsets[id] ?? .zero
         let live = dragging[id] ?? .zero
         return pad()
