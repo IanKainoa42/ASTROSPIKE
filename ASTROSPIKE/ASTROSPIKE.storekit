@@ -12,7 +12,7 @@
   "identifier": "astrospike",
   "nonConsumableProducts": [
     {
-      "displayPrice": "1.99",
+      "displayPrice": "0.99",
       "familyShareable": false,
       "internalID": "A82445F5-C84B-5B93-A6B0-D3E774E40CC4",
       "localizations": [
@@ -27,7 +27,7 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "1.99",
+      "displayPrice": "0.99",
       "familyShareable": false,
       "internalID": "567C0CFC-EB25-5AEC-BF03-B2EDB7B68A89",
       "localizations": [
@@ -42,7 +42,7 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "1.99",
+      "displayPrice": "0.99",
       "familyShareable": false,
       "internalID": "071FB85F-0BC2-5039-84ED-C879C598898A",
       "localizations": [
@@ -57,7 +57,7 @@
       "type": "NonConsumable"
     },
     {
-      "displayPrice": "1.99",
+      "displayPrice": "0.99",
       "familyShareable": false,
       "internalID": "41950C10-4D44-5379-A05C-3B4D90E608E3",
       "localizations": [

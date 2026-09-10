@@ -88,8 +88,9 @@ PURCHASES sits at the bottom of the same screen.
 
 Each product also needs, or it parks in *Missing Metadata*:
 
-- **Price** — the local config assumes $1.99 each, but the code never hardcodes
-  a price; it renders `product.displayPrice`, so ASC is free to disagree.
+- **Price** — **$0.99 each**. The local StoreKit config matches, but the code
+  never hardcodes a price; it renders `product.displayPrice`, so the number in
+  ASC is the one that ships.
 - **Availability** — all territories.
 - **Review screenshot** — 640×920 or larger. Take it from the Hangar with the
   hull previewed and the UNLOCK button visible.
@@ -141,7 +142,7 @@ is no automated purchase test. Run this by hand in Xcode before submitting:
 
 ```
 [ ]  1. Product ▸ Run (simulator or device). Menu ▸ HANGAR.
-[ ]  2. Tap a premium hull (Bulwark). The button reads UNLOCK • $1.99 — a real price, not placeholder text.
+[ ]  2. Tap a premium hull (Bulwark). The button reads UNLOCK • $0.99 — a real price, not placeholder text.
 [ ]  3. Tap UNLOCK. Approve. The button becomes FLY THE BULWARK, and the tile loses its padlock.
 [ ]  4. Tap FLY THE BULWARK, close the hangar, start a solo match. The Bulwark is on court.
 [ ]  5. Stop and re-run the app. The Bulwark is still unlocked and still selected.
