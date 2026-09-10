@@ -22,7 +22,20 @@ struct RaceTuningView: View {
                             value: $tuning.laneHalfWidth,
                             range: TrackGeometry.halfWidthLimits.minimum
                                 ... TrackGeometry.halfWidthLimits.maximum,
-                            step: 0.005
+                            step: 0.001,
+                            // The whole corridor, counted in hulls. This
+                            // circuit only has a thousandth or two to give
+                            // either way, so "0.10" at both ends of the
+                            // travel would read as a slider that does
+                            // nothing -- and it is not nothing: it is the
+                            // difference between two hulls of road and two
+                            // and a third.
+                            readout: {
+                                let hull = 2 * TrackConfiguration().shipRadius
+                                return ($0 * 2 / hull)
+                                    .formatted(.number.precision(.fractionLength(2)))
+                                    + " hulls"
+                            }
                         )
                         Stepper(
                             tuning.laps <= 0 ? "Laps: endless loop" : "Laps: \(tuning.laps)",

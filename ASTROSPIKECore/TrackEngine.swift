@@ -460,7 +460,9 @@ public struct TrackEngine: Sendable {
         var ahead = 0.0
         while ahead < 0.85 {
             let bend = abs(signedCurvature(track: track, alongFrom: placement.progress, distance: ahead))
-            let corner = bend > 1e-6 ? min(topSpeed, (lateral / bend).squareRoot()) : topSpeed
+            let corner = bend > 1e-6
+                ? min(topSpeed, Self.cornerMargin * (lateral / bend).squareRoot())
+                : topSpeed
             wanted = min(wanted, (corner * corner + 2 * shedding * ahead).squareRoot())
             ahead += 0.05
         }
@@ -469,7 +471,38 @@ public struct TrackEngine: Sendable {
         // Where it wants to be going: down the road, far enough ahead that it
         // is aiming at the corridor rather than at the point under its nose,
         // and pulled back toward the centreline by however far off it is.
-        let lookahead = 0.10 + 0.28 * (wanted / max(topSpeed, 1e-6))
+        //
+        // Aiming down the road is aiming across the bend in it. A target a
+        // distance d away round a radius r sits d * d / (8 * r) inside the
+        // arc it is cutting, and on a corner tight enough that the cut is
+        // wider than the lane, a ship that flies at the target flies into the
+        // railing -- every lap, in the same place. The oval this circuit
+        // replaced turned at twice the radius and never showed it. So the
+        // reach is capped at whatever keeps the cut inside a third of the
+        // corridor, measured against the tightest bend it is actually
+        // aiming through rather than the one under the nose.
+        //
+        // The cap alone did not clear the railing -- it took the strikes from
+        // eight a race to three, and the corner margin below took the last
+        // three. What it buys on top of that is room: with the cap the worst
+        // the pace ship gets to the rail all race is 0.0486 against a 0.0610
+        // limit; without it, 0.0560. Twenty per cent of a lane instead of
+        // eight.
+        var lookahead = 0.10 + 0.28 * (wanted / max(topSpeed, 1e-6))
+        var sharpest = 0.0
+        var toAim = 0.0
+        while toAim < lookahead {
+            sharpest = max(sharpest, abs(signedCurvature(
+                track: track, alongFrom: placement.progress, distance: toAim
+            )))
+            toAim += 0.05
+        }
+        if sharpest > 1e-6 {
+            lookahead = max(0.08, min(
+                lookahead,
+                (8 * (track.halfWidth / 3) / sharpest).squareRoot()
+            ))
+        }
         let target = centreline(track: track, alongFrom: placement.progress, distance: lookahead)
         var toward = target - car.position
         let reach = simd_length(toward)
@@ -518,6 +551,17 @@ public struct TrackEngine: Sendable {
     /// that takes every corner at exactly its limit spends the race in the
     /// barriers.
     private static let corneringShare = 0.62
+
+    /// How much of the speed it *could* hold the pace ship actually takes into
+    /// a bend. The speed above is the fastest a ship can go round a corner at
+    /// all -- take exactly that and there is nothing left over for the tenth
+    /// of a second the controller spends noticing it has drifted, so the line
+    /// settles hard against the inside rail and stays there. On the oval this
+    /// circuit replaced the corridor was wide enough to swallow that; here the
+    /// long right-hand sweep put the pace ship on the railing every lap. Nine
+    /// tenths turns a lane it was using all of into one it uses four fifths
+    /// of, and costs a second a lap.
+    private static let cornerMargin = 0.90
 
     /// How hard the pace ship closes on the velocity it wants, per second.
     /// High enough to hold a line, low enough that it does not chatter the

@@ -82,7 +82,13 @@ public final class TrackTuningStore {
         func read(_ key: String, _ value: Double) -> Double {
             defaults.object(forKey: key) as? Double ?? value
         }
-        laneHalfWidth = read(Keys.laneHalfWidth, fallback.laneHalfWidth)
+        // A lane width saved under the old oval sits outside the circuit's
+        // range. Clamp it on the way in, or the slider pins at its maximum
+        // while the label still reads the stale number.
+        laneHalfWidth = min(
+            TrackGeometry.halfWidthLimits.maximum,
+            max(TrackGeometry.halfWidthLimits.minimum, read(Keys.laneHalfWidth, fallback.laneHalfWidth))
+        )
         damageSeconds = read(Keys.damageSeconds, fallback.damageSeconds)
         damagePowerKept = read(Keys.damagePowerKept, fallback.damagePowerKept)
         railSpeedKept = read(Keys.railSpeedKept, fallback.railSpeedKept)

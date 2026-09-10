@@ -1060,19 +1060,26 @@ struct TuningSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
+    /// How the number beside the title reads. Two decimals suit the flight
+    /// sliders, whose range is wide; the corridor moves in thousandths and
+    /// is felt in hulls, so it gets to say so rather than showing the same
+    /// rounded number at both ends of its travel.
+    var readout: (Double) -> String = {
+        $0.formatted(.number.precision(.fractionLength(2)))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title)
                 Spacer()
-                Text(value.formatted(.number.precision(.fractionLength(2))))
+                Text(readout(value))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
             Slider(value: $value, in: range, step: step)
                 .accessibilityLabel(title)
-                .accessibilityValue(value.formatted(.number.precision(.fractionLength(2))))
+                .accessibilityValue(readout(value))
         }
     }
 }

@@ -182,7 +182,17 @@ struct TrackEngineTests {
             let hit = engine.lastEvents.contains {
                 if case .railStrike(.player, _, _) = $0 { true } else { false }
             }
-            if hit {
+            // A scrape on the same tick as the line is two events, not one,
+            // and the lap clock reading zero afterwards would then say
+            // nothing about what the railing cost. Wait for a clean one --
+            // including the run-up crossing, which starts the clock without
+            // announcing a lap because there was no lap before it.
+            let crossed = engine.lastEvents.contains {
+                if case .lapCompleted = $0 { true } else { false }
+            }
+            let started = before.lapProgress < 0
+                && engine.state.cars[.player]!.lapProgress >= 0
+            if hit && !crossed && !started {
                 struck = (before, engine.state.cars[.player]!)
                 break
             }

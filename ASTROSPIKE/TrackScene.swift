@@ -111,29 +111,35 @@ final class TrackScene: SKScene {
         trackLayer.removeAllChildren()
         skidLayer.removeAllChildren()
 
-        let width = tarmacWidthInPoints
-
-        // The tarmac is the centreline stroked at the full width of the tube.
-        // Drawing it the same way the collision measures it means what the
-        // driver sees and what the railing does can never drift apart.
-        let spine = closedPath(through: track.samples.map { point($0.point) })
-        let surface = SKShapeNode(path: spine)
-        surface.strokeColor = Self.tarmac
-        surface.lineWidth = width
-        surface.lineCap = .round
-        surface.lineJoin = .round
-        surface.fillColor = .clear
+        // The tarmac is the band between the two railings, filled. It used to
+        // be the centreline stroked at the tube's width, which is the same
+        // road and a great deal less code -- but a shape node builds a thick
+        // stroke by mitring one quad per segment, and where two segments are
+        // very nearly in line that mitre runs away to infinity. The oval this
+        // circuit replaced had a handful of such places and a corridor wide
+        // enough to hide them; four long straights at a fifth the width put a
+        // grey spike through the infield at every one. Filling the band never
+        // mitres anything, and the rails it is drawn between are the rails the
+        // engine collides against.
+        let surface = SKShapeNode(path: band(from: track.rail(sign: 1), to: track.rail(sign: -1)))
+        surface.strokeColor = .clear
+        surface.fillColor = Self.tarmac
         surface.zPosition = 0
         trackLayer.addChild(surface)
 
-        let sheen = SKShapeNode(path: spine)
-        sheen.strokeColor = SKColor(white: 1, alpha: 0.045)
-        sheen.lineWidth = width * 0.55
-        sheen.lineCap = .round
-        sheen.lineJoin = .round
-        sheen.fillColor = .clear
+        // The lighter strip up the middle, drawn the same way: a narrower band
+        // about the centreline, so it cannot spike either.
+        let inset = 0.55 * track.halfWidth
+        let sheen = SKShapeNode(path: band(
+            from: track.samples.map { $0.point + $0.normal * inset },
+            to: track.samples.map { $0.point - $0.normal * inset }
+        ))
+        sheen.strokeColor = .clear
+        sheen.fillColor = SKColor(white: 1, alpha: 0.045)
         sheen.zPosition = 1
         trackLayer.addChild(sheen)
+
+        let spine = closedPath(through: drawnIndices.map { point(track.samples[$0].point) })
 
         // The racing line, as a hint rather than an instruction.
         let hint = SKShapeNode(path: spine)
@@ -155,29 +161,29 @@ final class TrackScene: SKScene {
     /// bends, so the corners read as corners at a glance and the straights
     /// stay clean.
     private func addRail(sign: Double) {
-        let points = track.rail(sign: sign).map { point($0) }
+        let rail = track.rail(sign: sign)
+        let points = drawnIndices.map { point(rail[$0]) }
         let path = closedPath(through: points)
 
-        let rail = SKShapeNode(path: path)
-        rail.strokeColor = Self.railColor.withAlphaComponent(0.75)
-        rail.lineWidth = 2
-        rail.glowWidth = 3
-        rail.fillColor = .clear
-        rail.zPosition = 3
-        trackLayer.addChild(rail)
+        let edge = SKShapeNode(path: path)
+        edge.strokeColor = Self.railColor.withAlphaComponent(0.75)
+        edge.lineWidth = 2
+        edge.glowWidth = 3
+        edge.fillColor = .clear
+        edge.zPosition = 3
+        trackLayer.addChild(edge)
 
-        let count = track.samples.count
         let kerb = CGMutablePath()
         var laid = 0
-        for index in 0..<count {
+        for (slot, index) in drawnIndices.enumerated() {
             let bend = bendAt(index)
             // Kerb the inside of the bend, which is the rail on the side the
             // road is turning toward.
             guard abs(bend) > 0.9, (bend > 0) == (sign > 0) else { continue }
             laid += 1
             guard laid.isMultiple(of: 2) else { continue }
-            kerb.move(to: points[index])
-            kerb.addLine(to: points[(index + 1) % count])
+            kerb.move(to: points[slot])
+            kerb.addLine(to: points[(slot + 1) % points.count])
         }
         guard !kerb.isEmpty else { return }
         let stripes = SKShapeNode(path: kerb)
@@ -382,15 +388,46 @@ final class TrackScene: SKScene {
         )
     }
 
-    /// Signed turn per sample, for deciding where a kerb belongs.
+    /// Signed turn over a fixed length of road, for deciding where a kerb
+    /// belongs. Measured in world distance rather than in samples, because the
+    /// circuit carries nearly six times the oval's samples per unit and a turn
+    /// counted per-sample would read as a sixth of itself -- which is a kerb
+    /// laid down every straight instead of only round the bends.
     private func bendAt(_ index: Int) -> Double {
         let count = track.samples.count
+        let ahead = max(1, Int((0.019 / (track.totalLength / Double(count))).rounded()))
         let here = track.samples[index].tangent
-        let next = track.samples[(index + 3) % count].tangent
+        let next = track.samples[(index + ahead) % count].tangent
         return atan2(
             here.x * next.y - here.y * next.x,
             here.x * next.x + here.y * next.y
         ) * 100
+    }
+
+    /// Which samples get drawn. A shape node triangulates its whole stroked
+    /// path in one go, and this circuit's centreline is nearly six times the
+    /// oval's; past a couple of thousand points SpriteKit gives back grey
+    /// banding where the tarmac should be. Every fourth sample is still a
+    /// point every few pixels -- the gap between the chord and the arc at the
+    /// tightest corner here is under a hundredth of a pixel -- and the railing
+    /// still collides against all of them, because that is the engine's job
+    /// and not this one's.
+    private var drawnIndices: [Int] {
+        let count = track.samples.count
+        return Array(stride(from: 0, to: count, by: max(1, count / 640)))
+    }
+
+    /// The closed ribbon between two edges of the road: one edge forward, the
+    /// other back, joined into a single simple polygon.
+    private func band(from outer: [SIMD2<Double>], to inner: [SIMD2<Double>]) -> CGPath {
+        let indices = drawnIndices
+        let path = CGMutablePath()
+        guard let first = indices.first else { return path }
+        path.move(to: point(outer[first]))
+        for index in indices.dropFirst() { path.addLine(to: point(outer[index])) }
+        for index in indices.reversed() { path.addLine(to: point(inner[index])) }
+        path.closeSubpath()
+        return path
     }
 
     private func closedPath(through points: [CGPoint]) -> CGPath {
