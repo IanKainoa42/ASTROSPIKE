@@ -322,7 +322,8 @@ private struct HomeView: View {
                     MenuButton(title: "SOLO FLIGHT", subtitle: "ROOKIE • PILOT • ACE", icon: "person.fill") { sheet = .difficulty }
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
                     MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
-                    MenuButton(title: "GAME MODES", subtitle: "VOLLEYBALL • BASKETBALL • TIME TRIAL", icon: "square.grid.2x2.fill") { sheet = .modes }
+                    // Volleyball, basketball and the circuit are parked (Ian may spin them into
+                    // their own game); `sheet = .modes` still opens them if ever wanted back.
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
                         SmallMenuButton(title: "INVITE", icon: "person.2.wave.2.fill") { sheet = .invite }
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
@@ -952,7 +953,7 @@ private struct SettingsView: View {
             Form {
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
-                Toggle("Arrange pads (drag them in a match or a race)", isOn: $arrangePads)
+                Toggle("Arrange pads (drag them in a match)", isOn: $arrangePads)
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
@@ -981,10 +982,6 @@ private struct SettingsView: View {
                     NavigationLink("Flight Tuning") {
                         FlightTuningView(tuning: tuning)
                     }
-                    NavigationLink("Race Tuning") {
-                        RaceTuningView(tuning: trackTuning)
-                    }
-                    .accessibilityIdentifier("race-tuning-link")
                 }
                 if let replayIntro {
                     Section("Intro") {
