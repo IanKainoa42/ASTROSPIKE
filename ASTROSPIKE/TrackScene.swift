@@ -328,10 +328,33 @@ final class TrackScene: SKScene {
 
     // MARK: - Geometry
 
-    /// Ships, sparks and the tarmac all share the court's screen box, so the
-    /// track sits exactly where the arena would and the HUD above it does not
-    /// have to move between modes.
-    private var trackRect: CGRect { ArenaScene.arenaRect(in: size) }
+    /// The circuit gets its own screen box, and it is not the court's.
+    ///
+    /// A match keeps the outer fifth of each side clear so the thumb pads
+    /// never sit on the court -- there is a ball in there to lose under a
+    /// thumb. On an iPad that margin is 515 points, and it was clamping the
+    /// width of the box while nothing clamped its height: a corridor that is
+    /// half again as wide as it is tall was being drawn into a box taller
+    /// than it was wide. Every corner came out a third tighter than the
+    /// corridor the physics is actually flying, and the ship's drawn heading
+    /// disagreed with the direction it was travelling, because x and y were
+    /// on different scales. The race has no ball to lose, so it takes the
+    /// whole screen and takes it square: one scale for both axes.
+    private var trackRect: CGRect { Self.circuitRect(in: size) }
+
+    /// The world, fitted to the screen without distorting it.
+    static func circuitRect(in size: CGSize, arena: ArenaGeometry = .standard) -> CGRect {
+        let inset = min(size.width, size.height) * 0.035
+        let worldWidth = CGFloat(arena.halfWidth * 2)
+        let worldHeight = CGFloat(arena.ceilingY - arena.floorY)
+        let scale = min(
+            (size.width - inset * 2) / worldWidth,
+            (size.height - inset * 2) / worldHeight
+        )
+        let width = worldWidth * scale
+        let height = worldHeight * scale
+        return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
+    }
 
     private var tarmacWidthInPoints: CGFloat {
         let rect = trackRect
@@ -339,11 +362,12 @@ final class TrackScene: SKScene {
     }
 
     /// The match's own hull scale, to the character. `ArenaScene` sizes a
-    /// ship as `unit / 473` off the same arena rect; the circuit uses the very
-    /// same number so the hull the pilot chose is the hull they see, at the
-    /// size they chose it at.
+    /// ship as `unit / 473` off the *court's* rect, so this reads that rect
+    /// and not the circuit's: the hull the pilot chose is the hull they see,
+    /// at the size they chose it at. The corridor around it got wider; the
+    /// ship did not get bigger to match.
     private var hullScale: CGFloat {
-        let rect = trackRect
+        let rect = ArenaScene.arenaRect(in: size)
         return min(rect.width / 2, rect.height) / 1.7 / 473
     }
 
