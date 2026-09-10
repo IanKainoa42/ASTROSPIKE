@@ -75,6 +75,7 @@
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
 		F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */; };
 		F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B202192D985A9E29E73E1 /* LobbyView.swift */; };
+		FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056582DB470999C16355D1FE /* HullStore.swift */; };
 		FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5637738B4E3686D57BD33184 /* WarmupRings.swift */; };
 /* End PBXBuildFile section */
 
@@ -130,12 +131,14 @@
 /* Begin PBXFileReference section */
 		0229900C8172E2E47EE8513F /* TrackTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTuning.swift; sourceTree = "<group>"; };
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
+		056582DB470999C16355D1FE /* HullStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullStore.swift; sourceTree = "<group>"; };
 		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
 		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
 		0B581A251E3DC103CDFB31F3 /* TrackScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackScene.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
 		1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
+		1D6D5F20EF789803283845FE /* ASTROSPIKE.storekit */ = {isa = PBXFileReference; path = ASTROSPIKE.storekit; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
 		2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsTests.swift; sourceTree = "<group>"; };
 		213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaPhysicsTests.swift; sourceTree = "<group>"; };
@@ -251,6 +254,7 @@
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */,
 				828D26A07A966607CF8F1287 /* Hulls.swift */,
+				056582DB470999C16355D1FE /* HullStore.swift */,
 				047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */,
 				1AC83DD77126E7FA513D2942 /* Lobby.swift */,
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
@@ -293,6 +297,7 @@
 				26AED5437E5592EACB25579F /* ArenaScene.swift */,
 				2CD4F97738D5A2F620398EBF /* Assets.xcassets */,
 				519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */,
+				1D6D5F20EF789803283845FE /* ASTROSPIKE.storekit */,
 				91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */,
 				EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */,
 				1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */,
@@ -519,6 +524,7 @@
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */,
+				FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */,
 				077E31AEAA3268F71CF606CB /* Hulls.swift in Sources */,
 				C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */,
 				594C28054C252A6E6577D9EC /* Lobby.swift in Sources */,
@@ -745,7 +751,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 49;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -805,7 +811,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 47;
+				CURRENT_PROJECT_VERSION = 49;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

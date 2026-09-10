@@ -7,6 +7,7 @@ import SwiftUI
 struct OnboardingFlow: View {
     @Bindable var profile: PilotProfileStore
     let entitlements: HullEntitlements
+    let store: HullStore
     /// Called when the pilot is done. `true` means launch a rookie match now.
     let finish: (_ launchRookieMatch: Bool) -> Void
 
@@ -185,7 +186,7 @@ struct OnboardingFlow: View {
                 .foregroundStyle(.white.opacity(0.55))
             Text("PICK YOUR HULL.")
                 .font(.system(size: 30, weight: .black, design: .rounded))
-            HangarView(profile: profile, entitlements: entitlements, compact: true)
+            HangarView(profile: profile, entitlements: entitlements, store: store, compact: true)
         }
         .padding(.horizontal, 28).padding(.top, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

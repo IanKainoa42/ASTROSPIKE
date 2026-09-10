@@ -1,14 +1,18 @@
 import ASTROSPIKECore
 import SwiftUI
 
-/// Pick a hull. Free hulls select on tap; premium hulls preview but stay
-/// locked with a visible reason, so nothing here is a silent dead end.
+/// Pick a hull. Free hulls select on tap; premium hulls preview and buy.
+/// Every locked branch renders either a price, a spinner or a reason -- none
+/// of them is a silent dead end.
 struct HangarView: View {
     @Bindable var profile: PilotProfileStore
     let entitlements: HullEntitlements
+    let store: HullStore
     /// Team colour to preview in. Solo play is always cyan.
     var team: Team = .cyan
     /// Compact layout for the intro page, full layout for the sheet.
+    /// The intro previews premium hulls but never sells them; buying lives
+    /// in the hangar sheet, where the restore button and terms sit too.
     var compact = false
 
     @State private var previewed: Hull?
@@ -33,11 +37,61 @@ struct HangarView: View {
                 if !compact {
                     Text("Hulls are cosmetic. Every ship flies and bounces the same, online and solo.")
                         .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                    storeFooter
                 }
             }
             .frame(maxWidth: .infinity)
         }
         .accessibilityIdentifier("hangar")
+    }
+
+    /// Restore plus the store's last word. Both live here rather than in the
+    /// toolbar so the intro page never shows them.
+    @ViewBuilder
+    private var storeFooter: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button {
+                    Task { await store.restore() }
+                } label: {
+                    if store.isRestoring {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini).tint(.white)
+                            Text("RESTORING…")
+                        }
+                        .contentShape(Rectangle())
+                    } else {
+                        Text("RESTORE PURCHASES").contentShape(Rectangle())
+                    }
+                }
+                .font(.caption2.weight(.black)).tracking(1)
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(store.isRestoring ? 0.55 : 0.8))
+                .disabled(store.isRestoring)
+                .accessibilityIdentifier("hull-restore")
+                Spacer(minLength: 0)
+            }
+            if let message = store.message {
+                Button {
+                    store.message = nil
+                } label: {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "info.circle.fill")
+                        Text(message).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Image(systemName: "xmark").font(.system(size: 8, weight: .black))
+                    }
+                    .font(.caption2)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.85))
+                .accessibilityIdentifier("hull-store-message")
+            }
+        }
     }
 
     private var preview: some View {
@@ -84,16 +138,68 @@ struct HangarView: View {
             .buttonStyle(.borderedProminent).tint(team == .cyan ? .cyan : .orange)
             .accessibilityIdentifier("hull-select")
         } else {
-            VStack(spacing: 4) {
+            lockedControls(spec)
+        }
+    }
+
+    /// The locked branch has four states and every one of them renders:
+    /// preview-only on the intro, a spinner mid-purchase, a priced buy button
+    /// once StoreKit answers, and a tappable retry with the reason if it did
+    /// not. There is no path here that leaves the pilot looking at nothing.
+    @ViewBuilder
+    private func lockedControls(_ spec: HullSpec) -> some View {
+        let productID = spec.availability.productID
+        VStack(spacing: 4) {
+            if compact {
                 Label("LOCKED • PREMIUM", systemImage: "lock.fill")
                     .font(.caption.weight(.black)).tracking(1)
-                Text("Hull packs arrive with in-app purchases in a coming update.")
+                Text("Unlock premium hulls in the Hangar.")
                     .font(.caption2).foregroundStyle(.white.opacity(0.55))
                     .multilineTextAlignment(.center)
+            } else if store.purchasing == productID {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).tint(.white)
+                    Text("CONTACTING THE APP STORE…")
+                        .font(.caption.weight(.black)).tracking(1)
+                }
+                .frame(maxWidth: .infinity, minHeight: 40)
+            } else if let price = store.price(for: spec.hull) {
+                Button {
+                    store.message = nil
+                    FeedbackCenter.shared.tap()
+                    Task { await store.purchase(spec.hull) }
+                } label: {
+                    Label("UNLOCK • \(price)", systemImage: "lock.open.fill")
+                        .font(.caption.weight(.black)).tracking(1)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderedProminent).tint(team == .cyan ? .cyan : .orange)
+                .disabled(store.purchasing != nil)
+                .accessibilityIdentifier("hull-buy")
+            } else {
+                Button {
+                    store.message = nil
+                    Task { await store.loadProducts() }
+                } label: {
+                    VStack(spacing: 4) {
+                        Label(store.phase == .loading ? "LOADING PRICE…" : "LOCKED • PREMIUM",
+                              systemImage: "lock.fill")
+                            .font(.caption.weight(.black)).tracking(1)
+                        Text(store.phase.reason ?? "Fetching the price from the App Store.")
+                            .font(.caption2).foregroundStyle(.white.opacity(0.55))
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.white)
+                .disabled(store.phase == .loading)
+                .accessibilityIdentifier("hull-retry")
             }
-            .frame(maxWidth: .infinity, minHeight: 40)
-            .accessibilityIdentifier("hull-locked")
         }
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .accessibilityIdentifier("hull-locked")
     }
 
     private func hullTile(_ spec: HullSpec) -> some View {
@@ -139,15 +245,23 @@ struct HangarView: View {
 struct HangarSheet: View {
     @Bindable var profile: PilotProfileStore
     let entitlements: HullEntitlements
+    let store: HullStore
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                HangarView(profile: profile, entitlements: entitlements)
+                HangarView(profile: profile, entitlements: entitlements, store: store)
                     .padding(24)
             }
             .background(CosmicBackground())
+            // `start()` is idempotent -- the app root has usually run it
+            // already. Opening the hangar is the moment to retry a load that
+            // failed earlier, so prices are there when the pilot looks.
+            .task {
+                await store.start()
+                if store.phase.reason != nil { await store.loadProducts() }
+            }
             .navigationTitle("Hangar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Done") { dismiss() } }

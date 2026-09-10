@@ -230,9 +230,10 @@ public enum HullCatalog {
 
 // MARK: - Persistence
 
-/// Which premium hulls this device owns. Free hulls are always unlocked.
-/// `unlock(productID:)` is the single seam a StoreKit transaction observer
-/// will call once in-app purchases ship; nothing else needs to change.
+/// Which premium hulls this Apple Account owns. Free hulls are always unlocked.
+/// This is the offline cache, not the ledger: `HullStore` owns the StoreKit
+/// side and calls `unlock(productID:)` / `lock(productID:)` as transactions
+/// and revocations arrive.
 @MainActor
 @Observable
 public final class HullEntitlements {
@@ -254,13 +255,27 @@ public final class HullEntitlements {
     }
 
     public func unlock(productID: String) {
+        guard !unlockedProductIDs.contains(productID) else { return }
         unlockedProductIDs.insert(productID)
-        defaults.set(Array(unlockedProductIDs).sorted(), forKey: Self.key)
+        persist()
+    }
+
+    /// Refunded or family-sharing-revoked. Only StoreKit calls this -- the
+    /// cache never revokes on its own, so a cold launch cannot strip a hull
+    /// the pilot paid for.
+    public func lock(productID: String) {
+        guard unlockedProductIDs.contains(productID) else { return }
+        unlockedProductIDs.remove(productID)
+        persist()
     }
 
     public func revokeAll() {
         unlockedProductIDs.removeAll()
         defaults.removeObject(forKey: Self.key)
+    }
+
+    private func persist() {
+        defaults.set(unlockedProductIDs.sorted(), forKey: Self.key)
     }
 }
 

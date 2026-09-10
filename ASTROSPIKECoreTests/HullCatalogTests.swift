@@ -90,3 +90,48 @@ struct HullPersistenceTests {
         }
     }
 }
+
+@Suite("Hull store contract")
+@MainActor
+struct HullStoreTests {
+    /// These strings are typed by hand into App Store Connect, so they are
+    /// pinned here rather than derived. A rename that does not also happen in
+    /// ASC ships a hull nobody can buy.
+    @Test("Premium product identifiers match the App Store Connect records")
+    func productIDsArePinned() {
+        #expect(HullStore.premiumProductIDs == [
+            "com.iankainoa.ASTROSPIKE.hull.bulwark",
+            "com.iankainoa.ASTROSPIKE.hull.wraith",
+            "com.iankainoa.ASTROSPIKE.hull.hornet",
+            "com.iankainoa.ASTROSPIKE.hull.comet",
+        ])
+    }
+
+    @Test("A refund revokes exactly one hull and the revocation survives a relaunch")
+    func revocationPersists() {
+        let name = "hull-store-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+
+        let entitlements = HullEntitlements(defaults: defaults)
+        entitlements.unlock(productID: HullCatalog.productID(for: .bulwark))
+        entitlements.unlock(productID: HullCatalog.productID(for: .wraith))
+        entitlements.lock(productID: HullCatalog.productID(for: .bulwark))
+
+        #expect(!entitlements.isUnlocked(.bulwark))
+        #expect(entitlements.isUnlocked(.wraith))
+
+        let reloaded = HullEntitlements(defaults: defaults)
+        #expect(!reloaded.isUnlocked(.bulwark))
+        #expect(reloaded.isUnlocked(.wraith))
+    }
+
+    @Test("An unstarted store sells nothing and quotes no price")
+    func idleStoreHasNoPrices() {
+        let entitlements = HullEntitlements(defaults: UserDefaults(suiteName: "hull-idle-\(UUID().uuidString)")!)
+        let store = HullStore(entitlements: entitlements)
+        #expect(store.phase == .idle)
+        #expect(store.purchasing == nil)
+        for spec in HullCatalog.premium { #expect(store.price(for: spec.hull) == nil) }
+    }
+}

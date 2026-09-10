@@ -11,7 +11,10 @@ struct AppRootView: View {
     /// Drawn once and kept: the pace ship should not change hulls every time
     /// the pilot restarts a race.
     @State private var rivalHull = PilotProfileStore().rivalHull()
-    @State private var entitlements = HullEntitlements()
+    @State private var entitlements: HullEntitlements
+    /// StoreKit for the premium hulls. Built here so it shares the one
+    /// `HullEntitlements` the hangar reads; its listener starts in `.task`.
+    @State private var store: HullStore
     @State private var gameMode: GameMode?
     @State private var sheet: MenuSheet?
     /// The track runs on its own engine and its own scene -- no ball, no
@@ -22,6 +25,9 @@ struct AppRootView: View {
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
     init() {
+        let entitlements = HullEntitlements()
+        _entitlements = State(initialValue: entitlements)
+        _store = State(initialValue: HullStore(entitlements: entitlements))
         let arguments = ProcessInfo.processInfo.arguments
         let demoMode = arguments.contains("--demo")
         let diagnosticsPreviewMode = arguments.contains("--online-diagnostics-preview")
@@ -90,7 +96,7 @@ struct AppRootView: View {
                 .id(gameMode)
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
             } else if showOnboarding {
-                OnboardingFlow(profile: profile, entitlements: entitlements) { launch in
+                OnboardingFlow(profile: profile, entitlements: entitlements, store: store) { launch in
                     withAnimation(.easeOut(duration: 0.25)) {
                         showOnboarding = false
                         if launch { gameMode = .solo(.rookie) }
@@ -111,6 +117,17 @@ struct AppRootView: View {
             lobby.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
                 online.authenticate()
+            }
+        }
+        .task {
+            // Runs for the app's lifetime: the listener has to be up before
+            // the hangar opens, or an Ask to Buy approval or a purchase made
+            // on another device lands with nobody home.
+            await store.start()
+            // A refund can revoke the hull the pilot is flying. Put them back
+            // in something they own rather than launching a locked ship.
+            if !entitlements.isUnlocked(profile.selectedHull) {
+                profile.selectedHull = .lancet
             }
         }
         .onChange(of: tuning.snapshot) { _, snapshot in online.preferredTuning = snapshot }
@@ -163,7 +180,7 @@ struct AppRootView: View {
                     showOnboarding = true
                 }).presentationDetents([.large])
             case .hangar:
-                HangarSheet(profile: profile, entitlements: entitlements)
+                HangarSheet(profile: profile, entitlements: entitlements, store: store)
             case .lobby:
                 LobbyView(lobby: lobby, online: online)
                     .presentationDetents([.large])

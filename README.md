@@ -1,6 +1,6 @@
 # ASTROSPIKE
 
-ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and later. Two momentum-driven landers volley a fast, highly elastic luminous ball around a single centre net that hangs from the roof, trying to lift it up and drive it through the net itself — a portal the ball vanishes into.
+ASTROSPIKE is a free-to-play, landscape-only iPhone and iPad arena game for iOS 18 and later. Every mode and every rule is free; the only in-app purchases are four cosmetic hulls, which change nothing about how a ship flies, bounces or scores. Two momentum-driven landers volley a fast, highly elastic luminous ball around a single centre net that hangs from the roof, trying to lift it up and drive it through the net itself — a portal the ball vanishes into.
 
 ## Project layout
 
@@ -8,6 +8,9 @@ ASTROSPIKE is a free, landscape-only iPhone and iPad arena game for iOS 18 and l
 - `ASTROSPIKECore/` — deterministic `SIMD2<Double>` simulation, arena geometry, match rules, AI, binary wire protocol, prediction reconciliation, and reconnect state machine.
 - `ASTROSPIKECoreTests/` — physics, collision, scoring, AI, networking, performance, and soak tests.
 - `ASTROSPIKEUITests/` — landscape home, tutorial/settings, solo, and pause flows.
+- `ASTROSPIKE/ASTROSPIKE.storekit` — local StoreKit prices for the premium hulls. Attached to the scheme's
+  Run action only, so **Product ▸ Run from Xcode** exercises the real purchase path without App Store Connect.
+  It is not copied into the shipped bundle, and `xcodebuild test` does not pick it up.
 - `project.yml` — XcodeGen source of truth for the Xcode 26.6 project.
 
 SpriteKit only renders immutable `WorldState` snapshots. It does not own physics, scoring, AI, or network authority.
