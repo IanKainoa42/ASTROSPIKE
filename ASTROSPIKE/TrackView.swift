@@ -2,18 +2,26 @@ import ASTROSPIKECore
 import SpriteKit
 import SwiftUI
 
-/// The mini circuit. Same thumbs as the arena, a very different job: three
-/// laps against one pace car, with the railing as the only opponent that
-/// never makes a mistake.
+/// The mini circuit. The same ship, the same arena box and the same gravity
+/// as a match -- a very different job: three laps down a wide corridor
+/// against one pace ship, with the railing as the only opponent that never
+/// makes a mistake.
 struct TrackView: View {
+    let flight: FlightTuningSnapshot
     let exit: () -> Void
 
-    @State private var session = TrackSession()
+    @State private var session: TrackSession
     @State private var showLeaveConfirmation = false
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
     @Environment(\.scenePhase) private var scenePhase
+
+    init(flight: FlightTuningSnapshot, exit: @escaping () -> Void) {
+        self.flight = flight
+        self.exit = exit
+        _session = State(initialValue: TrackSession(flight: flight))
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -27,18 +35,18 @@ struct TrackView: View {
                         torque: $session.torque,
                         thrust: $session.thrust,
                         fire: .constant(false),
-                        tractor: $session.brake,
+                        tractor: $session.retro,
                         largeControls: largeControls,
                         leftHanded: leftHanded,
                         arenaFrame: Self.arenaFrame(in: geometry),
-                        loadout: .car
+                        loadout: .racer
                     )
                 }
                 KeyboardControls(
                     torque: $session.torque,
                     thrust: $session.thrust,
                     fire: .constant(false),
-                    tractor: $session.brake,
+                    tractor: $session.retro,
                     onCommand: nil
                 )
                 .frame(width: 0, height: 0)
@@ -117,7 +125,7 @@ private struct TrackHUD: View {
             Spacer(minLength: 0)
             penaltyBadge
             Spacer(minLength: 0)
-            carColumn(seat: .rival, name: "PACE CAR", tint: .orange)
+            carColumn(seat: .rival, name: "PACE SHIP", tint: .orange)
         }
         .padding(.horizontal, 18)
         .padding(.top, 8)
@@ -165,7 +173,7 @@ private struct RaceResultsOverlay: View {
     var body: some View {
         let won = session.state.winner == .player
         VStack(spacing: 16) {
-            Text(won ? "CHEQUERED FLAG" : "PACE CAR WINS")
+            Text(won ? "CHEQUERED FLAG" : "PACE SHIP WINS")
                 .font(.system(size: 30, weight: .black, design: .rounded)).tracking(2)
                 .foregroundStyle(won ? .cyan : .orange)
             VStack(spacing: 4) {

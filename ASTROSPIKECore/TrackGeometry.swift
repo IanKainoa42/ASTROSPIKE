@@ -5,7 +5,7 @@ import simd
 /// arena occupies, so the track fills the screen the court already fits.
 ///
 /// The track is defined as a tube around a curve rather than as a pair of
-/// walls. That is the whole trick: a car is on the track when it is within
+/// walls. That is the whole trick: a ship is on the track when it is within
 /// `halfWidth` of the centreline and off it when it is not, which makes the
 /// railing exact everywhere -- through the chicane, round the hairpin, and at
 /// the joins -- without ever intersecting two polylines against each other.
@@ -21,12 +21,12 @@ public struct TrackGeometry: Equatable, Sendable {
         public var arcLength: Double
     }
 
-    /// The corners as laid out: a long start straight along the bottom, a
-    /// right-hand sweeper, a proper chicane across the top, and a long left
-    /// hairpin back onto the straight. Everything else is interpolated.
+    /// The corners as laid out: a start straight along the bottom, a long
+    /// right-hand sweeper, the top straight, and a tighter hairpin back onto
+    /// the bottom. Everything else is interpolated.
     public let controlPoints: [SIMD2<Double>]
-    /// Half the width of the tarmac. A car is `carRadius` narrower than this
-    /// before it touches a rail.
+    /// Half the width of the tarmac. A ship is `shipRadius` narrower than
+    /// this before it touches a rail.
     public let halfWidth: Double
     public let samples: [Sample]
     public let totalLength: Double
@@ -83,32 +83,55 @@ public struct TrackGeometry: Equatable, Sendable {
         totalLength = running
     }
 
-    /// The circuit. Corners are deliberately uneven -- a fast sweeper, a
-    /// double-apex kink, a long hairpin -- so no single line round the lap
-    /// works, and the rail is somewhere different every corner.
+    /// The circuit: a long left-hand loop drawn to the widest corridor the
+    /// arena box will take. It is a stadium rather than a chicane because the
+    /// tarmac is now nearly a third of the arena's height -- there is no room
+    /// left for a kink that a ship the size of a hull could thread, and a
+    /// corner tighter than the tarmac is wide is not a corner, it is a wall
+    /// with a gap in it. The two ends are deliberately different radii, so
+    /// one is a hairpin the ships have to lift for and the other a sweeper
+    /// they can carry speed through.
     ///
-    /// Every corner here is drawn to a radius the car can actually hold. The
-    /// tightest is 0.245 against a corridor of 0.055, so the limit is the
-    /// driver's line and not the geometry: a corner tighter than the tarmac
-    /// is wide is not a corner, it is a wall with a gap in it.
+    /// Every corner is drawn to a radius the flight model can hold: the
+    /// tightest is about 0.32 against a corridor half-width of 0.19, and a
+    /// ship pulling its whole thrust sideways at that radius holds roughly
+    /// 0.7 arena units per second. The outer rail stays inside the arena
+    /// walls on all four sides.
     public static let circuit = TrackGeometry(
         controlPoints: [
-            SIMD2(-0.58, -0.44), // start line, bottom left
-            SIMD2(0.06, -0.48), // the straight
-            SIMD2(0.55, -0.38),
-            SIMD2(0.82, -0.13), // sweeper in
-            SIMD2(0.73, 0.19), // sweeper out
-            SIMD2(0.40, 0.30), // kink, first apex
-            SIMD2(0.04, 0.23), // kink, the dip back
-            SIMD2(-0.30, 0.40), // kink, second apex
-            SIMD2(-0.61, 0.44), // top straight
-            SIMD2(-0.82, 0.19), // hairpin in
-            SIMD2(-0.84, -0.15), // hairpin out
+            SIMD2(0.072, -0.413),
+            SIMD2(0.266, -0.420),
+            SIMD2(0.387, -0.406),
+            SIMD2(0.499, -0.358),
+            SIMD2(0.593, -0.280),
+            SIMD2(0.660, -0.178),
+            SIMD2(0.696, -0.061),
+            SIMD2(0.696, 0.061),
+            SIMD2(0.660, 0.178),
+            SIMD2(0.593, 0.280),
+            SIMD2(0.499, 0.358),
+            SIMD2(0.387, 0.406),
+            SIMD2(0.266, 0.420),
+            SIMD2(0.072, 0.413),
+            SIMD2(-0.121, 0.406),
+            SIMD2(-0.314, 0.400),
+            SIMD2(-0.423, 0.380),
+            SIMD2(-0.524, 0.332),
+            SIMD2(-0.606, 0.257),
+            SIMD2(-0.665, 0.163),
+            SIMD2(-0.696, 0.056),
+            SIMD2(-0.696, -0.056),
+            SIMD2(-0.665, -0.163),
+            SIMD2(-0.606, -0.257),
+            SIMD2(-0.524, -0.332),
+            SIMD2(-0.423, -0.380),
+            SIMD2(-0.314, -0.400),
+            SIMD2(-0.121, -0.406),
         ],
-        halfWidth: 0.085
+        halfWidth: 0.19
     )
 
-    /// Where the car is relative to the tarmac. `offset` is signed: positive
+    /// Where the ship is relative to the tarmac. `offset` is signed: positive
     /// is left of the direction of travel, so its sign says which rail.
     public struct Placement: Equatable, Sendable {
         public var closest: SIMD2<Double>
@@ -172,8 +195,8 @@ public struct TrackGeometry: Equatable, Sendable {
         )
     }
 
-    /// Where a car sits on the grid. Staggered off the centreline so two cars
-    /// do not start inside each other.
+    /// Where a ship sits on the grid. Staggered off the centreline so two of
+    /// them do not start inside each other.
     public func gridPosition(row: Int, offset: Double) -> (SIMD2<Double>, Double) {
         // A little way back from the line, so the first crossing is a real one.
         let back = 0.06 + 0.075 * Double(row)

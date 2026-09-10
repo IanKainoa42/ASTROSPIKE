@@ -12,7 +12,7 @@ struct AppRootView: View {
     @State private var sheet: MenuSheet?
     /// The track runs on its own engine and its own scene -- no ball, no
     /// teams, no rulebook -- so it sits beside `gameMode` rather than in it.
-    @State private var showTrack = false
+    @State private var showTrack: Bool
     @State private var showOnboarding: Bool
     @Environment(\.scenePhase) private var scenePhase
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
@@ -40,7 +40,12 @@ struct AppRootView: View {
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
         let lobbyMode = arguments.contains("--lobby")
-        let bypass = demoMode || warmupMode || diagnosticsPreviewMode || lobbyMode || arguments.contains("--skip-onboarding")
+        // `--track` drops straight onto the circuit, for the same reason
+        // `--warmup` drops into the bay: the simulator cannot work a sheet.
+        let trackMode = arguments.contains("--track")
+        _showTrack = State(initialValue: trackMode)
+        let bypass = demoMode || warmupMode || diagnosticsPreviewMode || lobbyMode || trackMode
+            || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
         // `--lobby` opens the board straight away; the simulator cannot tap it.
         _sheet = State(initialValue: lobbyMode ? .lobby : nil)
@@ -50,7 +55,9 @@ struct AppRootView: View {
         ZStack {
             CosmicBackground()
             if showTrack {
-                TrackView { withAnimation(.easeOut(duration: 0.25)) { showTrack = false } }
+                TrackView(flight: tuning.snapshot) {
+                    withAnimation(.easeOut(duration: 0.25)) { showTrack = false }
+                }
                     .transition(.opacity)
             } else if let gameMode {
                 GameView(

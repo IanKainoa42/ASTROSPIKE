@@ -3,8 +3,9 @@ import SpriteKit
 import UIKit
 
 /// The circuit, drawn. It shares the arena's screen box so the track fills the
-/// window exactly where the court would, and it shares nothing else: there is
-/// no ball, no net and no scoreboard here.
+/// window exactly where the court would, and the ships on it are drawn at the
+/// size they collide at. What it does not draw is the match: no ball, no net
+/// and no scoreboard here.
 @MainActor
 final class TrackScene: SKScene {
     var snapshot: TrackState? { didSet { renderSnapshot() } }
@@ -168,7 +169,7 @@ final class TrackScene: SKScene {
     private func renderSnapshot() {
         guard let snapshot else { return }
         buildTrack()
-        let length = carLengthInPoints
+        let length = shipLengthInPoints
         for seat in TrackSeat.allCases {
             guard let car = snapshot.cars[seat],
                   let node = carNodes[seat],
@@ -197,7 +198,7 @@ final class TrackScene: SKScene {
             } else {
                 node.fillColor = tint.withAlphaComponent(0.85)
                 node.strokeColor = .white
-                let heat = CGFloat(min(1, abs(car.speed) / 1.05))
+                let heat = CGFloat(min(1, car.speed / TrackConfiguration().paceTopSpeed))
                 glow.fillColor = tint.withAlphaComponent(0.05 + 0.16 * heat)
             }
         }
@@ -233,7 +234,7 @@ final class TrackScene: SKScene {
 
     // MARK: - Geometry
 
-    /// Cars, sparks and the tarmac all share the court's screen box, so the
+    /// Ships, sparks and the tarmac all share the court's screen box, so the
     /// track sits exactly where the arena would and the HUD above it does not
     /// have to move between modes.
     private var trackRect: CGRect { ArenaScene.arenaRect(in: size) }
@@ -243,7 +244,15 @@ final class TrackScene: SKScene {
         return CGFloat(track.halfWidth * 2 / (ArenaGeometry.standard.halfWidth * 2)) * rect.width
     }
 
-    private var carLengthInPoints: CGFloat { tarmacWidthInPoints * 0.52 }
+    /// The ship is drawn at the size it actually collides at, not at a
+    /// fraction of the tarmac. The corridor is more than twice as wide as it
+    /// used to be, and a hull scaled off it would have grown with it -- what
+    /// flies round here is the same 0.048-radius hull a match flies.
+    private var shipLengthInPoints: CGFloat {
+        let arena = ArenaGeometry.standard
+        let hull = TrackConfiguration().shipRadius * 2
+        return CGFloat(hull / (arena.halfWidth * 2)) * trackRect.width
+    }
 
     private func point(_ world: SIMD2<Double>) -> CGPoint {
         let rect = trackRect

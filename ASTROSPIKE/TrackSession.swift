@@ -4,9 +4,12 @@ import QuartzCore
 import SwiftUI
 
 /// The circuit's session: a fixed-step pump around `TrackEngine`, the same
-/// shape as `GameSession` but with none of its match plumbing. There is no
-/// online path here on purpose -- the track is a local time trial against one
-/// pace car, and nothing it produces has ever crossed the wire.
+/// shape as `GameSession` but with none of its match plumbing. The ship it
+/// flies is the match's ship, under the match's gravity and off the match's
+/// tuning sliders -- what the circuit drops is the ball, the net, the teams
+/// and the rulebook, not the flight model. There is still no online path
+/// here: the race is a local three-lapper against one pace ship, and nothing
+/// it produces has ever crossed the wire.
 @MainActor
 @Observable
 final class TrackSession {
@@ -15,7 +18,8 @@ final class TrackSession {
 
     var torque = 0.0
     var thrust = false
-    var brake = false
+    /// The retro pad. A ship has no brake, so this burns out of the tail.
+    var retro = false
 
     let scene: TrackScene
     private var engine: TrackEngine
@@ -24,8 +28,19 @@ final class TrackSession {
     private var accumulator = 0.0
     private var tick: UInt64 = 0
 
-    init(track: TrackGeometry = .circuit, lapsToWin: Int = 3) {
-        let engine = TrackEngine(track: track, lapsToWin: lapsToWin)
+    private let flight: FlightTuningSnapshot
+
+    init(
+        track: TrackGeometry = .circuit,
+        flight: FlightTuningSnapshot = .defaults,
+        lapsToWin: Int = 3
+    ) {
+        self.flight = flight
+        let engine = TrackEngine(
+            track: track,
+            configuration: TrackConfiguration(flight: flight),
+            lapsToWin: lapsToWin
+        )
         self.engine = engine
         state = engine.state
         scene = TrackScene(track: track)
@@ -62,7 +77,11 @@ final class TrackSession {
     func resume() { isPaused = false }
 
     func restart() {
-        engine = TrackEngine(track: engine.track, lapsToWin: state.lapsToWin)
+        engine = TrackEngine(
+            track: engine.track,
+            configuration: TrackConfiguration(flight: flight),
+            lapsToWin: state.lapsToWin
+        )
         state = engine.state
         scene.snapshot = engine.state
         accumulator = 0
@@ -101,7 +120,7 @@ final class TrackSession {
             torque: max(-1, min(1, torque)),
             thrust: thrust,
             fire: false,
-            tractor: brake
+            tractor: retro
         )
         engine.step(input: input)
         tick &+= 1
@@ -111,8 +130,8 @@ final class TrackSession {
             scene.present(events)
             announce(events)
         }
-        // The engine note follows the throttle, not the button: a car sliding
-        // through a penalty makes no noise, because it has no drive.
+        // The thruster note follows the burn, not the button: a ship sliding
+        // through a penalty makes no noise, because its engine is out.
         let driving = thrust && state.phase == .racing && player?.isStunned == false
         if driving {
             SoundBank.shared.startLoop(

@@ -5,7 +5,7 @@ import UIKit
 struct TouchControls: View {
     enum Loadout: Equatable {
         case ship
-        case car
+        case racer
     }
 
     @Binding var torque: Double
@@ -18,9 +18,10 @@ struct TouchControls: View {
     /// either side of it: a thumb never has to reach past the court's edge
     /// and never covers the play.
     let arenaFrame: CGRect
-    /// What the pads are flying. The circuit has no cannon and its beam pad is
-    /// a brake, so the same four thumb positions serve both without the driver
-    /// hunting for a trigger that does nothing.
+    /// What the pads are flying. Both fly the same ship; the circuit just has
+    /// no cannon, and its beam pad burns out of the tail instead. The same
+    /// four thumb positions serve both, so nobody hunts for a trigger that
+    /// does nothing.
     var loadout: Loadout = .ship
 
     @State private var leftPressed = false
@@ -259,10 +260,10 @@ struct TouchControls: View {
 
     private func tractorPad(chrome: CGSize) -> some View {
         ControlZone(
-            icon: loadout == .car ? "minus.circle.fill" : "arrow.down.to.line.compact",
-            label: loadout == .car ? "Brake" : "Tractor beam",
+            icon: loadout == .racer ? "arrow.uturn.backward.circle.fill" : "arrow.down.to.line.compact",
+            label: loadout == .racer ? "Retro burn" : "Tractor beam",
             identifier: "tractor-control",
-            tint: loadout == .car ? .red : .purple,
+            tint: loadout == .racer ? .red : .purple,
             active: tractorPressed, chrome: chrome, bottomPadding: 12,
             pressChanged: setTractorPressed
         )

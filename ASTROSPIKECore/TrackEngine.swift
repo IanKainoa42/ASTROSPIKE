@@ -12,39 +12,50 @@ public enum RacePhase: String, Equatable, Sendable {
     case finished
 }
 
-/// Why a car is being held up. Shown on the car itself, because a penalty the
-/// driver cannot see is just the controls going wrong.
+/// Why a ship is being held up. Shown on the ship itself, because a penalty
+/// the pilot cannot see is just the controls going wrong.
 public enum PenaltyReason: String, Equatable, Sendable {
     case railing
 }
 
+/// One racer. It is a hull, not a car: it flies the same model the match
+/// does -- a velocity vector under constant gravity, turned by torque and
+/// pushed along the nose by thrust -- and the tarmac underneath it is a
+/// corridor rather than a road surface. Nothing here grips.
 public struct CarState: Equatable, Sendable {
     public var position: SIMD2<Double>
-    /// Which way the nose points, radians.
+    /// Which way the nose points, radians. Turns at the match's torque rate.
     public var heading: Double
-    /// Along the nose, arena units per second. Negative is reverse.
-    public var speed: Double
-    /// Ticks left on the stun. Throttle and steering are dead while it runs.
+    /// Where the ship is actually going, arena units per second. A ship does
+    /// not travel along its nose -- it travels along whatever the last burn
+    /// left it with, and gravity is pulling on that the whole way round.
+    public var velocity: SIMD2<Double>
+    /// The burn currently coming out of the nose, so a ramped thrust curve
+    /// behaves here exactly as it does in a match.
+    public var thrustLevel: Double
+    /// Ticks left on the stun. Torque and thrust are dead while it runs;
+    /// gravity is not.
     public var stunTicksRemaining: UInt64
     public var penaltyReason: PenaltyReason?
     /// Seconds added to this lap for hitting the railing.
     public var penaltySeconds: Double
     /// Laps completed, as a real number. Counted from the distance actually
-    /// driven round the loop, so reversing over the line does not add one and
-    /// cutting back across it does not either.
+    /// flown round the loop, so drifting back over the line does not add one
+    /// and cutting back across it does not either.
     public var lapProgress: Double
     public var lapsCompleted: Int
     public var lapClock: Double
     public var bestLapSeconds: Double?
     /// Position round the lap on the previous tick, for the progress delta.
     public var lastProgress: Double
-    /// How far off the centreline the car is, signed. Kept for the renderer.
+    /// How far off the centreline the ship is, signed. Kept for the renderer.
     public var railOffset: Double
 
     public init(
         position: SIMD2<Double>,
         heading: Double,
-        speed: Double = 0,
+        velocity: SIMD2<Double> = .zero,
+        thrustLevel: Double = 0,
         stunTicksRemaining: UInt64 = 0,
         penaltyReason: PenaltyReason? = nil,
         penaltySeconds: Double = 0,
@@ -57,7 +68,8 @@ public struct CarState: Equatable, Sendable {
     ) {
         self.position = position
         self.heading = heading
-        self.speed = speed
+        self.velocity = velocity
+        self.thrustLevel = thrustLevel
         self.stunTicksRemaining = stunTicksRemaining
         self.penaltyReason = penaltyReason
         self.penaltySeconds = penaltySeconds
@@ -68,6 +80,9 @@ public struct CarState: Equatable, Sendable {
         self.lastProgress = lastProgress
         self.railOffset = railOffset
     }
+
+    /// How fast it is going, whichever way it happens to be pointing.
+    public var speed: Double { simd_length(velocity) }
 
     public var isStunned: Bool { stunTicksRemaining > 0 }
 }
@@ -98,7 +113,7 @@ public struct TrackState: Equatable, Sendable {
 }
 
 public enum TrackEvent: Equatable, Sendable {
-    /// A car scraped the railing. The position is where it touched.
+    /// A ship scraped the railing. The position is where it touched.
     case railStrike(seat: TrackSeat, position: SIMD2<Double>, speed: Double)
     case lapCompleted(seat: TrackSeat, lap: Int, seconds: Double)
     case raceFinished(winner: TrackSeat)
@@ -106,70 +121,88 @@ public enum TrackEvent: Equatable, Sendable {
 
 public struct TrackConfiguration: Equatable, Sendable {
     public var stepDuration: Double
-    /// Top speed under power, arena units per second.
-    public var maximumSpeed: Double
-    public var acceleration: Double
-    /// How hard the brake pad pulls it up. Held past a stop it reverses.
-    public var braking: Double
-    public var reverseSpeed: Double
-    /// Rolling resistance with the throttle shut.
-    public var coastDrag: Double
-    /// Radians per second at full lock, once the car is up to `steeringBite`.
-    public var steeringRate: Double
-    /// Below this speed the steering does nothing -- the same as a real car,
-    /// and it stops a stunned car from pirouetting on the spot.
-    public var steeringBite: Double
-    /// How much of the car's speed survives a scrape along the railing.
+    /// The same pull the match runs under, and it never lets up: there is no
+    /// floor here, only the rail the ship falls onto if it stops flying.
+    public var gravity: SIMD2<Double>
+    public var initialThrustAcceleration: Double
+    public var maximumThrustAcceleration: Double
+    public var thrustRampRate: Double
+    /// Radians per second at full lock. The match's rotation rate.
+    public var torqueAcceleration: Double
+    /// The burn out of the tail. A ship has no brake, and a corridor race
+    /// with no way to shed speed is a race nobody finishes, so the pad that
+    /// works the tractor beam in a match works a retro burn here.
+    public var retroAcceleration: Double
+    /// How much of the ship's speed survives a scrape along the railing.
     public var railSpeedKept: Double
     /// How long the controls stay dead after a scrape.
     public var railStunSeconds: Double
     /// What a scrape costs on the lap clock.
     public var railPenaltySeconds: Double
-    /// The car's own radius. It touches the railing this far from it.
-    public var carRadius: Double
+    /// The hull's own radius, the same 0.048 the arena collides against. It
+    /// touches the railing this far from it.
+    public var shipRadius: Double
     /// Seconds of lights before the flag drops.
     public var countdownSeconds: Double
-    /// The rival's share of the player's top speed. Under one, so a clean
-    /// lap beats it and a scrappy one does not.
+    /// The pace ship's own ceiling on the straights, arena units per second.
+    /// The player has no ceiling, exactly as in a match.
+    public var paceTopSpeed: Double
+    /// The share of the cornering limit the pace ship actually uses. Under
+    /// one, so a clean lap beats it and a scrappy one does not.
     public var rivalPace: Double
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
-        maximumSpeed: Double = 1.05,
-        acceleration: Double = 1.5,
-        braking: Double = 2.2,
-        reverseSpeed: Double = 0.32,
-        coastDrag: Double = 0.55,
-        steeringRate: Double = 4.6,
-        steeringBite: Double = 0.12,
-        railSpeedKept: Double = 0.22,
+        gravity: SIMD2<Double> = SIMD2(0, -0.5),
+        initialThrustAcceleration: Double = 2.75,
+        maximumThrustAcceleration: Double = 2.75,
+        thrustRampRate: Double = 0,
+        torqueAcceleration: Double = 5.5,
+        retroAcceleration: Double = 1.8,
+        railSpeedKept: Double = 0.30,
         railStunSeconds: Double = 0.6,
         railPenaltySeconds: Double = 1.0,
-        carRadius: Double = 0.030,
+        shipRadius: Double = 0.048,
         countdownSeconds: Double = 3,
+        paceTopSpeed: Double = 1.30,
         rivalPace: Double = 0.88
     ) {
         self.stepDuration = stepDuration
-        self.maximumSpeed = maximumSpeed
-        self.acceleration = acceleration
-        self.braking = braking
-        self.reverseSpeed = reverseSpeed
-        self.coastDrag = coastDrag
-        self.steeringRate = steeringRate
-        self.steeringBite = steeringBite
+        self.gravity = gravity
+        self.initialThrustAcceleration = initialThrustAcceleration
+        self.maximumThrustAcceleration = maximumThrustAcceleration
+        self.thrustRampRate = thrustRampRate
+        self.torqueAcceleration = torqueAcceleration
+        self.retroAcceleration = retroAcceleration
         self.railSpeedKept = max(0, min(1, railSpeedKept))
         self.railStunSeconds = max(0, railStunSeconds)
         self.railPenaltySeconds = max(0, railPenaltySeconds)
-        self.carRadius = carRadius
+        self.shipRadius = shipRadius
         self.countdownSeconds = max(0, countdownSeconds)
+        self.paceTopSpeed = max(0.2, paceTopSpeed)
         self.rivalPace = max(0.1, min(1.4, rivalPace))
+    }
+
+    /// The race flown on the match's own numbers. Move the gravity or thrust
+    /// slider and the circuit moves with it, because the pilot asked for the
+    /// same ship in the same arena and a race tuned separately would not be
+    /// that.
+    public init(flight: FlightTuningSnapshot) {
+        self.init(
+            gravity: SIMD2(0, -flight.gravityMagnitude),
+            initialThrustAcceleration: flight.thrustAcceleration,
+            maximumThrustAcceleration: flight.thrustAcceleration,
+            torqueAcceleration: flight.rotationAcceleration,
+            retroAcceleration: flight.thrustAcceleration * 0.65
+        )
     }
 }
 
-/// The circuit's own engine. It shares nothing with `SimulationEngine` but the
-/// fixed step and the input type: there is no ball, no net, no teams and no
-/// rulebook here, and pretending otherwise would have meant threading a
-/// nil ball through every method in the arena.
+/// The circuit's own engine. It shares the fixed step, the input type and now
+/// the flight model with `SimulationEngine`: a ship here answers the pads
+/// exactly as it does in a match, under the same gravity, inside the same
+/// arena box. What it does not share is any of the match: no ball, no net, no
+/// teams and no rulebook -- only a corridor, a railing and a lap counter.
 public struct TrackEngine: Sendable {
     public let track: TrackGeometry
     public private(set) var configuration: TrackConfiguration
@@ -190,7 +223,7 @@ public struct TrackEngine: Sendable {
         // The grid sits behind the line, so the lap counter starts negative by
         // exactly the run-up. Lap one then ends at the line rather than back
         // at the grid.
-        func gridCar(_ point: SIMD2<Double>, _ heading: Double) -> CarState {
+        func gridShip(_ point: SIMD2<Double>, _ heading: Double) -> CarState {
             let progress = track.placement(of: point).progress
             return CarState(
                 position: point,
@@ -201,8 +234,8 @@ public struct TrackEngine: Sendable {
         }
         state = TrackState(
             cars: [
-                .player: gridCar(playerPoint, playerHeading),
-                .rival: gridCar(rivalPoint, rivalHeading),
+                .player: gridShip(playerPoint, playerHeading),
+                .rival: gridShip(rivalPoint, rivalHeading),
             ],
             lapsToWin: max(1, lapsToWin)
         )
@@ -237,10 +270,7 @@ public struct TrackEngine: Sendable {
         for seat in TrackSeat.allCases {
             guard var car = state.cars[seat] else { continue }
             let control = seat == .player ? input : rivalInput(for: car)
-            let topSpeed = seat == .player
-                ? configuration.maximumSpeed
-                : configuration.maximumSpeed * configuration.rivalPace
-            advance(car: &car, seat: seat, control: control, topSpeed: topSpeed, events: &events)
+            advance(car: &car, seat: seat, control: control, events: &events)
             state.cars[seat] = car
         }
 
@@ -257,7 +287,6 @@ public struct TrackEngine: Sendable {
         car: inout CarState,
         seat: TrackSeat,
         control: PlayerInput,
-        topSpeed: Double,
         events: inout [TrackEvent]
     ) {
         let dt = configuration.stepDuration
@@ -268,59 +297,59 @@ public struct TrackEngine: Sendable {
             if car.stunTicksRemaining == 0 { car.penaltyReason = nil }
         }
 
-        // A stunned car keeps rolling but answers nothing: no throttle, no
-        // brake, no steering. That is the penalty -- you are a passenger for
-        // six tenths of a second, in whatever direction you were pointing.
-        if !car.isStunned {
-            if control.thrust {
-                car.speed = min(topSpeed, car.speed + configuration.acceleration * dt)
-            } else if control.tractor {
-                car.speed = max(
-                    -configuration.reverseSpeed,
-                    car.speed - configuration.braking * dt
-                )
-            } else {
-                let drag = configuration.coastDrag * dt
-                car.speed = car.speed > 0
-                    ? max(0, car.speed - drag)
-                    : min(0, car.speed + drag)
-            }
+        // A stunned ship answers nothing: no torque, no thrust, no retro.
+        // That is the penalty -- you are a passenger for six tenths of a
+        // second, and gravity is the only thing still flying you.
+        let listening = !car.isStunned
 
-            // Steering scales with speed, so the car turns in and not on the
-            // spot. Reversing steers the other way, as it does in a car park.
-            // With power on it keeps some authority at a standstill: a car
-            // pinned nose-first against the railing has to be able to get its
-            // front round, or the penalty is a dead end rather than a cost.
-            let motionBite = min(1, abs(car.speed) / max(configuration.steeringBite, 1e-6))
-            let poweredBite = (control.thrust || control.tractor) ? 0.5 : 0
-            let bite = max(motionBite, poweredBite)
-            let direction: Double = car.speed < 0 ? -1 : 1
-            car.heading += control.torque * configuration.steeringRate * bite * direction * dt
-        } else {
-            let drag = configuration.coastDrag * dt
-            car.speed = car.speed > 0 ? max(0, car.speed - drag) : min(0, car.speed + drag)
+        // The match's flight model, line for line: torque sets the turn rate,
+        // gravity is always on, and thrust pushes along the nose.
+        if listening {
+            car.heading += control.torque * configuration.torqueAcceleration * dt
         }
-
-        let axis = SIMD2(cos(car.heading), sin(car.heading))
-        car.position += axis * (car.speed * dt)
+        var acceleration = configuration.gravity
+        let nose = SIMD2(cos(car.heading), sin(car.heading))
+        if listening, control.thrust {
+            car.thrustLevel = car.thrustLevel > 0
+                ? min(
+                    configuration.maximumThrustAcceleration,
+                    car.thrustLevel + configuration.thrustRampRate * dt
+                )
+                : configuration.initialThrustAcceleration
+            acceleration += nose * car.thrustLevel
+        } else {
+            car.thrustLevel = 0
+        }
+        if listening, control.tractor {
+            acceleration -= nose * configuration.retroAcceleration
+        }
+        car.velocity += acceleration * dt
+        car.position += car.velocity * dt
 
         // The railing. The tarmac is a tube round the centreline, so being off
-        // the track is one comparison, and putting the car back on it is one
-        // clamp -- true through the chicane and the hairpin alike.
+        // the track is one comparison, and putting the ship back on it is one
+        // clamp -- true through the sweeper and the hairpin alike.
         var placement = track.placement(of: car.position)
-        let limit = track.halfWidth - configuration.carRadius
+        let limit = track.halfWidth - configuration.shipRadius
         if abs(placement.offset) > limit {
             let sign: Double = placement.offset < 0 ? -1 : 1
-            let struckAt = placement.closest + placement.normal * (sign * track.halfWidth)
+            let outward = placement.normal * sign
+            let struckAt = placement.closest + outward * track.halfWidth
             // Back onto the tarmac with a little daylight, not flush against
-            // the rail: a car left exactly on the line re-triggers next tick.
-            car.position = placement.closest + placement.normal * (sign * limit * 0.94)
-            // One strike per contact. A car already serving a stun is sliding
-            // along the railing, and charging it again for every tick of that
-            // slide is what turns a penalty into a pin.
+            // the rail: a ship left exactly on the line re-triggers next tick.
+            car.position = placement.closest + outward * (limit * 0.94)
+            let impactSpeed = simd_length(car.velocity)
+            // The rail is solid every tick it is being leaned on: whatever is
+            // heading into it stops there. Without this the ship keeps its
+            // velocity pointed at the wall and drives straight back into it
+            // the instant the stun lifts, which turns a penalty into a pin.
+            let into = simd_dot(car.velocity, outward)
+            if into > 0 { car.velocity -= outward * into }
+            // One strike per contact, and the scrape is charged once. A ship
+            // already serving a stun is sliding along the railing; billing it
+            // for every tick of that slide is the same pin by another route.
             if !car.isStunned {
-                let impactSpeed = abs(car.speed)
-                car.speed *= configuration.railSpeedKept
+                car.velocity *= configuration.railSpeedKept
                 car.stunTicksRemaining = UInt64(
                     (configuration.railStunSeconds / configuration.stepDuration).rounded()
                 )
@@ -332,8 +361,8 @@ public struct TrackEngine: Sendable {
         }
         car.railOffset = placement.offset
 
-        // Lap counting off the distance actually driven, wrapped short. A car
-        // that reverses over the line unwinds its own progress instead of
+        // Lap counting off the distance actually flown, wrapped short. A ship
+        // that drifts back over the line unwinds its own progress instead of
         // banking a lap.
         var delta = placement.progress - car.lastProgress
         if delta > 0.5 { delta -= 1 }
@@ -357,104 +386,135 @@ public struct TrackEngine: Sendable {
         }
     }
 
-    /// The rival drives the line: it aims at a point up the road and holds
-    /// the throttle open, lifting only when the corner ahead is sharper than
-    /// it can take. It is on the same railing rules as the player.
+    /// The pace ship flies the line: it decides where it wants to be going,
+    /// works out the burn that would get it there, and points the nose at
+    /// that burn. It is on the same railing rules as the player.
     private func rivalInput(for car: CarState) -> PlayerInput {
         Self.paceCommand(
             track: track,
             car: car,
             configuration: configuration,
-            topSpeed: configuration.maximumSpeed * configuration.rivalPace,
+            pace: configuration.rivalPace,
             tick: state.tick
         )
     }
 
-    /// The line the pace car drives, as a pure function of the road and the
-    /// car on it. Public so it can be flown against the track on its own,
-    /// without a race around it.
+    /// The line the pace ship flies, as a pure function of the corridor and
+    /// the ship in it. Public so it can be flown against the track on its
+    /// own, without a race around it.
+    ///
+    /// A car planned in heading space: point the nose down the road and open
+    /// the throttle. A ship cannot, because the nose is not where it is
+    /// going and gravity is pulling it off the line the whole time. So the
+    /// plan is made in acceleration space instead. Ask for a velocity -- down
+    /// the road, at whatever the corner ahead allows, crabbing back toward
+    /// the middle of the corridor -- subtract the velocity it has, subtract
+    /// gravity, and what is left is the burn. Point at the burn, and light it
+    /// when the nose is close enough to be pushing the right way.
     public static func paceCommand(
         track: TrackGeometry,
         car: CarState,
         configuration: TrackConfiguration,
-        topSpeed: Double,
+        pace: Double,
         tick: UInt64
     ) -> PlayerInput {
         let placement = track.placement(of: car.position)
-        let top = topSpeed
-        let pace = abs(car.speed) / max(top, 1e-6)
+        let thrust = configuration.maximumThrustAcceleration
+        // Pace has to reach the corners, not just the straights. Nearly all
+        // of this lap is corner, so a pace ship throttled only on the straight
+        // is barely slower at all -- and a pace ship nobody can beat, or one
+        // nobody can lose to, is not a race either way. Cornering speed goes
+        // as the root of the sideways push, so squaring the pace here makes
+        // the corner exactly `pace` times slower too.
+        let topSpeed = configuration.paceTopSpeed * pace
 
-        // Two terms, not one, and the first of them looks at the road *here*
-        // rather than up ahead. Aiming the nose at a point further round the
-        // bend turns the car in early, and turning in early on a curve whose
-        // centreline is itself curving means the car is always heading inside
-        // of where the centreline will be -- it walks itself onto the inner
-        // rail and stays there. Anticipation belongs in the speed target, not
-        // the steering one. So: line the nose up with the road under the car,
-        // then crab back toward the middle by however far off it is.
-        let roadAngle = atan2(placement.tangent.y, placement.tangent.x)
-        var headingError = roadAngle - car.heading
-        while headingError > .pi { headingError -= 2 * .pi }
-        while headingError < -.pi { headingError += 2 * .pi }
-        // Offset is positive to the left of travel, so a positive offset asks
-        // for right lock, which is negative torque. Divided by speed because
-        // the same sideways error needs less lock the faster the car is going.
-        let recentre = atan(2.2 * placement.offset / max(abs(car.speed), 0.25))
-        // Feed-forward. On a corner of constant curvature a purely corrective
-        // driver is always a beat late -- it can only steer once it is already
-        // off the line, so it spends the whole corner catching up and arrives
-        // at the exit against the outside rail. So hand it the corner before
-        // it happens: holding curvature k at speed v needs exactly k * v
-        // radians per second of yaw, which is that fraction of full lock.
-        // Read the corner a little way in front of the nose, not under it: the
-        // car takes a moment to take up the lock, and a corner it starts
-        // turning for on arrival is a corner it turns into late.
-        let bendHere = 0.5 * (
-            signedCurvature(track: track, alongFrom: placement.progress, distance: 0.02)
-                + signedCurvature(track: track, alongFrom: placement.progress, distance: 0.08)
-        )
-        let holdTheCorner = bendHere * car.speed / max(configuration.steeringRate, 1e-6)
-        let torque = max(-1, min(1, holdTheCorner + (headingError - recentre) * 4.0))
-
-        // Brake for the corner, not for the mistake. Walk up the road ahead,
-        // and for every point on it ask two questions: how fast could the car
-        // get round the bend that is there, and -- given it still has that
-        // much road to slow down in -- how fast is it allowed to be going
-        // *now* to arrive at that speed. The lowest answer wins. That is why
-        // it lifts before a corner it cannot yet see the far side of.
-        var wanted = top
+        // How fast it is allowed to be here. Walk the road ahead, and for
+        // every point on it ask two questions: how fast could the ship hold
+        // the bend that is there, and -- given it still has that much road to
+        // slow down in -- how fast is it allowed to be going *now* to arrive
+        // at that speed. The lowest answer wins, which is why it lifts before
+        // a corner it cannot yet see the far side of.
+        //
+        // A ship holding a bend of radius r at speed v needs v * v / r of
+        // sideways push, and everything it has to push with is the thrust. It
+        // cannot spend all of it: some is holding the ship up against gravity
+        // and some is the margin between a fast line and the rail.
+        let lateral = max(0.1, thrust * Self.corneringShare - simd_length(configuration.gravity))
+            * pace * pace
+        // Shedding speed is the retro burn plus whatever gravity happens to
+        // be doing, and gravity is as often against as for, so it is left out.
+        let shedding = max(0.1, configuration.retroAcceleration)
+        var wanted = topSpeed
         var ahead = 0.0
-        while ahead < 0.70 {
+        while ahead < 0.85 {
             let bend = abs(signedCurvature(track: track, alongFrom: placement.progress, distance: ahead))
-            // A car turning at full lock carves a circle of radius v / ω, so
-            // the tightest bend it can hold at speed v has curvature ω / v.
-            // Read backwards: the fastest it can take this bend is ω / κ.
-            let corner = bend > 1e-6
-                ? min(top, configuration.steeringRate / bend * Self.cornerMargin)
-                : top
-            wanted = min(wanted, (corner * corner + 2 * configuration.braking * ahead).squareRoot())
+            let corner = bend > 1e-6 ? min(topSpeed, (lateral / bend).squareRoot()) : topSpeed
+            wanted = min(wanted, (corner * corner + 2 * shedding * ahead).squareRoot())
             ahead += 0.05
         }
-        wanted = max(wanted, top * 0.22)
-        // Pace scales it: a car that is meant to be beatable does not have to
-        // be the one that finds the limit of the corner every time.
-        _ = pace
-        let thrust = abs(car.speed) < wanted
-        let brake = abs(car.speed) > wanted * 1.08
+        wanted = max(wanted, topSpeed * 0.25)
+
+        // Where it wants to be going: down the road, far enough ahead that it
+        // is aiming at the corridor rather than at the point under its nose,
+        // and pulled back toward the centreline by however far off it is.
+        let lookahead = 0.10 + 0.28 * (wanted / max(topSpeed, 1e-6))
+        let target = centreline(track: track, alongFrom: placement.progress, distance: lookahead)
+        var toward = target - car.position
+        let reach = simd_length(toward)
+        toward = reach > 1e-9 ? toward / reach : placement.tangent
+        let wantedVelocity = toward * wanted
+
+        // The burn: close the gap to that velocity inside a couple of tenths,
+        // and carry gravity on top so the ship holds its height as well as
+        // its line.
+        var burn = (wantedVelocity - car.velocity) * Self.velocityGain - configuration.gravity
+        let magnitude = simd_length(burn)
+        if magnitude < 1e-9 { burn = SIMD2(cos(car.heading), sin(car.heading)) }
+
+        let wantHeading = atan2(burn.y, burn.x)
+        var headingError = wantHeading - car.heading
+        while headingError > .pi { headingError -= 2 * .pi }
+        while headingError < -.pi { headingError += 2 * .pi }
+        // Heading integrates straight off the torque, so the exact lock that
+        // lands the nose on the burn this tick is arithmetic, not a guess.
+        let perTick = configuration.torqueAcceleration * configuration.stepDuration
+        let torque = max(-1, min(1, headingError / max(perTick, 1e-9)))
+
+        // Thrust is on or off, never half, so it duty-cycles: light it when
+        // the nose is pushing the right way and the burn asked for is worth
+        // more than the fixed shove it will get.
+        let nose = SIMD2(cos(car.heading), sin(car.heading))
+        let along = simd_dot(nose, burn)
+        let lit = along > thrust * Self.thrustDeadband && abs(headingError) < 1.0
+        // The retro pad, for the case the plan cannot fix by pointing: badly
+        // over the speed it wants, with the nose already turned away.
+        let retro = !lit
+            && simd_length(car.velocity) > wanted * 1.25
+            && simd_dot(nose, car.velocity) < 0
+
         return PlayerInput(
             tick: tick,
             torque: torque,
-            thrust: thrust,
+            thrust: lit,
             fire: false,
-            tractor: brake
+            tractor: retro
         )
     }
 
-    /// How much of the theoretical cornering limit the pace car actually uses.
-    /// Under one because tyres are not the only thing between it and the rail:
-    /// the steering is discrete, the line is not perfect, and a car that takes
-    /// every corner at exactly its limit spends the race in the barriers.
-    private static let cornerMargin = 0.75
+    /// How much of the thrust the pace ship is willing to spend on turning.
+    /// Under one because holding the ship up is not free and because a ship
+    /// that takes every corner at exactly its limit spends the race in the
+    /// barriers.
+    private static let corneringShare = 0.62
+
+    /// How hard the pace ship closes on the velocity it wants, per second.
+    /// High enough to hold a line, low enough that it does not chatter the
+    /// nose back and forth on a straight.
+    private static let velocityGain = 3.2
+
+    /// The share of full thrust a burn has to be worth before the pace ship
+    /// lights it. This is what turns an on/off engine into a throttle.
+    private static let thrustDeadband = 0.34
 
     /// How sharply the road bends `distance` further round the lap, in radians
     /// per arena unit. The magnitude's reciprocal is the corner's radius; the
@@ -479,11 +539,26 @@ public struct TrackEngine: Sendable {
         alongFrom progress: Double,
         distance: Double
     ) -> Double {
-        let along = progress + distance / max(track.totalLength, 1e-6)
-        let wrapped = along - floor(along)
-        let index = Int(wrapped * Double(track.samples.count)) % track.samples.count
-        let tangent = track.samples[index].tangent
+        let tangent = track.samples[sampleIndex(track: track, alongFrom: progress, distance: distance)].tangent
         return atan2(tangent.y, tangent.x)
     }
 
+    /// The point on the centreline `distance` further round the lap.
+    private static func centreline(
+        track: TrackGeometry,
+        alongFrom progress: Double,
+        distance: Double
+    ) -> SIMD2<Double> {
+        track.samples[sampleIndex(track: track, alongFrom: progress, distance: distance)].point
+    }
+
+    private static func sampleIndex(
+        track: TrackGeometry,
+        alongFrom progress: Double,
+        distance: Double
+    ) -> Int {
+        let along = progress + distance / max(track.totalLength, 1e-6)
+        let wrapped = along - floor(along)
+        return Int(wrapped * Double(track.samples.count)) % track.samples.count
+    }
 }
