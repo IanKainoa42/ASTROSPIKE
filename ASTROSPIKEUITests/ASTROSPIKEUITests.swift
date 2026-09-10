@@ -132,7 +132,7 @@ extension ASTROSPIKEUITests {
             XCTFail("no thrust-control; tree: \(tree.prefix(3000))")
             return
         }
-        XCTAssertTrue(app.staticTexts["DRAG THE PADS · SETTINGS TURNS THIS OFF"].exists, "arrange mode not on")
+        XCTAssertTrue(app.staticTexts["DRAG THE PADS"].exists, "arrange mode not on")
         let before = thrust.frame
         let start = thrust.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let end = start.withOffset(CGVector(dx: -160, dy: -80))
@@ -148,5 +148,53 @@ extension ASTROSPIKEUITests {
         XCTAssertTrue(again.waitForExistence(timeout: 8))
         XCTAssertEqual(again.frame.midX, after.midX, accuracy: 2, "offset did not persist: \(after) vs \(again.frame)")
         XCTAssertEqual(again.frame.midY, after.midY, accuracy: 2)
+    }
+}
+
+extension ASTROSPIKEUITests {
+    /// A pad shoved at the corner stops at the corner. The layout ships to
+    /// everyone, and a pad flung past the glass would be gone for good --
+    /// there is no per-pad undo, only the global reset.
+    func testArrangePadsClampToTheScreen() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--warmup", "--skip-onboarding", "-arrangePads", "YES"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let thrust = app.descendants(matching: .any)["thrust-control"]
+        XCTAssertTrue(thrust.waitForExistence(timeout: 8))
+
+        let start = thrust.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let corner = app.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.999))
+        start.press(forDuration: 0.2, thenDragTo: corner)
+
+        let landed = NSPredicate { _, _ in thrust.frame.maxX > 0 }
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: landed, object: nil)], timeout: 2)
+
+        let window = app.frame
+        let pad = thrust.frame
+        XCTAssertLessThanOrEqual(pad.maxX, window.maxX + 1, "pad ran off the right edge: \(pad) in \(window)")
+        XCTAssertLessThanOrEqual(pad.maxY, window.maxY + 1, "pad ran off the bottom: \(pad) in \(window)")
+        XCTAssertGreaterThanOrEqual(pad.minX, window.minX - 1, "pad ran off the left edge: \(pad)")
+        XCTAssertGreaterThanOrEqual(pad.minY, window.minY - 1, "pad ran off the top: \(pad)")
+    }
+
+    /// DONE leaves arrange mode without a trip through Settings, and RESET
+    /// puts the pads back where they were drawn.
+    func testDoneChipLeavesArrangeMode() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--warmup", "--skip-onboarding", "--arrange-pads"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let done = app.buttons["finish-arranging"]
+        XCTAssertTrue(done.waitForExistence(timeout: 8), "no DONE chip in arrange mode")
+        XCTAssertTrue(app.buttons["reset-pads-inline"].exists, "no RESET chip in arrange mode")
+        done.tap()
+        let gone = NSPredicate { _, _ in !app.buttons["finish-arranging"].exists }
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: gone, object: nil)], timeout: 3),
+            .completed,
+            "DONE did not leave arrange mode"
+        )
+        XCTAssertFalse(app.staticTexts["DRAG THE PADS"].exists)
     }
 }

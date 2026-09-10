@@ -53,6 +53,10 @@ struct TouchControls: View {
         "thrust": CGSize(width: -123, height: -246),
     ]
     @State private var dragging: [String: CGSize] = [:]
+    /// Where each pad actually landed on the glass, measured after every
+    /// offset is applied. A drag is committed against this, so a pad can
+    /// never be flung somewhere the pilot cannot reach it again.
+    @State private var padFrames: [String: CGRect] = [:]
 
     /// A margin narrower than this cannot hold a pad; the old full-bleed
     /// split (steer left, engine right) takes over, as on a portrait phone.
@@ -173,12 +177,21 @@ struct TouchControls: View {
             }
             .position(x: thrustX, y: thrustY)
             if arranging {
-                Text("DRAG THE PADS · SETTINGS TURNS THIS OFF")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 8)
-                    .allowsHitTesting(false)
+                HStack(spacing: 10) {
+                    Text("DRAG THE PADS")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                    arrangeChip("RESET", identifier: "reset-pads-inline") {
+                        padOffsets = [:]
+                        dragging = [:]
+                    }
+                    arrangeChip("DONE", identifier: "finish-arranging") {
+                        dragging = [:]
+                        arranging = false
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
             }
         }
     }
@@ -197,12 +210,19 @@ struct TouchControls: View {
     }
 
     /// While arranging, the pad stops taking presses and can be dragged
-    /// anywhere; its offset from the drawn default persists.
+    /// anywhere on the glass; its offset from the drawn default persists.
+    /// The commit is clamped to the window, so a pad the pilot shoves at the
+    /// edge stops at the edge instead of disappearing off it -- the layout is
+    /// shipped to everyone, and a stranger who loses a pad has no way back.
     private func placeable<Pad: View>(_ id: String, scale: CGSize, @ViewBuilder _ pad: () -> Pad) -> some View {
         let raw = Self.bakedOffsets[id] ?? .zero
         let baked = CGSize(width: raw.width * scale.width, height: raw.height * scale.height)
         let saved = padOffsets[id] ?? .zero
         let live = dragging[id] ?? .zero
+        let applied = CGSize(
+            width: baked.width + saved.width + live.width,
+            height: baked.height + saved.height + live.height
+        )
         return pad()
             .allowsHitTesting(!arranging)
             .overlay {
@@ -214,18 +234,70 @@ struct TouchControls: View {
                             DragGesture()
                                 .onChanged { dragging[id] = $0.translation }
                                 .onEnded { value in
-                                    var offsets = padOffsets
-                                    offsets[id] = CGSize(
+                                    let proposed = CGSize(
                                         width: saved.width + value.translation.width,
                                         height: saved.height + value.translation.height
                                     )
+                                    var offsets = padOffsets
+                                    offsets[id] = onGlass(proposed, id: id, baked: baked, applied: applied)
                                     padOffsets = offsets
                                     dragging[id] = nil
                                 }
                         )
                 }
             }
-            .offset(x: baked.width + saved.width + live.width, y: baked.height + saved.height + live.height)
+            .offset(x: applied.width, y: applied.height)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onChange(of: proxy.frame(in: .global), initial: true) { _, frame in
+                            padFrames[id] = frame
+                        }
+                }
+            }
+    }
+
+    /// Pulls a proposed offset back until the pad sits inside the window.
+    /// The measured frame already has `applied` in it, so subtracting that
+    /// recovers where the pad would sit with no offset at all -- everything
+    /// else is arithmetic on that anchor. A pad larger than the window (the
+    /// steering strip on a small phone) is held covering it rather than
+    /// squeezed inside it.
+    private func onGlass(_ proposed: CGSize, id: String, baked: CGSize, applied: CGSize) -> CGSize {
+        guard let measured = padFrames[id], !windowFrame.isEmpty else { return proposed }
+        let anchor = CGPoint(x: measured.minX - applied.width, y: measured.minY - applied.height)
+        let lowX = windowFrame.maxX - measured.width
+        let lowY = windowFrame.maxY - measured.height
+        let x = min(
+            max(anchor.x + baked.width + proposed.width, min(windowFrame.minX, lowX)),
+            max(windowFrame.minX, lowX)
+        )
+        let y = min(
+            max(anchor.y + baked.height + proposed.height, min(windowFrame.minY, lowY)),
+            max(windowFrame.minY, lowY)
+        )
+        return CGSize(width: x - anchor.x - baked.width, height: y - anchor.y - baked.height)
+    }
+
+    /// A small capsule for the arrange banner. Nothing else on the pads is a
+    /// button, so it carries its own look rather than a shared style.
+    private func arrangeChip(
+        _ title: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(Color.white.opacity(0.18)))
+                .overlay(Capsule().stroke(Color.white.opacity(0.45), lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
     }
 
     /// How far the steering strip reaches back over the wall into the court.

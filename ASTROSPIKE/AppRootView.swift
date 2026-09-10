@@ -37,6 +37,13 @@ struct AppRootView: View {
         ) : nil
         // `--warmup` opens the bay directly, for screenshots and simulator checks
         // where Game Center cannot put an invite out.
+        // `--arrange-pads` turns the drag layer on through the same default the
+        // Settings toggle writes, so a test can turn it back off again.
+        // `-arrangePads YES` lands in the argument domain instead, which
+        // nothing at runtime is allowed to overwrite.
+        if arguments.contains("--arrange-pads") {
+            UserDefaults.standard.set(true, forKey: "arrangePads")
+        }
         let warmupMode = arguments.contains("--warmup")
         _gameMode = State(initialValue: diagnosticsPreviewMode ? .online
             : warmupMode ? .warmup
@@ -945,7 +952,7 @@ private struct SettingsView: View {
             Form {
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
-                Toggle("Arrange pads (drag them in the bay)", isOn: $arrangePads)
+                Toggle("Arrange pads (drag them in a match or a race)", isOn: $arrangePads)
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
