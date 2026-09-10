@@ -10,7 +10,10 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public var ballDropSpeed: Double
     public var allowedBouncesPerHit: Int
     public var allowedTouchesPerSide: Int
-    /// 1 = single game, 2 = best of three, 3 = best of five.
+    /// 1 = single game, 2 = best of three, 3 = best of five. This is the one
+    /// place the shipped default lives -- `MatchRuleState`'s own `setsToWin`
+    /// default stays at 1 because a bare rule state is a single set by
+    /// construction, not a match anybody plays.
     public var setsToWin: Int
 
     /// The one baseline every mode flies. The online preset and the warm-up
@@ -25,7 +28,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         ballDropSpeed: 0.06,
         allowedBouncesPerHit: 3,
         allowedTouchesPerSide: 3,
-        setsToWin: 1
+        setsToWin: 2
     )
 
     public var configuration: SimulationConfiguration {

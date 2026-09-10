@@ -5,6 +5,23 @@ import Testing
 @MainActor
 @Suite("Flight tuning persistence")
 struct FlightTuningTests {
+    @Test("A fresh install plays best of three")
+    func freshInstallIsBestOfThree() throws {
+        try withIsolatedDefaults { defaults in
+            #expect(FlightTuningSnapshot.defaults.setsToWin == 2)
+            #expect(FlightTuningStore(defaults: defaults).setsToWin == 2)
+        }
+    }
+
+    @Test("A pilot who already chose single game keeps it")
+    func anExplicitChoiceOutranksTheNewDefault() throws {
+        try withIsolatedDefaults { defaults in
+            let first = FlightTuningStore(defaults: defaults)
+            first.setsToWin = 1
+            #expect(FlightTuningStore(defaults: defaults).setsToWin == 1)
+        }
+    }
+
     @Test("Tuned values survive store reconstruction")
     func valuesPersist() throws {
         try withIsolatedDefaults { defaults in
