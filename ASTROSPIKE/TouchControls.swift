@@ -311,29 +311,28 @@ struct TouchControls: View {
 
     private func steeringPad(chrome: CGSize) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(leftPressed || rightPressed ? Color.cyan.opacity(0.13) : .black.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(Color.cyan.opacity(leftPressed || rightPressed ? 0.34 : 0.10),
-                                lineWidth: leftPressed || rightPressed ? 2 : 1)
-                )
-                .overlay(
-                    VStack(spacing: 10) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "rotate.left")
-                                .font(.system(size: leftPressed ? 34 : 30, weight: .semibold))
-                                .foregroundStyle(Color.cyan.opacity(leftPressed ? 0.82 : 0.28))
-                            Spacer(minLength: 0)
-                            Image(systemName: "rotate.right")
-                                .font(.system(size: rightPressed ? 34 : 30, weight: .semibold))
-                                .foregroundStyle(Color.cyan.opacity(rightPressed ? 0.82 : 0.28))
-                        }
-                        .padding(.horizontal, 10)
-                        trimSliderIndicator(width: chrome.width - 24)
-                    }
-                )
+            RoundedRectangle(cornerRadius: 26)
+                .fill(padWash(tint: .cyan, active: leftPressed || rightPressed))
                 .frame(width: chrome.width, height: chrome.height)
+            steeringSeam
+                .frame(width: seamWidth, height: max(0, chrome.height - 48))
+            VStack(spacing: 10) {
+                HStack(spacing: 4) {
+                    Image(systemName: "rotate.left")
+                        .font(.system(size: 31, weight: .semibold))
+                        .foregroundStyle(Color.cyan.opacity(leftPressed ? 0.58 : 0.34))
+                        .shadow(color: .cyan.opacity(leftPressed ? 0.5 : 0), radius: 11)
+                    Spacer(minLength: 0)
+                    Image(systemName: "rotate.right")
+                        .font(.system(size: 31, weight: .semibold))
+                        .foregroundStyle(Color.cyan.opacity(rightPressed ? 0.58 : 0.34))
+                        .shadow(color: .cyan.opacity(rightPressed ? 0.5 : 0), radius: 11)
+                }
+                .padding(.horizontal, 10)
+                trimSliderIndicator(width: chrome.width - 24)
+            }
+            .frame(width: chrome.width, height: chrome.height)
+            .allowsHitTesting(false)
             SteeringCapture(
                 onTorque: { torque = $0 },
                 onActive: { left, right in leftPressed = left; rightPressed = right }
@@ -374,6 +373,29 @@ struct TouchControls: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The seam between the two halves of the steering strip. Which side of it
+    /// a thumb lands on decides which way the ship turns, so unlike the rest of
+    /// the chrome it does not dissolve sideways -- it is a hairline, and it
+    /// only fades out at its two ends so it still reads as part of the wash.
+    private let seamWidth: CGFloat = 1.5
+
+    private var steeringSeam: some View {
+        Capsule()
+            .fill(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: Color.cyan.opacity(leftPressed || rightPressed ? 0.34 : 0.24),
+                              location: 0.5),
+                        .init(color: .clear, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .allowsHitTesting(false)
+    }
+
     /// A dead strip down the middle so a stray thumb over the arena does nothing.
     private var neutralGap: some View {
         Color.clear.frame(width: largeControls ? 24 : 36)
@@ -391,6 +413,9 @@ struct TouchControls: View {
                     tint: .cyan, active: rightPressed, chrome: steeringChrome, pressChanged: nil
                 )
             }
+            steeringSeam
+                .frame(width: seamWidth)
+                .padding(.vertical, 22)
             trimSliderIndicator(width: steeringChrome.width * 2 - 36)
                 .padding(.bottom, 16)
                 .allowsHitTesting(false)
@@ -432,9 +457,6 @@ struct TouchControls: View {
             Capsule()
                 .fill(Color.white.opacity(0.08))
                 .frame(width: totalWidth, height: 4)
-            Rectangle()
-                .fill(Color.white.opacity(0.35))
-                .frame(width: 2, height: 8)
             Capsule()
                 .fill(Color.cyan.opacity(abs(torque) > 0 ? (isPegged ? 1.0 : 0.85) : 0.25))
                 .frame(width: isPegged ? 24 : 16, height: 6)
@@ -482,6 +504,24 @@ struct TouchControls: View {
     }
 }
 
+/// A pad has no outline any more. It is a wash that is brightest in the middle
+/// and has reached nothing well before its own edge, so it dissolves into the
+/// court instead of drawing a box on top of it. Holding warms the middle and
+/// blooms the icon; it never draws a ring, because the ring was the thing that
+/// kept catching the eye mid-rally.
+fileprivate func padWash(tint: Color, active: Bool) -> EllipticalGradient {
+    EllipticalGradient(
+        stops: [
+            .init(color: tint.opacity(active ? 0.115 : 0.05), location: 0),
+            .init(color: tint.opacity(active ? 0.06 : 0.026), location: 0.55),
+            .init(color: .clear, location: 1)
+        ],
+        center: .center,
+        startRadiusFraction: 0,
+        endRadiusFraction: 0.62
+    )
+}
+
 private struct ControlZone: View {
     let icon: String
     let label: String
@@ -495,19 +535,28 @@ private struct ControlZone: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // Holding anywhere in the zone tints all of it, so it is obvious that
-            // the whole side is the control and not just the drawn rectangle.
+            // the whole side is the control and not just the drawn pad. It has
+            // to fall off the same way the pad does -- a flat fill over the zone
+            // draws a hard square, which is the edge we just took off the pad.
             Rectangle()
-                .fill(tint.opacity(active ? 0.06 : 0))
-            RoundedRectangle(cornerRadius: 20)
-                .fill(active ? tint.opacity(0.13) : .black.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(tint.opacity(active ? 0.34 : 0.10), lineWidth: active ? 2 : 1)
+                .fill(
+                    EllipticalGradient(
+                        stops: [
+                            .init(color: tint.opacity(active ? 0.055 : 0), location: 0),
+                            .init(color: .clear, location: 1)
+                        ],
+                        center: .center,
+                        startRadiusFraction: 0,
+                        endRadiusFraction: 0.72
+                    )
                 )
+            RoundedRectangle(cornerRadius: 26)
+                .fill(padWash(tint: tint, active: active))
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: active ? 30 : 25, weight: .semibold))
-                        .foregroundStyle(tint.opacity(active ? 0.82 : 0.28))
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(tint.opacity(active ? 0.58 : 0.34))
+                        .shadow(color: tint.opacity(active ? 0.5 : 0), radius: 10)
                 )
                 .frame(width: chrome.width, height: chrome.height)
                 .padding(.bottom, bottomPadding)
