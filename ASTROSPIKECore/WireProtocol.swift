@@ -34,7 +34,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 13: ShipState gained ballTouchCooldownTicks -- a ball rattling between a
     //     hull and a wall now spends one touch instead of the whole allowance,
     //     so a build 51 peer would call a fault this build plays through.
-    public static let currentVersion: UInt16 = 13
+    // 14: FlightTuningSnapshot gained tractorStrength, so the seating payload
+    //     a build 58 peer sends no longer decodes -- and a guest that did
+    //     decode it would fly a different beam from the host.
+    public static let currentVersion: UInt16 = 14
 
     public var version: UInt16
     public var sequence: UInt64

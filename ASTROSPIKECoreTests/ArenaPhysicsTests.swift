@@ -38,6 +38,89 @@ struct ArenaPhysicsTests {
         #expect(arena.netHalfWidth < arena.halfWidth * 0.05)
     }
 
+    /// One tick of physics with the ships parked out of the way, so the only
+    /// thing the ball can meet is the goal structure.
+    private func ballOnlyStep(
+        position: SIMD2<Double>,
+        velocity: SIMD2<Double>
+    ) -> (scored: Bool, engine: SimulationEngine) {
+        let ships: [Seat: ShipState] = [
+            .cyan: ShipState(position: SIMD2(-1.4, -0.4), angle: 0, isDestroyed: true, homeSide: .cyan),
+            .orange: ShipState(position: SIMD2(1.4, -0.4), angle: .pi, isDestroyed: true, homeSide: .orange),
+        ]
+        var engine = SimulationEngine(
+            state: WorldState(ships: ships, ball: BallState(position: position))
+        )
+        engine.state.ball.velocity = velocity
+        let before = engine.state.match.score.cyan + engine.state.match.score.orange
+        engine.step(inputs: [:])
+        let after = engine.state.match.score.cyan + engine.state.match.score.orange
+        return (after > before, engine)
+    }
+
+    @Test("A ball driven up into the underside of a lip does not score")
+    func theLipIsTheBottomBar() {
+        // Found by sweeping position x velocity against the unfixed engine:
+        // the one-tick sweep carried the ball clean through the ledge and past
+        // the face, and the goal was awarded before the lip was ever consulted.
+        let result = ballOnlyStep(
+            position: SIMD2(0.060, 0.125),
+            velocity: SIMD2(-0.69, 3.94)
+        )
+        #expect(!result.scored)
+        // And it was actually turned around rather than merely not counted.
+        #expect(result.engine.state.ball.velocity.y < 0)
+    }
+
+    @Test("No shot anywhere scores through the underside of a lip")
+    func noGoalsThroughTheBottomBar() {
+        let arena = ArenaGeometry.standard
+        let configuration = SimulationConfiguration()
+        let dt = configuration.stepDuration
+        // Classify against the same swept segment the engine integrates --
+        // gravity included -- and with a hair off the radius, so a ball that
+        // grazes the very underside of the ledge by a fraction of a percent
+        // is not read as one that went through it.
+        let radius = BallState(position: .zero).radius * 0.99
+        var leaks = 0
+        var goals = 0
+        // Both lips. `lipContact` mirrors through `abs(position.x)`, so a bug
+        // that only leaks on one side is possible in principle -- a one-sided
+        // grid could never turn this test red.
+        for side in [1.0, -1.0] {
+            for xStep in 0 ... 24 {
+                let x = side * (0.058 + Double(xStep) * 0.008)
+                for yStep in 0 ... 24 {
+                    let y = 0.09 + Double(yStep) * 0.006
+                    for speed in [3.0, 5.0, 8.0, 12.0] {
+                        for degrees in stride(from: 100.0, through: 260.0, by: 10.0) {
+                            let angle = degrees * .pi / 180
+                            let velocity = SIMD2(side * cos(angle), sin(angle)) * speed
+                            let result = ballOnlyStep(position: SIMD2(x, y), velocity: velocity)
+                            guard result.scored else { continue }
+                            goals += 1
+                            // Would this shot's own sweep have been sitting under
+                            // the ledge, driving into it? Then it went through the
+                            // bottom bar and should never have counted.
+                            let swept = velocity
+                                + configuration.gravity * configuration.ballGravityMultiplier * dt
+                            let end = SIMD2(x, y) + swept * dt
+                            guard let lip = arena.lipContact(
+                                from: SIMD2(x, y),
+                                to: end,
+                                radius: radius
+                            ) else { continue }
+                            if lip.normal.y < 0, simd_dot(swept, lip.normal) < 0 { leaks += 1 }
+                        }
+                    }
+                }
+            }
+        }
+        // The sweep has to actually be scoring goals, or "no leaks" is vacuous.
+        #expect(goals > 1000)
+        #expect(leaks == 0)
+    }
+
     @Test("The lips tilt inward and are wider than a ball")
     func lipsFeedTheMouth() {
         let arena = ArenaGeometry.standard

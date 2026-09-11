@@ -365,7 +365,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         boltPunch: Double = 1.15,
         exhaustWashStrength: Double = 0.65,
         exhaustWashRange: Double = 0.36,
-        tractorStrength: Double = 1.9,
+        tractorStrength: Double = 2.6,
         tractorRange: Double = 0.82,
         tractorDrag: Double = 2.0,
         sandbox: Bool = false
@@ -1120,6 +1120,26 @@ public struct SimulationEngine: Sendable {
             }
         }
 
+        // The lip is the bottom bar of the goal, and from underneath it is
+        // solid. A ball driven up into it is stopped there -- it must not be
+        // handed the goal just because its one-tick sweep carried it past the
+        // face on the far side of a ledge it never got through. Seen from on
+        // top the lip is still the funnel it always was, so that contact is
+        // left where it has always been: after the goal, further down.
+        var blockedByLip = false
+        if let lip = arena.lipContact(
+            from: previousPosition,
+            to: state.ball.position,
+            radius: r
+        ), lip.normal.y < 0 {
+            let inwardSpeed = simd_dot(state.ball.velocity, lip.normal)
+            if inwardSpeed < 0 {
+                state.ball.position = lip.position
+                state.ball.velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
+                blockedByLip = true
+            }
+        }
+
         // Cap first: the rounded bottom of the net is hard and neutral, so
         // clipping it from below is a rebound rather than a score. Only the two
         // faces above it are the portal, and a ball that reaches one is gone --
@@ -1142,7 +1162,7 @@ public struct SimulationEngine: Sendable {
             radius: r,
             postCenterX: 0
         ) {
-            if netHit.crossedFace, netHit.position.y <= arena.portalMouthTopY {
+            if netHit.crossedFace, !blockedByLip, netHit.position.y <= arena.portalMouthTopY {
                 state.ball.position = netHit.position
                 contacts.append(.ballEnteredGoal(
                     defending: arena.portalScorer(enteredFromLeft: netHit.fromLeft).opponent
@@ -1173,7 +1193,7 @@ public struct SimulationEngine: Sendable {
         // The lips are the one soft surface in the arena: a ball that lands
         // on one is meant to settle and roll down into the mouth, not spring
         // back off. They never count as a bounce -- they are part of the goal.
-        if let lip = arena.lipContact(
+        if !blockedByLip, let lip = arena.lipContact(
             from: previousPosition,
             to: state.ball.position,
             radius: r

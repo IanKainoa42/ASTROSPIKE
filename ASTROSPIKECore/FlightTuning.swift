@@ -8,6 +8,10 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public var ballGravityMultiplier: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
+    /// How hard the tractor beam reels the ball in. Ian's own knob -- the
+    /// beam is the one control that is felt rather than seen, so the strength
+    /// it pulls at is a setting rather than a baked constant.
+    public var tractorStrength: Double
     public var allowedBouncesPerHit: Int
     public var allowedTouchesPerSide: Int
     /// 1 = single game, 2 = best of three, 3 = best of five. This is the one
@@ -26,6 +30,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         ballGravityMultiplier: 0.2,
         ballDropHeight: 0.10,
         ballDropSpeed: 0.06,
+        tractorStrength: 2.6,
         allowedBouncesPerHit: 3,
         allowedTouchesPerSide: 3,
         setsToWin: 2
@@ -41,7 +46,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
             allowedFloorBounces: allowedBouncesPerHit,
-            allowedShipTouches: allowedTouchesPerSide
+            allowedShipTouches: allowedTouchesPerSide,
+            tractorStrength: tractorStrength
         )
     }
 }
@@ -69,6 +75,9 @@ public final class FlightTuningStore {
     public var ballDropSpeed: Double {
         didSet { persist(ballDropSpeed, key: Keys.ballDropSpeed) }
     }
+    public var tractorStrength: Double {
+        didSet { persist(tractorStrength, key: Keys.tractorStrength) }
+    }
     public var allowedBouncesPerHit: Int {
         didSet { defaults.set(allowedBouncesPerHit, forKey: Keys.allowedBouncesPerHit) }
     }
@@ -88,6 +97,12 @@ public final class FlightTuningStore {
         ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
         ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: -0.30 ... 0.10)
         ballDropSpeed = Self.load(defaults, key: Keys.ballDropSpeed, fallback: baked.ballDropSpeed, range: 0 ... 0.8)
+        tractorStrength = Self.load(
+            defaults,
+            key: Keys.tractorStrength,
+            fallback: baked.tractorStrength,
+            range: 1 ... 4.5
+        )
         allowedBouncesPerHit = Self.load(
             defaults,
             key: Keys.allowedBouncesPerHit,
@@ -111,6 +126,7 @@ public final class FlightTuningStore {
             ballGravityMultiplier: ballGravityMultiplier,
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
+            tractorStrength: tractorStrength,
             allowedBouncesPerHit: allowedBouncesPerHit,
             allowedTouchesPerSide: allowedTouchesPerSide,
             setsToWin: setsToWin
@@ -127,6 +143,7 @@ public final class FlightTuningStore {
         ballGravityMultiplier = baked.ballGravityMultiplier
         ballDropHeight = baked.ballDropHeight
         ballDropSpeed = baked.ballDropSpeed
+        tractorStrength = baked.tractorStrength
         allowedBouncesPerHit = baked.allowedBouncesPerHit
         allowedTouchesPerSide = baked.allowedTouchesPerSide
         setsToWin = baked.setsToWin
@@ -164,6 +181,7 @@ public final class FlightTuningStore {
         static let ballGravityMultiplier = "tuning.ballGravityMultiplier"
         static let ballDropHeight = "tuning.ballDropHeight"
         static let ballDropSpeed = "tuning.ballDropSpeed"
+        static let tractorStrength = "tuning.tractorStrength"
         static let allowedBouncesPerHit = "tuning.allowedBouncesPerHit"
         static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
         static let setsToWin = "tuning.setsToWin"
@@ -174,6 +192,7 @@ public final class FlightTuningStore {
             ballGravityMultiplier,
             ballDropHeight,
             ballDropSpeed,
+            tractorStrength,
             allowedBouncesPerHit,
             allowedTouchesPerSide,
             setsToWin,
