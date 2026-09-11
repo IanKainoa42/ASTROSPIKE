@@ -113,6 +113,48 @@ public enum FlightControlMapping {
     }
 }
 
+/// Turns a finger's position on the steering strip into a torque command.
+///
+/// The pad has no modes: a press and a drag are the same gesture. Touching
+/// down places a *virtual centre* one full span past the finger, on the far
+/// side of whichever half was touched, so the first sample already clamps to
+/// full deflection -- a tap still pegs the turn. Sliding back toward that
+/// virtual centre eases the torque down continuously, through zero, and on
+/// into the opposite turn. Sliding the other way (deeper into the turn) can
+/// only stay pegged, never weaken.
+public struct SteeringCurve: Sendable, Equatable {
+    /// Points of travel between neutral and full deflection.
+    public let span: Double
+    /// Slack past full deflection, so jitter while holding a tap stays pegged.
+    public let deadZone: Double
+    /// Shapes the ramp. 1 is linear; above 1 stretches the slow-turn end.
+    public let gamma: Double
+
+    public init(span: Double = 60, deadZone: Double = 8, gamma: Double = 2) {
+        self.span = span
+        self.deadZone = deadZone
+        self.gamma = gamma
+    }
+
+    public static let standard = SteeringCurve()
+
+    /// Where neutral sits for a touch that began at `anchorX` on a pad
+    /// whose midpoint is `midX`.
+    public func virtualCenter(anchorX: Double, midX: Double) -> Double {
+        // Positive torque is a left turn, and the left half of the pad turns
+        // left, so neutral goes to the right of a left-half touch.
+        let direction: Double = anchorX < midX ? 1 : -1
+        return anchorX + direction * (span + deadZone)
+    }
+
+    /// Torque for a finger at `x`, given the neutral point fixed at touch-down.
+    public func torque(x: Double, virtualCenter: Double) -> Double {
+        let u = min(1, max(-1, (virtualCenter - x) / span))
+        let magnitude = pow(abs(u), gamma)
+        return u < 0 ? -magnitude : magnitude
+    }
+}
+
 public struct ControlPressTracker<ID: Hashable & Sendable>: Sendable {
     private var activeIDs: Set<ID> = []
 

@@ -550,15 +550,19 @@ private final class SteeringCaptureView: UIView {
     var onTorqueChanged: ((Double) -> Void)?
     var onActiveChanged: ((Bool, Bool) -> Void)?
 
+    private let curve = SteeringCurve.standard
     private var activeTouchID: ObjectIdentifier?
-    private var touchAnchor: CGPoint = .zero
+    private var virtualCenterX: CGFloat = 0
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
         guard activeTouchID == nil, let touch = touches.first else { return }
-        let id = ObjectIdentifier(touch)
-        activeTouchID = id
-        touchAnchor = touch.location(in: self)
+        activeTouchID = ObjectIdentifier(touch)
+        let anchor = touch.location(in: self)
+        virtualCenterX = CGFloat(curve.virtualCenter(
+            anchorX: Double(anchor.x),
+            midX: Double(bounds.width / 2)
+        ))
         updateTorque(for: touch)
     }
 
@@ -584,36 +588,15 @@ private final class SteeringCaptureView: UIView {
     }
 
     private func updateTorque(for touch: UITouch) {
-        let current = touch.location(in: self)
-        let deltaX = current.x - touchAnchor.x
-        let deadZone: CGFloat = 6.0
-        let pegThreshold: CGFloat = 42.0
-
-        if abs(deltaX) > deadZone {
-            let magnitude = Double(min(1.0, max(0.0, (abs(deltaX) - deadZone) / (pegThreshold - deadZone))))
-            let analogTorque: Double = 0.18 + 0.82 * (magnitude * magnitude)
-            if deltaX < 0 {
-                // Dragging left -> Rotate left (positive torque)
-                let t = min(1.0, analogTorque)
-                onTorqueChanged?(t)
-                onActiveChanged?(true, false)
-            } else {
-                // Dragging right -> Rotate right (negative torque)
-                let t = -min(1.0, analogTorque)
-                onTorqueChanged?(t)
-                onActiveChanged?(false, true)
-            }
-        } else {
-            // Stationary tap: check which half of the steering container was tapped
-            let midX = bounds.width / 2
-            if touchAnchor.x < midX {
-                onTorqueChanged?(1.0)
-                onActiveChanged?(true, false)
-            } else {
-                onTorqueChanged?(-1.0)
-                onActiveChanged?(false, true)
-            }
-        }
+        let torque = curve.torque(
+            x: Double(touch.location(in: self).x),
+            virtualCenter: Double(virtualCenterX)
+        )
+        onTorqueChanged?(torque)
+        // Light the icons off a threshold, not the sign, so passing through
+        // neutral doesn't strobe them.
+        let lit = 0.03
+        onActiveChanged?(torque > lit, torque < -lit)
     }
 
     private func releaseTouch() {
