@@ -491,7 +491,11 @@ final class OnlineMatchCoordinator: NSObject,
         pendingPing = sentAt
         ownPings.append(sentAt)
         if ownPings.count > 4 { ownPings.removeFirst(ownPings.count - 4) }
-        send(.ping(nanoseconds: sentAt), mode: .unreliable)
+        // Best effort on purpose. This fires once a second for the life of the
+        // match, the seat hold included -- and during a hold the pilot it is
+        // addressed to is exactly the one who is gone. A ping that cannot go
+        // out is the thing being measured, not a reason to call the match.
+        sendQuietly(.ping(nanoseconds: sentAt), to: nil, mode: .unreliable)
     }
 
     private func presentMatchmaker(inviteOnly: Bool) {
@@ -778,21 +782,30 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    /// Answer one pilot rather than the table. A ping echoed to everyone is an
-    /// echo every other board then echoes back: at three or four pilots the
-    /// same stamp bounces between them forever, and a heartbeat re-seeds it
-    /// every second.
-    private func send(_ payload: WirePayload, to playerID: String, mode: GKMatch.SendDataMode) {
-        guard let match,
-              let player = match.players.first(where: { $0.gamePlayerID == playerID })
-        else { return }
+    /// The heartbeat and its echoes: best effort, and addressed.
+    ///
+    /// A `playerID` answers one pilot rather than the table, because a ping
+    /// echoed to everyone is an echo every other board then echoes back -- at
+    /// three or four pilots the same stamp bounces between them forever, and a
+    /// heartbeat re-seeds it every second. Nil addresses the table.
+    ///
+    /// Failure here is noted and dropped. Reliable sends carry real state and
+    /// still go through `send(_:mode:)`, which does end the match on a throw.
+    private func sendQuietly(_ payload: WirePayload, to playerID: String?, mode: GKMatch.SendDataMode) {
+        guard let match else { return }
         do {
             sequence &+= 1
             let data = try codec.encode(WireEnvelope(sequence: sequence, payload: payload))
-            try match.send(data, to: [player], dataMode: mode)
+            if let playerID {
+                guard let player = match.players.first(where: { $0.gamePlayerID == playerID })
+                else { return }
+                try match.send(data, to: [player], dataMode: mode)
+            } else {
+                guard !match.players.isEmpty else { return }
+                try match.sendData(toAllPlayers: data, with: mode)
+            }
         } catch {
-            note("SEND FAILED: \(describe(error))")
-            status = .failed(message: "Network send failed")
+            note("PING DROPPED: \(describe(error))")
         }
     }
 
@@ -879,7 +892,7 @@ final class OnlineMatchCoordinator: NSObject,
                 pendingPing = nil
                 return
             }
-            send(.ping(nanoseconds: sentAt), to: playerID, mode: .unreliable)
+            sendQuietly(.ping(nanoseconds: sentAt), to: playerID, mode: .unreliable)
         case let .resync(state):
             if lifecycle.acceptsGameplayData {
                 snapshotGate.reset(to: state.tick)
