@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ASTROSPIKECore
 
@@ -41,12 +42,29 @@ struct TractorBeamTests {
         #expect(engine.state.ball.velocity.y == gravityOnly)
     }
 
-    @Test("The beam is holstered deep in the opponent's half")
-    func beamOnlyFromOwnHalf() {
+    @Test("The beam works anywhere, including deep in the opponent's half")
+    func beamWorksAnywhere() {
         var engine = playing()
         engine.state.ships[.cyan]!.position = .init(0.6, 0)
         engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, tractor: true)])
-        #expect(!engine.state.ships[.cyan]!.tractorActive)
+        #expect(engine.state.ships[.cyan]!.tractorActive)
+    }
+
+    @Test("The cannon stays holstered deep in the opponent's half")
+    func cannonStillHolstered() {
+        var engine = playing()
+        engine.state.ships[.cyan]!.position = .init(0.6, 0)
+        engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
+        #expect(engine.state.bolts.isEmpty)
+    }
+
+    @Test("The drawn cone is the cone that grabs")
+    func coneIsNarrowAndLong() {
+        let engine = playing()
+        // A ball 35 degrees off the nose is outside the cone; 25 is inside.
+        #expect(cos(35 * .pi / 180) < SimulationEngine.tractorCone)
+        #expect(cos(25 * .pi / 180) > SimulationEngine.tractorCone)
+        #expect(engine.configuration.tractorRange > 0.7, "the beam is a long reach")
     }
 
     @Test("S and the down arrow hold the beam; a snapshot with it on still fits an unreliable packet")

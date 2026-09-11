@@ -165,6 +165,7 @@ final class GameSession {
         }
         scene.scaleMode = .resizeFill
         scene.arena = mode.court
+        scene.tractorRange = engine.configuration.tractorRange
         scene.snapshot = state
         if mode == .warmup { scene.rings = rings.rings }
         for seat in Seat.allCases {

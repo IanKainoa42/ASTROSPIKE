@@ -365,8 +365,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
         boltPunch: Double = 1.15,
         exhaustWashStrength: Double = 0.65,
         exhaustWashRange: Double = 0.36,
-        tractorStrength: Double = 1.6,
-        tractorRange: Double = 0.55,
+        tractorStrength: Double = 1.9,
+        tractorRange: Double = 0.82,
         tractorDrag: Double = 2.0,
         sandbox: Bool = false
     ) {
@@ -611,8 +611,9 @@ public struct SimulationEngine: Sendable {
             if input.fire, onOwnHalf, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, owner: seat.team)
             }
-            // Same holster rule as the cannon: the beam only works from home.
-            ship.tractorActive = input.tractor && onOwnHalf
+            // Unlike the cannon, the beam works anywhere on the court — a
+            // pilot can reach into the far half and reel the ball back out.
+            ship.tractorActive = input.tractor
                 && (state.match.phase == .playing || configuration.sandbox)
             state.ships[seat] = ship
         }
@@ -853,7 +854,12 @@ public struct SimulationEngine: Sendable {
     /// nose and gone at `tractorRange`. Like the wash it is not a touch, so
     /// reeling a ball in never counts against the touch limit -- the touch
     /// comes when it lands on the hull.
-    private static let tractorCone = 0.45
+    /// The cosine of the cone's half-angle: higher is narrower. 0.86 is a
+    /// touch under 31 degrees: a long thin reach rather than a wide fan.
+    /// Paired with the longer range it grabs about as much court as the old
+    /// wide cone did, just further out and straighter ahead.
+    /// Public so `ArenaScene` draws the volume that actually grabs.
+    public static let tractorCone = 0.86
 
     private mutating func applyTractorBeam(dt: Double) {
         let range = configuration.tractorRange

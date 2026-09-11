@@ -32,6 +32,9 @@ final class ArenaScene: SKScene {
     private var boltNodes: [UInt64: SKNode] = [:]
     /// The tractor cone ahead of each nose, redrawn every frame it is on.
     private var beamNodes: [Seat: SKShapeNode] = [:]
+    /// How far the beam reaches, taken from the engine that does the pulling
+    /// so the drawing can never disagree with the grab.
+    var tractorRange = SimulationConfiguration().tractorRange
     private var ballTrail: [CGPoint] = []
     private var wakeAnchors: [Seat: CGPoint] = [:]
     private var plumeBudgets: [Seat: Double] = [:]
@@ -56,10 +59,11 @@ final class ArenaScene: SKScene {
         actorLayer.addChild(ball)
         for seat in Seat.allCases {
             let beam = SKShapeNode()
-            beam.fillColor = Self.beamColor.withAlphaComponent(0.16)
-            beam.strokeColor = Self.beamColor.withAlphaComponent(0.55)
-            beam.lineWidth = 1.5
-            beam.glowWidth = 6
+            beam.fillColor = Self.beamColor.withAlphaComponent(0.06)
+            // No stroke: an outline is the loudest thing a shape can wear,
+            // and the beam is meant to be felt in the ball rather than read.
+            beam.strokeColor = .clear
+            beam.lineWidth = 0
             beam.blendMode = .add
             beam.zPosition = 3
             beam.isHidden = true
@@ -678,12 +682,17 @@ final class ArenaScene: SKScene {
     }
 
     /// The beam is drawn as the cone the engine actually uses, tip at the
-    /// nose, so what a pilot sees is exactly what can grab the ball.
+    /// nose, so what a pilot sees is exactly what can grab the ball. Both
+    /// numbers come from the engine; nothing here re-states the geometry.
+    ///
+    /// It is deliberately faint. The beam is meant to be felt in the ball's
+    /// path rather than watched, so the cone sits barely above the floor and
+    /// only leans brighter as the ball comes into its grip.
     private func updateBeam(seat: Seat, state: ShipState) {
         guard let beam = beamNodes[seat] else { return }
         guard state.tractorActive, !state.isDestroyed, let snapshot else { beam.isHidden = true; return }
-        let range = 0.55
-        let halfAngle = acos(0.45)
+        let range = tractorRange
+        let halfAngle = acos(SimulationEngine.tractorCone)
         let nose = state.angle
         let tip = state.position
         let left = tip + SIMD2(cos(nose + halfAngle), sin(nose + halfAngle)) * range
@@ -696,11 +705,18 @@ final class ArenaScene: SKScene {
         path.closeSubpath()
         beam.path = path
         beam.isHidden = false
-        // Brightens as the ball comes into its grip.
+        // Leans up as the ball comes into its grip.
         let distance = simd_length(snapshot.ball.position - tip)
         let grip = max(0, 1 - distance / range)
-        beam.alpha = 0.55 + CGFloat(grip) * 0.45
+        // A slow breath, phased off the tick so both peers see the same one.
+        // There is no update loop here, and wall clock would drift apart.
+        let breath = reduceMotion ? 0 : sin(Double(snapshot.tick % Self.beamPulseTicks)
+            / Double(Self.beamPulseTicks) * 2 * .pi) * 0.05
+        beam.alpha = 0.26 + CGFloat(grip) * 0.22 + CGFloat(breath)
     }
+
+    /// One breath of the beam, in simulation ticks: 1.2s at 120 Hz.
+    private static let beamPulseTicks: UInt64 = 144
 
     /// A drifting ship leaves vapour rather than a pen line: one soft puff
     /// every few points of travel, laid down where the ship was and left to
