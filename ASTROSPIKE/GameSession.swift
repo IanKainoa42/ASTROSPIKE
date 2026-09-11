@@ -226,6 +226,7 @@ final class GameSession {
     func applyTuning(_ configuration: SimulationConfiguration) {
         guard mode.isOffline else { return }
         engine.updateConfiguration(configuration)
+        scene.tractorRange = engine.configuration.tractorRange
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
     }
@@ -233,6 +234,7 @@ final class GameSession {
     func restartRally(with configuration: SimulationConfiguration) {
         guard mode.isOffline, state.match.phase != .finished else { return }
         engine.updateConfiguration(configuration)
+        scene.tractorRange = engine.configuration.tractorRange
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
         engine.prepareNextRally(mirrored: false)

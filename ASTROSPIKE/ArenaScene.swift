@@ -59,7 +59,10 @@ final class ArenaScene: SKScene {
         actorLayer.addChild(ball)
         for seat in Seat.allCases {
             let beam = SKShapeNode()
-            beam.fillColor = Self.beamColor.withAlphaComponent(0.06)
+            // The node's alpha multiplies this one, so the breath below is
+            // worth fill * amplitude on screen. At 0.06 that came to under a
+            // single 8-bit level and the pulse simply wasn't there.
+            beam.fillColor = Self.beamColor.withAlphaComponent(0.11)
             // No stroke: an outline is the loudest thing a shape can wear,
             // and the beam is meant to be felt in the ball rather than read.
             beam.strokeColor = .clear
@@ -711,7 +714,7 @@ final class ArenaScene: SKScene {
         // A slow breath, phased off the tick so both peers see the same one.
         // There is no update loop here, and wall clock would drift apart.
         let breath = reduceMotion ? 0 : sin(Double(snapshot.tick % Self.beamPulseTicks)
-            / Double(Self.beamPulseTicks) * 2 * .pi) * 0.05
+            / Double(Self.beamPulseTicks) * 2 * .pi) * 0.10
         beam.alpha = 0.26 + CGFloat(grip) * 0.22 + CGFloat(breath)
     }
 
