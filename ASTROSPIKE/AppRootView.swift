@@ -378,6 +378,10 @@ private struct GameView: View {
     @State private var session: GameSession
     @State private var showPause = false
     @State private var showLeaveConfirmation = false
+    /// Why the link ended, when it ended for a reason the seat hold does not
+    /// cover. Non-nil puts a card over the arena instead of leaving the pilot
+    /// flying a match that is already over.
+    @State private var linkFailure: String?
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
@@ -497,6 +501,9 @@ private struct GameView: View {
                     .background(.black.opacity(0.66), in: Capsule())
                     .overlay(Capsule().stroke(.white.opacity(0.35)))
             }
+            if let linkFailure, session.state.match.phase != .finished {
+                LinkLostOverlay(message: linkFailure, exit: leaveGame)
+            }
             if session.state.match.phase == .finished {
                 ResultsOverlay(state: session.state, localTeam: localTeam, exit: leaveGame)
             }
@@ -523,6 +530,22 @@ private struct GameView: View {
             // Apple's picker was cancelled under the bay: nothing is pending, so
             // there is nothing to warm up for.
             if mode == .warmup, case .ready = status { exit() }
+            // Every way an online match can end badly that is not the seat
+            // hold -- a send that threw, a GameKit match error, a timeout that
+            // took the transport down -- used to reach this screen as nothing
+            // at all: the arena stayed up, the ship stayed flyable, and the
+            // pilot found out they had been dropped by never scoring again.
+            guard mode == .online else { return }
+            if case let .failed(message) = status {
+                linkFailure = message
+            } else if case .connected = status {
+                linkFailure = nil
+            } else if case .reconnecting = status {
+                // The seat is on hold, which has its own countdown and its own
+                // way out. A LINK LOST card over the top of it says the match
+                // is over while the match is still waiting for them.
+                linkFailure = nil
+            }
         }
         .onChange(of: tuning.snapshot) { _, _ in
             session.applyTuning(tuning.configuration)
@@ -1154,6 +1177,29 @@ private struct PauseView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("pause-screen")
         }
+    }
+}
+
+/// The match is over and it was the network that ended it. One statement of
+/// what happened, one way out.
+private struct LinkLostOverlay: View {
+    let message: String
+    let exit: () -> Void
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .font(.system(size: 40, weight: .semibold)).foregroundStyle(.orange)
+            Text("LINK LOST").font(.caption.monospaced().bold()).tracking(3)
+            Text(message.uppercased())
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 260)
+            Button("Return to Hangar", action: exit).buttonStyle(.borderedProminent).tint(.orange)
+        }
+        .padding(30)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
+        .accessibilityIdentifier("link-lost-screen")
     }
 }
 

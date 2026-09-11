@@ -58,6 +58,46 @@ struct WireProtocolTests {
         #expect(buffer.latest == PlayerInput(tick: 12, torque: 1, thrust: true))
     }
 
+    @Test("A held throttle expires when its pilot goes quiet")
+    func heldInputExpires() {
+        var buffer = RemoteInputBuffer()
+        let burning = PlayerInput(tick: 12, torque: 0, thrust: true)
+        buffer.accept(burning, at: 10)
+
+        #expect(buffer.current(at: 10.4, expiringAfter: 0.5) == burning)
+        #expect(buffer.current(at: 10.5, expiringAfter: 0.5) == nil)
+
+        // A fresh packet puts the throttle back under the pilot's thumb.
+        buffer.accept(PlayerInput(tick: 14, torque: 0, thrust: true), at: 10.6)
+        #expect(buffer.current(at: 10.9, expiringAfter: 0.5)?.tick == 14)
+    }
+
+    @Test("A pilot who goes quiet mid-burn coasts instead of riding the ceiling")
+    func expiredInputStopsTheBurn() {
+        let burning = PlayerInput(tick: 0, torque: 0, thrust: true)
+        var buffer = RemoteInputBuffer()
+        buffer.accept(burning, at: 0)
+
+        var pinned = SimulationEngine.testing()
+        var released = SimulationEngine.testing()
+        let dt = pinned.configuration.stepDuration
+
+        for tick in 0 ..< 200 {
+            let idle = PlayerInput.idle(tick: UInt64(tick))
+            let aged = buffer.current(at: Double(tick) * dt, expiringAfter: 0.5) ?? idle
+            pinned.step(inputs: [.cyan: idle, .orange: burning])
+            released.step(inputs: [.cyan: idle, .orange: aged])
+        }
+
+        let stuck = pinned.state.ships[.orange]!
+        let coasting = released.state.ships[.orange]!
+        // The bug: the host kept flying the last packet it ever got, so the
+        // ship burned all the way up and stayed there.
+        #expect(stuck.position.y > 0.55)
+        #expect(coasting.position.y < stuck.position.y)
+        #expect(coasting.velocity.y < 0)
+    }
+
     @Test("Large prediction errors snap while small errors blend")
     func reconciliationPolicy() {
         let authoritative = ShipState(position: SIMD2(0, 0), angle: 0)

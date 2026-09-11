@@ -81,14 +81,28 @@ public struct WireCodec: Sendable {
 
 public struct RemoteInputBuffer: Sendable {
     public private(set) var latest: PlayerInput?
+    /// When `latest` arrived, on the receiver's own clock.
+    public private(set) var receivedAt: TimeInterval = 0
 
     public init() {}
 
     @discardableResult
-    public mutating func accept(_ input: PlayerInput) -> Bool {
+    public mutating func accept(_ input: PlayerInput, at time: TimeInterval = 0) -> Bool {
         guard latest == nil || input.tick > latest!.tick else { return false }
         latest = input
+        receivedAt = time
         return true
+    }
+
+    /// The pilot's last input, or nil once it is too old to fly by.
+    ///
+    /// A packet is a statement about one tick, not a standing order. Left to
+    /// stand, the last packet from a pilot whose link died holds whatever
+    /// they were doing when it died -- a burn into the roof that never lets
+    /// up. Past the timeout the seat goes quiet and the ship coasts.
+    public func current(at time: TimeInterval, expiringAfter timeout: TimeInterval) -> PlayerInput? {
+        guard let latest, time - receivedAt < timeout else { return nil }
+        return latest
     }
 }
 

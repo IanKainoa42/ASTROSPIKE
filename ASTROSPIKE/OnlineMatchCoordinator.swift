@@ -60,8 +60,19 @@ final class OnlineMatchCoordinator: NSObject,
         for player in match?.players ?? [] { names[player.gamePlayerID] = player.displayName }
         return names
     }
-    /// The latest input from every other pilot, by seat.
-    private(set) var remoteInputs: [Seat: PlayerInput] = [:]
+    /// The latest input from every other pilot, by seat -- and only while it
+    /// is still fresh. A packet is a statement about one tick, not a standing
+    /// order: past `inputExpirySeconds` the seat goes quiet rather than
+    /// keeping a dead pilot's throttle open. Rebuilt on each read, so hoist it
+    /// out of a per-seat loop.
+    var remoteInputs: [Seat: PlayerInput] {
+        let now = Self.now
+        return inputBuffers.compactMapValues {
+            $0.current(at: now, expiringAfter: Self.inputExpirySeconds)
+        }
+    }
+    /// Seats whose first packet has been noted, so the log says it once.
+    private var heardSeats: Set<Seat> = []
     /// Peers whose packets carry another wire version, noted once each.
     private var mismatchedPeers: Set<String> = []
     /// The hulls the peers fly, once their profiles arrive. A seat missing
@@ -204,6 +215,19 @@ final class OnlineMatchCoordinator: NSObject,
     private var match: GKMatch?
     private var sequence: UInt64 = 0
     private var inputBuffers: [Seat: RemoteInputBuffer] = [:]
+    /// When the last packet of any kind arrived from each peer, by player ID.
+    private var lastHeard: [String: TimeInterval] = [:]
+    /// Peers judged gone from silence alone, because GameKit never said so.
+    private var silentPeers: Set<String> = []
+    private var heartbeatTask: Task<Void, Never>?
+    /// This end's own clock, for measuring how long a link has been quiet.
+    private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+    /// How long a pilot's last input stays flyable. Inputs go out every other
+    /// tick, so half a second of nothing is a dead link, not jitter.
+    private static let inputExpirySeconds: TimeInterval = 0.5
+    /// Total silence this long from a seated pilot is a dropped link, whatever
+    /// GameKit still says. Pings go out every second, so this is five missed.
+    private static let peerSilenceSeconds: TimeInterval = 5
     private var snapshotGate = AuthoritativeSnapshotGate()
     private var eventGate = MonotonicSequenceGate()
     private var lifecycle = OnlineMatchLifecycle()
@@ -249,6 +273,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// Seconds into the hold before Game Center is asked to call them back.
     private static let reinviteDelaySeconds = 3
     private var pendingPing: UInt64?
+    /// Stamps this board put on the wire. An echo carrying one of these is our
+    /// own round trip coming home, never something to answer.
+    private var ownPings: [UInt64] = []
     private let codec = WireCodec()
     private var isListenerRegistered = false
     private var pendingMatchmakingIntent: MatchmakingIntent?
@@ -462,6 +489,8 @@ final class OnlineMatchCoordinator: NSObject,
     func sendPing() {
         let sentAt = DispatchTime.now().uptimeNanoseconds
         pendingPing = sentAt
+        ownPings.append(sentAt)
+        if ownPings.count > 4 { ownPings.removeFirst(ownPings.count - 4) }
         send(.ping(nanoseconds: sentAt), mode: .unreliable)
     }
 
@@ -527,7 +556,9 @@ final class OnlineMatchCoordinator: NSObject,
         mismatchedPeers = []
         remoteHulls = [:]
         inputBuffers = [:]
-        remoteInputs = [:]
+        heardSeats = []
+        lastHeard = [:]
+        silentPeers = []
         isMatchReady = false
         isAuthoritative = false
         localSeat = nil
@@ -610,7 +641,69 @@ final class OnlineMatchCoordinator: NSObject,
         // the handshake loop below stops at once when the peer is already heard.
         sendHandshake()
         beginHandshake()
-        sendPing()
+        beginHeartbeat()
+    }
+
+    /// A ping a second, for as long as the match runs.
+    ///
+    /// It was one ping at kick-off, which made `pingMilliseconds` a number
+    /// from the distant past and left nothing at all flowing between two
+    /// boards that were not stepping the simulation. The repeat gives both
+    /// ends something to miss.
+    private func beginHeartbeat() {
+        heartbeatTask?.cancel()
+        let started = Self.now
+        let localID = GKLocalPlayer.local.gamePlayerID
+        for id in seating.keys where id != localID { lastHeard[id] = started }
+        silentPeers = []
+        heartbeatTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, self.match != nil else { return }
+                self.sendPing()
+                self.checkPeerLiveness()
+            }
+        }
+    }
+
+    /// GameKit does not always tell us a pilot has gone. A backgrounded app,
+    /// a Wi-Fi handoff, a phone that went in a pocket mid-rally: the match
+    /// object stays connected and the packets simply stop. Until this, the
+    /// board went on flying the last packet it ever got -- a burn into the
+    /// roof that never let up -- under a HUD still reading LINK STABLE.
+    /// Silence is the signal, and it holds the seat exactly as a clean
+    /// disconnect does.
+    private func checkPeerLiveness() {
+        // Only once the table is actually playing. A pilot who seats and then
+        // never answers belongs to the handshake timeout, which gives up in
+        // twenty seconds rather than holding their chair for two minutes.
+        guard isMatchReady, lifecycle.acceptsGameplayData, !seating.isEmpty else { return }
+        let localID = GKLocalPlayer.local.gamePlayerID
+        let now = Self.now
+        let silent = Set(seating.keys.filter {
+            $0 != localID && now - (lastHeard[$0] ?? now) >= Self.peerSilenceSeconds
+        })
+        guard silent != silentPeers else { return }
+        let gone = silent.subtracting(silentPeers)
+        let returned = silentPeers.subtracting(silent)
+        silentPeers = silent
+
+        if let dropped = gone.first {
+            let name = seatedPilotNames[dropped] ?? "PILOT"
+            note("SILENT LINK: NOTHING FROM \(name) IN \(Int(Self.peerSilenceSeconds))s")
+            for id in gone { readyPeers.remove(id) }
+            pendingForfeitWinner = seating[dropped]?.team.opponent
+            beginReconnectWindow()
+            return
+        }
+        // A five-second hole that closes again was a bad stretch of network,
+        // not a pilot walking out. Take the seat off hold rather than making
+        // them sit through the rest of a two-minute count.
+        guard silent.isEmpty, !returned.isEmpty, case .reconnecting = status else { return }
+        note("PACKETS RESUMED · SEAT RECLAIMED")
+        readyPeers.formUnion(returned)
+        _ = lifecycle.acceptConnection()
+        completeReconnect()
     }
 
     /// The peer only learns we are ready from a message, and a message sent
@@ -685,7 +778,28 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// Answer one pilot rather than the table. A ping echoed to everyone is an
+    /// echo every other board then echoes back: at three or four pilots the
+    /// same stamp bounces between them forever, and a heartbeat re-seeds it
+    /// every second.
+    private func send(_ payload: WirePayload, to playerID: String, mode: GKMatch.SendDataMode) {
+        guard let match,
+              let player = match.players.first(where: { $0.gamePlayerID == playerID })
+        else { return }
+        do {
+            sequence &+= 1
+            let data = try codec.encode(WireEnvelope(sequence: sequence, payload: payload))
+            try match.send(data, to: [player], dataMode: mode)
+        } catch {
+            note("SEND FAILED: \(describe(error))")
+            status = .failed(message: "Network send failed")
+        }
+    }
+
     private func receive(_ data: Data, from playerID: String) {
+        // Before the decode: a packet we cannot read still proves the pilot
+        // is there, and that is all the liveness check is asking.
+        lastHeard[playerID] = Self.now
         let envelope: WireEnvelope
         do {
             envelope = try codec.decode(data)
@@ -705,11 +819,10 @@ final class OnlineMatchCoordinator: NSObject,
         case let .input(seat, value):
             guard lifecycle.acceptsGameplayData, seat != localSeat else { return }
             var buffer = inputBuffers[seat] ?? RemoteInputBuffer()
-            if remoteInputs[seat] == nil { note("FIRST INPUT FROM \(seat.label) AT TICK \(value.tick)") }
-            if buffer.accept(value) {
-                inputBuffers[seat] = buffer
-                remoteInputs[seat] = value
+            if heardSeats.insert(seat).inserted {
+                note("FIRST INPUT FROM \(seat.label) AT TICK \(value.tick)")
             }
+            if buffer.accept(value, at: Self.now) { inputBuffers[seat] = buffer }
         case let .seating(plan, tuning):
             guard lifecycle.acceptsNetworkMessages, plan[GKLocalPlayer.local.gamePlayerID] != nil else { return }
             if lifecycle.phase == .configuring {
@@ -756,13 +869,17 @@ final class OnlineMatchCoordinator: NSObject,
             note("\(seat.label) FLIES \(hull.spec.name.uppercased())")
         case let .ping(sentAt):
             guard lifecycle.acceptsNetworkMessages else { return }
-            if pendingPing == sentAt {
+            guard !ownPings.contains(sentAt) else {
+                // Our own stamp home again. The first board to answer times the
+                // trip; a second pilot's echo of the same stamp is that same
+                // trip, not a new question.
+                guard pendingPing == sentAt else { return }
                 let now = DispatchTime.now().uptimeNanoseconds
                 pingMilliseconds = Int((now - sentAt) / 1_000_000)
                 pendingPing = nil
-            } else {
-                send(.ping(nanoseconds: sentAt), mode: .unreliable)
+                return
             }
+            send(.ping(nanoseconds: sentAt), to: playerID, mode: .unreliable)
         case let .resync(state):
             if lifecycle.acceptsGameplayData {
                 snapshotGate.reset(to: state.tick)
@@ -790,6 +907,8 @@ final class OnlineMatchCoordinator: NSObject,
                     self.status = .failed(message: "Opponent forfeited")
                     self.isMatchReady = false
                     self.lifecycle.finish()
+                    self.heartbeatTask?.cancel()
+                    self.heartbeatTask = nil
                     if let winner = self.pendingForfeitWinner ?? self.localTeam { self.onForfeit?(winner) }
                     self.disconnectTransport()
                     return
@@ -981,7 +1100,12 @@ final class OnlineMatchCoordinator: NSObject,
         let message = error.map { describe($0) }
         Task { @MainActor [weak self] in
             guard let self, self.match === match else { return }
-            if let message { self.note("MATCH FAILED: \(message)") }
+            let detail = message ?? "The match ended"
+            self.note("MATCH FAILED: \(detail)")
+            // A log line was the whole of it, which is how a pilot got dropped
+            // with the arena still up and nothing on screen to say so.
+            guard self.lifecycle.acceptsNetworkMessages else { return }
+            self.status = .failed(message: detail)
         }
     }
 
@@ -1062,12 +1186,16 @@ final class OnlineMatchCoordinator: NSObject,
         finishTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         session = nil
         lifecycle.reset()
         snapshotGate.reset()
         eventGate.reset()
         inputBuffers = [:]
-        remoteInputs = [:]
+        heardSeats = []
+        lastHeard = [:]
+        silentPeers = []
         mismatchedPeers = []
         remoteHulls = [:]
         isMatchReady = false
@@ -1080,6 +1208,7 @@ final class OnlineMatchCoordinator: NSObject,
         pendingForfeitWinner = nil
         pingMilliseconds = nil
         pendingPing = nil
+        ownPings = []
         lastAuthoritativeState = nil
         pendingResync = nil
         hostID = nil
@@ -1113,6 +1242,8 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         finishTask?.cancel()
         finishTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))

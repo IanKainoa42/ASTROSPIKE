@@ -317,8 +317,9 @@ final class GameSession {
                 localInputHistory[tick] = localInput
                 if tick > 64 { localInputHistory[tick - 64] = nil }
             }
+            let remote = online.remoteInputs
             for seat in engine.state.ships.keys where seat != localSeat && inputs[seat] == nil {
-                inputs[seat] = online.remoteInputs[seat] ?? .idle(tick: tick)
+                inputs[seat] = remote[seat] ?? .idle(tick: tick)
             }
             engine.step(inputs: inputs)
             if online.isAuthoritative, tick.isMultiple(of: 6) {
@@ -449,6 +450,7 @@ final class GameSession {
             // has already flown since, with the inputs it actually gave, so the
             // world never steps backwards on arrival.
             let behind = predicted.tick > authoritative.tick ? predicted.tick - authoritative.tick : 0
+            let remote = online.remoteInputs
             if behind <= Self.maximumRollForward, [.serve, .playing].contains(self.state.match.phase) {
                 while rolled.state.tick < predicted.tick {
                     let tick = rolled.state.tick
@@ -456,7 +458,7 @@ final class GameSession {
                         self.localSeat: self.localInputHistory[tick] ?? .idle(tick: tick),
                     ]
                     for seat in rolled.state.ships.keys where seat != self.localSeat {
-                        inputs[seat] = online.remoteInputs[seat] ?? .idle(tick: tick)
+                        inputs[seat] = remote[seat] ?? .idle(tick: tick)
                     }
                     rolled.step(inputs: inputs)
                 }
