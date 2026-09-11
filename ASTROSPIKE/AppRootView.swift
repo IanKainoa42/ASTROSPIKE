@@ -1034,6 +1034,18 @@ private struct SettingsView: View {
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
+                Section("Tractor Beam") {
+                    TuningSlider(
+                        title: "Pull strength",
+                        value: $tuning.tractorStrength,
+                        range: 1 ... 4.5,
+                        step: 0.1,
+                        readout: { $0.formatted(.number.precision(.fractionLength(1))) }
+                    )
+                    Text("How hard the beam reels the ball in. Applies to solo matches immediately.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("Match Rules") {
                     Stepper(
                         "Touches per side: \(tuning.allowedTouchesPerSide)",
@@ -1093,6 +1105,7 @@ private struct FlightTuningView: View {
                             TuningSlider(title: "Ball gravity", value: $tuning.ballGravityMultiplier, range: 0.1 ... 1.2, step: 0.02)
                             TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: -0.30 ... 0.10, step: 0.01)
                             TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)
+                            TuningSlider(title: "Tractor pull", value: $tuning.tractorStrength, range: 1 ... 4.5, step: 0.1)
                         }
                     }
                     GroupBox("Match Rule") {

@@ -62,7 +62,7 @@ final class ArenaScene: SKScene {
             // The node's alpha multiplies this one, so the breath below is
             // worth fill * amplitude on screen. At 0.06 that came to under a
             // single 8-bit level and the pulse simply wasn't there.
-            beam.fillColor = Self.beamColor.withAlphaComponent(0.11)
+            beam.fillColor = Self.beamColor.withAlphaComponent(0.15)
             // No stroke: an outline is the loudest thing a shape can wear,
             // and the beam is meant to be felt in the ball rather than read.
             beam.strokeColor = .clear
@@ -166,10 +166,29 @@ final class ArenaScene: SKScene {
             ship.addChild(exhaust)
             setHull(Hull.defaultHull(forSeat: seat), for: seat)
         }
-        ball.fillColor = .white
-        ball.strokeColor = SKColor(red: 0.65, green: 0.95, blue: 1, alpha: 1)
-        ball.lineWidth = 3
-        ball.glowWidth = 12
+        // The ball is the one thing a pilot is always aiming at, so it is
+        // built to read as a hard object: an opaque body, a machined rim, and
+        // a lit face turned up-left. No glow anywhere on it -- a halo blurs
+        // the very edge you are trying to hit.
+        ball.fillColor = SKColor(white: 0.72, alpha: 1)
+        ball.strokeColor = SKColor(white: 0.30, alpha: 1)
+        ball.lineWidth = 2
+        ball.glowWidth = 0
+        // The lit face: a second disc offset toward the light. Two flat tones
+        // with a crisp step between them read as a sphere without any blur.
+        let ballLit = SKShapeNode(circleOfRadius: 8)
+        ballLit.position = CGPoint(x: -1.4, y: 1.7)
+        ballLit.fillColor = SKColor(white: 0.97, alpha: 1)
+        ballLit.strokeColor = .clear
+        ballLit.glowWidth = 0
+        ball.addChild(ballLit)
+        // The specular: small, hard, and off to one side.
+        let ballShine = SKShapeNode(circleOfRadius: 2.6)
+        ballShine.position = CGPoint(x: -3.6, y: 4.2)
+        ballShine.fillColor = .white
+        ballShine.strokeColor = .clear
+        ballShine.glowWidth = 0
+        ball.addChild(ballShine)
     }
 
     private func buildArena() {
@@ -217,7 +236,7 @@ final class ArenaScene: SKScene {
         let wall = SKShapeNode(path: boundsPath())
         wall.strokeColor = SKColor(white: 0.8, alpha: 0.45)
         wall.lineWidth = 3
-        wall.glowWidth = 5
+        wall.glowWidth = 1
         arenaLayer.addChild(wall)
 
         let floor = CGMutablePath()
@@ -226,7 +245,7 @@ final class ArenaScene: SKScene {
         let floorNode = SKShapeNode(path: floor)
         floorNode.strokeColor = .white.withAlphaComponent(0.55)
         floorNode.lineWidth = 4
-        floorNode.glowWidth = 3
+        floorNode.glowWidth = 1
         arenaLayer.addChild(floorNode)
 
         if arena.hasHump { addHump() }
@@ -285,7 +304,7 @@ final class ArenaScene: SKScene {
         let tapeNode = SKShapeNode(path: tape)
         tapeNode.strokeColor = .white.withAlphaComponent(0.95)
         tapeNode.lineWidth = 4
-        tapeNode.glowWidth = 8
+        tapeNode.glowWidth = 2
         tapeNode.fillColor = .clear
         arenaLayer.addChild(tapeNode)
 
@@ -329,7 +348,7 @@ final class ArenaScene: SKScene {
         let windowNode = SKShapeNode(path: window)
         windowNode.strokeColor = SKColor(red: 1, green: 0.62, blue: 0.24, alpha: 0.55)
         windowNode.lineWidth = 3
-        windowNode.glowWidth = 10
+        windowNode.glowWidth = 4
         arenaLayer.addChild(windowNode)
 
         for sign in [-1.0, 1.0] {
@@ -340,7 +359,7 @@ final class ArenaScene: SKScene {
             post.fillColor = SKColor(red: 1, green: 0.45, blue: 0.12, alpha: 1)
             post.strokeColor = .white.withAlphaComponent(0.9)
             post.lineWidth = 2
-            post.glowWidth = 8
+            post.glowWidth = 2
             arenaLayer.addChild(post)
         }
 
@@ -408,7 +427,7 @@ final class ArenaScene: SKScene {
         let edge = SKShapeNode(path: hill)
         edge.strokeColor = .white.withAlphaComponent(0.55)
         edge.lineWidth = 4
-        edge.glowWidth = 3
+        edge.glowWidth = 1
         edge.fillColor = .clear
         arenaLayer.addChild(edge)
     }
@@ -459,8 +478,11 @@ final class ArenaScene: SKScene {
             face.addLine(to: point(half * sign, arena.netBottomY))
             let faceNode = SKShapeNode(path: face)
             faceNode.strokeColor = color.withAlphaComponent(0.9)
+            // Some bloom is left on the faces alone: they are the target,
+            // and the colour is the aiming cue. Everything structural around
+            // them is hard.
             faceNode.lineWidth = 4
-            faceNode.glowWidth = 14
+            faceNode.glowWidth = 4
             arenaLayer.addChild(faceNode)
         }
 
@@ -472,9 +494,9 @@ final class ArenaScene: SKScene {
             control: point(0, arena.netBottomY - 0.04)
         )
         let capNode = SKShapeNode(path: cap)
-        capNode.strokeColor = .white.withAlphaComponent(0.95)
-        capNode.lineWidth = 4
-        capNode.glowWidth = 6
+        capNode.strokeColor = .white
+        capNode.lineWidth = 5
+        capNode.glowWidth = 0
         arenaLayer.addChild(capNode)
 
         // The lips: a thin ledge under each face, drawn from the same two
@@ -490,7 +512,7 @@ final class ArenaScene: SKScene {
             body.addLine(to: point(root.x, root.y - 0.014))
             body.closeSubpath()
             let bodyNode = SKShapeNode(path: body)
-            bodyNode.strokeColor = .white.withAlphaComponent(0.55)
+            bodyNode.strokeColor = .white.withAlphaComponent(0.85)
             bodyNode.lineWidth = 2
             bodyNode.fillColor = SKColor(white: 0.16, alpha: 1)
             arenaLayer.addChild(bodyNode)
@@ -499,9 +521,9 @@ final class ArenaScene: SKScene {
             ledge.move(to: point(root.x, root.y))
             ledge.addLine(to: point(tip.x, tip.y))
             let ledgeNode = SKShapeNode(path: ledge)
-            ledgeNode.strokeColor = .white.withAlphaComponent(0.95)
-            ledgeNode.lineWidth = 4
-            ledgeNode.glowWidth = 6
+            ledgeNode.strokeColor = .white
+            ledgeNode.lineWidth = 5
+            ledgeNode.glowWidth = 0
             arenaLayer.addChild(ledgeNode)
         }
     }
@@ -533,7 +555,7 @@ final class ArenaScene: SKScene {
         let marker = SKShapeNode(path: path)
         marker.strokeColor = color.withAlphaComponent(0.28)
         marker.lineWidth = 1.5
-        marker.glowWidth = 3
+        marker.glowWidth = 1
         arenaLayer.addChild(marker)
 
         let label = SKLabelNode(text: "MAX CROSS")
@@ -553,7 +575,7 @@ final class ArenaScene: SKScene {
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
         let ballScale = CGFloat(snapshot.ball.radius / 0.038)
         ball.setScale(ballScale)
-        ball.glowWidth = 12 + min(20, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y))
+        // No speed glow: the faster it moves the more its edge matters.
         updateTrails(snapshot)
         updateBolts(snapshot)
     }
@@ -715,7 +737,7 @@ final class ArenaScene: SKScene {
         // There is no update loop here, and wall clock would drift apart.
         let breath = reduceMotion ? 0 : sin(Double(snapshot.tick % Self.beamPulseTicks)
             / Double(Self.beamPulseTicks) * 2 * .pi) * 0.10
-        beam.alpha = 0.26 + CGFloat(grip) * 0.22 + CGFloat(breath)
+        beam.alpha = 0.32 + CGFloat(grip) * 0.22 + CGFloat(breath)
     }
 
     /// One breath of the beam, in simulation ticks: 1.2s at 120 Hz.
@@ -861,7 +883,7 @@ final class ArenaScene: SKScene {
         trailLayer.removeAllChildren()
         let ballTrailNode = trail(points: ballTrail, color: .white)
         ballTrailNode.lineWidth = 2 + min(6, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y) * 0.25)
-        ballTrailNode.glowWidth = 8
+        ballTrailNode.glowWidth = 0
         trailLayer.addChild(ballTrailNode)
     }
 
@@ -872,7 +894,7 @@ final class ArenaScene: SKScene {
         let node = SKShapeNode(path: path)
         node.strokeColor = color.withAlphaComponent(0.32)
         node.lineWidth = 3
-        node.glowWidth = 5
+        node.glowWidth = 2
         return node
     }
 
