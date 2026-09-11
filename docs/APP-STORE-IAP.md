@@ -133,31 +133,53 @@ No sign-in is required to play. Online duels use Game Center; solo play,
 practice and the hangar all work signed out.
 ```
 
-## 4. Manual verification — required, not optional
+## 4. Manual verification — in Sandbox, after step 2
 
-StoreKit Testing is attached to the scheme's **Run** action, which
-`xcodebuild test` does not use; `SKTestSession` returns zero products under
-headless `xcodebuild test` even for a known-good configuration file, so there
-is no automated purchase test. Run this by hand in Xcode before submitting:
+**Local StoreKit Testing does not work on this Mac.** Not under `xcodebuild
+test` and not under Product ▸ Run either. Verified 2026-09-10 on two runtimes
+(iOS 26.5 / Xcode 26.6 and iOS 27 / Xcode 27): the `.storekit` file is
+delivered to the simulator's Octane store
+(`…/Documents/Persistence/Octane/com.iankainoa.ASTROSPIKE/Configuration.storekit`),
+`storekitd` logs `Initialized with server XcodeTest(file://…)` — and then
+routes the product request to the live Media API anyway:
 
 ```
-[ ]  1. Product ▸ Run (simulator or device). Menu ▸ HANGAR.
+Requesting products from Media API using in-app-purchasables endpoint
+Some requested products were not found: …hull.bulwark, …comet, …hornet, …wraith
+Found 0 IAP(s) / Ignoring empty product response
+```
+
+So the request is correct and the catalogue is empty. **Prices will appear as
+soon as the four ASC records in step 2 exist** — nothing in the app needs to
+change. Do the pass below in **Sandbox on a real device** once they are live,
+signed in with a Sandbox Apple Account (Settings ▸ Developer ▸ Sandbox Account).
+
+```
+[ ]  1. Launch from TestFlight or a device build. Menu ▸ HANGAR.
 [ ]  2. Tap a premium hull (Bulwark). The button reads UNLOCK • $0.99 — a real price, not placeholder text.
 [ ]  3. Tap UNLOCK. Approve. The button becomes FLY THE BULWARK, and the tile loses its padlock.
 [ ]  4. Tap FLY THE BULWARK, close the hangar, start a solo match. The Bulwark is on court.
-[ ]  5. Stop and re-run the app. The Bulwark is still unlocked and still selected.
-[ ]  6. Debug ▸ StoreKit ▸ Manage Transactions ▸ delete the transaction, then delete the app from the device.
-[ ]  7. Re-run. Bulwark is locked again. Tap RESTORE PURCHASES — it unlocks, and the banner says "Restored 1 hull."
+[ ]  5. Force-quit and relaunch. The Bulwark is still unlocked and still selected.
+[ ]  6. Settings ▸ Developer ▸ Sandbox Account ▸ Clear Purchase History, then delete the app.
+[ ]  7. Reinstall. Bulwark is locked again. Tap RESTORE PURCHASES — it unlocks, and the banner says "Restored 1 hull."
 [ ]  8. Tap RESTORE PURCHASES again with nothing new to find. The banner says so rather than doing nothing.
-[ ]  9. Editor ▸ enable "Fail Transactions" in the .storekit file, tap UNLOCK. A visible failure message appears and the hull stays locked.
+[ ]  9. Decline the purchase sheet instead of approving it. A visible message appears and the hull stays locked.
 [ ] 10. Turn on Airplane Mode, cold-launch, open the hangar. The locked hull shows a tappable retry with a reason — never a blank panel.
 ```
 
 Steps 9 and 10 are the App Review 2.1(a) shape that rejected HitRate 1.7: a
 button that changes nothing when its path fails. Do not skip them.
 
-Re-run the same pass in **Sandbox** on a real device once the ASC records are
-live, using a Sandbox Apple Account (Settings ▸ Developer ▸ Sandbox Account).
+Steps 1 and 10 (and the restore-failure banner) were verified headlessly on the
+simulator on 2026-09-10 against an empty catalogue: the locked tile reads
+"LOCKED • PREMIUM / Hull packs aren't on sale yet", and cancelling the Apple
+Account sheet surfaces "Restore failed: Request Canceled". The rest needs live
+records.
+
+**Review screenshot caveat:** the four captures in
+`AppStoreScreenshots/iap-review/` show the locked state, not a price, because
+of the above. Re-shoot them from a Sandbox device after step 2 and before
+attaching them to the IAP records.
 
 ## How the code is wired
 
