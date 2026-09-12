@@ -28,6 +28,9 @@ final class ArenaScene: SKScene {
     /// the seat is empty.
     private var shipNodes: [Seat: SKShapeNode] = [:]
     private var exhaustNodes: [Seat: SKSpriteNode] = [:]
+    /// The hull's own exhaust width, kept so the idle ember can be pinned
+    /// narrower than a wide hull's lit plume.
+    private var exhaustWidths: [Seat: CGFloat] = [:]
     private let ball = SKShapeNode(circleOfRadius: 10)
     private var boltNodes: [UInt64: SKNode] = [:]
     /// The tractor cone ahead of each nose, redrawn every frame it is on.
@@ -707,8 +710,15 @@ final class ArenaScene: SKScene {
         // are rotating to line up a shot and there is no plume at all.
         // Not gated on reduceMotion -- the plume is, and this is the cue
         // that has to survive it.
+        // Width is the hull's own character while the engine is lit, but the
+        // idle ember is capped: across the eight hulls exhaustWidth spans
+        // 0.75...2.1, and at 2.1 a soft radial puff 63pt wide reads as a
+        // blob the size of the ship rather than a nozzle. The facing cue has
+        // to look the same whatever you fly.
         let thrusting = state.thrustLevel > 0
+        let hullWidth = exhaustWidths[seat] ?? 1
         exhaust.isHidden = state.isDestroyed
+        exhaust.xScale = thrusting ? hullWidth : min(hullWidth, 1)
         exhaust.yScale = thrusting ? 2.0 : 0.62
         exhaust.alpha = thrusting ? 1 : 0.38
         emitPlume(from: shipNode, seat: seat, state: state)
@@ -909,11 +919,12 @@ final class ArenaScene: SKScene {
     }
 
     /// Swaps the drawn silhouette without touching the simulation: every hull
-    /// shares one collision envelope. yScale of the exhaust is driven per
-    /// frame by thrust, so only its width is set here.
+    /// shares one collision envelope. Both scales of the exhaust are driven
+    /// per frame by thrust; the width is recorded here for that.
     func setHull(_ hull: Hull, for seat: Seat) {
         guard let ship = shipNodes[seat], let exhaust = exhaustNodes[seat] else { return }
         ship.path = hull.spec.outline.cgPath
+        exhaustWidths[seat] = CGFloat(hull.spec.exhaustWidth)
         exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
     }
 
