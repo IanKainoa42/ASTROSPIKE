@@ -32,7 +32,6 @@
 		594C28054C252A6E6577D9EC /* Lobby.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC83DD77126E7FA513D2942 /* Lobby.swift */; };
 		5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */; };
 		5E6A28DD8A98ABAAEB45CCA4 /* CourtVariantTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */; };
-		6BFC46911FCD2C139BD46B83 /* CACHEDIR.TAG in Resources */ = {isa = PBXBuildFile; fileRef = 822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */; };
 		73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */; };
 		767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACCBC1253D91A47299D2645 /* DoublesTests.swift */; };
 		769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07221F436E712100C50841C1 /* LobbyTests.swift */; };
@@ -178,7 +177,6 @@
 		74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterOrange.mp3; sourceTree = "<group>"; };
 		802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothingTests.swift; sourceTree = "<group>"; };
 		812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackGeometry.swift; sourceTree = "<group>"; };
-		822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */ = {isa = PBXFileReference; path = CACHEDIR.TAG; sourceTree = "<group>"; };
 		828D26A07A966607CF8F1287 /* Hulls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hulls.swift; sourceTree = "<group>"; };
 		83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineMatchCoordinator.swift; sourceTree = "<group>"; };
 		859573897DB0229481CD4EC8 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
@@ -200,7 +198,6 @@
 		E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaceTuningView.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
-		EDB7E77E05F615E80F9752BF /* .buildSystem_debug */ = {isa = PBXFileReference; path = .buildSystem_debug; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
 		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -237,15 +234,6 @@
 			path = Sounds;
 			sourceTree = "<group>";
 		};
-		7A9B5A367198D665A66DFAA1 /* .build */ = {
-			isa = PBXGroup;
-			children = (
-				EDB7E77E05F615E80F9752BF /* .buildSystem_debug */,
-				822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */,
-			);
-			path = .build;
-			sourceTree = "<group>";
-		};
 		9604EA1A48B705AA26BE6021 /* ASTROSPIKECore */ = {
 			isa = PBXGroup;
 			children = (
@@ -266,7 +254,6 @@
 				0229900C8172E2E47EE8513F /* TrackTuning.swift */,
 				5637738B4E3686D57BD33184 /* WarmupRings.swift */,
 				2CD95C0514B3196435647AEC /* WireProtocol.swift */,
-				7A9B5A367198D665A66DFAA1 /* .build */,
 			);
 			path = ASTROSPIKECore;
 			sourceTree = "<group>";
@@ -369,7 +356,6 @@
 			buildConfigurationList = 98248C9108EBB61D65AE2857 /* Build configuration list for PBXNativeTarget "ASTROSPIKECore" */;
 			buildPhases = (
 				0D1E0B236D8E1CF0B0FAC751 /* Sources */,
-				BFAA7DC483BFD744238051A2 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -502,14 +488,6 @@
 				98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */,
 				81CFFE5928F7D9BC1B3CB1F3 /* thrusterCyan.mp3 in Resources */,
 				0B193428AC54E680033CB925 /* thrusterOrange.mp3 in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		BFAA7DC483BFD744238051A2 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				6BFC46911FCD2C139BD46B83 /* CACHEDIR.TAG in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

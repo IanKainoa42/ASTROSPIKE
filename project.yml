@@ -17,7 +17,12 @@ targets:
     type: framework
     platform: iOS
     sources:
-      - ASTROSPIKECore
+      # A stray SwiftPM run leaves a .build/ here; without this exclude
+      # XcodeGen sweeps its CACHEDIR.TAG into the framework's resources and
+      # every fresh clone fails the build on a file that isn't checked in.
+      - path: ASTROSPIKECore
+        excludes:
+          - ".build/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.iankainoa.ASTROSPIKE.core
