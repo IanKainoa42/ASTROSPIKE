@@ -138,7 +138,7 @@
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
 		1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
-		1D6D5F20EF789803283845FE /* ASTROSPIKE.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = ASTROSPIKE.storekit; sourceTree = "<group>"; };
+		1D6D5F20EF789803283845FE /* ASTROSPIKE.storekit */ = {isa = PBXFileReference; path = ASTROSPIKE.storekit; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
 		2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsTests.swift; sourceTree = "<group>"; };
 		213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaPhysicsTests.swift; sourceTree = "<group>"; };
@@ -162,9 +162,9 @@
 		4033BD3492F8C74CE390EB56 /* FlightTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuning.swift; sourceTree = "<group>"; };
 		415B202192D985A9E29E73E1 /* LobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyView.swift; sourceTree = "<group>"; };
 		4405102C04B2CE798F18AD89 /* WarmupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmupTests.swift; sourceTree = "<group>"; };
-		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
-		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B8F43E674683CFA8668873B /* HullShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullShapes.swift; sourceTree = "<group>"; };
 		508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ASTROSPIKECore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
@@ -178,14 +178,14 @@
 		74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterOrange.mp3; sourceTree = "<group>"; };
 		802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothingTests.swift; sourceTree = "<group>"; };
 		812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackGeometry.swift; sourceTree = "<group>"; };
-		822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */ = {isa = PBXFileReference; lastKnownFileType = text; path = CACHEDIR.TAG; sourceTree = "<group>"; };
+		822C4CEB1A7563D8BDC3E80F /* CACHEDIR.TAG */ = {isa = PBXFileReference; path = CACHEDIR.TAG; sourceTree = "<group>"; };
 		828D26A07A966607CF8F1287 /* Hulls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hulls.swift; sourceTree = "<group>"; };
 		83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineMatchCoordinator.swift; sourceTree = "<group>"; };
 		859573897DB0229481CD4EC8 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionTests.swift; sourceTree = "<group>"; };
 		8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtVariantTests.swift; sourceTree = "<group>"; };
 		8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTests.swift; sourceTree = "<group>"; };
-		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
 		9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRulesTests.swift; sourceTree = "<group>"; };
@@ -200,7 +200,7 @@
 		E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaceTuningView.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
-		EDB7E77E05F615E80F9752BF /* .buildSystem_debug */ = {isa = PBXFileReference; lastKnownFileType = text; path = .buildSystem_debug; sourceTree = "<group>"; };
+		EDB7E77E05F615E80F9752BF /* .buildSystem_debug */ = {isa = PBXFileReference; path = .buildSystem_debug; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
 		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -448,7 +448,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2700;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					0EF3C1A2427CAECD77EFACD7 = {
 						DevelopmentTeam = WC46K49VFA;
@@ -683,14 +683,12 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = com.iankainoa.ASTROSPIKE.core;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -753,7 +751,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -772,7 +770,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
@@ -814,7 +811,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 61;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -840,7 +837,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
@@ -875,14 +871,12 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				ENABLE_MODULE_VERIFIER = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu11 gnu++14";
 				PRODUCT_BUNDLE_IDENTIFIER = com.iankainoa.ASTROSPIKE.core;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;

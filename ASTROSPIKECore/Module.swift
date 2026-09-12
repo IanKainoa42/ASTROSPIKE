@@ -879,11 +879,15 @@ public struct SimulationEngine: Sendable {
     /// Public so `ArenaScene` draws the volume that actually grabs.
     public static let tractorCone = 0.86
 
+    /// Every impulse the beam hands the ball comes back out of the hull at
+    /// this ratio, which is what makes the grab conserve momentum.
+    static let tractorMassRatio = ballMass / shipMass
+
     private mutating func applyTractorBeam(dt: Double) {
         let range = configuration.tractorRange
         guard range > 0, configuration.tractorStrength > 0 else { return }
         for seat in Seat.allCases {
-            guard let ship = state.ships[seat], !ship.isDestroyed, ship.tractorActive else { continue }
+            guard var ship = state.ships[seat], !ship.isDestroyed, ship.tractorActive else { continue }
             let nose = SIMD2(cos(ship.angle), sin(ship.angle))
             let offset = state.ball.position - ship.position
             let distance = simd_length(offset)
@@ -894,9 +898,23 @@ public struct SimulationEngine: Sendable {
             let falloff = 1 - distance / range
             let centring = (along - Self.tractorCone) / (1 - Self.tractorCone)
             let grip = falloff * centring
-            let pull = configuration.tractorStrength * grip
-            state.ball.velocity -= toward * (pull * dt)
-            state.ball.velocity *= max(0, 1 - configuration.tractorDrag * grip * dt)
+            // Newton's third law. Whatever the beam puts into the ball it
+            // takes out of the hull, scaled by the mass ratio: reeling a ball
+            // in drags you toward it, and a heavy ball moves you more than a
+            // light one would. The beam is no longer a free hand.
+            let pull = toward * (configuration.tractorStrength * grip * dt)
+            state.ball.velocity -= pull
+            ship.velocity += pull * Self.tractorMassRatio
+            // The grab damps the ball against the SHIP's frame, not the
+            // world's, and hands the momentum it removes to the hull. A
+            // caught ball settles into the pocket and flies with you instead
+            // of being dragged toward a standstill. Against a ship that is
+            // holding still this is exactly the old behaviour.
+            let damp = min(1, configuration.tractorDrag * grip * dt)
+            let bleed = (state.ball.velocity - ship.velocity) * damp
+            state.ball.velocity -= bleed
+            ship.velocity += bleed * Self.tractorMassRatio
+            state.ships[seat] = ship
         }
     }
 

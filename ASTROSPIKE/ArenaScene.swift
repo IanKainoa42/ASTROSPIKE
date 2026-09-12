@@ -698,9 +698,19 @@ final class ArenaScene: SKScene {
         let unit = min(arenaRect.width / 2, arenaRect.height) / 1.7
         shipNode.setScale(unit / 473)
         shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)
-        exhaust.isHidden = state.thrustLevel <= 0 || state.isDestroyed
-        exhaust.yScale = 0.35 + CGFloat(state.thrustLevel / 18) * 1.65
-        exhaust.alpha = 0.55 + CGFloat(state.thrustLevel / 18) * 0.45
+        // `thrustLevel` is not a dial -- `thrustRampRate` is 0 and initial
+        // thrust equals maximum, so it is either 0 or whatever the slider
+        // says. The old `/ 18` normalisation therefore drew a flame sized
+        // for a thrust nobody flies: at 2.75 it sat at 15% of its range.
+        // Engine lit is now full size and full brightness; engine off keeps
+        // a dim ember burning, because the nose is hardest to read while you
+        // are rotating to line up a shot and there is no plume at all.
+        // Not gated on reduceMotion -- the plume is, and this is the cue
+        // that has to survive it.
+        let thrusting = state.thrustLevel > 0
+        exhaust.isHidden = state.isDestroyed
+        exhaust.yScale = thrusting ? 2.0 : 0.62
+        exhaust.alpha = thrusting ? 1 : 0.38
         emitPlume(from: shipNode, seat: seat, state: state)
         emitWake(from: shipNode, seat: seat, state: state)
         updateBeam(seat: seat, state: state)
@@ -817,7 +827,7 @@ final class ArenaScene: SKScene {
     /// instead of frame rate, then trails smoke back along the nose axis.
     private func emitPlume(from shipNode: SKShapeNode, seat: Seat, state: ShipState) {
         guard !reduceMotion, !state.isDestroyed, state.thrustLevel > 0 else { return }
-        var budget = (plumeBudgets[seat] ?? 0) + state.thrustLevel * 0.022
+        var budget = (plumeBudgets[seat] ?? 0) + 0.3
         while budget >= 1 {
             budget -= 1
             spawnPuff(from: shipNode, team: seat.team, state: state)
@@ -834,8 +844,8 @@ final class ArenaScene: SKScene {
         let origin = convert(CGPoint(x: 0, y: -34), from: shipNode)
         let back = (x: -cos(state.angle), y: -sin(state.angle))
         let side = (x: -sin(state.angle), y: cos(state.angle))
-        let travel = (32 + state.thrustLevel * 2.4) * scale
-        let spread = (11 + state.thrustLevel * 1.1) * scale
+        let travel = 46 * scale
+        let spread = 15 * scale
 
         let puff = SKSpriteNode(texture: Self.puffTexture)
         puff.color = team == .cyan
@@ -845,7 +855,7 @@ final class ArenaScene: SKScene {
         puff.blendMode = .add
         puff.zPosition = -2
         puff.alpha = 0
-        puff.setScale(CGFloat(scale * (0.32 + jitter * 0.1 + state.thrustLevel * 0.012)))
+        puff.setScale(CGFloat(scale * (0.44 + jitter * 0.1)))
         puff.position = CGPoint(
             x: origin.x + CGFloat(side.x * 4 * jitter * scale),
             y: origin.y + CGFloat(side.y * 4 * jitter * scale)
@@ -856,7 +866,7 @@ final class ArenaScene: SKScene {
             x: origin.x + CGFloat(back.x * travel + side.x * spread * drift),
             y: origin.y + CGFloat(back.y * travel + side.y * spread * drift)
         )
-        let life = 0.52 + jitter * 0.14 + state.thrustLevel * 0.012
+        let life = 0.58 + jitter * 0.14
         puff.run(.sequence([
             .group([
                 .move(to: destination, duration: life),

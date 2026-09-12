@@ -37,7 +37,12 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 14: FlightTuningSnapshot gained tractorStrength, so the seating payload
     //     a build 58 peer sends no longer decodes -- and a guest that did
     //     decode it would fly a different beam from the host.
-    public static let currentVersion: UInt16 = 14
+    // 15: the tractor beam conserves momentum -- reeling the ball in now
+    //     pushes the hull toward it, and the grab damps the ball against the
+    //     ship's frame rather than the world's. Both peers run the same
+    //     deterministic engine, so a build 60 peer would decode every packet
+    //     and then simulate a different rally from the same inputs.
+    public static let currentVersion: UInt16 = 15
 
     public var version: UInt16
     public var sequence: UInt64
