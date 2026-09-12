@@ -151,3 +151,113 @@ struct OnlineSeatingTests {
         #expect(!noHostKnown)
     }
 }
+
+@Suite("Peer liveness")
+struct PeerLivenessTests {
+    private let peers = ["guest", "wing"]
+
+    @Test("Five seconds of nothing from a seated pilot reads as a dropped link")
+    func silenceTripsAfterTheThreshold() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: peers, at: 100)
+
+        #expect(monitor.check(peers: peers, at: 104.9) == .unchanged)
+        #expect(monitor.check(peers: peers, at: 105) == .wentSilent(["guest", "wing"]))
+        #expect(monitor.silentPeers == ["guest", "wing"])
+    }
+
+    @Test("A pilot who is still sending never trips")
+    func trafficKeepsASeatAlive() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: peers, at: 0)
+
+        for tick in stride(from: 1.0, through: 20.0, by: 1.0) {
+            monitor.heard("guest", at: tick)
+            monitor.heard("wing", at: tick)
+            #expect(monitor.check(peers: peers, at: tick) == .unchanged)
+        }
+    }
+
+    @Test("Packets resuming inside the hold reclaims the seat")
+    func aReturningPilotReclaimsTheSeat() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["guest"], at: 0)
+
+        #expect(monitor.check(peers: ["guest"], at: 6) == .wentSilent(["guest"]))
+        monitor.heard("guest", at: 8)
+        #expect(monitor.check(peers: ["guest"], at: 8) == .resumed(["guest"]))
+        #expect(monitor.silentPeers.isEmpty)
+    }
+
+    @Test("A hold that nobody answers never fires twice, and runs out to a forfeit")
+    func anUnansweredHoldRunsToForfeit() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["guest"], at: 0)
+        #expect(monitor.check(peers: ["guest"], at: 5) == .wentSilent(["guest"]))
+
+        // The detector stays quiet for the whole hold rather than re-arming it.
+        for second in stride(from: 6.0, through: 125.0, by: 1.0) {
+            #expect(monitor.check(peers: ["guest"], at: second) == .unchanged)
+        }
+
+        var session = OnlineSessionStateMachine(localTeam: .cyan, ticksPerSecond: 120, reconnectWindowSeconds: 120)
+        #expect(session.remoteDisconnected(at: 600) == [.pause])
+        #expect(session.advance(to: 15_000) == [.forfeit(winner: .cyan)])
+    }
+
+    @Test("A pilot nobody has heard from yet belongs to the handshake, not the hold")
+    func anUnseededPeerNeverTrips() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["guest"], at: 0)
+
+        // "wing" seated after the heartbeat seeded the table.
+        #expect(monitor.check(peers: ["guest", "wing"], at: 3) == .unchanged)
+        #expect(monitor.check(peers: ["wing"], at: 900) == .unchanged)
+        #expect(monitor.silentPeers.isEmpty)
+    }
+
+    @Test("One of two silent pilots coming back is not a reclaimed seat")
+    func aPartialReturnHoldsTheSeat() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: peers, at: 0)
+        #expect(monitor.check(peers: peers, at: 6) == .wentSilent(["guest", "wing"]))
+
+        monitor.heard("guest", at: 7)
+        #expect(monitor.check(peers: peers, at: 7) == .unchanged)
+        #expect(monitor.silentPeers == ["wing"])
+    }
+
+    @Test("Two pilots dropping in the same tick report longest-silent first")
+    func simultaneousDropsAreOrdered() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["alpha", "bravo", "charlie"], at: 0)
+        monitor.heard("bravo", at: 1)
+        monitor.heard("charlie", at: 2)
+
+        // alpha has been quiet longest, then bravo, then charlie -- and the
+        // first name decides who the forfeit is awarded against.
+        #expect(monitor.check(peers: ["alpha", "bravo", "charlie"], at: 7)
+                == .wentSilent(["alpha", "bravo", "charlie"]))
+    }
+
+    @Test("Equally silent pilots break the tie on player ID")
+    func tiesBreakOnPlayerID() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["zulu", "alpha"], at: 0)
+
+        #expect(monitor.check(peers: ["zulu", "alpha"], at: 5) == .wentSilent(["alpha", "zulu"]))
+    }
+
+    @Test("A reset monitor does not carry the last match's silence into the next one")
+    func resetClearsTheTable() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["guest"], at: 0)
+        #expect(monitor.check(peers: ["guest"], at: 10) == .wentSilent(["guest"]))
+
+        monitor.reset()
+        #expect(monitor.silentPeers.isEmpty)
+        // Two matches later, with timestamps from an age ago still on the clock.
+        monitor.begin(peers: ["guest"], at: 5_000)
+        #expect(monitor.check(peers: ["guest"], at: 5_001) == .unchanged)
+    }
+}

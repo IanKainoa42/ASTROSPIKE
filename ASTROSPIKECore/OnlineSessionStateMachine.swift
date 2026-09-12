@@ -157,3 +157,90 @@ public enum OnlineSeating {
         return remainingPeerIDs.allSatisfy { $0 == droppedID || localID < $0 }
     }
 }
+
+/// What the silence detector decided this second.
+public enum PeerLivenessChange: Equatable, Sendable {
+    /// Nothing to act on. Either every link is healthy, or the ones that are
+    /// quiet were already quiet and the seat hold is already counting.
+    case unchanged
+    /// Pilots who have just crossed the silence threshold, longest-silent
+    /// first and player ID breaking a tie. The first name is the one the
+    /// forfeit is awarded against, so the order has to be the same on every
+    /// board rather than whatever a `Set` happens to hand back.
+    case wentSilent([String])
+    /// Every quiet link closed again, and these are the pilots who came back.
+    case resumed([String])
+}
+
+/// GameKit does not always tell us a pilot has gone. A backgrounded app, a
+/// Wi-Fi handoff, a phone that went in a pocket mid-rally: the match object
+/// stays connected and the packets simply stop. Until this, a board went on
+/// flying the last packet it ever got -- a burn into the roof that never let
+/// up -- under a HUD still reading LINK STABLE. Silence is the signal, and it
+/// holds the seat exactly as a clean disconnect does.
+///
+/// The decision lives here rather than beside the match object so it can be
+/// tested without two phones, which is the only way it ever gets tested.
+public struct PeerLivenessMonitor: Equatable, Sendable {
+    /// Total silence this long from a seated pilot is a dropped link, whatever
+    /// GameKit still says. Pings go out every second, so five of them missed.
+    public let silenceSeconds: TimeInterval
+    /// When the last packet of any kind arrived from each peer, by player ID.
+    private var lastHeard: [String: TimeInterval] = [:]
+    private var silent: Set<String> = []
+
+    public init(silenceSeconds: TimeInterval = 5) {
+        self.silenceSeconds = silenceSeconds
+    }
+
+    /// Pilots currently judged gone from silence alone.
+    public var silentPeers: Set<String> { silent }
+
+    /// Start the clock on a table. Every seated peer counts as just-heard, so
+    /// the first check after a match starts cannot trip on an empty history.
+    public mutating func begin(peers: some Sequence<String>, at now: TimeInterval) {
+        lastHeard = Dictionary(uniqueKeysWithValues: Set(peers).map { ($0, now) })
+        silent = []
+    }
+
+    /// A packet arrived. Called before the decode: a packet we cannot read
+    /// still proves the pilot is there, and that is all this is asking.
+    public mutating func heard(_ peerID: String, at now: TimeInterval) {
+        lastHeard[peerID] = now
+    }
+
+    /// Forget everything. A monitor carried into the next match would measure
+    /// this one's silence against timestamps two matches old.
+    public mutating func reset() {
+        lastHeard = [:]
+        silent = []
+    }
+
+    /// The once-a-second verdict on every seated peer.
+    ///
+    /// A peer with no history at all counts as just-heard rather than gone:
+    /// a pilot who seats and then never answers belongs to the handshake
+    /// timeout, which gives up in twenty seconds rather than holding their
+    /// chair for two minutes.
+    public mutating func check(peers: some Sequence<String>, at now: TimeInterval) -> PeerLivenessChange {
+        let quiet = Set(peers.filter { now - (lastHeard[$0] ?? now) >= silenceSeconds })
+        guard quiet != silent else { return .unchanged }
+        let gone = quiet.subtracting(silent)
+        let returned = silent.subtracting(quiet)
+        silent = quiet
+
+        if !gone.isEmpty {
+            return .wentSilent(gone.sorted {
+                let left = lastHeard[$0] ?? now
+                let right = lastHeard[$1] ?? now
+                return left == right ? $0 < $1 : left < right
+            })
+        }
+        // A five-second hole that closes again was a bad stretch of network,
+        // not a pilot walking out. Take the seat off hold rather than making
+        // them sit through the rest of a two-minute count. One of two coming
+        // back is not that: the table is still a pilot short.
+        guard quiet.isEmpty, !returned.isEmpty else { return .unchanged }
+        return .resumed(returned.sorted())
+    }
+}

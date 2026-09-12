@@ -215,10 +215,9 @@ final class OnlineMatchCoordinator: NSObject,
     private var match: GKMatch?
     private var sequence: UInt64 = 0
     private var inputBuffers: [Seat: RemoteInputBuffer] = [:]
-    /// When the last packet of any kind arrived from each peer, by player ID.
-    private var lastHeard: [String: TimeInterval] = [:]
-    /// Peers judged gone from silence alone, because GameKit never said so.
-    private var silentPeers: Set<String> = []
+    /// Who has gone quiet, and for how long. The decision itself lives in
+    /// Core, where it can be exercised without a second phone.
+    private var liveness = PeerLivenessMonitor(silenceSeconds: OnlineMatchCoordinator.peerSilenceSeconds)
     private var heartbeatTask: Task<Void, Never>?
     /// This end's own clock, for measuring how long a link has been quiet.
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
@@ -561,8 +560,7 @@ final class OnlineMatchCoordinator: NSObject,
         remoteHulls = [:]
         inputBuffers = [:]
         heardSeats = []
-        lastHeard = [:]
-        silentPeers = []
+        liveness.reset()
         isMatchReady = false
         isAuthoritative = false
         localSeat = nil
@@ -656,10 +654,8 @@ final class OnlineMatchCoordinator: NSObject,
     /// ends something to miss.
     private func beginHeartbeat() {
         heartbeatTask?.cancel()
-        let started = Self.now
         let localID = GKLocalPlayer.local.gamePlayerID
-        for id in seating.keys where id != localID { lastHeard[id] = started }
-        silentPeers = []
+        liveness.begin(peers: seating.keys.filter { $0 != localID }, at: Self.now)
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
@@ -670,44 +666,36 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    /// GameKit does not always tell us a pilot has gone. A backgrounded app,
-    /// a Wi-Fi handoff, a phone that went in a pocket mid-rally: the match
-    /// object stays connected and the packets simply stop. Until this, the
-    /// board went on flying the last packet it ever got -- a burn into the
-    /// roof that never let up -- under a HUD still reading LINK STABLE.
-    /// Silence is the signal, and it holds the seat exactly as a clean
-    /// disconnect does.
+    /// Act on the silence detector's once-a-second verdict. The judgement is
+    /// `PeerLivenessMonitor`'s; what is left here is the part that needs a
+    /// match object -- the seat, the name on the HUD, the hold.
     private func checkPeerLiveness() {
         // Only once the table is actually playing. A pilot who seats and then
         // never answers belongs to the handshake timeout, which gives up in
         // twenty seconds rather than holding their chair for two minutes.
         guard isMatchReady, lifecycle.acceptsGameplayData, !seating.isEmpty else { return }
         let localID = GKLocalPlayer.local.gamePlayerID
-        let now = Self.now
-        let silent = Set(seating.keys.filter {
-            $0 != localID && now - (lastHeard[$0] ?? now) >= Self.peerSilenceSeconds
-        })
-        guard silent != silentPeers else { return }
-        let gone = silent.subtracting(silentPeers)
-        let returned = silentPeers.subtracting(silent)
-        silentPeers = silent
+        let peers = seating.keys.filter { $0 != localID }
 
-        if let dropped = gone.first {
+        switch liveness.check(peers: peers, at: Self.now) {
+        case .unchanged:
+            return
+        case .wentSilent(let gone):
+            // Longest-silent first, so the pilot the forfeit is awarded
+            // against is the same one on every board at the table.
+            guard let dropped = gone.first else { return }
             let name = seatedPilotNames[dropped] ?? "PILOT"
             note("SILENT LINK: NOTHING FROM \(name) IN \(Int(Self.peerSilenceSeconds))s")
             for id in gone { readyPeers.remove(id) }
             pendingForfeitWinner = seating[dropped]?.team.opponent
             beginReconnectWindow()
-            return
+        case .resumed(let returned):
+            guard case .reconnecting = status else { return }
+            note("PACKETS RESUMED · SEAT RECLAIMED")
+            readyPeers.formUnion(returned)
+            _ = lifecycle.acceptConnection()
+            completeReconnect()
         }
-        // A five-second hole that closes again was a bad stretch of network,
-        // not a pilot walking out. Take the seat off hold rather than making
-        // them sit through the rest of a two-minute count.
-        guard silent.isEmpty, !returned.isEmpty, case .reconnecting = status else { return }
-        note("PACKETS RESUMED · SEAT RECLAIMED")
-        readyPeers.formUnion(returned)
-        _ = lifecycle.acceptConnection()
-        completeReconnect()
     }
 
     /// The peer only learns we are ready from a message, and a message sent
@@ -812,7 +800,7 @@ final class OnlineMatchCoordinator: NSObject,
     private func receive(_ data: Data, from playerID: String) {
         // Before the decode: a packet we cannot read still proves the pilot
         // is there, and that is all the liveness check is asking.
-        lastHeard[playerID] = Self.now
+        liveness.heard(playerID, at: Self.now)
         let envelope: WireEnvelope
         do {
             envelope = try codec.decode(data)
@@ -1207,8 +1195,7 @@ final class OnlineMatchCoordinator: NSObject,
         eventGate.reset()
         inputBuffers = [:]
         heardSeats = []
-        lastHeard = [:]
-        silentPeers = []
+        liveness.reset()
         mismatchedPeers = []
         remoteHulls = [:]
         isMatchReady = false
