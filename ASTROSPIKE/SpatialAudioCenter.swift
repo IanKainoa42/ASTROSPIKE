@@ -47,6 +47,22 @@ final class SpatialAudioCenter {
         return voice
     }
 
+    /// A voice with a speed control ahead of the environment, so a held sound
+    /// can climb while it plays. Varispeed moves rate and pitch together,
+    /// which is what an engine spooling up actually does. The connection stays
+    /// mono end to end because HRTF will not take anything else.
+    func makePitchedVoice(format: AVAudioFormat) -> (AVAudioPlayerNode, AVAudioUnitVarispeed) {
+        let voice = AVAudioPlayerNode()
+        let speed = AVAudioUnitVarispeed()
+        engine.attach(voice)
+        engine.attach(speed)
+        engine.connect(voice, to: speed, format: format)
+        engine.connect(speed, to: environment, format: format)
+        voice.renderingAlgorithm = .HRTF
+        ensureRunning()
+        return (voice, speed)
+    }
+
     func play(frequency: Double, duration: Double, positionX: Float) {
         if !engine.isRunning { try? engine.start() }
         guard engine.isRunning else { return }

@@ -155,16 +155,12 @@ final class TrackSession {
         // The thruster note follows the burn, not the button. A damaged ship
         // is still burning -- weakly -- so it still sounds like one: silence
         // while the pads answer would read as the audio breaking.
-        let driving = thrust && state.phase == .racing
-        if driving {
-            SoundBank.shared.startLoop(
-                .thrusterCyan,
-                positionX: Float(player?.position.x ?? 0),
-                volume: 0.5
-            )
-        } else {
-            SoundBank.shared.stopLoop(.thrusterCyan)
-        }
+        SoundBank.shared.driveLoop(
+            .thrusterCyan,
+            pressed: thrust && state.phase == .racing,
+            positionX: Float(player?.position.x ?? 0),
+            dt: engine.configuration.stepDuration
+        )
     }
 
     private func announce(_ events: [TrackEvent]) {

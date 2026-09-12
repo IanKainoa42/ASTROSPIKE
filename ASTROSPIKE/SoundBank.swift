@@ -26,8 +26,15 @@ final class SoundBank {
     /// A small ring of voices, so a second cue does not cut the first off.
     private var voices: [AVAudioPlayerNode] = []
     private var nextVoice = 0
-    /// Held sounds get a node of their own -- they have to be stoppable.
+    /// Held sounds get a node of their own -- they have to be stoppable -- and
+    /// a speed control, so the note can climb while the pad stays down.
     private var loops: [Cue: AVAudioPlayerNode] = [:]
+    private var loopSpeeds: [Cue: AVAudioUnitVarispeed] = [:]
+    /// How far each held cue has spooled up, 0 to 1. This is the whole reason
+    /// the thruster stops sounding like a clip: the physics thrust is a step
+    /// (`FlightTuning` runs initial == maximum with no ramp), so the sense of
+    /// an engine winding up has to be kept here, in wall-clock time.
+    private var spools: [Cue: Float] = [:]
     private var loaded = false
 
     private init() {}
@@ -46,7 +53,9 @@ final class SoundBank {
             voices.append(SpatialAudioCenter.shared.makeVoice(format: format))
         }
         for cue in [Cue.thrusterCyan, .thrusterOrange] {
-            loops[cue] = SpatialAudioCenter.shared.makeVoice(format: format)
+            let (voice, speed) = SpatialAudioCenter.shared.makePitchedVoice(format: format)
+            loops[cue] = voice
+            loopSpeeds[cue] = speed
         }
     }
 
@@ -63,26 +72,59 @@ final class SoundBank {
         voice.play()
     }
 
-    /// Starts the cue looping if it is not already running. Calling it again
-    /// while it plays does nothing, which is what a held button wants.
-    func startLoop(_ cue: Cue, positionX: Float, volume: Float = 0.6) {
-        guard enabled, let buffer = buffers[cue], let voice = loops[cue] else { return }
-        voice.position = AVAudio3DPoint(x: positionX, y: 0, z: -1)
-        guard !voice.isPlaying else { return }
-        SpatialAudioCenter.shared.ensureRunning()
-        voice.volume = volume
-        voice.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts])
-        voice.play()
-    }
+    /// Drive a held cue for one frame. Safe -- expected, in fact -- to call
+    /// every frame whether or not the pad is down: the cue swells while it is
+    /// held, coasts down when it is let go, and only stops once it has
+    /// actually reached silence. A stab and a long burn are different sounds
+    /// because a stab never gets far up the swell.
+    func driveLoop(_ cue: Cue, pressed: Bool, positionX: Float, dt: Double) {
+        guard let voice = loops[cue] else { return }
+        let step = Float(max(0, min(dt, 0.1)))
+        var level = spools[cue] ?? 0
+        if pressed && enabled {
+            level = min(1, level + step / Self.spoolUp)
+        } else {
+            level = max(0, level - step / Self.spoolDown)
+        }
+        spools[cue] = level
 
-    func stopLoop(_ cue: Cue) {
-        loops[cue]?.stop()
+        guard level > 0 else {
+            if voice.isPlaying { voice.stop() }
+            return
+        }
+        guard let buffer = buffers[cue] else { return }
+        voice.position = AVAudio3DPoint(x: positionX, y: 0, z: -1)
+        // The curve is deliberately steep at the bottom: a tap has to make a
+        // noise on the frame it happens, or the pad reads as dead. The last
+        // two thirds of the swell are the part you only hear on a long burn.
+        // Set ahead of `play()`, never after: a fresh node sits at full volume
+        // and the render thread can pull a quantum before the assignment
+        // lands, which is a bang on the very first press.
+        voice.volume = Self.loopPeakVolume * pow(level, 0.45)
+        loopSpeeds[cue]?.rate = Self.loopBaseRate + Self.loopRateClimb * level
+        if !voice.isPlaying {
+            SpatialAudioCenter.shared.ensureRunning()
+            voice.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts])
+            voice.play()
+        }
     }
 
     func stopEverything() {
         for voice in voices { voice.stop() }
         for voice in loops.values { voice.stop() }
+        spools.removeAll()
     }
+
+    /// Seconds from the pad going down to the engine sitting at full song.
+    private static let spoolUp: Float = 0.85
+    /// Seconds from full song to silence once it is released. Short enough to
+    /// feel like a cut-off, long enough not to click.
+    private static let spoolDown: Float = 0.3
+    private static let loopPeakVolume: Float = 0.72
+    /// The clip plays flat and slightly slow at ignition and passes its
+    /// recorded pitch near the top, so the burn climbs through the note.
+    private static let loopBaseRate: Float = 0.82
+    private static let loopRateClimb: Float = 0.3
 
     /// Decode a bundled clip, convert it to the engine's format, and drop the
     /// silence in front of it. Every one of these files starts with about four

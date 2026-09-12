@@ -85,9 +85,12 @@ final class GameSession {
     /// Which ships were past their MAX CROSS line last frame, so the call
     /// fires once on the way over instead of every frame they spend there.
     private var offsideLastFrame: Set<Seat> = []
-    /// Which teams had an engine lit last frame, so the thruster bed starts
-    /// and stops on the edges rather than restarting sixty times a second.
-    private var thrustingLastFrame: Set<Team> = []
+    /// Which teams have an engine lit, and where the burn is coming from.
+    /// The simulation writes these; the display frame reads them and feeds
+    /// the thruster bed in wall-clock time, so the swell keeps its shape even
+    /// when a frame carries several simulation ticks.
+    private var thrustingTeams: Set<Team> = []
+    private var thrustCenter: [Team: Double] = [:]
     let localSeat: Seat
     private weak var online: OnlineMatchCoordinator?
     /// The host mirrors the score to the lobby; guests leave it alone.
@@ -205,7 +208,8 @@ final class GameSession {
         // The thruster bed loops. Leaving the arena with the throttle down
         // must not leave it droning under the menu.
         SoundBank.shared.stopEverything()
-        thrustingLastFrame = []
+        thrustingTeams = []
+        thrustCenter = [:]
         offsideLastFrame = []
     }
 
@@ -257,6 +261,9 @@ final class GameSession {
         }
         let elapsed = min(timestamp - previousTimestamp, 0.1)
         self.previousTimestamp = timestamp
+        // Ahead of the pause guard on purpose. A pause with the throttle down
+        // has to let the bed coast to silence rather than freeze mid-swell.
+        driveThrusterBed(dt: elapsed)
         guard !isPaused else { return }
 
         switch state.match.phase {
@@ -405,7 +412,11 @@ final class GameSession {
         let limit = mode.court.opponentCrossingLimit
         var offsideNow: Set<Seat> = []
         var thrustingNow: Set<Team> = []
-        var thrustCenter: [Team: Double] = [:]
+        // Both ships on a team share one voice, so the burn is panned to the
+        // middle of whoever is actually burning rather than to whichever ship
+        // the dictionary happened to visit last.
+        var burnSum: [Team: Double] = [:]
+        var burnCount: [Team: Double] = [:]
 
         for (seat, ship) in state.ships {
             let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
@@ -420,23 +431,34 @@ final class GameSession {
             }
             if inputs[seat]?.thrust == true, state.match.phase == .playing {
                 thrustingNow.insert(ship.homeSide)
-                thrustCenter[ship.homeSide] = ship.position.x
+                burnSum[ship.homeSide, default: 0] += ship.position.x
+                burnCount[ship.homeSide, default: 0] += 1
             }
         }
         offsideLastFrame = offsideNow
-
-        for team in Team.allCases {
-            let cue = SoundBank.Cue.thruster(team)
-            if thrustingNow.contains(team) {
-                SoundBank.shared.startLoop(
-                    cue,
-                    positionX: Float(thrustCenter[team] ?? 0)
-                )
-            } else if thrustingLastFrame.contains(team) {
-                SoundBank.shared.stopLoop(cue)
-            }
+        thrustingTeams = thrustingNow
+        for team in Team.allCases where burnCount[team] != nil {
+            thrustCenter[team] = burnSum[team]! / burnCount[team]!
         }
-        thrustingLastFrame = thrustingNow
+    }
+
+    /// The thruster bed, one display frame's worth. It runs every frame
+    /// rather than on the press and release edges, because the whole point is
+    /// that the sound is still changing while the pad sits there.
+    private func driveThrusterBed(dt: CFTimeInterval) {
+        // `announceShipCues` only runs on the ticks it is asked for, so the
+        // last set of burning teams sits there through a countdown or a
+        // finish. The bed has to answer the phase, not the stale set, or a
+        // point scored with the throttle down drones under the restart.
+        let live = (isPaused || state.match.phase != .playing) ? [] : thrustingTeams
+        for team in Team.allCases {
+            SoundBank.shared.driveLoop(
+                .thruster(team),
+                pressed: live.contains(team),
+                positionX: Float(thrustCenter[team] ?? 0),
+                dt: dt
+            )
+        }
     }
 
     private func installOnlineCallbacks() {
