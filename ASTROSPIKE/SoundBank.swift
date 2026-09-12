@@ -45,8 +45,10 @@ final class SoundBank {
         guard !loaded else { return }
         loaded = true
         let format = SpatialAudioCenter.shared.mixFormat
+        let held: Set<Cue> = [.thrusterCyan, .thrusterOrange]
         for cue in Cue.allCases {
-            guard let buffer = Self.load(cue.rawValue, into: format) else { continue }
+            guard let buffer = Self.load(cue.rawValue, into: format, looping: held.contains(cue))
+            else { continue }
             buffers[cue] = buffer
         }
         for _ in 0..<6 {
@@ -125,12 +127,20 @@ final class SoundBank {
     /// recorded pitch near the top, so the burn climbs through the note.
     private static let loopBaseRate: Float = 0.82
     private static let loopRateClimb: Float = 0.3
+    /// How much of a held clip survives the trim, and how long the two ends
+    /// take to hand over at the seam.
+    private static let loopSeconds = 1.0
+    private static let loopFadeSeconds = 0.03
 
     /// Decode a bundled clip, convert it to the engine's format, and drop the
     /// silence in front of it. Every one of these files starts with about four
     /// tenths of a second of nothing, and a sound effect that arrives four
     /// tenths of a second after the thing it describes reads as a bug.
-    private static func load(_ name: String, into format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    private static func load(
+        _ name: String,
+        into format: AVAudioFormat,
+        looping: Bool = false
+    ) -> AVAudioPCMBuffer? {
         guard let url = Bundle.main.url(forResource: name, withExtension: "mp3"),
               let file = try? AVAudioFile(forReading: url) else { return nil }
         let frames = AVAudioFrameCount(file.length)
@@ -154,7 +164,82 @@ final class SoundBank {
             return source
         }
         guard error == nil, converted.frameLength > 0 else { return nil }
-        return trimmingLeadIn(converted)
+        let trimmed = trimmingLeadIn(converted)
+        return looping ? sustainWindow(trimmed) : trimmed
+    }
+
+    /// Cut a held clip down to a single loopable second. These recordings have
+    /// a shape of their own -- attack, body, then a long fade -- and looping
+    /// the whole of one replays that arc on a fixed cycle, which is the part
+    /// that still reads as a clip however the envelope is driven. A second of
+    /// the steadiest stretch has no arc left to hear.
+    ///
+    /// The window is found rather than dialled in. The two thrusters settle at
+    /// different times, and an offset measured off the files as they are today
+    /// would be wrong the moment either one is re-recorded.
+    private static func sustainWindow(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
+        guard buffer.format.channelCount == 1,
+              let samples = buffer.floatChannelData?[0] else { return buffer }
+        let rate = buffer.format.sampleRate
+        let length = Int(buffer.frameLength)
+        let bin = max(1, Int(rate * 0.05))
+        let fade = max(1, Int(rate * loopFadeSeconds))
+        guard length > Int(rate * loopSeconds) + fade + bin else { return buffer }
+
+        var energy: [Float] = []
+        energy.reserveCapacity(length / bin)
+        for base in stride(from: 0, to: length - bin, by: bin) {
+            var sum: Float = 0
+            for i in base ..< base + bin { sum += samples[i] * samples[i] }
+            energy.append((sum / Float(bin)).squareRoot())
+        }
+        guard let peak = energy.max(), peak > 0 else { return buffer }
+
+        let span = Int(rate * loopSeconds) / bin
+        // Reserve the crossfade's worth of bins past the window as well: the
+        // seam reads samples from beyond the body, so a window allowed to end
+        // on the last bin would read off the end of the buffer.
+        let tail = (fade + bin - 1) / bin
+        guard span > 0, energy.count > span + tail else { return buffer }
+
+        // Only bins carrying real signal are eligible, which is what keeps the
+        // search out of the silent lead-in and the fade -- both are flat, and
+        // both would otherwise win outright.
+        let floorLevel = peak * 0.35
+        var bestStart = -1
+        var bestFlatness = Float.greatestFiniteMagnitude
+        for s in 0 ... (energy.count - span - tail) {
+            let window = energy[s ..< s + span]
+            guard let low = window.min(), low >= floorLevel, let high = window.max() else { continue }
+            let mean = window.reduce(0, +) / Float(span)
+            guard mean > 0 else { continue }
+            let flatness = (high - low) / mean
+            if flatness < bestFlatness {
+                bestFlatness = flatness
+                bestStart = s
+            }
+        }
+        guard bestStart >= 0 else { return buffer }
+
+        let start = bestStart * bin
+        let body = span * bin
+        guard let loop = AVAudioPCMBuffer(
+                  pcmFormat: buffer.format,
+                  frameCapacity: AVAudioFrameCount(body)
+              ),
+              let out = loop.floatChannelData?[0] else { return buffer }
+        loop.frameLength = AVAudioFrameCount(body)
+        out.update(from: samples + start, count: body)
+        // The seam is already continuous -- the sample that opens the loop is
+        // the one that followed its last -- so the fade is only there to stop
+        // the waveform kinking. Equal power (a^2 + b^2 = 1) rather than a
+        // straight blend, or the level dips through the middle of it.
+        for i in 0 ..< fade {
+            let t = Float(i) / Float(fade)
+            out[i] = samples[start + body + i] * (1 - t).squareRoot()
+                + samples[start + i] * t.squareRoot()
+        }
+        return loop
     }
 
     private static func trimmingLeadIn(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {

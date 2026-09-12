@@ -28,9 +28,6 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.switches["Swap controls for left-handed play"].exists)
         let settingsForm = app.collectionViews.firstMatch
         XCTAssertTrue(settingsForm.exists)
-        // Match Rules sits below the fold on a landscape phone, and a cell
-        // scrolled past no longer exists either: nudge the form until the
-        // stepper is on screen.
         let bounceIncrement = app.buttons.matching(
             NSPredicate(
                 format: "label BEGINSWITH %@ AND label CONTAINS %@",
@@ -38,22 +35,49 @@ final class ASTROSPIKEUITests: XCTestCase {
                 "Increment"
             )
         ).firstMatch
-        for _ in 0 ..< 4 where !bounceIncrement.exists {
-            settingsForm.swipeUp(velocity: .slow)
-        }
-        XCTAssertTrue(bounceIncrement.waitForExistence(timeout: 2))
+        reveal(bounceIncrement, in: settingsForm)
         let flightTuning = app.buttons["Flight Tuning"]
-        XCTAssertTrue(flightTuning.waitForExistence(timeout: 3))
+        reveal(flightTuning, in: settingsForm)
         flightTuning.tap()
-        XCTAssertTrue(app.sliders["Gravity"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.sliders["Thrust"].exists)
-        XCTAssertTrue(app.sliders["Rotation"].exists)
-        app.swipeUp()
-        XCTAssertTrue(app.sliders["Ball gravity"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.sliders["Drop height"].exists)
-        XCTAssertTrue(app.sliders["Drop speed"].exists)
-        app.swipeUp()
-        XCTAssertTrue(app.buttons["Reset Defaults"].waitForExistence(timeout: 3))
+
+        // Flight Tuning is a ScrollView of GroupBoxes, not a Form -- asking for
+        // a collection view here matches the Settings form still on screen
+        // mid-push, and then swipes at something that has gone away.
+        let tuningPage = app.scrollViews.firstMatch
+        XCTAssertTrue(tuningPage.waitForExistence(timeout: 3))
+        for name in ["Gravity", "Thrust", "Rotation", "Ball gravity", "Drop height", "Drop speed"] {
+            reveal(app.sliders[name], in: tuningPage)
+        }
+        reveal(app.buttons["Reset Defaults"], in: tuningPage)
+    }
+
+    /// Scroll `element` into reach, one bounded loop per element asserted on --
+    /// never one loop for the whole screen. A loop that stops at the first row
+    /// is not a loop that reaches the row below it, so every Section added to
+    /// Settings would otherwise push the next assertion off the fold and break
+    /// a test that has nothing to do with the change. Slow swipes because one
+    /// full-velocity `swipeUp` overshoots whole sections.
+    ///
+    /// Hittable rather than existent on purpose: a row nudged to the very
+    /// bottom edge is in the hierarchy while a tap on it lands somewhere else,
+    /// which reads as a flake rather than as the layout problem it is.
+    @MainActor
+    private func reveal(
+        _ element: XCUIElement,
+        in scroller: XCUIElement,
+        nudges: Int = 8,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for _ in 0 ..< nudges where !element.isHittable {
+            scroller.swipeUp(velocity: .slow)
+        }
+        XCTAssertTrue(
+            element.isHittable,
+            "\(nudges) nudges never brought \(element) into reach",
+            file: file,
+            line: line
+        )
     }
 
     @MainActor
