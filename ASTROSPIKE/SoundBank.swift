@@ -129,7 +129,16 @@ final class SoundBank {
     private static let loopRateClimb: Float = 0.3
     /// How much of a held clip survives the trim, and how long the two ends
     /// take to hand over at the seam.
-    private static let loopSeconds = 1.0
+    ///
+    /// Two seconds rather than one because the cycle is what gives a loop
+    /// away, and at full throttle the varispeed runs at `loopBaseRate +
+    /// loopRateClimb`, so a one-second window came back round every 0.89s --
+    /// a 1.1 Hz pulse sitting right where hearing is most alert to rhythm.
+    /// Two seconds halves that to 0.56 Hz, slow enough to read as texture.
+    /// The cost is paid in flatness: the longer window has to take in more of
+    /// the clip's own shape (0.32 to 0.58 on cyan), so each pass is less even.
+    /// Fewer, less uniform cycles beat more, more uniform ones.
+    private static let loopSeconds = 2.0
     private static let loopFadeSeconds = 0.03
 
     /// Decode a bundled clip, convert it to the engine's format, and drop the
