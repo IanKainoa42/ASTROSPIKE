@@ -477,16 +477,19 @@ struct TouchControls: View {
     }
 
     private func setThrustPressed(_ pressed: Bool) {
+        if pressed, !thrustPressed { FeedbackCenter.shared.controlPressed() }
         thrustPressed = pressed
         thrust = pressed
     }
 
     private func setFirePressed(_ pressed: Bool) {
+        if pressed, !firePressed { FeedbackCenter.shared.controlPressed() }
         firePressed = pressed
         fire = pressed
     }
 
     private func setTractorPressed(_ pressed: Bool) {
+        if pressed, !tractorPressed { FeedbackCenter.shared.controlPressed() }
         tractorPressed = pressed
         tractor = pressed
     }
@@ -602,6 +605,9 @@ private final class SteeringCaptureView: UIView {
     private let curve = SteeringCurve.standard
     private var activeTouchID: ObjectIdentifier?
     private var virtualCenterX: CGFloat = 0
+    /// Whether the thumb is currently against the stop, so the detent tick
+    /// fires once on arrival instead of buzzing while it is held there.
+    private var pegged = false
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
@@ -610,8 +616,10 @@ private final class SteeringCaptureView: UIView {
         let anchor = touch.location(in: self)
         virtualCenterX = CGFloat(curve.virtualCenter(
             anchorX: Double(anchor.x),
-            midX: Double(bounds.width / 2)
+            width: Double(bounds.width)
         ))
+        pegged = false
+        FeedbackCenter.shared.controlPressed()
         updateTorque(for: touch)
     }
 
@@ -642,6 +650,17 @@ private final class SteeringCaptureView: UIView {
             virtualCenter: Double(virtualCenterX)
         )
         onTorqueChanged?(torque)
+        // A tick on arriving at full deflection: the whole point of starting a
+        // press at half is that there is somewhere further to go, and the
+        // thumb needs to feel where that runs out. Hysteresis, or holding
+        // against the stop would rattle.
+        let magnitude = abs(torque)
+        if magnitude > 0.995, !pegged {
+            pegged = true
+            FeedbackCenter.shared.steeringStop()
+        } else if magnitude < 0.9 {
+            pegged = false
+        }
         // Light the icons off a threshold, not the sign, so passing through
         // neutral doesn't strobe them.
         let lit = 0.03

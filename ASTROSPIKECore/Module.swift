@@ -116,35 +116,53 @@ public enum FlightControlMapping {
 /// Turns a finger's position on the steering strip into a torque command.
 ///
 /// The pad has no modes: a press and a drag are the same gesture. Touching
-/// down places a *virtual centre* one full span past the finger, on the far
-/// side of whichever half was touched, so the first sample already clamps to
-/// full deflection -- a tap still pegs the turn. Sliding back toward that
-/// virtual centre eases the torque down continuously, through zero, and on
-/// into the opposite turn. Sliding the other way (deeper into the turn) can
-/// only stay pegged, never weaken.
+/// down places a *virtual centre* out past the finger, on the far side of
+/// whichever half was touched, far enough that the first sample already reads
+/// `initialTorque` -- half a turn, with `sharpenTravel` points of pad left
+/// between the thumb and the stop to lean into a sharper one. Sliding back
+/// toward that virtual centre eases the torque down continuously, through
+/// zero, and on into the opposite turn.
 public struct SteeringCurve: Sendable, Equatable {
-    /// Points of travel between neutral and full deflection.
-    public let span: Double
-    /// Slack past full deflection, so jitter while holding a tap stays pegged.
-    public let deadZone: Double
+    /// Torque a fresh press lands on, before the finger has moved at all.
+    public let initialTorque: Double
+    /// Travel left between a fresh press and full deflection -- the room to
+    /// lean into a sharper turn.
+    public let sharpenTravel: Double
     /// Shapes the ramp. 1 is linear; above 1 stretches the slow-turn end.
     public let gamma: Double
 
-    public init(span: Double = 60, deadZone: Double = 8, gamma: Double = 2) {
-        self.span = span
-        self.deadZone = deadZone
+    public init(sharpenTravel: Double = 30, initialTorque: Double = 0.5, gamma: Double = 2) {
+        self.sharpenTravel = sharpenTravel
+        self.initialTorque = min(0.99, max(0.01, initialTorque))
         self.gamma = gamma
     }
 
     public static let standard = SteeringCurve()
 
-    /// Where neutral sits for a touch that began at `anchorX` on a pad
-    /// whose midpoint is `midX`.
-    public func virtualCenter(anchorX: Double, midX: Double) -> Double {
+    /// Points of travel between neutral and full deflection. Derived rather
+    /// than set, so `sharpenTravel` survives a change of `gamma`: a steeper
+    /// gamma pushes the half-torque point further out, and the span grows to
+    /// keep the same room past it.
+    public var span: Double { sharpenTravel / (1 - pow(initialTorque, 1 / gamma)) }
+
+    /// How far past the finger the virtual centre sits at touch-down.
+    public var anchorOffset: Double { span - sharpenTravel }
+
+    /// Where neutral sits for a touch that began at `anchorX` on a pad that is
+    /// `width` points across.
+    public func virtualCenter(anchorX: Double, width: Double) -> Double {
         // Positive torque is a left turn, and the left half of the pad turns
         // left, so neutral goes to the right of a left-half touch.
-        let direction: Double = anchorX < midX ? 1 : -1
-        return anchorX + direction * (span + deadZone)
+        if anchorX < width / 2 {
+            // Never nearer the left edge than one span, or a thumb that landed
+            // in the last few points of the pad could not reach full
+            // deflection at all -- there is no travel outside the screen. Such
+            // a press starts hotter than half instead, which is the only thing
+            // left to give, and it is continuous: the further out you land,
+            // the less room you had to begin with.
+            return max(anchorX + anchorOffset, span)
+        }
+        return min(anchorX - anchorOffset, width - span)
     }
 
     /// Torque for a finger at `x`, given the neutral point fixed at touch-down.

@@ -6,6 +6,33 @@ final class FeedbackCenter {
     static let shared = FeedbackCenter()
     var hapticsEnabled = true
 
+    // Kept alive and prepared. A cold generator can take tens of milliseconds
+    // to spin the engine up, and a control tick that lands late reads as a
+    // tick for whatever the thumb did next.
+    private let controlTick = UIImpactFeedbackGenerator(style: .soft)
+    private let detentTick = UIImpactFeedbackGenerator(style: .rigid)
+
+    private init() {
+        controlTick.prepare()
+        detentTick.prepare()
+    }
+
+    /// A flight-control pad took a press. Soft, because these fire constantly
+    /// -- it is confirmation that the pad heard you, not an event.
+    func controlPressed() {
+        guard hapticsEnabled else { return }
+        controlTick.impactOccurred(intensity: 0.7)
+        controlTick.prepare()
+    }
+
+    /// The steering thumb reached the stop: full deflection, nothing further
+    /// out to slide into.
+    func steeringStop() {
+        guard hapticsEnabled else { return }
+        detentTick.impactOccurred(intensity: 0.45)
+        detentTick.prepare()
+    }
+
     func impact(positionX: Float = 0) {
         SpatialAudioCenter.shared.play(frequency: 145, duration: 0.08, positionX: positionX)
         guard hapticsEnabled else { return }
