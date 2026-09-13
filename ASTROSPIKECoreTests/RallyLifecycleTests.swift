@@ -65,8 +65,13 @@ struct RallyLifecycleTests {
     @Test("The buffer expires, so a real second hit still counts")
     func debounceExpires() {
         var engine = rattleAgainstTheWall()
-        // The first strike lands on the fourth step of this scenario.
-        _ = flyTheRattle(&engine, ticks: 4)
+        // Fly until the first strike arms the buffer. Which tick that is
+        // depends on the size of the ball; how long the buffer runs does not.
+        var flown = 0
+        while engine.state.ships[.cyan]!.ballTouchCooldownTicks == 0, flown < 20 {
+            _ = flyTheRattle(&engine, ticks: 1)
+            flown += 1
+        }
         let armed = engine.state.ships[.cyan]!.ballTouchCooldownTicks
         #expect(armed == 12, "0.1s at the 120Hz fixed step")
 
@@ -124,6 +129,14 @@ struct RallyLifecycleTests {
         #expect(engine.state.ball.velocity == .init(-0.45, -0.08))
     }
 
+    /// Just outside the cyan face at mouth height, so a 2/s drive goes through
+    /// it on the next tick. Placed from the geometry, so it is still a goal
+    /// whatever size the ball is.
+    private static let besideTheCyanFace = SIMD2(
+        -(ArenaGeometry.standard.netHalfWidth + BallState.nominalRadius + 0.004),
+        0.30
+    )
+
     @Test("A point respawns only the ball, over the middle")
     func pointRespawnsOnlyBall() {
         var engine = SimulationEngine.testing()
@@ -141,7 +154,7 @@ struct RallyLifecycleTests {
             angularVelocity: 0,
             thrustLevel: 1.5
         )
-        engine.state.ball.position = .init(-0.06, 0.30)
+        engine.state.ball.position = Self.besideTheCyanFace
         engine.state.ball.velocity = .init(2, 0)
 
         engine.step(inputs: [:])
@@ -162,7 +175,7 @@ struct RallyLifecycleTests {
         var engine = SimulationEngine.testing()
         engine.state.ships[.cyan]!.position = .init(-0.55, 0.25)
         engine.state.ships[.cyan]!.angle = .pi / 2
-        engine.state.ball.position = .init(-0.06, 0.30)
+        engine.state.ball.position = Self.besideTheCyanFace
         engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldBall = engine.state.ball
@@ -184,7 +197,7 @@ struct RallyLifecycleTests {
     @Test("The serve releases after the prototype delay without a countdown")
     func serveDropsAfterPrototypeDelay() {
         var engine = SimulationEngine.testing()
-        engine.state.ball.position = .init(-0.06, 0.30)
+        engine.state.ball.position = Self.besideTheCyanFace
         engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldPosition = engine.state.ball.position

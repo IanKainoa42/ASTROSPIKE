@@ -42,7 +42,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     ship's frame rather than the world's. Both peers run the same
     //     deterministic engine, so a build 60 peer would decode every packet
     //     and then simulate a different rally from the same inputs.
-    public static let currentVersion: UInt16 = 15
+    // 16: a bigger ball, thinner bolts that glance off an off-centre hit, and
+    //     a ball wedged under a lip stays under it. Same reason: an older
+    //     peer would step a different rally from the same inputs.
+    public static let currentVersion: UInt16 = 16
 
     public var version: UInt16
     public var sequence: UInt64

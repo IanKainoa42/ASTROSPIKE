@@ -576,6 +576,8 @@ final class ArenaScene: SKScene {
         if !didBuild { buildArena() }
         for seat in Seat.allCases { update(seat: seat, state: snapshot.ships[seat]) }
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
+        // The node is drawn 10pt across for a 0.038 ball; a bigger ball draws
+        // bigger rather than being squeezed back to the old size.
         let ballScale = CGFloat(snapshot.ball.radius / 0.038)
         ball.setScale(ballScale)
         // No speed glow: the faster it moves the more its edge matters.
@@ -597,11 +599,11 @@ final class ArenaScene: SKScene {
                 continue
             }
             let color: SKColor = bolt.owner == .cyan ? .cyan : .orange
-            let node = SKShapeNode(rectOf: CGSize(width: 5, height: 18), cornerRadius: 2.5)
+            let node = SKShapeNode(rectOf: CGSize(width: 3, height: 18), cornerRadius: 1.5)
             node.fillColor = .white
             node.strokeColor = color
-            node.lineWidth = 2
-            node.glowWidth = 9
+            node.lineWidth = 1.5
+            node.glowWidth = 6
             node.zPosition = 6
             node.position = position
             node.zRotation = heading

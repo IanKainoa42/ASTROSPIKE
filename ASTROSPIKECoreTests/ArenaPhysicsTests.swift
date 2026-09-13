@@ -121,6 +121,88 @@ struct ArenaPhysicsTests {
         #expect(leaks == 0)
     }
 
+    @Test("A ball that starts a tick wedged under a lip stays under it")
+    func aWedgedBallCannotComeUpThroughTheLip() {
+        let arena = ArenaGeometry.standard
+        let radius = BallState(position: .zero).radius
+        // A knock off the cap can leave the ball's centre a fraction of a
+        // radius under the ledge. The lip is a line, so a drive up and in from
+        // there put the centre over the top by the swept check's first sample:
+        // the ball read as sitting on the ledge, and the face behind it took
+        // the goal. Placed from the geometry, halfway along each lip.
+        for side in [1.0, -1.0] {
+            let root = arena.lipRoot(sign: side)
+            let edge = arena.lipTip(sign: side) - root
+            let up = simd_normalize(SIMD2(-edge.y, edge.x)) * side
+            for depth in [0.2, 0.3, 0.4] {
+                for drive in [SIMD2(2.0, 2.0), SIMD2(3, 4), SIMD2(4, 6)] {
+                    let result = ballOnlyStep(
+                        position: root + edge * 0.5 - up * (radius * depth),
+                        velocity: SIMD2(-side * drive.x, drive.y)
+                    )
+                    #expect(!result.scored, "side \(side) depth \(depth) drive \(drive)")
+                    #expect(result.engine.state.ball.velocity.y < 0, "side \(side) depth \(depth) drive \(drive)")
+                }
+            }
+        }
+    }
+
+    @Test("A ball tucked under the lip beside the cap has not reached a face")
+    func thePocketUnderTheLipIsNotTheMouth() {
+        let arena = ArenaGeometry.standard
+        let radius = BallState(position: .zero).radius
+        // Beside the rounded bottom of the net, under the root of the lip, is
+        // open space. The face plane reaches down there but the mouth does not:
+        // it starts where the cap does. Placed from the geometry rather than
+        // from a found case, so it stays in that pocket whatever the ball's size.
+        for side in [1.0, -1.0] {
+            let result = ballOnlyStep(
+                position: SIMD2(
+                    side * (arena.netHalfWidth + radius + 0.001),
+                    arena.netBottomY - radius * 0.9
+                ),
+                velocity: SIMD2(-side * 0.5, 0)
+            )
+            #expect(!result.scored, "side \(side)")
+        }
+    }
+
+    @Test("No goal is scored across a face below the bottom of the mouth")
+    func noGoalsBelowTheMouth() {
+        let arena = ArenaGeometry.standard
+        let configuration = SimulationConfiguration()
+        let dt = configuration.stepDuration
+        let radius = BallState(position: .zero).radius
+        let limit = arena.netHalfWidth + radius
+        var goals = 0
+        var belowMouth = 0
+        for side in [1.0, -1.0] {
+            for xStep in 0 ..< 8 {
+                let x = side * (limit + 0.001 + Double(xStep) * 0.003)
+                for yStep in 0 ... 27 {
+                    let y = arena.netBottomY + radius * (-1.2 + Double(yStep) * 0.1)
+                    for speed in [1.0, 3.0, 6.0, 10.0] {
+                        for degrees in stride(from: -60.0, through: 60.0, by: 15.0) {
+                            let angle = degrees * .pi / 180
+                            let velocity = SIMD2(-side * cos(angle), sin(angle)) * speed
+                            let result = ballOnlyStep(position: SIMD2(x, y), velocity: velocity)
+                            guard result.scored else { continue }
+                            goals += 1
+                            // Where did this tick's own sweep cross the face plane?
+                            let swept = (velocity
+                                + configuration.gravity * configuration.ballGravityMultiplier * dt) * dt
+                            let t = (side * limit - x) / swept.x
+                            guard (0 ... 1).contains(t) else { continue }
+                            if y + swept.y * t < arena.netBottomY - 1e-9 { belowMouth += 1 }
+                        }
+                    }
+                }
+            }
+        }
+        #expect(goals > 500)
+        #expect(belowMouth == 0)
+    }
+
     @Test("The lips tilt inward and are wider than a ball")
     func lipsFeedTheMouth() {
         let arena = ArenaGeometry.standard
@@ -149,7 +231,7 @@ struct ArenaPhysicsTests {
         engine.state.ball = BallState(
             position: SIMD2(0.115, 0.26),
             velocity: .zero,
-            radius: 0.038
+            radius: BallState.nominalRadius
         )
 
         for tick in UInt64(0) ..< 240 where engine.state.match.phase == .playing {
@@ -167,7 +249,7 @@ struct ArenaPhysicsTests {
         engine.state.ball = BallState(
             position: SIMD2(0, -0.20),
             velocity: SIMD2(0, 2),
-            radius: 0.038
+            radius: BallState.nominalRadius
         )
 
         for tick in UInt64(0) ..< 90 where engine.state.match.phase == .playing {
@@ -194,7 +276,7 @@ struct ArenaPhysicsTests {
             engine.state.ball = BallState(
                 position: SIMD2(offset, -0.20),
                 velocity: SIMD2(0, 2),
-                radius: 0.038
+                radius: BallState.nominalRadius
             )
             for tick in UInt64(0) ..< 90 where engine.state.match.phase == .playing {
                 engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
@@ -218,7 +300,7 @@ struct ArenaPhysicsTests {
         engine.state.ball = BallState(
             position: SIMD2(-0.30, 0.29),
             velocity: SIMD2(2, 0.3),
-            radius: 0.038
+            radius: BallState.nominalRadius
         )
 
         for tick in UInt64(0) ..< 30 where engine.state.match.phase == .playing {
@@ -244,7 +326,7 @@ struct ArenaPhysicsTests {
         engine.state.ball = BallState(
             position: SIMD2(-0.30, 0.0),
             velocity: SIMD2(2, 0),
-            radius: 0.038
+            radius: BallState.nominalRadius
         )
 
         for tick in UInt64(0) ..< 20 where engine.state.match.phase == .playing {
@@ -263,7 +345,7 @@ struct ArenaPhysicsTests {
         engine.state.ball = BallState(
             position: SIMD2(-0.20, 0.30),
             velocity: SIMD2(1.5, 0),
-            radius: 0.038
+            radius: BallState.nominalRadius
         )
 
         for tick in UInt64(0) ..< 120 where engine.state.match.phase == .playing {
@@ -341,7 +423,7 @@ struct ArenaPhysicsTests {
         engine.state.ball = BallState(
             position: SIMD2(-0.55, 0.58),
             velocity: SIMD2(3, 0.6),
-            radius: 0.038
+            radius: BallState.nominalRadius
         )
 
         var thrownDown = false

@@ -5,7 +5,7 @@ public struct BallState: Codable, Equatable, Sendable {
     /// The radius every ball is created with. The arena is dimensioned against
     /// it -- the portal collar in particular -- so it belongs here rather than
     /// buried as a literal in the initialiser.
-    public static let nominalRadius = 0.038
+    public static let nominalRadius = 0.042
 
     public var position: SIMD2<Double>
     public var velocity: SIMD2<Double>
@@ -51,7 +51,9 @@ public struct HoopGeometry: Equatable, Sendable {
 
     public init(
         centerY: Double = 0.16,
-        innerHalfWidth: Double = 0.072,
+        // The clearance the hoop was tuned with, kept past the ball's own
+        // radius: a bigger ball gets a wider window, not a tighter one.
+        innerHalfWidth: Double = BallState.nominalRadius + 0.034,
         rimRadius: Double = 0.014,
         netDepth: Double = 0.11
     ) {
@@ -257,10 +259,33 @@ public struct ArenaGeometry: Equatable, Sendable {
         for step in 1 ... steps {
             let sample = start + (end - start) * (Double(step) / Double(steps))
             if let contact = lipContact(position: sample, radius: radius) {
+                // The lip is a line, so it has no inside to hold a centre that
+                // is already close. A ball that begins the tick wedged under it
+                // can have its centre over the top by the first sample, and
+                // would be read as sitting on the ledge it just went through.
+                // The side a ball is on is the side it started on.
+                if centreCrossesLip(from: start, to: sample) {
+                    let closest = contact.position - contact.normal * radius
+                    return (closest - contact.normal * radius, -contact.normal)
+                }
                 return contact
             }
         }
         return nil
+    }
+
+    /// Whether the straight path between two centres passes through the lip on
+    /// the side `end` is on.
+    private func centreCrossesLip(from start: SIMD2<Double>, to end: SIMD2<Double>) -> Bool {
+        let root = lipRoot(sign: end.x < 0 ? -1 : 1)
+        let edge = lipTip(sign: end.x < 0 ? -1 : 1) - root
+        let path = end - start
+        let denominator = path.x * edge.y - path.y * edge.x
+        guard abs(denominator) > 1e-12 else { return false }
+        let offset = root - start
+        let alongPath = (offset.x * edge.y - offset.y * edge.x) / denominator
+        let alongLip = (offset.x * path.y - offset.y * path.x) / denominator
+        return (0 ... 1).contains(alongPath) && (0 ... 1).contains(alongLip)
     }
 
     // MARK: - Hump surface

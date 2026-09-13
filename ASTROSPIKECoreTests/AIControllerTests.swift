@@ -288,58 +288,71 @@ struct AIControllerTests {
         (-0.18, SIMD2(-0.25, 0.15)),
     ]
 
+    /// Thirty seconds from one opening: how often the ball changed sides and how
+    /// many points were lost to a crash. With no difficulty both ships sit idle.
+    private static func rally(
+        from opening: (x: Double, velocity: SIMD2<Double>),
+        difficulty: AIDifficulty?
+    ) -> (crossings: Int, crashes: Int) {
+        var engine = SimulationEngine.testing()
+        var cyan = difficulty.map { AIController(difficulty: $0, configuration: engine.configuration) }
+        var orange = difficulty.map { AIController(difficulty: $0, configuration: engine.configuration) }
+        // Mid-court rather than up by the roof, which is where the
+        // goal hangs now.
+        engine.state.ball = BallState(
+            position: SIMD2(opening.x, 0.0),
+            velocity: opening.velocity
+        )
+        var crossings = 0
+        var crashes = 0
+
+        for tick in UInt64(0) ..< 3_600 {
+            let previousX = engine.state.ball.position.x
+            engine.step(inputs: [
+                .cyan: cyan?.input(for: engine.state, team: .cyan, tick: tick) ?? .idle(tick: tick),
+                .orange: orange?.input(for: engine.state, team: .orange, tick: tick) ?? .idle(tick: tick),
+            ])
+            if engine.state.match.phase == .playing,
+               previousX * engine.state.ball.position.x < 0 {
+                crossings += 1
+            }
+            crashes += engine.lastEvents.filter { event in
+                guard case let .point(_, reason) = event else { return false }
+                return reason == .crash
+            }.count
+            if engine.state.match.phase == .finished { break }
+        }
+        return (crossings, crashes)
+    }
+
     @Test("Solo rallies are real exchanges rather than a stalled ball")
     func soloRalliesProduceExchanges() {
+        // Two idle ships still see the ball cross: 5 times across these
+        // openings, with none at all from two of them. So a floor on every
+        // opening measured the draw, not the AI; the idle total is the bar.
+        let idleCrossings = Self.rallyOpenings.reduce(0) { total, opening in
+            total + Self.rally(from: opening, difficulty: nil).crossings
+        }
+
         for difficulty in AIDifficulty.allCases {
             var totalCrossings = 0
             var crashes = 0
-            var quietestOpening = Int.max
-
             for opening in Self.rallyOpenings {
-                var engine = SimulationEngine.testing()
-                var cyan = AIController(
-                    difficulty: difficulty,
-                    configuration: engine.configuration
-                )
-                var orange = AIController(
-                    difficulty: difficulty,
-                    configuration: engine.configuration
-                )
-                // Mid-court rather than up by the roof, which is where the
-                // goal hangs now.
-                engine.state.ball = BallState(
-                    position: SIMD2(opening.x, 0.0),
-                    velocity: opening.velocity
-                )
-                var crossings = 0
-
-                for tick in UInt64(0) ..< 3_600 {
-                    let previousX = engine.state.ball.position.x
-                    engine.step(inputs: [
-                        .cyan: cyan.input(for: engine.state, team: .cyan, tick: tick),
-                        .orange: orange.input(for: engine.state, team: .orange, tick: tick),
-                    ])
-                    if engine.state.match.phase == .playing,
-                       previousX * engine.state.ball.position.x < 0 {
-                        crossings += 1
-                    }
-                    crashes += engine.lastEvents.filter { event in
-                        guard case let .point(_, reason) = event else { return false }
-                        return reason == .crash
-                    }.count
-                    if engine.state.match.phase == .finished { break }
-                }
-
-                totalCrossings += crossings
-                quietestOpening = min(quietestOpening, crossings)
+                let rally = Self.rally(from: opening, difficulty: difficulty)
+                totalCrossings += rally.crossings
+                crashes += rally.crashes
             }
 
             // The prototype AI never struck the ball at all: it managed one or two
             // crossings in thirty seconds, and only because the ball drifted over.
-            // Measured totals across these five openings are 41 rookie, 58 pilot,
-            // 22 ace, so twelve leaves real headroom without being meaningless.
+            // Measured totals across these five openings are 20 rookie, 21 pilot,
+            // 22 ace against 5 idle, so twelve and twice idle leave headroom
+            // without being meaningless.
             #expect(totalCrossings >= 12, "\(difficulty) barely put the ball back over")
-            #expect(quietestOpening >= 1, "\(difficulty) had an opening with no rally at all")
+            #expect(
+                totalCrossings >= 2 * idleCrossings,
+                "\(difficulty) managed \(totalCrossings), barely more than idle ships' \(idleCrossings)"
+            )
             #expect(crashes == 0, "\(difficulty) flew itself into the ground")
         }
     }

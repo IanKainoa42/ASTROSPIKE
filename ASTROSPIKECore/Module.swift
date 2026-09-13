@@ -245,7 +245,14 @@ public struct ShipState: Codable, Equatable, Sendable {
 /// not the bolt: a ship can only fire from its own half. Hitting the ball
 /// is a touch by the owner, same as a hull would be.
 public struct BoltState: Codable, Equatable, Sendable {
-    public static let radius = 0.012
+    /// Thin enough that a pilot can clip the edge of the ball on purpose.
+    public static let radius = 0.007
+    /// How far a hit off the ball's centre turns it off the bolt's line,
+    /// toward the line through the two centres where they meet: 0 always
+    /// punches straight down the bolt's line, 1 is a pure glancing blow.
+    /// Halfway sends a hit on the very edge out at 45 degrees. A dead-centre
+    /// hit is the plain punch whatever this is.
+    public static let glance = 0.5
 
     public var id: UInt64
     public var owner: Team
@@ -932,7 +939,7 @@ public struct SimulationEngine: Sendable {
             bolt.position += bolt.velocity * dt
             bolt.ticksRemaining -= 1
 
-            if !ballStruck, let _ = sweptCircleTime(
+            if !ballStruck, let contact = sweptCircleTime(
                 from: previous - state.ball.position,
                 to: bolt.position - state.ball.position,
                 center: .zero,
@@ -940,7 +947,16 @@ public struct SimulationEngine: Sendable {
             ) {
                 ballStruck = true
                 let speed = simd_length(bolt.velocity)
-                let direction = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
+                let travel = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
+                // Off the centre the hit glances: the ball is knocked partway
+                // round from the bolt's line toward the line from where the
+                // bolt touched it through its middle. Clip it underneath and it
+                // lifts; clip the top and it is driven down.
+                let touch = previous + (bolt.position - previous) * contact
+                let throughCentre = simd_normalize(state.ball.position - touch)
+                let direction = simd_normalize(
+                    travel * (1 - BoltState.glance) + throughCentre * BoltState.glance
+                )
                 state.ball.velocity += direction * configuration.boltPunch
                 // A bolt is not a hull, and the cannon's own cooldown already
                 // rations these -- no debounce.
@@ -1376,7 +1392,11 @@ public struct SimulationEngine: Sendable {
         let t = (boundary - start.x) / delta.x
         guard (0 ... 1).contains(t) else { return nil }
         let hitY = start.y + delta.y * t
-        guard hitY + radius >= arena.netBottomY else { return nil }
+        // The face stops where the cap begins. Below netBottomY the edge of the
+        // slab is the rounded cap, which the caller has already swept, so a
+        // crossing down here is in the open pocket beside the cap and under the
+        // root of the lip -- it has touched nothing, and it is not the mouth.
+        guard hitY >= arena.netBottomY else { return nil }
         return (SIMD2(boundary, hitY), fromLeft, true)
     }
 

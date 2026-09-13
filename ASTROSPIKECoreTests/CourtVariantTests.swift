@@ -235,29 +235,43 @@ struct BasketballBotTests {
         }
     }
 
-    @Test("Two bots left alone on the hoop court finish the match")
-    func botsFinishAMatch() {
-        var engine = SimulationEngine.testing()
-        engine.updateArena(.basketball)
-        engine.updateConfiguration(Self.config)
-        engine.configureRoster([.cyan, .orange])
-        engine.beginPlay()
-        var bots: [Seat: AIController] = [
-            .cyan: AIController(difficulty: .pilot, configuration: Self.config, arena: .basketball),
-            .orange: AIController(difficulty: .pilot, configuration: Self.config, arena: .basketball),
-        ]
+    @Test("Two bots left alone on the hoop court never let the ball die on the floor")
+    func botsKeepTheHoopBallAlive() {
+        // Without the dribble the ball rolls dead, nobody can get under it, and
+        // the match deadlocks. How long a match takes is not the measure: the
+        // first basket lands anywhere from 3 to 197 seconds in, from ship starts
+        // two millimetres apart. A dead ball is: with the dribble it never rolls
+        // flat for more than 9 ticks from these starts, without it 369 to 3,904.
+        for nudge in 0 ..< 4 {
+            var engine = SimulationEngine.testing()
+            engine.updateArena(.basketball)
+            engine.updateConfiguration(Self.config)
+            engine.configureRoster([.cyan, .orange])
+            engine.beginPlay()
+            engine.state.ships[.cyan]!.position.x += Double(nudge) * 0.002
+            var bots: [Seat: AIController] = [
+                .cyan: AIController(difficulty: .pilot, configuration: Self.config, arena: .basketball),
+                .orange: AIController(difficulty: .pilot, configuration: Self.config, arena: .basketball),
+            ]
 
-        var finished = false
-        // Forty seconds at 120Hz. The duel below lands at about twenty-four.
-        for tick in 0 ..< 4_800 {
-            var inputs: [Seat: PlayerInput] = [:]
-            for seat in [Seat.cyan, .orange] {
-                inputs[seat] = bots[seat]!.input(for: engine.state, seat: seat, tick: UInt64(tick))
+            var flat = 0
+            var longestFlat = 0
+            // Forty seconds at 120Hz.
+            for tick in 0 ..< 4_800 {
+                var inputs: [Seat: PlayerInput] = [:]
+                for seat in [Seat.cyan, .orange] {
+                    inputs[seat] = bots[seat]!.input(for: engine.state, seat: seat, tick: UInt64(tick))
+                }
+                engine.step(inputs: inputs)
+                flat = abs(engine.state.ball.velocity.y) < 0.05 ? flat + 1 : 0
+                longestFlat = max(longestFlat, flat)
+                if engine.state.match.phase == .finished {
+                    #expect(engine.state.match.winner != nil)
+                    break
+                }
             }
-            engine.step(inputs: inputs)
-            if engine.state.match.phase == .finished { finished = true; break }
+            // Half a second rolling flat is a dead ball.
+            #expect(longestFlat < 60, "start \(nudge): the ball rolled flat for \(longestFlat) ticks")
         }
-        #expect(finished)
-        #expect(engine.state.match.winner != nil)
     }
 }

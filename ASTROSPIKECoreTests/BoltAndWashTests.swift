@@ -1,4 +1,5 @@
 import Testing
+import simd
 @testable import ASTROSPIKECore
 
 @Suite("Bolts and exhaust wash")
@@ -68,6 +69,70 @@ struct BoltAndWashTests {
         }
         #expect(hit, "the bolt fizzled before the far half")
         #expect(engine.state.ball.velocity.x > 0.9)
+    }
+
+    /// What one bolt does to a resting ball when it flies past on a line
+    /// `offset` above the ball's centre, travelling +x for `side` 1 and -x for
+    /// -1. Measured against the same ball left alone, so gravity cancels.
+    private func boltImpulse(side: Double, offset: Double) -> SIMD2<Double> {
+        func court() -> SimulationEngine {
+            var engine = playing()
+            engine.state.ships[.cyan]!.position = .init(-0.8, -0.5)
+            engine.state.ships[.orange]!.position = .init(0.8, -0.5)
+            engine.state.ball = BallState(position: .init(-side * 0.4, 0.05))
+            return engine
+        }
+        var struck = court()
+        var alone = court()
+        let travel = SIMD2(side, 0.0)
+        let reach = struck.state.ball.radius + BoltState.radius
+        struck.state.bolts = [BoltState(
+            id: 99,
+            owner: .cyan,
+            position: struck.state.ball.position - travel * (reach + 0.01) + SIMD2(0, offset),
+            velocity: travel * struck.configuration.boltSpeed,
+            ticksRemaining: 60
+        )]
+        for _ in 0 ..< 6 {
+            struck.step(inputs: [:])
+            alone.step(inputs: [:])
+        }
+        return struck.state.ball.velocity - alone.state.ball.velocity
+    }
+
+    @Test("A bolt that clips the ball off its centre glances it off the line")
+    func offCentreBoltGlancesTheBall() {
+        let punch = SimulationConfiguration().boltPunch
+        let reach = BallState.nominalRadius + BoltState.radius
+        for side in [1.0, -1.0] {
+            // Dead centre is the plain punch straight down the bolt's line. The
+            // ball drops a hair while the bolt closes, hence the tolerance.
+            let centre = boltImpulse(side: side, offset: 0)
+            #expect(abs(centre.x - side * punch) < 0.001)
+            #expect(abs(centre.y) < 0.01)
+            // Under the centre lifts it, over the centre drives it down, and
+            // the nearer the edge the harder it turns.
+            let under = boltImpulse(side: side, offset: -reach * 0.6)
+            let over = boltImpulse(side: side, offset: reach * 0.6)
+            let edge = boltImpulse(side: side, offset: -reach * 0.95)
+            #expect(under.y > 0.2)
+            #expect(over.y < -0.2)
+            #expect(edge.y > under.y)
+            // Always the full punch, always onward, never past 45 degrees.
+            for hit in [under, over, edge] {
+                #expect(abs(simd_length(hit) - punch) < 1e-9)
+                #expect(hit.x * side >= abs(hit.y))
+            }
+        }
+    }
+
+    @Test("A bolt passing just wide of the ball misses it")
+    func thinBoltMissesJustWide() {
+        // Thin enough to clip the very edge on purpose, so a bolt a centimetre
+        // outside the ball goes by without touching it.
+        for side in [1.0, -1.0] {
+            #expect(boltImpulse(side: side, offset: BallState.nominalRadius + 0.010) == .zero)
+        }
     }
 
     @Test("A bolt from the back wall reaches the far wall before it fizzles")
