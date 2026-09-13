@@ -16,6 +16,7 @@
 		189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD95C0514B3196435647AEC /* WireProtocol.swift */; };
 		195BC54E2CD59D12BC8DDE90 /* TouchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */; };
 		1AE0E523C4361D72455C1C5A /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		1C9BF2BE88472A99D82848CB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */; };
 		1D659B5B59B22184796127C4 /* ASTROSPIKEUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */; };
 		1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */; };
 		31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */; };
@@ -190,6 +191,7 @@
 		A3A9B354B5E4A268F1331755 /* AIController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIController.swift; sourceTree = "<group>"; };
 		A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothing.swift; sourceTree = "<group>"; };
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
+		AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioCenter.swift; sourceTree = "<group>"; };
 		BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideCyan.mp3; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
@@ -297,6 +299,7 @@
 				415B202192D985A9E29E73E1 /* LobbyView.swift */,
 				1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */,
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
+				AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */,
 				E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */,
 				38A34F8A0F4853AB40D1C40B /* SoundBank.swift */,
 				B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */,
@@ -483,6 +486,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */,
+				1C9BF2BE88472A99D82848CB /* PrivacyInfo.xcprivacy in Resources */,
 				A9CC6A505E6B540052A930D6 /* goal.mp3 in Resources */,
 				480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */,
 				98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */,
@@ -729,7 +733,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 72;
+				CURRENT_PROJECT_VERSION = 73;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -789,7 +793,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 72;
+				CURRENT_PROJECT_VERSION = 73;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
