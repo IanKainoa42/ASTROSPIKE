@@ -37,8 +37,8 @@ struct BoltAndWashTests {
         #expect(engine.state.nextBoltID == 2)
     }
 
-    @Test("A bolt that reaches the ball knocks it along the nose and counts as a touch")
-    func boltPunchesBallAndCountsTouch() {
+    @Test("A bolt that reaches the ball knocks it along the nose but is not a touch")
+    func boltPunchesBallWithoutATouch() {
         var engine = playing()
         engine.state.ball.position = .init(-0.55, -0.25)
         engine.state.ball.velocity = .zero
@@ -46,11 +46,40 @@ struct BoltAndWashTests {
         var hit = false
         for tick in 1 ..< 12 {
             engine.step(inputs: [.cyan: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false, fire: false)])
-            if engine.state.match.shipTouches[.cyan] == 1 { hit = true; break }
+            if engine.state.lastBallToucher == .cyan { hit = true; break }
         }
         #expect(hit, "the bolt never reached the ball")
         #expect(engine.state.ball.velocity.y > 0.9)
         #expect(engine.state.bolts.isEmpty, "a spent bolt is removed")
+        #expect(engine.state.match.shipTouches[.cyan] == 0)
+    }
+
+    @Test("A bolt leaves the bounce allowance alone, so it cannot stall a rally")
+    func boltDoesNotRefreshBounces() {
+        var engine = playing()
+        engine.state.ships[.cyan]!.position = .init(-0.85, 0.2)
+        engine.state.ships[.orange]!.position = .init(0.8, -0.5)
+        engine.state.ball = BallState(position: .init(-0.45, -0.3), velocity: .init(0, -1))
+        var bounced = false
+        for tick in 0 ..< 120 {
+            engine.step(inputs: [.cyan: .idle(tick: UInt64(tick))])
+            if engine.state.match.floorContacts[.cyan] == 1 { bounced = true; break }
+        }
+        #expect(bounced, "the ball has to bounce for this to prove anything")
+
+        engine.state.ball = BallState(position: .init(-0.45, 0), velocity: .zero)
+        engine.state.ships[.cyan]!.position = .init(-0.8, 0)
+        engine.state.ships[.cyan]!.velocity = .zero
+        engine.state.ships[.cyan]!.angle = 0 // nose toward +x
+        engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, fire: true)])
+        var hit = false
+        for _ in 0 ..< 40 {
+            engine.step(inputs: [.cyan: .idle(tick: engine.state.tick)])
+            if engine.state.lastBallToucher == .cyan { hit = true; break }
+        }
+        #expect(hit, "the bolt never reached the ball")
+        #expect(engine.state.match.floorContacts[.cyan] == 1)
+        #expect(engine.state.match.shipTouches[.cyan] == 0)
     }
 
     @Test("A bolt crosses the centre line and can hit a ball on the far half")
@@ -65,7 +94,7 @@ struct BoltAndWashTests {
         var hit = false
         for tick in 1 ..< 60 {
             engine.step(inputs: [.cyan: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false, fire: false)])
-            if engine.state.match.shipTouches[.cyan] == 1 { hit = true; break }
+            if engine.state.lastBallToucher == .cyan { hit = true; break }
         }
         #expect(hit, "the bolt fizzled before the far half")
         #expect(engine.state.ball.velocity.x > 0.9)

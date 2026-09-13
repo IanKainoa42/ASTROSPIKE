@@ -667,7 +667,7 @@ public struct SimulationEngine: Sendable {
         applyExhaustWash(dt: dt)
         applyTractorBeam(dt: dt)
         state.ball.position += state.ball.velocity * dt
-        advanceBolts(contacts: &contacts, effects: &collisionEffects)
+        advanceBolts(effects: &collisionEffects)
         resolveBallShipCollisions(
             previousBallPosition: previousBallPosition,
             previousShipPositions: previousShipPositions,
@@ -933,10 +933,7 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    private mutating func advanceBolts(
-        contacts: inout [RuleContact],
-        effects: inout [SimulationEvent]
-    ) {
+    private mutating func advanceBolts(effects: inout [SimulationEvent]) {
         guard !state.bolts.isEmpty else { return }
         let dt = configuration.stepDuration
         var survivors: [BoltState] = []
@@ -973,9 +970,11 @@ public struct SimulationEngine: Sendable {
                 // new hit replaces whatever spin was already on it.
                 let lever = (touch - state.ball.position) / (state.ball.radius + BoltState.radius)
                 state.ball.spin = BoltState.spinKick * (lever.x * travel.y - lever.y * travel.x)
-                // A bolt is not a hull, and the cannon's own cooldown already
-                // rations these -- no debounce.
-                contacts.append(.ballTouchedShip(team: bolt.owner, counted: true))
+                // A bolt plays the ball but is not a touch: it neither spends
+                // one nor refreshes the bounce allowance, or a cannon on your
+                // own half could keep a rally alive forever. It still marks who
+                // played the ball last.
+                state.lastBallToucher = bolt.owner
                 effects.append(.collisionEffect(
                     position: state.ball.position,
                     intensity: configuration.boltPunch
@@ -1542,13 +1541,18 @@ public struct SimulationEngine: Sendable {
                 * (configuration.minimumBallSeparationSpeed - separationSpeed)
         }
         // The physics above always runs -- a rattling ball still gets shoved
-        // clear every step. Only the scoring counts a burst as one hit.
-        let counted = ship.ballTouchCooldownTicks == 0
-        if counted {
+        // clear every step. Only the scoring counts a burst as one hit, and
+        // only a hit on your own half spends a touch: a hull pushed into the
+        // far half can still play the ball there, it just costs nothing. The
+        // warm-up bay and the hoop court have no halves to keep.
+        let fresh = ship.ballTouchCooldownTicks == 0
+        if fresh {
             ship.ballTouchCooldownTicks = UInt64(
                 (configuration.ballTouchDebounce / configuration.stepDuration).rounded()
             )
         }
+        let ballSide: Team = ballContact.x < 0 ? .cyan : .orange
+        let counted = fresh && (usesEngineRules || ballSide == ship.homeSide)
         state.ships[hit.seat] = ship
         contacts.append(.ballTouchedShip(team: hit.seat.team, counted: counted))
         effects.append(.collisionEffect(

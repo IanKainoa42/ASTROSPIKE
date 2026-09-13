@@ -830,24 +830,23 @@ private struct MatchHUD: View {
                             .stroke(tint, lineWidth: stake == .matchPoint ? 3 : 1.5)
                     }
                 }
-            // Touches are the harder limit, so they read as bars above the
-            // softer bounce dots rather than competing with them.
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 3) {
+            // Up arrows are touches, down arrows are bounces -- which way the
+            // ball was headed when it spent one.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 1) {
                     ForEach(0..<allowedTouches, id: \.self) { index in
-                        Capsule()
-                            .fill(index < touches ? tint : .white.opacity(0.16))
-                            .frame(width: 9, height: 4)
+                        Image(systemName: "arrow.up")
+                            .foregroundStyle(index < touches ? tint : .white.opacity(0.16))
                     }
                 }
-                HStack(spacing: 4) {
+                HStack(spacing: 1) {
                     ForEach(0..<allowedBounces, id: \.self) { index in
-                        Circle()
-                            .fill(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
-                            .frame(width: 7, height: 7)
+                        Image(systemName: "arrow.down")
+                            .foregroundStyle(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
                     }
                 }
             }
+            .font(.system(size: 10, weight: .black))
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -990,12 +989,12 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
-                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and counts as one of your touches. Bolts fly the whole court but you can only fire from your own half, and they never hurt a ship.")
+                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court but you can only fire from your own half, and they never hurt a ship.")
                     TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
-                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip, one bounce a touch.")
+                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip on your own half, three bounces a touch.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
                     TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
-                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal, a third touch, or a second bounce.")
+                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal, a fourth touch, or a fourth bounce.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }

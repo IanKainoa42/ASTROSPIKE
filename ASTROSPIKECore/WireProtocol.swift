@@ -52,7 +52,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 18: every surface grips the ball -- a bounce trades slide for spin and
     //     back, and a hull hands the ball its own motion. Same reason again:
     //     a build 68 peer would step a different rally from the same inputs.
-    public static let currentVersion: UInt16 = 18
+    // 19: bolts are no longer touches and a hull on the far half spends none.
+    //     A build 69 peer would call a touch fault this build plays through.
+    public static let currentVersion: UInt16 = 19
 
     public var version: UInt16
     public var sequence: UInt64

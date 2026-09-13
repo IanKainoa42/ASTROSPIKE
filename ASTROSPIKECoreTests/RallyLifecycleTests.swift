@@ -107,6 +107,36 @@ struct RallyLifecycleTests {
         #expect(engine.state.ships[.cyan]!.ballTouchCooldownTicks == 0)
     }
 
+    /// A ball dropped straight onto a cyan hull at `x`, with orange parked out
+    /// of the way in its far corner.
+    private func dropOntoCyan(atX x: Double) -> SimulationEngine {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        engine.state.ships[.cyan] = ShipState(position: SIMD2(x, -0.10), angle: .pi / 2, homeSide: .cyan)
+        engine.state.ships[.orange] = ShipState(position: SIMD2(0.85, 0.30), angle: .pi / 2, homeSide: .orange)
+        engine.state.ball = BallState(position: SIMD2(x, 0.05), velocity: SIMD2(0, -1.0))
+        for tick in UInt64(0) ..< 30 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            if engine.state.lastBallToucher == .cyan { break }
+        }
+        return engine
+    }
+
+    @Test("A hull touch spends a touch on your own half")
+    func ownHalfTouchCounts() {
+        let engine = dropOntoCyan(atX: -0.30)
+        #expect(engine.state.lastBallToucher == .cyan, "the hull has to reach the ball")
+        #expect(engine.state.match.shipTouches[.cyan] == 1)
+    }
+
+    @Test("A hull touch on the far half spends nothing")
+    func farHalfTouchIsFree() {
+        let engine = dropOntoCyan(atX: 0.30)
+        #expect(engine.state.lastBallToucher == .cyan, "the hull has to reach the ball")
+        #expect(engine.state.match.shipTouches[.cyan] == 0)
+        #expect(engine.state.match.shipTouches[.orange] == 0)
+    }
+
     @Test("A fresh rally stages the ball under the centre goal")
     func freshRallyUsesHigherDrop() {
         let engine = SimulationEngine.testing()

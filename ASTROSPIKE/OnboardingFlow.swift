@@ -142,7 +142,7 @@ struct OnboardingFlow: View {
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "arrow.left.and.right", tint: .cyan, title: "STEER", text: "Hold left or right to rotate. Let go and the nose stays where it is.")
             IntroLine(icon: "flame.fill", tint: .orange, title: "THRUST", text: "Hold to burn. Gravity pulls you down the whole time, and your exhaust shoves the ball.")
-            IntroLine(icon: "bolt.fill", tint: .yellow, title: "FIRE", text: "Tap to shoot a bolt from the nose. It knocks the ball where you point and counts as a touch.")
+            IntroLine(icon: "bolt.fill", tint: .yellow, title: "FIRE", text: "Tap to shoot a bolt from the nose. It knocks the ball where you point and is not a touch.")
             IntroLine(icon: "arrow.down.to.line.compact", tint: .purple, title: "PULL", text: "Hold to reel the ball in with the tractor beam. Not a touch until it lands on your hull.")
             // Phones almost never have a keyboard and do not have the height
             // for a fourth line; iPads and Macs get the hint.
@@ -172,8 +172,8 @@ struct OnboardingFlow: View {
             Text("THREE TOUCHES. ONE BOUNCE.")
                 .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
-            IntroLine(icon: "hand.tap.fill", tint: .cyan, title: "TOUCHES", text: "Your hull may touch the ball three times per trip. A fourth touch is their point.")
-            IntroLine(icon: "circle.bottomhalf.filled", tint: .orange, title: "BOUNCES", text: "The ball may bounce on your floor once between touches. Twice and it’s theirs.")
+            IntroLine(icon: "hand.tap.fill", tint: .cyan, title: "TOUCHES", text: "Your hull may touch the ball three times per trip on your own half. A fourth is their point. Bolts, and touches on their half, are free.")
+            IntroLine(icon: "circle.bottomhalf.filled", tint: .orange, title: "BOUNCES", text: "The ball may bounce on your floor three times between touches. A fourth and it’s theirs.")
             IntroLine(icon: "burst.fill", tint: .white.opacity(0.8), title: "NO WRECKS", text: "Walls, floor, roof and the other ship all just rebound. Only the ball scores.")
         } side: {
             RulesDiagram()
@@ -394,8 +394,8 @@ private struct GoalDiagram: View {
 private struct RulesDiagram: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            meter(title: "TOUCHES", used: 2, total: 3, shape: .bar)
-            meter(title: "BOUNCES", used: 1, total: 1, shape: .dot)
+            meter(title: "TOUCHES", used: 2, total: 3, symbol: "arrow.up")
+            meter(title: "BOUNCES", used: 1, total: 3, symbol: "arrow.down")
             Text("These live under each score in the HUD. Full means the next one costs you the point.")
                 .font(.caption).foregroundStyle(.white.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
@@ -406,18 +406,14 @@ private struct RulesDiagram: View {
         .accessibilityHidden(true)
     }
 
-    private enum Shape { case bar, dot }
-
-    private func meter(title: String, used: Int, total: Int, shape: Shape) -> some View {
+    private func meter(title: String, used: Int, total: Int, symbol: String) -> some View {
         HStack(spacing: 14) {
             Text(title).font(.system(size: 10, weight: .black)).tracking(1).frame(width: 70, alignment: .leading)
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 ForEach(0..<total, id: \.self) { index in
-                    if shape == .bar {
-                        Capsule().fill(index < used ? Color.cyan : .white.opacity(0.16)).frame(width: 22, height: 8)
-                    } else {
-                        Circle().fill(index < used ? Color.cyan.opacity(0.75) : .white.opacity(0.16)).frame(width: 14, height: 14)
-                    }
+                    Image(systemName: symbol)
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundStyle(index < used ? Color.cyan : .white.opacity(0.16))
                 }
             }
             Spacer()

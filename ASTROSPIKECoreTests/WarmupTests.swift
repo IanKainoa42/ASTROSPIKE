@@ -44,12 +44,14 @@ struct WarmupTests {
     func touchesAreOnlyAStreak() {
         var engine = bay()
         engine.state.match.shipTouches.cyan = 5
-        engine.state.ball.position = .init(-0.55, -0.25)
-        engine.state.ball.velocity = .zero
-        engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
-        for tick in 1 ..< 12 {
+        // Dropped straight onto the hull: a bolt is not a touch, even here.
+        engine.state.ships[.cyan] = ShipState(position: .init(-0.30, -0.10), angle: .pi / 2)
+        engine.state.ball = BallState(position: .init(-0.30, 0.05), velocity: .init(0, -1.0))
+        for tick in 0 ..< 30 {
             engine.step(inputs: [.cyan: .idle(tick: UInt64(tick))])
+            if engine.state.lastBallToucher == .cyan { break }
         }
+        #expect(engine.state.lastBallToucher == .cyan, "the hull has to reach the ball")
         #expect(engine.state.match.shipTouches.cyan == 6)
         #expect(engine.state.match.score == Score())
         #expect(engine.state.match.phase == .playing)

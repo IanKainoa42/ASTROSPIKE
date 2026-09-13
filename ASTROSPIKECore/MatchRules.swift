@@ -137,8 +137,9 @@ public enum RuleContact: Codable, Equatable, Sendable {
     case ballTouchedFloor(side: Team)
     /// `counted` is false for the follow-up contacts of a single rattle --
     /// the ball pinned on a wall, re-hitting the same hull within a few
-    /// ticks. Those still refresh the bounce allowance, they just don't
-    /// spend a touch.
+    /// ticks -- and for a hull playing the ball on the far half. Those still
+    /// refresh the bounce allowance, they just don't spend a touch. Bolts
+    /// never send this at all.
     case ballTouchedShip(team: Team, counted: Bool)
     case ballCrossedCenter(into: Team)
     case ballEnteredGoal(defending: Team)
