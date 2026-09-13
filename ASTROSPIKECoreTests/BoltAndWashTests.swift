@@ -71,10 +71,11 @@ struct BoltAndWashTests {
         #expect(engine.state.ball.velocity.x > 0.9)
     }
 
-    /// What one bolt does to a resting ball when it flies past on a line
-    /// `offset` above the ball's centre, travelling +x for `side` 1 and -x for
-    /// -1. Measured against the same ball left alone, so gravity cancels.
-    private func boltImpulse(side: Double, offset: Double) -> SIMD2<Double> {
+    /// One bolt flown at a resting ball on a line `offset` above the ball's
+    /// centre, travelling +x for `side` 1 and -x for -1, run up to the tick it
+    /// lands -- alongside the same ball left alone. Stopping on the hit keeps
+    /// the spin it sets from turning the ball before anything is measured.
+    private func boltHit(side: Double, offset: Double) -> (struck: SimulationEngine, alone: SimulationEngine) {
         func court() -> SimulationEngine {
             var engine = playing()
             engine.state.ships[.cyan]!.position = .init(-0.8, -0.5)
@@ -96,8 +97,16 @@ struct BoltAndWashTests {
         for _ in 0 ..< 6 {
             struck.step(inputs: [:])
             alone.step(inputs: [:])
+            if struck.state.bolts.isEmpty { break }
         }
-        return struck.state.ball.velocity - alone.state.ball.velocity
+        return (struck, alone)
+    }
+
+    /// What that bolt did to the ball's velocity. Measured against the ball
+    /// left alone, so gravity cancels.
+    private func boltImpulse(side: Double, offset: Double) -> SIMD2<Double> {
+        let hit = boltHit(side: side, offset: offset)
+        return hit.struck.state.ball.velocity - hit.alone.state.ball.velocity
     }
 
     @Test("A bolt that clips the ball off its centre glances it off the line")
@@ -124,6 +133,76 @@ struct BoltAndWashTests {
                 #expect(hit.x * side >= abs(hit.y))
             }
         }
+    }
+
+    @Test("An off-centre bolt sets the ball spinning, harder nearer the edge")
+    func offCentreBoltSpinsTheBall() {
+        let reach = BallState.nominalRadius + BoltState.radius
+        for side in [1.0, -1.0] {
+            // Dead centre there is nothing to drag round. The ball drops a
+            // hair while the bolt closes, hence the tolerance.
+            #expect(abs(boltHit(side: side, offset: 0).struck.state.ball.spin) < 0.5)
+            // Underneath is backspin -- counter-clockwise on a ball driven
+            // right, clockwise on one driven left -- and over the top is the
+            // reverse.
+            let under = boltHit(side: side, offset: -reach * 0.6).struck.state.ball.spin
+            let over = boltHit(side: side, offset: reach * 0.6).struck.state.ball.spin
+            let edge = boltHit(side: side, offset: -reach * 0.95).struck.state.ball.spin
+            #expect(under * side > 1)
+            #expect(over * side < -1)
+            #expect(abs(edge) > abs(under))
+            #expect(abs(edge) <= BoltState.spinKick)
+        }
+        // A bolt that misses leaves the ball as still as it was.
+        #expect(boltHit(side: 1, offset: BallState.nominalRadius + 0.010).struck.state.ball.spin == 0)
+    }
+
+    @Test("Spin turns the ball's path without speeding it up or slowing it down")
+    func spinOnlyTurnsTheVelocity() {
+        let velocity = SIMD2(1.3, 0.4)
+        let dt = SimulationConfiguration().stepDuration
+        let back = BallState.curved(velocity, spin: 20, over: dt)
+        let top = BallState.curved(velocity, spin: -20, over: dt)
+        for turned in [back, top] {
+            #expect(abs(simd_length(turned.velocity) - simd_length(velocity)) < 1e-12)
+            #expect(abs(turned.spin) < 20)
+            #expect(abs(turned.spin) > 19.5)
+        }
+        // Counter-clockwise spin turns the path counter-clockwise, and back.
+        #expect(velocity.x * back.velocity.y - velocity.y * back.velocity.x > 0)
+        #expect(velocity.x * top.velocity.y - velocity.y * top.velocity.x < 0)
+        let still = BallState.curved(velocity, spin: 0, over: dt)
+        #expect(still.velocity == velocity)
+        #expect(still.spin == 0)
+    }
+
+    @Test("A spinning ball curves off the line a still one flies, until it hits something")
+    func spinCurvesTheFlight() {
+        func thrown(spin: Double) -> SimulationEngine {
+            var engine = playing()
+            engine.state.ball = BallState(position: .init(-0.6, -0.2), velocity: .init(0, 1.2), spin: spin)
+            return engine
+        }
+        var spinning = thrown(spin: 20)
+        var still = thrown(spin: 0)
+        for _ in 0 ..< 30 {
+            spinning.step(inputs: [:])
+            still.step(inputs: [:])
+        }
+        // Counter-clockwise on a ball going up swings it left.
+        #expect(spinning.state.ball.position.x < still.state.ball.position.x - 0.005)
+        // The air bleeds the spin off gradually.
+        #expect(abs(spinning.state.ball.spin - 20 * exp(-BallState.spinDecay * 0.25)) < 1e-9)
+
+        // Driven into the wall, the bounce takes all of it.
+        spinning.state.ball.velocity = .init(-2, 0.3)
+        var bounced = false
+        for _ in 0 ..< 240 {
+            spinning.step(inputs: [:])
+            if spinning.state.ball.velocity.x > 0 { bounced = true; break }
+        }
+        #expect(bounced, "the ball never reached the wall")
+        #expect(spinning.state.ball.spin == 0)
     }
 
     @Test("A bolt passing just wide of the ball misses it")

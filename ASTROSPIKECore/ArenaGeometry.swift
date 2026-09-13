@@ -7,18 +7,50 @@ public struct BallState: Codable, Equatable, Sendable {
     /// buried as a literal in the initialiser.
     public static let nominalRadius = 0.042
 
+    /// How hard spin bends the flight: every second the path turns this many
+    /// radians for each radian a second of spin. Counter-clockwise spin turns
+    /// it counter-clockwise, which on a ball flying right is backspin and
+    /// holds it up; topspin dips it.
+    public static let spinCurve = 0.03
+    /// The air takes spin off at this rate per second, so a long flight bends
+    /// into an arc rather than winding round in circles.
+    public static let spinDecay = 0.8
+
     public var position: SIMD2<Double>
     public var velocity: SIMD2<Double>
     public var radius: Double
+    /// How fast the ball is turning, in radians a second, counter-clockwise
+    /// positive. Only a bolt that clips it off centre sets it, and the next
+    /// thing it hits -- a wall, the floor, a hull -- takes all of it back off.
+    public var spin: Double
 
     public init(
         position: SIMD2<Double>,
         velocity: SIMD2<Double> = .zero,
-        radius: Double = BallState.nominalRadius
+        radius: Double = BallState.nominalRadius,
+        spin: Double = 0
     ) {
         self.position = position
         self.velocity = velocity
         self.radius = radius
+        self.spin = spin
+    }
+
+    /// One step of flight under spin. The turn only rotates the velocity, so
+    /// spin bends a shot without ever speeding it up or slowing it down. The
+    /// engine and the bots' rollout both fly the ball through this.
+    public static func curved(
+        _ velocity: SIMD2<Double>,
+        spin: Double,
+        over dt: Double
+    ) -> (velocity: SIMD2<Double>, spin: Double) {
+        guard spin != 0 else { return (velocity, 0) }
+        let turn = spin * spinCurve * dt
+        let (c, s) = (cos(turn), sin(turn))
+        let turned = SIMD2(velocity.x * c - velocity.y * s, velocity.x * s + velocity.y * c)
+        let remaining = spin * exp(-spinDecay * dt)
+        // Under about a turn a minute there is nothing left to see.
+        return (turned, abs(remaining) < 0.1 ? 0 : remaining)
     }
 }
 

@@ -253,6 +253,9 @@ public struct BoltState: Codable, Equatable, Sendable {
     /// Halfway sends a hit on the very edge out at 45 degrees. A dead-centre
     /// hit is the plain punch whatever this is.
     public static let glance = 0.5
+    /// The spin, in radians a second, that a hit on the very edge leaves on
+    /// the ball. It falls away to nothing toward a dead-centre hit.
+    public static let spinKick = 30.0
 
     public var id: UInt64
     public var owner: Team
@@ -656,6 +659,11 @@ public struct SimulationEngine: Sendable {
 
         let previousBallPosition = state.ball.position
         state.ball.velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
+        (state.ball.velocity, state.ball.spin) = BallState.curved(
+            state.ball.velocity,
+            spin: state.ball.spin,
+            over: dt
+        )
         applyExhaustWash(dt: dt)
         applyTractorBeam(dt: dt)
         state.ball.position += state.ball.velocity * dt
@@ -958,6 +966,13 @@ public struct SimulationEngine: Sendable {
                     travel * (1 - BoltState.glance) + throughCentre * BoltState.glance
                 )
                 state.ball.velocity += direction * configuration.boltPunch
+                // The same clip that turns the ball sets it spinning: the bolt
+                // drags the side it touched along its own line. Underneath is
+                // backspin, which holds the shot up; over the top is topspin,
+                // which dips it. Dead centre there is nothing to drag, and a
+                // new hit replaces whatever spin was already on it.
+                let lever = (touch - state.ball.position) / (state.ball.radius + BoltState.radius)
+                state.ball.spin = BoltState.spinKick * (lever.x * travel.y - lever.y * travel.x)
                 // A bolt is not a hull, and the cannon's own cooldown already
                 // rations these -- no debounce.
                 contacts.append(.ballTouchedShip(team: bolt.owner, counted: true))
@@ -1135,6 +1150,11 @@ public struct SimulationEngine: Sendable {
     ) {
         let r = state.ball.radius
         var struckNet = false
+        // Whatever the ball hits takes its spin off. Every surface below that
+        // pushes back changes the velocity, so that is the test -- and the
+        // defer covers the early return for a goal as well.
+        let incoming = state.ball.velocity
+        defer { if state.ball.velocity != incoming { state.ball.spin = 0 } }
 
         // The floor-mounted net: one solid slab standing up out of the middle
         // of the court, capped with a half-round. Nothing goes through it, so
@@ -1466,6 +1486,8 @@ public struct SimulationEngine: Sendable {
             / (inverseBallMass + inverseShipMass)
         state.ball.velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
+        // A hull is a surface like any other: it takes the spin off.
+        state.ball.spin = 0
         // Every contact pops the ball clear of the hull. Without this a ship can
         // park under a slow ball and ride it, which stalls the rally outright.
         let separationSpeed = simd_dot(state.ball.velocity - ship.velocity, normal)

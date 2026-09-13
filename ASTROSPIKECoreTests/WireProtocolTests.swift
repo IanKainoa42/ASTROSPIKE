@@ -24,7 +24,7 @@ struct WireProtocolTests {
                 .cyan: ShipState(position: SIMD2(-0.31, 0.42), angle: 0.8),
                 .orange: ShipState(position: SIMD2(0.57, -0.12), angle: 2.1),
             ],
-            ball: BallState(position: SIMD2(0.48, 0.60)),
+            ball: BallState(position: SIMD2(0.48, 0.60), spin: -12.5),
             match: MatchRuleState(score: Score(cyan: 3, orange: 2), phase: .serve),
             serveTicksRemaining: 73
         )

@@ -407,13 +407,18 @@ public struct AIController: InputSource, Sendable {
         let shipSpeed = simd_length(ship.velocity)
         var position = state.ball.position
         var velocity = state.ball.velocity
+        // Spin bends the rollout exactly as it bends the real ball, and the
+        // first thing the ball bounces off takes it away, same as the engine.
+        var spin = state.ball.spin
         var earliestArrival: Plan?
         var firstReachable: Plan?
 
         for step in 1 ... Self.predictionSteps {
             let previous = position
             velocity.y += ballGravity * Self.predictionStep
+            (velocity, spin) = BallState.curved(velocity, spin: spin, over: Self.predictionStep)
             position += velocity * Self.predictionStep
+            let flying = velocity
             if position.x - radius <= -arena.halfWidth {
                 position.x = -arena.halfWidth + radius
                 velocity.x = abs(velocity.x) * SimulationEngine.ballRestitution
@@ -494,6 +499,7 @@ public struct AIController: InputSource, Sendable {
                 }
             }
             if gone { break }
+            if velocity != flying { spin = 0 }
             guard position.x * homeSign > 0.06,
                   position.y <= ceiling,
                   position.y >= floor else { continue }

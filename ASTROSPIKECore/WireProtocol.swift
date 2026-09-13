@@ -45,7 +45,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 16: a bigger ball, thinner bolts that glance off an off-centre hit, and
     //     a ball wedged under a lip stays under it. Same reason: an older
     //     peer would step a different rally from the same inputs.
-    public static let currentVersion: UInt16 = 16
+    // 17: the ball spins. A bolt that clips it off centre sets it turning,
+    //     the spin bends its flight until the next thing it hits, and
+    //     BallState carries it -- so a build 67 peer can neither decode the
+    //     snapshot nor step the same rally.
+    public static let currentVersion: UInt16 = 17
 
     public var version: UInt16
     public var sequence: UInt64

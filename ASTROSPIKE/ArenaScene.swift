@@ -32,6 +32,12 @@ final class ArenaScene: SKScene {
     /// narrower than a wide hull's lit plume.
     private var exhaustWidths: [Seat: CGFloat] = [:]
     private let ball = SKShapeNode(circleOfRadius: 10)
+    /// The one mark on the ball that turns with it. The lit face and the
+    /// shine stay where the light is; only the seam shows the spin.
+    private let ballSeam = SKShapeNode()
+    private var ballSpinAngle = 0.0
+    private var ballSpinTick: UInt64?
+    private static let tickDuration = SimulationConfiguration().stepDuration
     private var boltNodes: [UInt64: SKNode] = [:]
     /// The tractor cone ahead of each nose, redrawn every frame it is on.
     private var beamNodes: [Seat: SKShapeNode] = [:]
@@ -184,13 +190,32 @@ final class ArenaScene: SKScene {
         ballLit.fillColor = SKColor(white: 0.97, alpha: 1)
         ballLit.strokeColor = .clear
         ballLit.glowWidth = 0
+        // The view ignores sibling order, so the layers on the ball are
+        // stacked by z rather than by the order they were added.
+        ballLit.zPosition = 0.1
         ball.addChild(ballLit)
+        // The seam: an S across the face, dark enough to read on both tones.
+        let seam = CGMutablePath()
+        seam.move(to: CGPoint(x: -8.2, y: 0))
+        seam.addCurve(
+            to: CGPoint(x: 8.2, y: 0),
+            control1: CGPoint(x: -3, y: 6.5),
+            control2: CGPoint(x: 3, y: -6.5)
+        )
+        ballSeam.path = seam
+        ballSeam.strokeColor = SKColor(white: 0.36, alpha: 0.9)
+        ballSeam.lineWidth = 1.4
+        ballSeam.lineCap = .round
+        ballSeam.glowWidth = 0
+        ballSeam.zPosition = 0.2
+        ball.addChild(ballSeam)
         // The specular: small, hard, and off to one side.
         let ballShine = SKShapeNode(circleOfRadius: 2.6)
         ballShine.position = CGPoint(x: -3.6, y: 4.2)
         ballShine.fillColor = .white
         ballShine.strokeColor = .clear
         ballShine.glowWidth = 0
+        ballShine.zPosition = 0.3
         ball.addChild(ballShine)
     }
 
@@ -580,6 +605,16 @@ final class ArenaScene: SKScene {
         // bigger rather than being squeezed back to the old size.
         let ballScale = CGFloat(snapshot.ball.radius / 0.038)
         ball.setScale(ballScale)
+        // Turn the seam by however far the ball spun since the last drawn
+        // snapshot, counted in engine ticks so a guest that skips a few
+        // draws still shows the turn it missed.
+        if let last = ballSpinTick, snapshot.tick > last {
+            let ticks = Double(min(snapshot.tick - last, 30))
+            ballSpinAngle = (ballSpinAngle + snapshot.ball.spin * ticks * Self.tickDuration)
+                .truncatingRemainder(dividingBy: 2 * .pi)
+            ballSeam.zRotation = CGFloat(ballSpinAngle)
+        }
+        ballSpinTick = snapshot.tick
         // No speed glow: the faster it moves the more its edge matters.
         updateTrails(snapshot)
         updateBolts(snapshot)
