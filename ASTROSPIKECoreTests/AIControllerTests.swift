@@ -128,67 +128,66 @@ struct AIControllerTests {
 
     @Test("Pilot returns an incoming ball instead of merely surviving beside it")
     func pilotReturnsIncomingBall() {
-        // Staged so the idle control is meaningful: left alone this ball drifts
-        // away from the net and dies on the AI's own floor, so a crossing can only
-        // come from the AI hitting it. An earlier staging sent the ball toward the
-        // net to begin with, which made "returned" nearly free and left the control
-        // asserting something the lowered net had already made false.
-        let incomingBall = BallState(
-            position: SIMD2(0.45, 0.25),
-            velocity: SIMD2(0.30, -0.15)
-        )
-        var idleEngine = SimulationEngine.testing()
-        idleEngine.state.ball = incomingBall
-        var idleBallCrossed = false
-        for tick in UInt64(0) ..< 1_200 {
-            let previousX = idleEngine.state.ball.position.x
-            idleEngine.step(inputs: [
-                .cyan: .idle(tick: tick),
-                .orange: .idle(tick: tick),
-            ])
-            if previousX > 0, idleEngine.state.ball.position.x < 0 {
-                idleBallCrossed = true
-                break
-            }
-            if idleEngine.state.match.phase != .playing {
-                break
+        // Staged so the idle control is meaningful: left alone these balls drift
+        // away from the net and die on the AI's own floor, so a crossing can only
+        // come from the AI hitting it. A rally is chaotic, so one staging measured
+        // the draw rather than the AI -- a change to how the ball bounces flipped
+        // the old single staging while the AI's return rate held. A staging the
+        // idle control returns on its own proves nothing and is skipped.
+        var clean = 0
+        var returned = 0
+        for x in [0.40, 0.45, 0.50] {
+            for y in [0.20, 0.25, 0.30] {
+                for vx in [0.25, 0.35] {
+                    let ball = BallState(position: SIMD2(x, y), velocity: SIMD2(vx, -0.15))
+                    guard !Self.flyIncoming(ball, pilot: false).returned else { continue }
+                    clean += 1
+                    let flown = Self.flyIncoming(ball, pilot: true)
+                    if flown.returned {
+                        returned += 1
+                        // Causation, not coincidence: the AI has to have been on the ball first.
+                        #expect(flown.struck, "the ball from \(ball.position) went over without the AI ever reaching it")
+                    }
+                    #expect(!flown.destroyed)
+                }
             }
         }
 
-        var engine = SimulationEngine.testing()
-        engine.state.ball = incomingBall
-        var controller = AIController(
-            difficulty: .pilot,
-            configuration: engine.configuration
-        )
-        var returnedBall = false
-        var strikeFrames = 0
+        // Measured 9 returns from 16 clean stagings, and 6 from 15 before
+        // surfaces gripped the ball. The prototype AI returned none.
+        #expect(clean >= 12, "the idle control crossed too often for this to prove anything")
+        #expect(returned >= 4)
+        #expect(returned * 4 >= clean, "the pilot returned \(returned) of \(clean)")
+    }
 
+    /// One ball drifting on the orange side, flown by the pilot AI or left to an
+    /// idle ship: did it cross back, and had the AI reached it first?
+    private static func flyIncoming(
+        _ ball: BallState,
+        pilot: Bool
+    ) -> (returned: Bool, struck: Bool, destroyed: Bool) {
+        var engine = SimulationEngine.testing()
+        engine.state.ball = ball
+        var controller = AIController(difficulty: .pilot, configuration: engine.configuration)
+        var struck = false
         for tick in UInt64(0) ..< 1_200 {
             let previousX = engine.state.ball.position.x
-            let input = controller.input(for: engine.state, team: .orange, tick: tick)
-            engine.step(inputs: [
-                .cyan: .idle(tick: tick),
-                .orange: input,
-            ])
+            let input: PlayerInput = pilot
+                ? controller.input(for: engine.state, team: .orange, tick: tick)
+                : .idle(tick: tick)
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: input])
             if let ship = engine.state.ships[.orange],
                simd_distance(engine.state.ball.position, ship.position) < 0.14 {
-                strikeFrames += 1
+                struck = true
             }
             if previousX > 0, engine.state.ball.position.x < 0 {
-                returnedBall = true
-                break
+                return (true, struck, engine.state.ships[.orange]!.isDestroyed)
             }
             if engine.state.match.phase != .playing {
                 break
             }
         }
-
-        #expect(!idleBallCrossed, "the control ball crossed unaided, so the test proves nothing")
-        #expect(returnedBall)
-        // Causation, not coincidence: the AI has to have been on the ball first.
-        #expect(strikeFrames > 0, "the ball went over without the AI ever reaching it")
-        #expect(!engine.state.ships[.orange]!.isDestroyed)
+        return (false, struck, engine.state.ships[.orange]!.isDestroyed)
     }
 
     @Test("Pilot does not wander deep past the crossing marker")
@@ -213,43 +212,52 @@ struct AIControllerTests {
 
     @Test("The solo AI puts a served ball back at the net")
     func soloAIReturnsTheServe() {
-        for difficulty in AIDifficulty.allCases {
-            var engine = SimulationEngine.testing()
-            var controller = AIController(
-                difficulty: difficulty,
-                configuration: engine.configuration
-            )
-            // Staged exactly as a conceded point stages it: dead centre under
-            // the goal, drifting out to the AI's half.
-            engine.state.ball = BallState(position: SIMD2(0, 0.06), velocity: SIMD2(0.45, -0.18))
-            var returned = false
-            var strikes = 0
-
-            for tick in UInt64(0) ..< 1_200 {
-                let previousX = engine.state.ball.position.x
-                engine.step(inputs: [
-                    .cyan: Self.stationKeeping(for: engine.state, team: .cyan, tick: tick),
-                    .orange: controller.input(for: engine.state, team: .orange, tick: tick),
-                ])
-                if simd_distance(engine.state.ball.position, engine.state.ships[.orange]!.position) < 0.12 {
-                    strikes += 1
-                }
-                // The AI's own face is the goal it defends, so its shot goes
-                // under the cap into the far half. Landing it on the far lip
-                // is a goal; short of that it has still crossed.
-                if engine.state.match.score.orange == 1 {
-                    returned = true
-                    break
-                }
-                guard engine.state.match.phase == .playing else { break }
-                if previousX >= 0, engine.state.ball.position.x < 0 {
-                    returned = true
-                    break
+        // Staged as a conceded point stages it -- under the goal, drifting out
+        // to the AI's half -- across a spread of drifts, because one serve is a
+        // coin flip: a change to how the ball bounces flipped the pilot's single
+        // staging while its return rate barely moved.
+        var stagings: [BallState] = []
+        for y in [0.04, 0.06, 0.08] {
+            for vx in [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60] {
+                for vy in [-0.26, -0.22, -0.18, -0.14, -0.10] {
+                    stagings.append(BallState(position: SIMD2(0, y), velocity: SIMD2(vx, vy)))
                 }
             }
-
-            #expect(returned, "\(difficulty) never returned the serve (strikes \(strikes), ball \(engine.state.ball.position), phase \(engine.state.match.phase))")
         }
+        let idle = stagings.filter { Self.serveReturned($0, by: nil) }.count
+
+        for difficulty in AIDifficulty.allCases {
+            let returned = stagings.filter { Self.serveReturned($0, by: difficulty) }.count
+            // Measured 56 rookie, 67 pilot, 67 ace of 105 against 1 idle; before
+            // surfaces gripped the ball, 62, 77 and 61 against 2.
+            #expect(returned >= 42, "\(difficulty) returned only \(returned) of \(stagings.count) serves")
+            #expect(
+                returned >= 10 * max(1, idle),
+                "\(difficulty) returned \(returned), barely more than an idle ship's \(idle)"
+            )
+        }
+    }
+
+    /// One serve against a station-keeping opponent: did the AI -- or, with no
+    /// difficulty, an idle ship -- put it back over?
+    private static func serveReturned(_ ball: BallState, by difficulty: AIDifficulty?) -> Bool {
+        var engine = SimulationEngine.testing()
+        var controller = difficulty.map { AIController(difficulty: $0, configuration: engine.configuration) }
+        engine.state.ball = ball
+        for tick in UInt64(0) ..< 1_200 {
+            let previousX = engine.state.ball.position.x
+            engine.step(inputs: [
+                .cyan: Self.stationKeeping(for: engine.state, team: .cyan, tick: tick),
+                .orange: controller?.input(for: engine.state, team: .orange, tick: tick) ?? .idle(tick: tick),
+            ])
+            // The AI's own face is the goal it defends, so its shot goes
+            // under the cap into the far half. Landing it on the far lip
+            // is a goal; short of that it has still crossed.
+            if engine.state.match.score.orange == 1 { return true }
+            guard engine.state.match.phase == .playing else { return false }
+            if previousX >= 0, engine.state.ball.position.x < 0 { return true }
+        }
+        return false
     }
 
     @Test("The solo AI keeps the ball moving instead of hovering with it")

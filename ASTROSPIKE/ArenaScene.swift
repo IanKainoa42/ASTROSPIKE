@@ -204,11 +204,19 @@ final class ArenaScene: SKScene {
         )
         ballSeam.path = seam
         ballSeam.strokeColor = SKColor(white: 0.36, alpha: 0.9)
-        ballSeam.lineWidth = 1.4
+        ballSeam.lineWidth = 2
         ballSeam.lineCap = .round
         ballSeam.glowWidth = 0
         ballSeam.zPosition = 0.2
         ball.addChild(ballSeam)
+        // The S looks the same after half a turn, so on its own a spinning
+        // ball can look still. One dot in one lobe breaks the symmetry.
+        let ballMark = SKShapeNode(circleOfRadius: 1.8)
+        ballMark.position = CGPoint(x: -4.2, y: -3.4)
+        ballMark.fillColor = SKColor(white: 0.30, alpha: 0.95)
+        ballMark.strokeColor = .clear
+        ballMark.glowWidth = 0
+        ballSeam.addChild(ballMark)
         // The specular: small, hard, and off to one side.
         let ballShine = SKShapeNode(circleOfRadius: 2.6)
         ballShine.position = CGPoint(x: -3.6, y: 4.2)

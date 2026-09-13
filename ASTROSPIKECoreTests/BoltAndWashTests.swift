@@ -174,6 +174,12 @@ struct BoltAndWashTests {
         let still = BallState.curved(velocity, spin: 0, over: dt)
         #expect(still.velocity == velocity)
         #expect(still.spin == 0)
+        // A roll faster than any bolt could set bends no harder than the
+        // hardest clip, though it keeps all of its turn.
+        let rolled = BallState.curved(velocity, spin: 200, over: dt)
+        let clipped = BallState.curved(velocity, spin: BoltState.spinKick, over: dt)
+        #expect(simd_distance(rolled.velocity, clipped.velocity) < 1e-12)
+        #expect(rolled.spin > 198)
     }
 
     @Test("A spinning ball curves off the line a still one flies, until it hits something")
@@ -194,7 +200,8 @@ struct BoltAndWashTests {
         // The air bleeds the spin off gradually.
         #expect(abs(spinning.state.ball.spin - 20 * exp(-BallState.spinDecay * 0.25)) < 1e-9)
 
-        // Driven into the wall, the bounce takes all of it.
+        // Driven into the side wall, the wall grips it: it comes off rolling
+        // along the wall rather than skidding with the spin it brought.
         spinning.state.ball.velocity = .init(-2, 0.3)
         var bounced = false
         for _ in 0 ..< 240 {
@@ -202,7 +209,63 @@ struct BoltAndWashTests {
             if spinning.state.ball.velocity.x > 0 { bounced = true; break }
         }
         #expect(bounced, "the ball never reached the wall")
-        #expect(spinning.state.ball.spin == 0)
+        let ball = spinning.state.ball
+        #expect(abs(ball.position.x - (-spinning.arena.halfWidth + ball.radius)) < 1e-9, "it met something other than the side wall")
+        #expect(abs(ball.velocity.y - ball.spin * ball.radius) < 1e-9)
+    }
+
+    @Test("A bounce grips the ball: a firm one leaves it rolling, a graze barely turns it")
+    func surfacesGripTheBall() {
+        let r = BallState.nominalRadius
+        let floor = SIMD2(0.0, 1.0)
+        // Skidding right into the deck, it comes off rolling clockwise, with
+        // 2/7 of its run along the floor gone into the turn.
+        let skid = BallState.gripped(.init(1, 0.78), from: .init(1, -1), spin: 0, radius: r, normal: floor)
+        #expect(skid.spin < -1)
+        #expect(abs(skid.velocity.x + skid.spin * r) < 1e-12)
+        #expect(abs(skid.velocity.x - 5.0 / 7) < 1e-12)
+        #expect(skid.velocity.y == 0.78)
+        // Backspin dropped straight down kicks the ball back the way it turns.
+        let back = BallState.gripped(.init(0, 0.78), from: .init(0, -1), spin: 20, radius: r, normal: floor)
+        #expect(back.velocity.x < -0.1)
+        #expect(back.spin < 20)
+        // A graze: the floor barely pushed, so it can barely turn the ball.
+        let graze = BallState.gripped(.init(1, 0.0078), from: .init(1, -0.01), spin: 0, radius: r, normal: floor)
+        #expect(abs(graze.spin) <= BallState.contactFriction * 0.0178 * 2.5 / r + 1e-9)
+        #expect(abs(graze.velocity.x + graze.spin * r) > 0.9)
+        // No push, no grip.
+        let untouched = BallState.gripped(.init(1, 0.5), from: .init(1, 0.5), spin: 3, radius: r, normal: floor)
+        #expect(untouched.velocity == SIMD2(1, 0.5))
+        #expect(untouched.spin == 3)
+        // A surface moving under a still ball drags it along and turns it.
+        let dragged = BallState.gripped(
+            .init(0, 0.95), from: .init(0, -1), spin: 0, radius: r, normal: floor, surfaceVelocity: .init(1, 0)
+        )
+        #expect(dragged.velocity.x > 0.2)
+        #expect(dragged.spin > 1)
+    }
+
+    @Test("A ball glancing off a hull goes away turning; a square hit does not")
+    func hullGlanceSpinsTheBall() {
+        func struck(offset: Double) -> BallState {
+            var engine = playing()
+            var ship = engine.state.ships[.cyan]!
+            ship.position = .init(-0.4, 0.1)
+            ship.velocity = .zero
+            engine.state.ships[.cyan] = ship
+            engine.state.ball = BallState(position: .init(-0.62, 0.1 + offset), velocity: .init(1.5, 0))
+            for _ in 0 ..< 60 {
+                engine.step(inputs: [:])
+                if abs(engine.state.ball.velocity.x - 1.5) > 0.1 { break }
+            }
+            #expect(abs(engine.state.ball.velocity.x - 1.5) > 0.1, "the ball never reached the hull")
+            return engine.state.ball
+        }
+        #expect(abs(struck(offset: 0).spin) < 0.5)
+        // Passing over the hull it rolls over the top, clockwise; under it,
+        // the other way.
+        #expect(struck(offset: 0.07).spin < -1)
+        #expect(struck(offset: -0.07).spin > 1)
     }
 
     @Test("A bolt passing just wide of the ball misses it")

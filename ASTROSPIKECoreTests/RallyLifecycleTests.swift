@@ -4,9 +4,10 @@ import Testing
 @Suite("Rally lifecycle")
 struct RallyLifecycleTests {
     /// A ball pinned between a hull and the left wall, taken from a sweep of
-    /// randomised near-wall situations: on the old engine this hull is struck
-    /// three separate times inside seven ticks, which is the entire touch
-    /// allowance gone in under 60ms.
+    /// randomised near-wall situations: without the buffer this hull is struck
+    /// three separate times inside a handful of ticks, which is the entire
+    /// touch allowance gone in under 60ms. Re-swept when surfaces started
+    /// gripping the ball, which moved every bounce of the old rattle.
     private func rattleAgainstTheWall(debounce: Double? = nil) -> SimulationEngine {
         var configuration = SimulationConfiguration()
         if let debounce { configuration.ballTouchDebounce = debounce }
@@ -14,15 +15,15 @@ struct RallyLifecycleTests {
             state: WorldState(
                 ships: [
                     .cyan: ShipState(
-                        position: SIMD2(-0.849872, -0.460041),
-                        velocity: SIMD2(1.125247, -0.726516),
-                        angle: 0.507198
+                        position: SIMD2(-0.864797, -0.465901),
+                        velocity: SIMD2(1.200220, -0.801959),
+                        angle: 0.582852
                     ),
                     .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
                 ],
                 ball: BallState(
-                    position: SIMD2(-0.925343, -0.544544),
-                    velocity: SIMD2(1.871315, -0.579135)
+                    position: SIMD2(-0.932278, -0.548562),
+                    velocity: SIMD2(1.770773, -0.266915)
                 ),
                 match: MatchRuleState(phase: .playing)
             ),

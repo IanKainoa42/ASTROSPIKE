@@ -49,7 +49,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     the spin bends its flight until the next thing it hits, and
     //     BallState carries it -- so a build 67 peer can neither decode the
     //     snapshot nor step the same rally.
-    public static let currentVersion: UInt16 = 17
+    // 18: every surface grips the ball -- a bounce trades slide for spin and
+    //     back, and a hull hands the ball its own motion. Same reason again:
+    //     a build 68 peer would step a different rally from the same inputs.
+    public static let currentVersion: UInt16 = 18
 
     public var version: UInt16
     public var sequence: UInt64

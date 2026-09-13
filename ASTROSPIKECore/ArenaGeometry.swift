@@ -15,13 +15,18 @@ public struct BallState: Codable, Equatable, Sendable {
     /// The air takes spin off at this rate per second, so a long flight bends
     /// into an arc rather than winding round in circles.
     public static let spinDecay = 0.8
+    /// Coulomb's cap on a surface's grip: the kick along the surface can be at
+    /// most this share of the push the surface gave, so a firm bounce leaves
+    /// the ball rolling and a graze barely turns it.
+    public static let contactFriction = 0.4
 
     public var position: SIMD2<Double>
     public var velocity: SIMD2<Double>
     public var radius: Double
     /// How fast the ball is turning, in radians a second, counter-clockwise
-    /// positive. Only a bolt that clips it off centre sets it, and the next
-    /// thing it hits -- a wall, the floor, a hull -- takes all of it back off.
+    /// positive. A bolt that clips it off centre sets it outright; every
+    /// surface it touches -- a wall, the floor, a hull -- grips it, trading
+    /// slide for spin and spin for slide.
     public var spin: Double
 
     public init(
@@ -45,12 +50,40 @@ public struct BallState: Codable, Equatable, Sendable {
         over dt: Double
     ) -> (velocity: SIMD2<Double>, spin: Double) {
         guard spin != 0 else { return (velocity, 0) }
-        let turn = spin * spinCurve * dt
+        // A ball rolling off a fast bounce turns far quicker than any bolt can
+        // set it turning. The seam shows all of that, but the flight bends no
+        // harder than the hardest clip -- uncapped, a fast roll pins the ball
+        // to the deck.
+        let bend = max(-BoltState.spinKick, min(BoltState.spinKick, spin))
+        let turn = bend * spinCurve * dt
         let (c, s) = (cos(turn), sin(turn))
         let turned = SIMD2(velocity.x * c - velocity.y * s, velocity.x * s + velocity.y * c)
         let remaining = spin * exp(-spinDecay * dt)
         // Under about a turn a minute there is nothing left to see.
         return (turned, abs(remaining) < 0.1 ? 0 : remaining)
+    }
+
+    /// One contact's friction. The surface with outward `normal` has just
+    /// pushed the ball from `incoming` to `velocity`; where they touch, the
+    /// ball's face slides against the surface, and the grip takes some of that
+    /// slide out -- off the ball's travel along the surface and into its spin,
+    /// or the other way round. A solid ball settles into a roll once 2/7 of
+    /// the slide comes off its travel and 5/7 goes into its turn.
+    public static func gripped(
+        _ velocity: SIMD2<Double>,
+        from incoming: SIMD2<Double>,
+        spin: Double,
+        radius: Double,
+        normal: SIMD2<Double>,
+        surfaceVelocity: SIMD2<Double> = .zero
+    ) -> (velocity: SIMD2<Double>, spin: Double) {
+        let pushed = simd_dot(velocity - incoming, normal)
+        guard pushed > 0 else { return (velocity, spin) }
+        let tangent = SIMD2(-normal.y, normal.x)
+        let slide = simd_dot(velocity - surfaceVelocity, tangent) - spin * radius
+        let limit = contactFriction * pushed
+        let kick = max(-limit, min(limit, slide * 2 / 7))
+        return (velocity - tangent * kick, spin + kick * 2.5 / radius)
     }
 }
 

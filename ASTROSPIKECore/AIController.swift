@@ -407,39 +407,57 @@ public struct AIController: InputSource, Sendable {
         let shipSpeed = simd_length(ship.velocity)
         var position = state.ball.position
         var velocity = state.ball.velocity
-        // Spin bends the rollout exactly as it bends the real ball, and the
-        // first thing the ball bounces off takes it away, same as the engine.
+        // Spin bends the rollout exactly as it bends the real ball, and every
+        // surface grips it, same as the engine.
         var spin = state.ball.spin
         var earliestArrival: Plan?
         var firstReachable: Plan?
+        func grip(_ normal: SIMD2<Double>, from incoming: SIMD2<Double>) {
+            (velocity, spin) = BallState.gripped(
+                velocity,
+                from: incoming,
+                spin: spin,
+                radius: radius,
+                normal: normal
+            )
+        }
 
         for step in 1 ... Self.predictionSteps {
             let previous = position
             velocity.y += ballGravity * Self.predictionStep
             (velocity, spin) = BallState.curved(velocity, spin: spin, over: Self.predictionStep)
             position += velocity * Self.predictionStep
-            let flying = velocity
             if position.x - radius <= -arena.halfWidth {
+                let incoming = velocity
                 position.x = -arena.halfWidth + radius
                 velocity.x = abs(velocity.x) * SimulationEngine.ballRestitution
+                grip(SIMD2(1, 0), from: incoming)
             }
             if position.x + radius >= arena.halfWidth {
+                let incoming = velocity
                 position.x = arena.halfWidth - radius
                 velocity.x = -abs(velocity.x) * SimulationEngine.ballRestitution
+                grip(SIMD2(-1, 0), from: incoming)
             }
             if position.y + radius >= arena.ceilingY {
+                let incoming = velocity
                 position.y = arena.ceilingY - radius
                 velocity.y = -abs(velocity.y) * SimulationEngine.ballRestitution
+                grip(SIMD2(0, -1), from: incoming)
             }
             if position.y - radius <= arena.floorY {
+                let incoming = velocity
                 position.y = arena.floorY + radius
                 velocity.y = abs(velocity.y) * SimulationEngine.floorRestitution
+                grip(SIMD2(0, 1), from: incoming)
             }
             if let hump = arena.humpContact(position: position, radius: radius) {
                 position = hump.position
                 let inward = simd_dot(velocity, hump.normal)
                 if inward < 0 {
+                    let incoming = velocity
                     velocity -= hump.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                    grip(hump.normal, from: incoming)
                 }
             }
             // Whatever stands in the middle of this court -- and only that.
@@ -462,11 +480,15 @@ public struct AIController: InputSource, Sendable {
                         // Solid collar above the mouth: it shoves the ball back
                         // out along the slope it came down.
                         let sign: Double = position.x < 0 ? -1 : 1
+                        let incoming = velocity
                         position.x = sign * (arena.netHalfWidth + radius)
                         velocity.x = sign * abs(velocity.x)
+                        grip(SIMD2(sign, 0), from: incoming)
                     } else if position.y + radius >= arena.netBottomY - radius {
+                        let incoming = velocity
                         position.y = arena.netBottomY - radius * 2
                         velocity.y = -abs(velocity.y)
+                        grip(SIMD2(0, -1), from: incoming)
                     }
                 }
             case .floorWall:
@@ -477,7 +499,9 @@ public struct AIController: InputSource, Sendable {
                     position = wall.position
                     let inward = simd_dot(velocity, wall.normal)
                     if inward < 0 {
+                        let incoming = velocity
                         velocity -= wall.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                        grip(wall.normal, from: incoming)
                     }
                 }
             case .none:
@@ -494,12 +518,13 @@ public struct AIController: InputSource, Sendable {
                     position = rim.position
                     let inward = simd_dot(velocity, rim.normal)
                     if inward < 0 {
+                        let incoming = velocity
                         velocity -= rim.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                        grip(rim.normal, from: incoming)
                     }
                 }
             }
             if gone { break }
-            if velocity != flying { spin = 0 }
             guard position.x * homeSign > 0.06,
                   position.y <= ceiling,
                   position.y >= floor else { continue }

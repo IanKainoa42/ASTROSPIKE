@@ -1150,11 +1150,6 @@ public struct SimulationEngine: Sendable {
     ) {
         let r = state.ball.radius
         var struckNet = false
-        // Whatever the ball hits takes its spin off. Every surface below that
-        // pushes back changes the velocity, so that is the test -- and the
-        // defer covers the early return for a goal as well.
-        let incoming = state.ball.velocity
-        defer { if state.ball.velocity != incoming { state.ball.spin = 0 } }
 
         // The floor-mounted net: one solid slab standing up out of the middle
         // of the court, capped with a half-round. Nothing goes through it, so
@@ -1168,7 +1163,9 @@ public struct SimulationEngine: Sendable {
             state.ball.position = wall.position
             let inwardSpeed = simd_dot(state.ball.velocity, wall.normal)
             if inwardSpeed < 0 {
+                let incoming = state.ball.velocity
                 state.ball.velocity -= wall.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(wall.normal, from: incoming)
             }
             struckNet = true
         }
@@ -1188,7 +1185,9 @@ public struct SimulationEngine: Sendable {
             state.ball.position = rim.position
             let inwardSpeed = simd_dot(state.ball.velocity, rim.normal)
             if inwardSpeed < 0 {
+                let incoming = state.ball.velocity
                 state.ball.velocity -= rim.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(rim.normal, from: incoming)
             }
         }
 
@@ -1207,7 +1206,9 @@ public struct SimulationEngine: Sendable {
             let inwardSpeed = simd_dot(state.ball.velocity, lip.normal)
             if inwardSpeed < 0 {
                 state.ball.position = lip.position
+                let incoming = state.ball.velocity
                 state.ball.velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
+                grip(lip.normal, from: incoming)
                 blockedByLip = true
             }
         }
@@ -1225,7 +1226,9 @@ public struct SimulationEngine: Sendable {
             state.ball.position = capHit.position
             let inwardSpeed = simd_dot(state.ball.velocity, capHit.normal)
             if inwardSpeed < 0 {
+                let incoming = state.ball.velocity
                 state.ball.velocity -= capHit.normal * (2 * inwardSpeed)
+                grip(capHit.normal, from: incoming)
             }
             struckNet = true
         } else if arena.netStyle == .roofPortal, let netHit = sweptNetHit(
@@ -1249,7 +1252,9 @@ public struct SimulationEngine: Sendable {
                 let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
                 let inwardSpeed = simd_dot(state.ball.velocity, normal)
                 if inwardSpeed < 0 {
+                    let incoming = state.ball.velocity
                     state.ball.velocity -= normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                    grip(normal, from: incoming)
                 }
                 struckNet = true
             }
@@ -1273,7 +1278,9 @@ public struct SimulationEngine: Sendable {
             state.ball.position = lip.position
             let inwardSpeed = simd_dot(state.ball.velocity, lip.normal)
             if inwardSpeed < 0 {
+                let incoming = state.ball.velocity
                 state.ball.velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
+                grip(lip.normal, from: incoming)
             }
         }
 
@@ -1290,7 +1297,9 @@ public struct SimulationEngine: Sendable {
             state.ball.position = hump.position
             let inwardSpeed = simd_dot(state.ball.velocity, hump.normal)
             if inwardSpeed < 0 {
+                let incoming = state.ball.velocity
                 state.ball.velocity -= hump.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(hump.normal, from: incoming)
             }
             // Never a floor contact: the hump is a structure hanging from the
             // roof, not the ground. The corners register because they *are*
@@ -1301,7 +1310,9 @@ public struct SimulationEngine: Sendable {
             state.ball.position = corner.position
             let inwardSpeed = simd_dot(state.ball.velocity, corner.normal)
             if inwardSpeed < 0 {
+                let incoming = state.ball.velocity
                 state.ball.velocity -= corner.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(corner.normal, from: incoming)
             }
             if corner.normal.y > 0.5 {
                 floorRegistered = true
@@ -1310,8 +1321,10 @@ public struct SimulationEngine: Sendable {
         }
 
         if state.ball.position.y - r <= arena.floorY {
+            let incoming = state.ball.velocity
             state.ball.position.y = arena.floorY + r
             state.ball.velocity.y = abs(state.ball.velocity.y) * Self.floorRestitution
+            grip(SIMD2(0, 1), from: incoming)
             if !floorRegistered {
                 contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
                 floorRegistered = true
@@ -1324,17 +1337,35 @@ public struct SimulationEngine: Sendable {
             state.ball.velocity.y = max(state.ball.velocity.y, Self.hoopDribbleSpeed)
         }
         if state.ball.position.y + r >= arena.ceilingY {
+            let incoming = state.ball.velocity
             state.ball.position.y = arena.ceilingY - r
             state.ball.velocity.y = -abs(state.ball.velocity.y) * Self.ballRestitution
+            grip(SIMD2(0, -1), from: incoming)
         }
         if state.ball.position.x - r <= -arena.halfWidth {
+            let incoming = state.ball.velocity
             state.ball.position.x = -arena.halfWidth + r
             state.ball.velocity.x = abs(state.ball.velocity.x) * Self.ballRestitution
+            grip(SIMD2(1, 0), from: incoming)
         }
         if state.ball.position.x + r >= arena.halfWidth {
+            let incoming = state.ball.velocity
             state.ball.position.x = arena.halfWidth - r
             state.ball.velocity.x = -abs(state.ball.velocity.x) * Self.ballRestitution
+            grip(SIMD2(-1, 0), from: incoming)
         }
+    }
+
+    /// The surface with outward `normal` has just pushed the ball off
+    /// `incoming`; let it grip, trading the ball's slide for spin.
+    private mutating func grip(_ normal: SIMD2<Double>, from incoming: SIMD2<Double>) {
+        (state.ball.velocity, state.ball.spin) = BallState.gripped(
+            state.ball.velocity,
+            from: incoming,
+            spin: state.ball.spin,
+            radius: state.ball.radius,
+            normal: normal
+        )
     }
 
     private func sweptNetCapHit(
@@ -1484,10 +1515,25 @@ public struct SimulationEngine: Sendable {
         let inverseShipMass = 1.0 / Self.shipMass
         let impulse = -(1 + Self.shipBallRestitution) * inwardSpeed
             / (inverseBallMass + inverseShipMass)
+        let incoming = state.ball.velocity
         state.ball.velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
-        // A hull is a surface like any other: it takes the spin off.
-        state.ball.spin = 0
+        // A hull grips like any other surface, except the surface is moving:
+        // the ball slides against the hull where they touch, so a glance, or a
+        // nose swung through the ball, sends it off turning. The hull takes
+        // the other end of that kick.
+        let lever = state.ball.position - normal * state.ball.radius - ship.position
+        let hullSurface = ship.velocity + ship.angularVelocity * SIMD2(-lever.y, lever.x)
+        let sliding = state.ball.velocity
+        (state.ball.velocity, state.ball.spin) = BallState.gripped(
+            state.ball.velocity,
+            from: incoming,
+            spin: state.ball.spin,
+            radius: state.ball.radius,
+            normal: normal,
+            surfaceVelocity: hullSurface
+        )
+        ship.velocity -= (state.ball.velocity - sliding) * (Self.ballMass / Self.shipMass)
         // Every contact pops the ball clear of the hull. Without this a ship can
         // park under a slow ball and ride it, which stalls the rally outright.
         let separationSpeed = simd_dot(state.ball.velocity - ship.velocity, normal)
