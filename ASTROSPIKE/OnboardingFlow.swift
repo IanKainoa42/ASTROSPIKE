@@ -169,7 +169,7 @@ struct OnboardingFlow: View {
 
     private var rules: some View {
         IntroPage(kicker: "03 • RULES") {
-            Text("THREE TOUCHES. ONE BOUNCE.")
+            Text("THREE TOUCHES. THREE BOUNCES.")
                 .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
             IntroLine(icon: "hand.tap.fill", tint: .cyan, title: "TOUCHES", text: "Your hull may touch the ball three times per trip on your own half. A fourth is their point. Bolts, and touches on their half, are free.")
