@@ -494,7 +494,9 @@ private struct GameView: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
-            if session.state.match.phase == .serve, let text = session.lastPointText {
+            if let seconds = session.setBreakCountdown {
+                CountdownView(value: seconds, title: session.lastPointText, caption: "SWITCH SIDES")
+            } else if session.state.match.phase == .serve, let text = session.lastPointText {
                 Text(text)
                     .font(.system(size: 30, weight: .black, design: .rounded)).tracking(2)
                     .padding(.horizontal, 24).padding(.vertical, 13)
@@ -874,10 +876,15 @@ private struct MatchHUD: View {
 
 struct CountdownView: View {
     let value: Int
+    var title: String? = nil
+    var caption = "NEUTRAL CENTER DROP"
     var body: some View {
         VStack(spacing: 8) {
+            if let title {
+                Text(title).font(.system(size: 22, weight: .black, design: .rounded)).tracking(2)
+            }
             Text(value > 0 ? value.formatted() : "DROP").font(.system(size: 74, weight: .black, design: .rounded)).contentTransition(.numericText())
-            Text("NEUTRAL CENTER DROP").font(.caption.monospaced().weight(.bold)).tracking(2).foregroundStyle(.white.opacity(0.6))
+            Text(caption).font(.caption.monospaced().weight(.bold)).tracking(2).foregroundStyle(.white.opacity(0.6))
         }
         .accessibilityElement(children: .combine).accessibilityIdentifier("countdown")
     }
@@ -994,7 +1001,7 @@ private struct FlightTutorial: View {
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip on your own half, three bounces a touch.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
                     TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
-                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal, a fourth touch, or a fourth bounce.")
+                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal, a fourth touch, or a fourth bounce. After every set the teams switch sides and keep their colours, so everyone plays both halves.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }

@@ -235,6 +235,13 @@ final class GameSession {
         demoAI?.updateConfiguration(configuration)
     }
 
+    /// Whole seconds left in the break between sets, or nil outside one. Read
+    /// off the engine's serve clock, so a guest counts down with the host.
+    var setBreakCountdown: Int? {
+        guard state.match.phase == .serve, state.setBreak else { return nil }
+        return Int((Double(state.serveTicksRemaining) * engine.configuration.stepDuration).rounded(.up))
+    }
+
     func restartRally(with configuration: SimulationConfiguration) {
         guard mode.isOffline, state.match.phase != .finished else { return }
         engine.updateConfiguration(configuration)
@@ -418,21 +425,23 @@ final class GameSession {
         var burnSum: [Team: Double] = [:]
         var burnCount: [Team: Double] = [:]
 
+        // `homeSide` is the half a hull flies, which changes between sets;
+        // the voice belongs to the seat's colour, which never does.
         for (seat, ship) in state.ships {
             let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
             if ship.position.x * intrusionSign > limit {
                 offsideNow.insert(seat)
                 if !offsideLastFrame.contains(seat) {
                     FeedbackCenter.shared.crossedOffside(
-                        team: ship.homeSide,
+                        team: seat.team,
                         positionX: ship.position.x
                     )
                 }
             }
             if inputs[seat]?.thrust == true, state.match.phase == .playing {
-                thrustingNow.insert(ship.homeSide)
-                burnSum[ship.homeSide, default: 0] += ship.position.x
-                burnCount[ship.homeSide, default: 0] += 1
+                thrustingNow.insert(seat.team)
+                burnSum[seat.team, default: 0] += ship.position.x
+                burnCount[seat.team, default: 0] += 1
             }
         }
         offsideLastFrame = offsideNow

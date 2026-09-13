@@ -310,12 +310,19 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
     }
 
-    @Test("The face on your side is your goal: entry from your half scores for the other side")
-    func portalEntryScoresAgainstTheDefender() {
-        let arena = ArenaGeometry.standard
+    @Test("Each half belongs to the team on it, whichever end that team started at")
+    func halvesBelongToTheTeamOnThem() {
+        var state = SimulationEngine.testing().state
 
-        #expect(arena.portalScorer(enteredFromLeft: true) == .orange)
-        #expect(arena.portalScorer(enteredFromLeft: false) == .cyan)
+        #expect(state.team(onHalfAt: -0.5) == .cyan)
+        #expect(state.team(onHalfAt: 0.5) == .orange)
+        #expect(state.halfSign(of: .cyan) == -1)
+
+        state.sidesSwapped = true
+
+        #expect(state.team(onHalfAt: -0.5) == .orange)
+        #expect(state.team(onHalfAt: 0.5) == .cyan)
+        #expect(state.halfSign(of: .cyan) == 1)
     }
 
     @Test("A ball crossing under the net has not scored")

@@ -286,7 +286,9 @@ public struct MatchRules: Sendable {
                 state.winner = team
                 events.append(.matchEnded(winner: team))
             } else {
-                // Next set from love, same sides, straight into a serve.
+                // Next set from love, straight into a serve. The engine
+                // changes ends on this event and stretches the serve into a
+                // countdown.
                 events.append(.setEnded(winner: team, sets: state.sets))
                 state.score = Score()
                 state.phase = .serve

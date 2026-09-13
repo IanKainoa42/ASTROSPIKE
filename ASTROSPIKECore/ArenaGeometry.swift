@@ -512,13 +512,6 @@ public struct ArenaGeometry: Equatable, Sendable {
         return (contact, normal)
     }
 
-    /// Who scores, for a ball that has just gone through the portal. The face
-    /// on your side is your goal to defend, so a ball that enters through the
-    /// left face -- from the cyan half -- is a point for orange.
-    public func portalScorer(enteredFromLeft: Bool) -> Team {
-        enteredFromLeft ? .orange : .cyan
-    }
-
     // MARK: - The floor-mounted net
 
     /// The top of the slab, as a point. The cap is a half-round centred here

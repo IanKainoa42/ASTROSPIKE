@@ -168,6 +168,107 @@ struct RallyLifecycleTests {
         0.30
     )
 
+    // MARK: - Changing ends
+
+    /// Orange a point from the first set, the ball about to go through the
+    /// left face.
+    private static func setPointForOrange(setsToWin: Int) -> SimulationEngine {
+        SimulationEngine(state: WorldState(
+            ships: [
+                .cyan: ShipState(position: SIMD2(-0.55, -0.45), angle: .pi / 2),
+                .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
+            ],
+            ball: BallState(position: besideTheCyanFace, velocity: SIMD2(2, 0)),
+            match: MatchRuleState(score: Score(cyan: 0, orange: 6), phase: .playing, setsToWin: setsToWin)
+        ))
+    }
+
+    /// The second set: cyan on the right half, orange on the left.
+    private static func secondSet(ball: BallState) -> SimulationEngine {
+        SimulationEngine(state: WorldState(
+            ships: [
+                .cyan: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
+                .orange: ShipState(position: SIMD2(-0.55, -0.45), angle: .pi / 2),
+            ],
+            ball: ball,
+            match: MatchRuleState(phase: .playing, sets: Score(cyan: 0, orange: 1), setsToWin: 2),
+            sidesSwapped: true
+        ))
+    }
+
+    @Test("Winning a set changes ends, keeps colours, and counts down the next serve")
+    func setPointChangesEnds() {
+        var engine = Self.setPointForOrange(setsToWin: 2)
+
+        engine.step(inputs: [:])
+
+        #expect(engine.lastEvents.contains(.setEnded(winner: .orange, sets: Score(cyan: 0, orange: 1))))
+        #expect(engine.state.sidesSwapped)
+        #expect(engine.state.setBreak)
+        #expect(engine.state.ships[.cyan]?.position == SIMD2(0.55, -0.45))
+        #expect(engine.state.ships[.cyan]?.homeSide == .orange, "cyan now flies the right half")
+        #expect(engine.state.ships[.orange]?.position == SIMD2(-0.55, -0.45))
+        // Cyan conceded the set point, and cyan is on the right now.
+        #expect(engine.state.serveDriftSign == 1)
+
+        let breakTicks = Int((SimulationEngine.setBreakDuration / engine.configuration.stepDuration).rounded())
+        for _ in 0 ..< breakTicks - 1 { engine.step(inputs: [:]) }
+
+        #expect(engine.state.match.phase == .serve)
+        #expect(engine.state.setBreak)
+
+        engine.step(inputs: [:])
+
+        #expect(engine.state.match.phase == .playing)
+        #expect(!engine.state.setBreak)
+        #expect(engine.state.ball.velocity.x > 0)
+    }
+
+    @Test("The set that wins the match does not change ends")
+    func matchPointKeepsEnds() {
+        var engine = Self.setPointForOrange(setsToWin: 1)
+
+        engine.step(inputs: [:])
+
+        #expect(engine.state.match.phase == .finished)
+        #expect(!engine.state.sidesSwapped)
+        #expect(!engine.state.setBreak)
+    }
+
+    @Test("After changing ends a bounce on the right half is cyan's bounce")
+    func swappedFloorBelongsToTheTeamOnIt() {
+        var engine = Self.secondSet(ball: BallState(position: SIMD2(0.25, -0.2)))
+
+        for _ in 0 ..< 240 where engine.state.match.floorContacts == SideCounts() {
+            engine.step(inputs: [:])
+        }
+
+        #expect(engine.state.match.floorContacts.cyan == 1)
+        #expect(engine.state.match.floorContacts.orange == 0)
+    }
+
+    @Test("After changing ends the left face is orange's to defend")
+    func swappedGoalFaceBelongsToTheTeamOnIt() {
+        var engine = Self.secondSet(ball: BallState(position: Self.besideTheCyanFace, velocity: SIMD2(2, 0)))
+
+        engine.step(inputs: [:])
+
+        #expect(engine.state.match.score == Score(cyan: 1, orange: 0))
+        // Orange conceded, and orange is on the left now.
+        #expect(engine.state.serveDriftSign == -1)
+    }
+
+    @Test("Restarting a rally in the second set keeps the teams on their new ends")
+    func restartKeepsChangedEnds() {
+        var engine = Self.secondSet(ball: BallState(position: SIMD2(0, 0.10)))
+
+        engine.prepareNextRally(mirrored: false)
+
+        #expect(engine.state.ships[.cyan]?.position.x == 0.55)
+        #expect(engine.state.ships[.orange]?.homeSide == .cyan, "orange still flies the left half")
+        #expect(engine.state.ball.velocity.x > 0, "the opening drift still goes to cyan")
+    }
+
     @Test("A point respawns only the ball, over the middle")
     func pointRespawnsOnlyBall() {
         var engine = SimulationEngine.testing()

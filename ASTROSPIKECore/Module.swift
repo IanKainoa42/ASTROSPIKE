@@ -284,10 +284,18 @@ public struct WorldState: Codable, Equatable, Sendable {
     public var ball: BallState
     public var match: MatchRuleState
     public var serveTicksRemaining: UInt64
-    /// Which way the next serve drifts: -1 toward cyan, +1 toward orange. The
-    /// ball reappears dead centre under the goal, and the side that just
+    /// Which way the next serve drifts: -1 to the left half, +1 to the right.
+    /// The ball reappears dead centre under the goal, and the side that just
     /// conceded is the side it is handed to.
     public var serveDriftSign: Double
+    /// The teams have changed ends: cyan flies the right half and orange the
+    /// left. Flipped after every set but the last, so each team plays both
+    /// halves in a match. Colours stay with the team, so anything that turns
+    /// a half of the court into a team goes through `team(onHalfAt:)`.
+    public var sidesSwapped: Bool
+    /// The serve under way is the break between sets: longer than a rally's,
+    /// and counted down on every board.
+    public var setBreak: Bool
     /// Bolts in flight, oldest first.
     public var bolts: [BoltState]
     public var nextBoltID: UInt64
@@ -304,6 +312,8 @@ public struct WorldState: Codable, Equatable, Sendable {
         match: MatchRuleState = MatchRuleState(),
         serveTicksRemaining: UInt64 = 0,
         serveDriftSign: Double = -1,
+        sidesSwapped: Bool = false,
+        setBreak: Bool = false,
         bolts: [BoltState] = [],
         nextBoltID: UInt64 = 0,
         lastBallToucher: Team? = nil
@@ -314,9 +324,22 @@ public struct WorldState: Codable, Equatable, Sendable {
         self.match = match
         self.serveTicksRemaining = serveTicksRemaining
         self.serveDriftSign = serveDriftSign
+        self.sidesSwapped = sidesSwapped
+        self.setBreak = setBreak
         self.bolts = bolts
         self.nextBoltID = nextBoltID
         self.lastBallToucher = lastBallToucher
+    }
+
+    /// The team whose half of the court `x` is on.
+    public func team(onHalfAt x: Double) -> Team {
+        let left: Team = sidesSwapped ? .orange : .cyan
+        return x < 0 ? left : left.opponent
+    }
+
+    /// -1 if the team is on the left half, +1 if it is on the right.
+    public func halfSign(of team: Team) -> Double {
+        self.team(onHalfAt: -1) == team ? -1 : 1
     }
 }
 
@@ -561,6 +584,10 @@ public struct SimulationEngine: Sendable {
 
     public mutating func prepareNextRally(mirrored: Bool) {
         guard state.match.phase != .finished else { return }
+        // Relative to the ends the teams are on now, so a restart in the
+        // second set does not quietly swap them back.
+        let mirrored = mirrored != state.sidesSwapped
+        state.setBreak = false
         // Whoever is seated stays seated; only the positions reset.
         let seats = state.ships.isEmpty ? Seat.singles : Set(state.ships.keys)
         state.ships = Dictionary(uniqueKeysWithValues: seats.map { seat in
@@ -703,9 +730,32 @@ public struct SimulationEngine: Sendable {
                 guard case let .point(scoringTeam, _) = event else { return nil }
                 return scoringTeam.opponent
             }.first
+            let setEnded = ruleEvents.contains { if case .setEnded = $0 { true } else { false } }
+            if setEnded { changeEnds() }
             stageServe(on: concedingTeam)
+            if setEnded {
+                state.setBreak = true
+                state.serveTicksRemaining = UInt64((Self.setBreakDuration / configuration.stepDuration).rounded())
+            }
         }
         state.tick += 1
+    }
+
+    /// Seconds between the set point and the next set's serve: long enough
+    /// to count down 3, 2, 1 while the ships settle on their new ends.
+    public static let setBreakDuration = 3.0
+
+    /// Between sets the teams change ends, colours and all, so each plays
+    /// both halves in a match. Every hull starts the next set from its seat's
+    /// spawn on the new half, and its `homeSide` follows the half.
+    private mutating func changeEnds() {
+        state.sidesSwapped.toggle()
+        for seat in state.ships.keys {
+            state.ships[seat] = ShipState(
+                position: Self.spawnPosition(for: seat, mirrored: state.sidesSwapped),
+                angle: .pi / 2
+            )
+        }
     }
 
     /// Enough sideways drift that the ball lands well inside the receiving
@@ -722,10 +772,10 @@ public struct SimulationEngine: Sendable {
         // The ball reappears dead centre, just under the cap of the goal, and
         // drifts out to the side that just conceded. It cannot score by
         // itself: the goal is above it, and it only ever falls.
-        switch team {
-        case .cyan: state.serveDriftSign = -1
-        case .orange: state.serveDriftSign = 1
-        case nil: state.serveDriftSign = -state.serveDriftSign
+        if let team {
+            state.serveDriftSign = state.halfSign(of: team)
+        } else {
+            state.serveDriftSign = -state.serveDriftSign
         }
         state.ball = BallState(
             position: SIMD2(0, configuration.ballDropHeight),
@@ -750,6 +800,7 @@ public struct SimulationEngine: Sendable {
             state.serveTicksRemaining -= 1
         }
         guard state.serveTicksRemaining == 0 else { return }
+        state.setBreak = false
         respawnDestroyedShips()
         state.ball.velocity = serveVelocity
         if usesEngineRules {
@@ -1238,8 +1289,9 @@ public struct SimulationEngine: Sendable {
         ) {
             if netHit.crossedFace, !blockedByLip, netHit.position.y <= arena.portalMouthTopY {
                 state.ball.position = netHit.position
+                // The face on your half is the one you defend.
                 contacts.append(.ballEnteredGoal(
-                    defending: arena.portalScorer(enteredFromLeft: netHit.fromLeft).opponent
+                    defending: state.team(onHalfAt: netHit.fromLeft ? -1 : 1)
                 ))
                 return
             }
@@ -1263,7 +1315,7 @@ public struct SimulationEngine: Sendable {
         }
 
         if !struckNet, previousPosition.x.sign != state.ball.position.x.sign {
-            contacts.append(.ballCrossedCenter(into: state.ball.position.x < 0 ? .cyan : .orange))
+            contacts.append(.ballCrossedCenter(into: state.team(onHalfAt: state.ball.position.x)))
         }
 
         // The lips are the one soft surface in the arena: a ball that lands
@@ -1315,7 +1367,7 @@ public struct SimulationEngine: Sendable {
             }
             if corner.normal.y > 0.5 {
                 floorRegistered = true
-                contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
+                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.ball.position.x)))
             }
         }
 
@@ -1325,7 +1377,7 @@ public struct SimulationEngine: Sendable {
             state.ball.velocity.y = abs(state.ball.velocity.y) * Self.floorRestitution
             grip(SIMD2(0, 1), from: incoming)
             if !floorRegistered {
-                contacts.append(.ballTouchedFloor(side: state.ball.position.x < 0 ? .cyan : .orange))
+                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.ball.position.x)))
                 floorRegistered = true
             }
         }

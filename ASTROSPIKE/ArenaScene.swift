@@ -49,6 +49,10 @@ final class ArenaScene: SKScene {
     private var plumeBudgets: [Seat: Double] = [:]
     private var plumeSeed = 0
     private var didBuild = false
+    /// The ends the court was last drawn for. The teams change ends between
+    /// sets, so every half-coloured mark is drawn for whoever is on that half.
+    private var drawnSidesSwapped = false
+    private var leftTeam: Team { drawnSidesSwapped ? .orange : .cyan }
 
     override init(size: CGSize = CGSize(width: 960, height: 540)) {
         super.init(size: size)
@@ -233,29 +237,29 @@ final class ArenaScene: SKScene {
         arenaLayer.removeAllChildren()
         let frame = arenaRect
 
-        let cyanZone = SKShapeNode(rect: CGRect(
+        let leftZone = SKShapeNode(rect: CGRect(
             x: frame.minX,
             y: frame.minY,
             width: frame.width / 2,
             height: frame.height
         ))
-        cyanZone.fillColor = .cyan.withAlphaComponent(0.025)
-        cyanZone.strokeColor = .clear
-        arenaLayer.addChild(cyanZone)
-        let orangeZone = SKShapeNode(rect: CGRect(
+        leftZone.fillColor = Self.color(leftTeam).withAlphaComponent(0.025)
+        leftZone.strokeColor = .clear
+        arenaLayer.addChild(leftZone)
+        let rightZone = SKShapeNode(rect: CGRect(
             x: frame.midX,
             y: frame.minY,
             width: frame.width / 2,
             height: frame.height
         ))
-        orangeZone.fillColor = .orange.withAlphaComponent(0.025)
-        orangeZone.strokeColor = .clear
-        arenaLayer.addChild(orangeZone)
+        rightZone.fillColor = Self.color(leftTeam.opponent).withAlphaComponent(0.025)
+        rightZone.strokeColor = .clear
+        arenaLayer.addChild(rightZone)
 
-        addSideLabel("CYAN SIDE", team: .cyan, at: point(-0.72, 0.68))
-        addSideLabel("ORANGE SIDE", team: .orange, at: point(0.72, 0.68))
-        addCrossingLimit(for: .cyan)
-        addCrossingLimit(for: .orange)
+        addSideLabel("\(leftTeam.rawValue.uppercased()) SIDE", team: leftTeam, at: point(-0.72, 0.68))
+        addSideLabel("\(leftTeam.opponent.rawValue.uppercased()) SIDE", team: leftTeam.opponent, at: point(0.72, 0.68))
+        addCrossingLimit(for: leftTeam, fromLeft: true)
+        addCrossingLimit(for: leftTeam.opponent, fromLeft: false)
 
         for index in 0..<56 {
             let seed = Double(index * 7919 % 101) / 101
@@ -507,8 +511,8 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(mouthNode)
 
         for sign in [-1.0, 1.0] {
-            let scorer: Team = sign < 0 ? .cyan : .orange
-            let color: SKColor = scorer == .cyan ? .cyan : .orange
+            // Coloured for the team that defends it: whoever is on that half.
+            let color = Self.color(sign < 0 ? leftTeam : leftTeam.opponent)
             let face = CGMutablePath()
             face.move(to: point(half * sign, collarBottom))
             face.addLine(to: point(half * sign, arena.netBottomY))
@@ -576,11 +580,14 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(label)
     }
 
-    private func addCrossingLimit(for intrudingTeam: Team) {
-        let x = intrudingTeam == .cyan
-            ? arena.opponentCrossingLimit
-            : -arena.opponentCrossingLimit
-        let color: SKColor = intrudingTeam == .cyan ? .cyan : .orange
+    private static func color(_ team: Team) -> SKColor {
+        team == .cyan ? .cyan : .orange
+    }
+
+    /// The furthest a team flying from the given half may push into the other.
+    private func addCrossingLimit(for intrudingTeam: Team, fromLeft: Bool) {
+        let x = fromLeft ? arena.opponentCrossingLimit : -arena.opponentCrossingLimit
+        let color = Self.color(intrudingTeam)
         let path = CGMutablePath()
         var y = arena.floorY + 0.04
         while y < arena.ceilingY {
@@ -606,6 +613,10 @@ final class ArenaScene: SKScene {
 
     private func renderSnapshot() {
         guard let snapshot else { return }
+        if snapshot.sidesSwapped != drawnSidesSwapped {
+            drawnSidesSwapped = snapshot.sidesSwapped
+            didBuild = false
+        }
         if !didBuild { buildArena() }
         for seat in Seat.allCases { update(seat: seat, state: snapshot.ships[seat]) }
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)

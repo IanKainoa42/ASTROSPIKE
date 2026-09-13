@@ -26,7 +26,9 @@ struct WireProtocolTests {
             ],
             ball: BallState(position: SIMD2(0.48, 0.60), spin: -12.5),
             match: MatchRuleState(score: Score(cyan: 3, orange: 2), phase: .serve),
-            serveTicksRemaining: 73
+            serveTicksRemaining: 73,
+            sidesSwapped: true,
+            setBreak: true
         )
         let envelope = WireEnvelope(sequence: 18, payload: .snapshot(state))
 

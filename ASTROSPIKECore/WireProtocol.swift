@@ -54,7 +54,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     a build 68 peer would step a different rally from the same inputs.
     // 19: bolts are no longer touches and a hull on the far half spends none.
     //     A build 69 peer would call a touch fault this build plays through.
-    public static let currentVersion: UInt16 = 19
+    // 20: teams change ends between sets. WorldState carries sidesSwapped
+    //     and setBreak, and every floor, crossing and goal is scored by the
+    //     team on that half rather than by its colour's old end.
+    public static let currentVersion: UInt16 = 20
 
     public var version: UInt16
     public var sequence: UInt64
