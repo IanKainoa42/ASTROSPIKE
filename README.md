@@ -72,12 +72,12 @@ xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
 ## Online architecture
 
 - `GKMatchmakerViewController` provides automatic matching and friend invitations.
-- Every peer invokes `chooseBestHostingPlayer`; the selected peer is authoritative.
-- Inputs are sent unreliably every four simulation ticks (30 Hz).
-- Host snapshots are sent unreliably every six ticks (20 Hz).
+- Hosting is role-based: the inviter hosts; an invitee never hosts; in automatch the lowest `gamePlayerID` hosts.
+- Inputs are sent unreliably every two simulation ticks (~60 Hz at 120 Hz sim).
+- Host snapshots are sent unreliably every six ticks (~20 Hz).
 - Lifecycle and scoring events are sent reliably.
 - Guests predict their local ship and reconcile by blend-or-snap against host snapshots.
-- A disconnect opens a ten-second recovery window. Reconnection triggers a reliable full resync; expiry finishes the match by forfeit.
+- A disconnect opens a 120-second seat-hold window. Reconnection triggers a reliable full resync; expiry finishes the match by forfeit.
 
 The implementation follows Apple's [real-time data exchange](https://developer.apple.com/documentation/gamekit/exchanging-data-between-players-in-real-time-games) and [matchmaking](https://developer.apple.com/documentation/gamekit/gkmatchmakerviewcontroller) guidance.
 
