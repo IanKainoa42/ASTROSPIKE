@@ -29,10 +29,10 @@ This is the final manual gate. Use two physical iOS 18+ devices signed into sepa
 
 ## Recovery and forfeit
 
-- [ ] During a rally, disconnect device B for fewer than ten seconds.
-- [ ] Confirm the connected device shows `LINK: RECONNECTING` while `RETRY` counts down from 10 seconds.
+- [ ] During a rally, disconnect device B briefly (well under two minutes).
+- [ ] Confirm the connected device shows `LINK: RECONNECTING` while `RETRY` counts down from 120 seconds.
 - [ ] Confirm both pause, B is reinvited, and reconnection returns `LINK: STABLE`, clears `RETRY`, and performs a full resync plus three-count.
-- [ ] Repeat, keeping B disconnected beyond ten seconds.
+- [ ] Repeat, keeping B disconnected beyond two minutes.
 - [ ] Confirm the countdown expires, device A wins by forfeit, the link no longer reports stable, and both leave the live match cleanly.
 - [ ] Background and foreground each app once during a match and confirm state remains synchronized.
 
