@@ -144,6 +144,67 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Leave Match?"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Leave Match"].exists)
     }
+
+    @MainActor
+    func testHangarShowsPrivacyAndTermsNextToRestore() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
+        app.launch()
+
+        app.buttons["hangar"].tap()
+        XCTAssertTrue(app.navigationBars["Hangar"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["hull-restore"].waitForExistence(timeout: 3)
+                || app.staticTexts["RESTORE PURCHASES"].waitForExistence(timeout: 3),
+            "Restore Purchases missing from Hangar"
+        )
+        XCTAssertTrue(app.buttons["hangar-privacy"].waitForExistence(timeout: 3), "Privacy Policy missing next to Restore")
+        XCTAssertTrue(app.buttons["hangar-terms"].exists, "Terms of Use missing next to Restore")
+    }
+
+    @MainActor
+    func testResultsWinOffersPlayAgainChallengeAndBackToMenu() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--results-win", "--skip-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["YOU WIN"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["PLAY AGAIN"].exists)
+        XCTAssertTrue(app.buttons["CHALLENGE PILOT"].exists)
+        XCTAssertTrue(app.buttons["BACK TO MENU"].exists)
+    }
+
+    @MainActor
+    func testResultsLoseRetriesTheSameRival() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--results-lose", "--skip-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["YOU LOSE"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["CHALLENGE PILOT"].exists)
+        app.buttons["PLAY AGAIN"].tap()
+        XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["YOU LOSE"].exists)
+    }
+
+    @MainActor
+    func testResultsBackToMenuReturnsHome() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--results-win", "--skip-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.buttons["BACK TO MENU"].waitForExistence(timeout: 5))
+        app.buttons["BACK TO MENU"].tap()
+        XCTAssertTrue(app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testResultsChallengeStartsTheNextRival() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--results-win", "--skip-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.buttons["CHALLENGE PILOT"].waitForExistence(timeout: 5))
+        app.buttons["CHALLENGE PILOT"].tap()
+        XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["YOU WIN"].exists)
+    }
 }
 
 extension ASTROSPIKEUITests {

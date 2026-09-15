@@ -46,6 +46,38 @@ public enum AIDifficulty: String, Codable, CaseIterable, Sendable {
         case .ace: 0.72
         }
     }
+
+    /// The next rung on the solo ladder. Nil at Ace: there is nowhere harder.
+    public var next: AIDifficulty? {
+        switch self {
+        case .rookie: .pilot
+        case .pilot: .ace
+        case .ace: nil
+        }
+    }
+}
+
+/// What the results card should offer. Online duels cannot rematch in-place;
+/// a loss retries the same rival rather than skipping a rung.
+public struct ResultsPlan: Equatable, Sendable {
+    public let canPlayAgain: Bool
+    public let nextRival: AIDifficulty?
+
+    public init(offline: Bool, localWon: Bool, rival: AIDifficulty?) {
+        canPlayAgain = offline
+        nextRival = (offline && localWon) ? rival?.next : nil
+    }
+}
+
+/// Win and lose are different sounds. The simulation only emits `matchEnded`;
+/// the local side decides which sting to play.
+public enum MatchEndCue: Equatable, Sendable {
+    case win
+    case lose
+
+    public static func forLocalSide(_ team: Team, winner: Team) -> MatchEndCue {
+        winner == team ? .win : .lose
+    }
 }
 
 /// Flies a lander the way a player has to. It rolls the ball forward to find

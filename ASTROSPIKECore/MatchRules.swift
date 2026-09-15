@@ -205,6 +205,12 @@ public struct MatchRules: Sendable {
         state.phase = .countdown
     }
 
+    /// Play Again: love-all, same format, same bounce/touch caps, into countdown.
+    public mutating func resetMatch() {
+        let format = state.setsToWin
+        state = MatchRuleState(phase: .countdown, setsToWin: format)
+    }
+
     public mutating func forfeit(winner: Team) -> [SimulationEvent] {
         guard state.phase != .finished else { return [] }
         state.score[winner] += 1

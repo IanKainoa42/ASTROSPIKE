@@ -16,6 +16,7 @@ struct HangarView: View {
     var compact = false
 
     @State private var previewed: Hull?
+    @Environment(\.openURL) private var openURL
 
     private var shown: Hull { previewed ?? profile.selectedHull }
     private var shownUnlocked: Bool { entitlements.isUnlocked(shown) }
@@ -42,6 +43,7 @@ struct HangarView: View {
             }
             .frame(maxWidth: .infinity)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("hangar")
     }
 
@@ -69,7 +71,20 @@ struct HangarView: View {
                 .foregroundStyle(.white.opacity(store.isRestoring ? 0.55 : 0.8))
                 .disabled(store.isRestoring)
                 .accessibilityIdentifier("hull-restore")
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
+                Button("Privacy Policy") {
+                    openURL(LegalLinks.privacyPolicy)
+                }
+                .font(.caption2.weight(.semibold))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("hangar-privacy")
+                Text("·").foregroundStyle(.white.opacity(0.35))
+                Button("Terms of Use") {
+                    openURL(LegalLinks.termsOfUse)
+                }
+                .font(.caption2.weight(.semibold))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("hangar-terms")
             }
             if let message = store.message {
                 Button {
@@ -266,6 +281,7 @@ struct HangarSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Done") { dismiss() } }
         }
+        .presentationDetents([.large])
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("hangar-screen")
     }

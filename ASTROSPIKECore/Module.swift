@@ -582,6 +582,21 @@ public struct SimulationEngine: Sendable {
         prepareNextRally(mirrored: mirrored)
     }
 
+    /// Play Again after a finished match: love-all, same roster and format,
+    /// ships reseated, clock at zero. `prepareNextRally` refuses a finished
+    /// board, so the rulebook has to be cleared first.
+    public mutating func restartMatch() {
+        rules.resetMatch()
+        state.match = rules.state
+        state.tick = 0
+        state.sidesSwapped = false
+        state.setBreak = false
+        state.bolts.removeAll()
+        state.nextBoltID = 0
+        state.lastBallToucher = nil
+        configureRoster(Set(state.ships.keys))
+    }
+
     public mutating func prepareNextRally(mirrored: Bool) {
         guard state.match.phase != .finished else { return }
         // Relative to the ends the teams are on now, so a restart in the

@@ -87,4 +87,4 @@ The implementation follows Apple's [real-time data exchange](https://developer.a
 - `artifacts/screenshots/physical-gameplay-landscape.png` — signed build running on a physical iPhone, including the Metal performance HUD.
 - `docs/PHYSICAL-MULTIPLAYER-CHECKLIST.md` — two-device sandbox Game Center acceptance checklist.
 
-The `--demo` debug launch argument starts a Pilot-vs-Pilot match for unattended rendering and capture. It does not change release gameplay.
+The `--demo` debug launch argument starts a Pilot-vs-Pilot match for unattended rendering and capture. `--results-win` and `--results-lose` open a finished Rookie match on the results card so the rematch buttons can be exercised without playing through. `--online-diagnostics-preview` mounts the Game Center diagnostics HUD so UI tests can still read it; live Release matches keep that HUD off. They do not change release gameplay.

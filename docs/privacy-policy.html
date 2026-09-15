@@ -19,10 +19,10 @@
 </head>
 <body>
     <h1>ASTROSPIKE Privacy Policy</h1>
-    <p>Last updated: September 13, 2026</p>
+    <p>Last updated: September 15, 2026</p>
 
     <h2>The short version</h2>
-    <p>ASTROSPIKE does not collect, store, or share any personal data. Everything the app remembers stays on your device.</p>
+    <p>Solo play stays on your device. Online play uses Apple Game Center and iCloud (CloudKit) so the lobby can show who is flying. That means your Game Center player ID, display name, selected hull, and match activity leave the device. ASTROSPIKE does not track you, sell data, or run its own servers.</p>
 
     <h2>What the app stores locally</h2>
     <ul>
@@ -30,16 +30,27 @@
         <li>Onboarding/tutorial completion state</li>
         <li>Control and gameplay settings</li>
     </ul>
-    <p>This data is stored using Apple's standard on-device preferences (UserDefaults) and never leaves your device.</p>
+    <p>This data is stored using Apple's on-device preferences (UserDefaults). It is not uploaded unless you play online, in which case the hull you selected is also written to the lobby record below.</p>
+
+    <h2>What online play writes to iCloud</h2>
+    <p>When you are signed in to iCloud and Game Center, ASTROSPIKE publishes records in the CloudKit container <code>iCloud.com.iankainoa.ASTROSPIKE</code> so other pilots can find you:</p>
+    <ul>
+        <li>Game Center player ID</li>
+        <li>Game Center display name</li>
+        <li>Selected hull</li>
+        <li>Activity (idle, searching, in a duel, or flying solo) and the match you are in</li>
+        <li>Hosted duel scorelines, winners, and tournament names, entries, and results</li>
+    </ul>
+    <p>Presence records go stale after a short window if you leave. ASTROSPIKE does not use this data for advertising or analytics. Apple operates CloudKit; see <a href="https://www.apple.com/legal/privacy/">Apple's privacy policy</a>.</p>
 
     <h2>Game Center</h2>
-    <p>ASTROSPIKE uses Apple's Game Center for friend invites and multiplayer matchmaking. Game Center is operated by Apple and governed by <a href="https://www.apple.com/legal/privacy/">Apple's own privacy policy</a>. ASTROSPIKE does not receive or store your Game Center data beyond what's needed to run a match.</p>
-
-    <h2>Multiplayer</h2>
-    <p>When you play online, match data (ship positions, ball state, score) is relayed between players to keep the match in sync. This data is not stored after the match ends.</p>
+    <p>Friend invites and matchmaking run through Apple's Game Center. Apple holds that account. During a live match, ship positions, ball state, and score are relayed between the devices in the match so the boards stay in sync. That relay is not a CloudKit store of the rally after the match ends; the lobby scoreline above is the host's summary.</p>
 
     <h2>In-app purchases</h2>
-    <p>Purchases are processed entirely by Apple through StoreKit. ASTROSPIKE never sees or stores your payment information.</p>
+    <p>Cosmetic hull purchases are processed by Apple through StoreKit. ASTROSPIKE never sees or stores your payment information. Unlock flags for hulls you already bought stay on the device.</p>
+
+    <h2>Tracking</h2>
+    <p>ASTROSPIKE does not track you across apps or websites, does not use your data for targeted ads, and does not attach third-party analytics SDKs.</p>
 
     <h2>Contact</h2>
     <p>Questions about this policy:<br>

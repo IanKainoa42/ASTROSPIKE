@@ -49,6 +49,27 @@ enum GameMode: Hashable {
         case .basketball: "BASKETBALL"
         }
     }
+
+    /// The bot ladder this mode is on, if any. Online and the bay have none.
+    var rivalDifficulty: AIDifficulty? {
+        switch self {
+        case let .solo(difficulty), let .doubles(difficulty),
+             let .volleyball(difficulty), let .basketball(difficulty):
+            difficulty
+        case .online, .warmup:
+            nil
+        }
+    }
+
+    func withRival(_ difficulty: AIDifficulty) -> GameMode {
+        switch self {
+        case .solo: .solo(difficulty)
+        case .doubles: .doubles(difficulty)
+        case .volleyball: .volleyball(difficulty)
+        case .basketball: .basketball(difficulty)
+        case .online, .warmup: self
+        }
+    }
 }
 
 @MainActor
@@ -113,7 +134,8 @@ final class GameSession {
         configuration: SimulationConfiguration = .init(),
         setsToWin: Int = 1,
         localHull: Hull = .lancet,
-        rivalHull: Hull = .anvil
+        rivalHull: Hull = .anvil,
+        finishedAs: Team? = nil
     ) {
         self.mode = mode
         self.online = online
@@ -171,6 +193,11 @@ final class GameSession {
         scene.tractorRange = engine.configuration.tractorRange
         scene.snapshot = state
         if mode == .warmup { scene.rings = rings.rings }
+        if let winner = finishedAs {
+            engine.finishByForfeit(winner: winner)
+            state = engine.state
+            scene.snapshot = state
+        }
         for seat in Seat.allCases {
             let hull: Hull = if seat == localSeat {
                 localHull
@@ -240,6 +267,40 @@ final class GameSession {
     var setBreakCountdown: Int? {
         guard state.match.phase == .serve, state.setBreak else { return nil }
         return Int((Double(state.serveTicksRemaining) * engine.configuration.stepDuration).rounded(.up))
+    }
+
+    /// Play Again: same rival, same format, new countdown. Online cannot.
+    func restartMatch() {
+        guard mode.isOffline else { return }
+        engine.restartMatch()
+        state = engine.state
+        scene.snapshot = state
+        countdown = mode == .warmup ? 1 : 3
+        countdownAccumulator = 0
+        accumulator = 0
+        lastPointText = nil
+        announcedStakes = (.none, .none)
+        isPaused = false
+        torque = 0
+        thrust = false
+        fire = false
+        fireLatched = false
+        tractor = false
+        for seat in pilots.keys {
+            let difficulty = pilots[seat]?.difficulty ?? .pilot
+            pilots[seat] = AIController(
+                difficulty: difficulty,
+                configuration: engine.configuration,
+                arena: mode.court
+            )
+        }
+        if demoAI != nil {
+            demoAI = AIController(difficulty: .pilot, configuration: engine.configuration, arena: mode.court)
+        }
+        SoundBank.shared.stopEverything()
+        thrustingTeams = []
+        thrustCenter = [:]
+        offsideLastFrame = []
     }
 
     func restartRally(with configuration: SimulationConfiguration) {
@@ -380,7 +441,12 @@ final class GameSession {
         }
         for event in events where presentsLocalEvents {
             if case .collisionEffect = event { FeedbackCenter.shared.impact() }
-            if case .matchEnded = event { FeedbackCenter.shared.win() }
+            if case let .matchEnded(winner) = event {
+                switch MatchEndCue.forLocalSide(localSeat.team, winner: winner) {
+                case .win: FeedbackCenter.shared.win()
+                case .lose: FeedbackCenter.shared.lose()
+                }
+            }
             if case .online = mode, online?.isAuthoritative == true {
                 if case .matchEnded = event {
                     online?.sendFullResync(engine.state)

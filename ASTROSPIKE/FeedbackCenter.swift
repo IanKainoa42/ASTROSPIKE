@@ -89,4 +89,10 @@ final class FeedbackCenter {
         guard hapticsEnabled else { return }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
+
+    func lose() {
+        SpatialAudioCenter.shared.play(frequency: 220, duration: 0.42, positionX: 0)
+        guard hapticsEnabled else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
 }

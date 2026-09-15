@@ -19,6 +19,7 @@
 		1C9BF2BE88472A99D82848CB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */; };
 		1D659B5B59B22184796127C4 /* ASTROSPIKEUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */; };
 		1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */; };
+		2B482102C2AED82F18584933 /* ResultsLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */; };
 		31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */; };
 		3A4D0B7ACDA79D239BD06DDB /* ASTROSPIKEApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */; };
 		3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 859573897DB0229481CD4EC8 /* KeyboardControls.swift */; };
@@ -28,7 +29,9 @@
 		480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */; };
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		4ABE3DC27EA7E0AA4E79BA2D /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		4CEC3317A8917605AAC45A0C /* PlayerNetworkCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */; };
 		52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */; };
+		53CF65C86386C661178D68E9 /* LegalLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9739AF060E01614EDB007C1C /* LegalLinks.swift */; };
 		58B4CF56A2EA0B283E718739 /* HullShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8F43E674683CFA8668873B /* HullShapes.swift */; };
 		594C28054C252A6E6577D9EC /* Lobby.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC83DD77126E7FA513D2942 /* Lobby.swift */; };
 		5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */; };
@@ -42,6 +45,7 @@
 		81CFFE5928F7D9BC1B3CB1F3 /* thrusterCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 3642C970AB86552313466CC5 /* thrusterCyan.mp3 */; };
 		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
 		8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */; };
+		8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */; };
 		8D4415BEF5D274D18341CD57 /* LobbyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D734BE128C9E77556BF0D012 /* LobbyService.swift */; };
 		90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */; };
 		92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CD4F97738D5A2F620398EBF /* Assets.xcassets */; };
@@ -68,6 +72,7 @@
 		CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5488DBEBDCDC52A967D49F5A /* AppRootView.swift */; };
 		CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */; };
 		D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AED5437E5592EACB25579F /* ArenaScene.swift */; };
+		DE0C9433C7AFD7FC5912429C /* PrivacyDisclosureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */; };
 		DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088700D916D7C71D0559E240 /* TrackEngine.swift */; };
 		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
 		EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9B354B5E4A268F1331755 /* AIController.swift */; };
@@ -133,10 +138,12 @@
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		056582DB470999C16355D1FE /* HullStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullStore.swift; sourceTree = "<group>"; };
 		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
+		079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopy.swift; sourceTree = "<group>"; };
 		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
 		0B581A251E3DC103CDFB31F3 /* TrackScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackScene.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
+		1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopyTests.swift; sourceTree = "<group>"; };
 		1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 		1D6D5F20EF789803283845FE /* ASTROSPIKE.storekit */ = {isa = PBXFileReference; path = ASTROSPIKE.storekit; sourceTree = "<group>"; };
 		1ED4E0B75A2F992CEDD09F79 /* TouchControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchControls.swift; sourceTree = "<group>"; };
@@ -187,6 +194,7 @@
 		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
+		9739AF060E01614EDB007C1C /* LegalLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalLinks.swift; sourceTree = "<group>"; };
 		9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRulesTests.swift; sourceTree = "<group>"; };
 		A3A9B354B5E4A268F1331755 /* AIController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIController.swift; sourceTree = "<group>"; };
 		A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothing.swift; sourceTree = "<group>"; };
@@ -197,10 +205,12 @@
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
 		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
+		E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsLoopTests.swift; sourceTree = "<group>"; };
 		E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaceTuningView.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
+		F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyDisclosureTests.swift; sourceTree = "<group>"; };
 		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -246,11 +256,13 @@
 				828D26A07A966607CF8F1287 /* Hulls.swift */,
 				056582DB470999C16355D1FE /* HullStore.swift */,
 				047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */,
+				9739AF060E01614EDB007C1C /* LegalLinks.swift */,
 				1AC83DD77126E7FA513D2942 /* Lobby.swift */,
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
+				079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */,
 				088700D916D7C71D0559E240 /* TrackEngine.swift */,
 				812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */,
 				0229900C8172E2E47EE8513F /* TrackTuning.swift */,
@@ -341,7 +353,10 @@
 				2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */,
 				8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */,
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
+				1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */,
+				F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */,
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
+				E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
 				8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */,
 				FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */,
@@ -509,11 +524,13 @@
 				FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */,
 				077E31AEAA3268F71CF606CB /* Hulls.swift in Sources */,
 				C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */,
+				53CF65C86386C661178D68E9 /* LegalLinks.swift in Sources */,
 				594C28054C252A6E6577D9EC /* Lobby.swift in Sources */,
 				76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */,
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
+				8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */,
 				DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */,
 				80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */,
 				B4C588645F32130C5896505D /* TrackTuning.swift in Sources */,
@@ -568,7 +585,10 @@
 				CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */,
 				9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */,
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
+				4CEC3317A8917605AAC45A0C /* PlayerNetworkCopyTests.swift in Sources */,
+				DE0C9433C7AFD7FC5912429C /* PrivacyDisclosureTests.swift in Sources */,
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,
+				2B482102C2AED82F18584933 /* ResultsLoopTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
 				5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */,
 				31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */,
@@ -733,7 +753,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 73;
+				CURRENT_PROJECT_VERSION = 74;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -793,7 +813,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 73;
+				CURRENT_PROJECT_VERSION = 74;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

@@ -21,6 +21,9 @@ struct AppRootView: View {
     /// teams, no rulebook -- so it sits beside `gameMode` rather than in it.
     @State private var showTrack: Bool
     @State private var showOnboarding: Bool
+    /// Consumed by the first GameView; cleared on appear so Challenge does not
+    /// inherit `--results-win` / `--results-lose`.
+    @State private var resultsPreviewWinner: Team?
     @Environment(\.scenePhase) private var scenePhase
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
@@ -31,6 +34,7 @@ struct AppRootView: View {
         let arguments = ProcessInfo.processInfo.arguments
         let demoMode = arguments.contains("--demo")
         let diagnosticsPreviewMode = arguments.contains("--online-diagnostics-preview")
+        let resultsPreview = arguments.contains("--results-win") || arguments.contains("--results-lose")
         diagnosticsPreview = diagnosticsPreviewMode ? OnlineDiagnosticsSnapshot(
             playerName: "GC TEST PILOT",
             localTeam: .cyan,
@@ -51,8 +55,14 @@ struct AppRootView: View {
             UserDefaults.standard.set(true, forKey: "arrangePads")
         }
         let warmupMode = arguments.contains("--warmup")
+        _resultsPreviewWinner = State(
+            initialValue: arguments.contains("--results-win") ? .cyan
+                : arguments.contains("--results-lose") ? .orange
+                : nil
+        )
         _gameMode = State(initialValue: diagnosticsPreviewMode ? .online
             : warmupMode ? .warmup
+            : resultsPreview ? .solo(.rookie)
             : demoMode ? .solo(.pilot) : nil)
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
@@ -62,6 +72,7 @@ struct AppRootView: View {
         let trackMode = arguments.contains("--track")
         _showTrack = State(initialValue: trackMode)
         let bypass = demoMode || warmupMode || diagnosticsPreviewMode || lobbyMode || trackMode
+            || resultsPreview
             || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
         // `--lobby` opens the board straight away; the simulator cannot tap it.
@@ -89,11 +100,16 @@ struct AppRootView: View {
                     lobby: lobby,
                     tuning: tuning,
                     profile: profile,
-                    diagnosticsOverride: diagnosticsPreview
+                    diagnosticsOverride: diagnosticsPreview,
+                    previewWinner: resultsPreviewWinner,
+                    continueWith: { mode in
+                        withAnimation(.easeOut(duration: 0.25)) { self.gameMode = mode }
+                    }
                 ) {
                     self.gameMode = nil
                 }
                 .id(gameMode)
+                .onAppear { resultsPreviewWinner = nil }
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
             } else if showOnboarding {
                 OnboardingFlow(profile: profile, entitlements: entitlements, store: store) { launch in
@@ -373,6 +389,8 @@ private struct GameView: View {
     let tuning: FlightTuningStore
     let profile: PilotProfileStore
     let diagnosticsOverride: OnlineDiagnosticsSnapshot?
+    let previewWinner: Team?
+    let continueWith: (GameMode) -> Void
     let exit: () -> Void
 
     @State private var session: GameSession
@@ -394,6 +412,8 @@ private struct GameView: View {
         tuning: FlightTuningStore,
         profile: PilotProfileStore,
         diagnosticsOverride: OnlineDiagnosticsSnapshot? = nil,
+        previewWinner: Team? = nil,
+        continueWith: @escaping (GameMode) -> Void,
         exit: @escaping () -> Void
     ) {
         self.mode = mode
@@ -402,6 +422,8 @@ private struct GameView: View {
         self.tuning = tuning
         self.profile = profile
         self.diagnosticsOverride = diagnosticsOverride
+        self.previewWinner = previewWinner
+        self.continueWith = continueWith
         self.exit = exit
         let configuration = switch mode {
         case .solo, .doubles: tuning.configuration
@@ -419,8 +441,20 @@ private struct GameView: View {
             configuration: configuration,
             setsToWin: tuning.setsToWin,
             localHull: profile.selectedHull,
-            rivalHull: profile.rivalHull()
+            rivalHull: profile.rivalHull(),
+            finishedAs: previewWinner
         ))
+    }
+
+    /// Live matches keep the engineer HUD in Debug. Release only shows it
+    /// when `--online-diagnostics-preview` supplies a snapshot.
+    private var showsConnectionDiagnostics: Bool {
+        if diagnosticsOverride != nil { return true }
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
     }
 
     var body: some View {
@@ -448,24 +482,24 @@ private struct GameView: View {
                         }
                     }
                 }
-                if mode == .online {
+                if mode == .online, showsConnectionDiagnostics {
                     GameCenterDiagnosticsPanel(
                         diagnostics: diagnosticsOverride ?? online.diagnosticsSnapshot
                     )
                     .padding(.top, 4)
-                    if case .reconnecting = online.status {
-                        Button {
-                            online.reinviteDroppedPilots()
-                        } label: {
-                            Label("RE-INVITE PILOT", systemImage: "arrow.uturn.backward.circle.fill")
-                                .font(.caption.weight(.bold))
-                                .padding(.horizontal, 6)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.yellow)
-                        .padding(.top, 6)
-                        .accessibilityIdentifier("reinvite-button")
+                }
+                if mode == .online, case .reconnecting = online.status {
+                    Button {
+                        online.reinviteDroppedPilots()
+                    } label: {
+                        Label("RE-INVITE PILOT", systemImage: "arrow.uturn.backward.circle.fill")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 6)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.yellow)
+                    .padding(.top, 6)
+                    .accessibilityIdentifier("reinvite-button")
                 }
                 if mode != .warmup {
                     HStack {
@@ -507,7 +541,14 @@ private struct GameView: View {
                 LinkLostOverlay(message: linkFailure, exit: leaveGame)
             }
             if session.state.match.phase == .finished {
-                ResultsOverlay(state: session.state, localTeam: localTeam, exit: leaveGame)
+                ResultsOverlay(
+                    state: session.state,
+                    localTeam: localTeam,
+                    plan: resultsPlan,
+                    playAgain: playAgain,
+                    challenge: challengeNext,
+                    exit: leaveGame
+                )
             }
         }
         .accessibilityIdentifier("game-screen")
@@ -632,8 +673,14 @@ private struct GameView: View {
                 showLeaveConfirmation = true
             }
         case .confirm:
-            // Only meaningful on the results card, where it is the one button.
-            if session.state.match.phase == .finished { leaveGame() }
+            // Primary action on the results card: stay in the loop when we can.
+            if session.state.match.phase == .finished {
+                if resultsPlan.canPlayAgain {
+                    playAgain()
+                } else {
+                    leaveGame()
+                }
+            }
         }
     }
 
@@ -646,6 +693,28 @@ private struct GameView: View {
         case .solo, .doubles, .volleyball, .basketball: break
         }
         exit()
+    }
+
+    private var resultsPlan: ResultsPlan {
+        ResultsPlan(
+            offline: mode.isOffline,
+            localWon: didLocalPlayerWin,
+            rival: mode.rivalDifficulty
+        )
+    }
+
+    private var didLocalPlayerWin: Bool {
+        if let winner = session.state.match.winner { return winner == localTeam }
+        return session.state.match.score[localTeam] > session.state.match.score[localTeam.opponent]
+    }
+
+    private func playAgain() {
+        session.restartMatch()
+    }
+
+    private func challengeNext() {
+        guard let next = resultsPlan.nextRival else { return }
+        continueWith(mode.withRival(next))
     }
 }
 
@@ -1073,11 +1142,13 @@ private struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                #if DEBUG
                 Section("Developer") {
                     NavigationLink("Flight Tuning") {
                         FlightTuningView(tuning: tuning)
                     }
                 }
+                #endif
                 if let replayIntro {
                     Section("Intro") {
                         Button("Replay intro", action: replayIntro)
@@ -1214,7 +1285,7 @@ private struct LinkLostOverlay: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 260)
-            Button("Return to Hangar", action: exit).buttonStyle(.borderedProminent).tint(.orange)
+            Button("BACK TO MENU", action: exit).buttonStyle(.borderedProminent).tint(.orange)
         }
         .padding(30)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
@@ -1225,7 +1296,11 @@ private struct LinkLostOverlay: View {
 private struct ResultsOverlay: View {
     let state: WorldState
     let localTeam: Team
+    let plan: ResultsPlan
+    let playAgain: () -> Void
+    let challenge: () -> Void
     let exit: () -> Void
+
     var body: some View {
         VStack(spacing: 14) {
             Text(didLocalPlayerWin ? "YOU WIN" : "YOU LOSE")
@@ -1237,9 +1312,26 @@ private struct ResultsOverlay: View {
             } else {
                 Text("\(state.match.score.cyan)  —  \(state.match.score.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
             }
-            Button("Return to Hangar", action: exit).buttonStyle(.borderedProminent).tint(.cyan)
+            if plan.canPlayAgain {
+                Button("PLAY AGAIN", action: playAgain)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                    .accessibilityIdentifier("results-play-again")
+            }
+            if let next = plan.nextRival {
+                Button("CHALLENGE \(next.rawValue.uppercased())", action: challenge)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .accessibilityIdentifier("results-challenge")
+            }
+            Button("BACK TO MENU", action: exit)
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .accessibilityIdentifier("results-back-to-menu")
         }
-        .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26)).accessibilityIdentifier("results-screen")
+        .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("results-screen")
     }
 
     private var didLocalPlayerWin: Bool {

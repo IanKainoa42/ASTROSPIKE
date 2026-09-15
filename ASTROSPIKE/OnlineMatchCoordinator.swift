@@ -196,6 +196,33 @@ final class OnlineMatchCoordinator: NSObject,
         return text
     }
 
+    /// What a pilot sees. Codes and engineer names stay in `describe`.
+    nonisolated func playerFacingGameCenter(_ error: Error) -> String {
+        gameCenterKind(error).message
+    }
+
+    nonisolated private func gameCenterKind(_ error: Error) -> PlayerNetworkCopy.GameCenter {
+        guard let gkError = error as? GKError else { return .other }
+        let kind: PlayerNetworkCopy.GameCenter = switch gkError.code {
+        case .notAuthenticated: .notAuthenticated
+        case .authenticationInProgress: .authenticationInProgress
+        case .userDenied: .userDenied
+        case .communicationsFailure: .communicationsFailure
+        case .invitationsDisabled: .invitationsDisabled
+        case .restrictedToAutomatch: .restrictedToAutomatch
+        case .matchNotConnected: .matchNotConnected
+        case .underage: .underage
+        case .gameUnrecognized: .gameUnrecognized
+        case .notSupported: .notSupported
+        case .cancelled: .cancelled
+        case .iCloudUnavailable: .iCloudUnavailable
+        case .connectionTimeout: .connectionTimeout
+        case .apiNotAvailable: .apiNotAvailable
+        default: .other
+        }
+        return kind
+    }
+
     var onSnapshot: ((WorldState) -> Void)?
     var onResync: ((WorldState) -> Void)? {
         didSet {
@@ -297,7 +324,7 @@ final class OnlineMatchCoordinator: NSObject,
                     let detail = self.describe(error)
                     self.note("AUTH FAILED: \(detail)")
                     self.pendingMatchmakingIntent = nil
-                    self.status = .failed(message: "Game Center unavailable · \(detail)")
+                    self.status = .failed(message: self.playerFacingGameCenter(error))
                 } else {
                     self.note("AUTH: SIGNED OUT")
                     self.pendingMatchmakingIntent = nil
@@ -422,13 +449,13 @@ final class OnlineMatchCoordinator: NSObject,
                 guard let self, generation == self.matchmakingGeneration else { return }
                 let word = Self.describe(response)
                 self.note("INVITE → \(player.displayName): \(word)")
-                self.inviteNotice = "\(player.displayName.uppercased()) · \(word)"
+                self.inviteNotice = "\(player.displayName.uppercased()) · \(Self.playerPhrase(response))"
                 guard response != .accepted else { return }
                 self.declinedInvites += 1
                 // Everyone we asked said no, so there is nothing to wait for.
                 if self.declinedInvites >= recipientCount, case .matching = self.status, self.match == nil {
                     GKMatchmaker.shared().cancel()
-                    self.status = .failed(message: "\(player.displayName): \(word.lowercased())")
+                    self.status = .failed(message: "\(player.displayName): \(Self.playerPhrase(response))")
                 } else {
                     self.tryStartAsHost()
                 }
@@ -449,7 +476,7 @@ final class OnlineMatchCoordinator: NSObject,
                 if let error {
                     let detail = self.describe(error)
                     self.note("MATCHMAKING FAILED: \(detail)")
-                    self.status = .failed(message: detail)
+                    self.status = .failed(message: self.playerFacingGameCenter(error))
                     return
                 }
                 guard let match else {
@@ -539,6 +566,23 @@ final class OnlineMatchCoordinator: NSObject,
         case .noAnswer: "NO ANSWER"
         @unknown default: "RESPONSE \(response.rawValue)"
         }
+    }
+
+    private static func playerPhrase(_ response: GKInviteRecipientResponse) -> String {
+        inviteKind(response).message
+    }
+
+    private static func inviteKind(_ response: GKInviteRecipientResponse) -> PlayerNetworkCopy.Invite {
+        let kind: PlayerNetworkCopy.Invite = switch response {
+        case .accepted: .accepted
+        case .declined: .declined
+        case .failed: .failed
+        case .incompatible: .incompatible
+        case .unableToConnect: .unableToConnect
+        case .noAnswer: .noAnswer
+        @unknown default: .other
+        }
+        return kind
     }
 
     /// A programmatic `findMatch` hands the match back before the invited
@@ -1000,7 +1044,7 @@ final class OnlineMatchCoordinator: NSObject,
         let detail = describe(error)
         note("MATCHMAKER FAILED: \(detail)")
         viewController.dismiss(animated: true)
-        status = .failed(message: detail)
+        status = .failed(message: playerFacingGameCenter(error))
     }
 
     func matchmakerViewController(_ viewController: GKMatchmakerViewController, didFind match: GKMatch) {
@@ -1098,15 +1142,16 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     nonisolated func match(_ match: GKMatch, didFailWithError error: Error?) {
-        let message = error.map { describe($0) }
+        let diagnostic = error.map { describe($0) }
+        let visible = error.map { playerFacingGameCenter($0) }
         Task { @MainActor [weak self] in
             guard let self, self.match === match else { return }
-            let detail = message ?? "The match ended"
+            let detail = diagnostic ?? "The match ended"
             self.note("MATCH FAILED: \(detail)")
             // A log line was the whole of it, which is how a pilot got dropped
             // with the arena still up and nothing on screen to say so.
             guard self.lifecycle.acceptsNetworkMessages else { return }
-            self.status = .failed(message: detail)
+            self.status = .failed(message: visible ?? "The match ended")
         }
     }
 
@@ -1152,7 +1197,7 @@ final class OnlineMatchCoordinator: NSObject,
                 if let error {
                     let detail = self.describe(error)
                     self.note("INVITE JOIN FAILED: \(detail)")
-                    self.status = .failed(message: detail)
+                    self.status = .failed(message: self.playerFacingGameCenter(error))
                     return
                 }
                 guard let match else {

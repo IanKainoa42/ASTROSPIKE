@@ -149,7 +149,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("ICLOUD: \(detail)")
-            availability = .offline("iCloud unreachable · \(detail)")
+            availability = .offline(playerFacing(error))
         }
     }
 
@@ -220,8 +220,8 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("REFRESH FAILED: \(detail)")
-            notice = detail
-            if availability == .checking { availability = .offline(detail) }
+            notice = playerFacing(error)
+            if availability == .checking { availability = .offline(playerFacing(error)) }
         }
     }
 
@@ -279,8 +279,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("PRESENCE FAILED: \(detail)")
-            notice = detail
-            notice = detail
+            notice = playerFacing(error)
             presenceRecord = nil
         }
     }
@@ -354,7 +353,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("DUEL PUSH FAILED: \(detail)")
-            notice = detail
+            notice = playerFacing(error)
         }
     }
 
@@ -379,7 +378,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("TOURNAMENT CREATE FAILED: \(detail)")
-            notice = detail
+            notice = playerFacing(error)
         }
     }
 
@@ -399,7 +398,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("TOURNAMENT JOIN FAILED: \(detail)")
-            notice = detail
+            notice = playerFacing(error)
         }
         await refresh()
     }
@@ -416,7 +415,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("TOURNAMENT START FAILED: \(detail)")
-            notice = detail
+            notice = playerFacing(error)
         }
         await refresh()
     }
@@ -437,7 +436,7 @@ final class LobbyService {
         } catch {
             let detail = describe(error)
             note("TOURNAMENT REPORT FAILED: \(detail)")
-            notice = detail
+            notice = playerFacing(error)
         }
     }
 
@@ -463,7 +462,7 @@ final class LobbyService {
                 if let failure {
                     let detail = self.describe(failure)
                     self.note("INVITE: LOOKUP FAILED \(detail)")
-                    self.notice = "Could not reach \(name) · \(detail)"
+                    self.notice = "Could not reach \(name). Try again."
                     return
                 }
                 guard let players, !players.isEmpty else {
@@ -532,6 +531,24 @@ final class LobbyService {
             return "CK\(ckError.code.rawValue) \(name)"
         }
         return "\(nsError.domain)#\(nsError.code) \(nsError.localizedDescription)"
+    }
+
+    /// What a pilot sees. Schema and index names stay in `describe`.
+    private func playerFacing(_ error: Error) -> String {
+        guard let ckError = error as? CKError else {
+            return PlayerNetworkCopy.CloudKit.other.message
+        }
+        let kind: PlayerNetworkCopy.CloudKit = switch ckError.code {
+        case .notAuthenticated: .notAuthenticated
+        case .networkUnavailable, .networkFailure: .network
+        case .serviceUnavailable, .accountTemporarilyUnavailable: .unavailable
+        case .unknownItem: .unknownItem
+        case .invalidArguments: .invalidArguments
+        case .quotaExceeded: .quotaExceeded
+        case .permissionFailure: .permissionFailure
+        default: .other
+        }
+        return kind.message
     }
 }
 
