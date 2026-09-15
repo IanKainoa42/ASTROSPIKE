@@ -53,6 +53,15 @@ final class ArenaScene: SKScene {
     /// sets, so every half-coloured mark is drawn for whoever is on that half.
     private var drawnSidesSwapped = false
     private var leftTeam: Team { drawnSidesSwapped ? .orange : .cyan }
+    /// The pilot's own team, so the court can say which goal is theirs to
+    /// score in and which to defend. Nil in the warm-up bay.
+    var localTeam: Team? {
+        didSet {
+            guard localTeam != oldValue else { return }
+            didBuild = false
+            buildArena()
+        }
+    }
 
     override init(size: CGSize = CGSize(width: 960, height: 540)) {
         super.init(size: size)
@@ -256,8 +265,8 @@ final class ArenaScene: SKScene {
         rightZone.strokeColor = .clear
         arenaLayer.addChild(rightZone)
 
-        addSideLabel("\(leftTeam.rawValue.uppercased()) SIDE", team: leftTeam, at: point(-0.72, 0.68))
-        addSideLabel("\(leftTeam.opponent.rawValue.uppercased()) SIDE", team: leftTeam.opponent, at: point(0.72, 0.68))
+        addSideLabel(for: leftTeam, at: point(-0.72, 0.68))
+        addSideLabel(for: leftTeam.opponent, at: point(0.72, 0.68))
         addCrossingLimit(for: leftTeam, fromLeft: true)
         addCrossingLimit(for: leftTeam.opponent, fromLeft: false)
 
@@ -518,13 +527,15 @@ final class ArenaScene: SKScene {
             face.addLine(to: point(half * sign, arena.netBottomY))
             let faceNode = SKShapeNode(path: face)
             faceNode.strokeColor = color.withAlphaComponent(0.9)
-            // Some bloom is left on the faces alone: they are the target,
-            // and the colour is the aiming cue. Everything structural around
-            // them is hard.
+            // Some bloom is left on the faces alone: they are the goals.
+            // Everything structural around them is hard. The colour says who
+            // defends a face, not who aims at it -- the SCORE and DEFEND calls
+            // beside them say that.
             faceNode.lineWidth = 4
             faceNode.glowWidth = 4
             arenaLayer.addChild(faceNode)
         }
+        addGoalCalls()
 
         // The cap: solid, neutral, and the part of the net that bounces.
         let cap = CGMutablePath()
@@ -578,6 +589,70 @@ final class ArenaScene: SKScene {
         label.position = position
         label.zPosition = 1
         arenaLayer.addChild(label)
+    }
+
+    private func addSideLabel(for team: Team, at position: CGPoint) {
+        let isLocal = team == localTeam
+        let label = SKLabelNode(text: "\(team.rawValue.uppercased()) SIDE" + (isLocal ? " · YOU" : ""))
+        label.fontName = "AvenirNextCondensed-Bold"
+        // It was 11pt at 35%, which is part of why nobody could tell whose
+        // end was whose.
+        label.fontSize = 14
+        label.fontColor = Self.color(team).withAlphaComponent(isLocal ? 0.8 : 0.5)
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = position
+        label.zPosition = 1
+        arenaLayer.addChild(label)
+    }
+
+    /// SCORE beside the face this pilot shoots into and DEFEND beside their
+    /// own, each on the side the ball has to come in from. The face on your
+    /// half is yours to defend, so the one to score in is across the net --
+    /// and changes with the ends between sets.
+    private func addGoalCalls() {
+        guard let localTeam, let snapshot else { return }
+        let mouthY = (arena.portalMouthTopY + arena.netBottomY) / 2
+        let attack = snapshot.attackFaceSign(of: localTeam)
+        let defend = -attack
+        // Each word is pinned at its inner edge and runs away from the net,
+        // so it can never be drawn over the chevron whatever its width.
+        func outward(_ sign: Double) -> SKLabelHorizontalAlignmentMode { sign > 0 ? .left : .right }
+
+        let score = SKLabelNode(text: "SCORE")
+        score.fontName = "AvenirNextCondensed-Heavy"
+        score.fontSize = 15
+        score.fontColor = .white.withAlphaComponent(0.92)
+        score.horizontalAlignmentMode = outward(attack)
+        score.verticalAlignmentMode = .center
+        score.position = point(attack * (arena.netHalfWidth + 0.07), mouthY)
+        score.zPosition = 1
+        arenaLayer.addChild(score)
+
+        // A chevron against the face, pointing into the goal.
+        let tipX = attack * (arena.netHalfWidth + 0.02)
+        let armX = attack * (arena.netHalfWidth + 0.045)
+        let chevron = CGMutablePath()
+        chevron.move(to: point(armX, mouthY + 0.035))
+        chevron.addLine(to: point(tipX, mouthY))
+        chevron.addLine(to: point(armX, mouthY - 0.035))
+        let chevronNode = SKShapeNode(path: chevron)
+        chevronNode.strokeColor = .white.withAlphaComponent(0.92)
+        chevronNode.lineWidth = 3
+        chevronNode.lineCap = .round
+        chevronNode.lineJoin = .round
+        chevronNode.zPosition = 1
+        arenaLayer.addChild(chevronNode)
+
+        let guardLabel = SKLabelNode(text: "DEFEND")
+        guardLabel.fontName = "AvenirNextCondensed-Bold"
+        guardLabel.fontSize = 13
+        guardLabel.fontColor = Self.color(localTeam).withAlphaComponent(0.7)
+        guardLabel.horizontalAlignmentMode = outward(defend)
+        guardLabel.verticalAlignmentMode = .center
+        guardLabel.position = point(defend * (arena.netHalfWidth + 0.035), mouthY)
+        guardLabel.zPosition = 1
+        arenaLayer.addChild(guardLabel)
     }
 
     private static func color(_ team: Team) -> SKColor {

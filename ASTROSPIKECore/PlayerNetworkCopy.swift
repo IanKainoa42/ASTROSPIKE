@@ -22,7 +22,9 @@ public enum PlayerNetworkCopy {
 
         public var message: String {
             switch self {
-            case .notAuthenticated: "Sign in to Game Center"
+            // GameKit will not show its sign-in sheet twice, so the way back
+            // in is Settings, and the copy has to say so.
+            case .notAuthenticated: "Sign in to Game Center in Settings"
             case .authenticationInProgress: "Still signing in"
             case .userDenied: "Game Center permission declined"
             case .communicationsFailure: "Couldn't reach Game Center"
@@ -61,6 +63,27 @@ public enum PlayerNetworkCopy {
             case .permissionFailure: "Couldn't access iCloud"
             case .other: "Couldn't reach iCloud. Pull to refresh."
             }
+        }
+    }
+
+    /// What the bay says while a table is being set. FINDING PILOT is right
+    /// for a quick match and wrong for everything else: a pilot who tapped an
+    /// invite sat under it with no word that they were on their way in.
+    public enum Matchmaking {
+        public static func joining(_ name: String) -> String {
+            "JOINING \(name.uppercased())…"
+        }
+
+        public static func rejoining(_ name: String) -> String {
+            "REJOINING \(name.uppercased())…"
+        }
+
+        public static func waiting(for names: [String]) -> String {
+            guard let first = names.first else { return "WAITING FOR PILOTS…" }
+            let others = names.count - 1
+            return others > 0
+                ? "WAITING FOR \(first.uppercased()) +\(others)…"
+                : "WAITING FOR \(first.uppercased())…"
         }
     }
 

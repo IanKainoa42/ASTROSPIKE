@@ -132,6 +132,12 @@ struct AppRootView: View {
             online.preferredTuning = tuning.snapshot
             lobby.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--joining-preview") {
+                    online.previewMatchmaking(headline: PlayerNetworkCopy.Matchmaking.joining("Ian"))
+                    return
+                }
+                #endif
                 online.authenticate()
             }
         }
@@ -344,7 +350,7 @@ private struct HomeView: View {
                     .accessibilityLabel("Your hull: \(profile.selectedHull.spec.name). Open hangar")
                     .accessibilityIdentifier("home-hull")
                     Spacer().frame(height: 10)
-                    Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
+                    Label(online.statusLabel, systemImage: "dot.radiowaves.left.and.right")
                         .font(.caption2.monospaced().weight(.bold))
                         .foregroundStyle(statusColor).lineLimit(1)
                 }
@@ -468,6 +474,7 @@ private struct GameView: View {
                 } else {
                     MatchHUD(
                         state: session.state,
+                        localTeam: localTeam,
                         allowedBounces: allowedBounces,
                         allowedTouches: allowedTouches,
                         online: mode == .online && diagnosticsOverride == nil ? online : nil,
@@ -733,8 +740,22 @@ private struct WarmupHUD: View {
             VStack(spacing: 3) {
                 Text("WARM-UP BAY").font(.caption2.monospaced().weight(.bold)).tracking(2)
                     .foregroundStyle(.white.opacity(0.55))
-                Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
-                    .font(.caption2.weight(.bold)).foregroundStyle(statusColor).lineLimit(1)
+                if let headline = online.matchmakingHeadline {
+                    // Who they are waiting on, big enough to read mid-hoop.
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).tint(.yellow)
+                        Text(headline).font(.subheadline.monospaced().weight(.black)).tracking(1)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    .foregroundStyle(.yellow)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .overlay(Capsule().stroke(.yellow.opacity(0.75), lineWidth: 1.5))
+                    .accessibilityIdentifier("matchmaking-headline")
+                } else {
+                    Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
+                        .font(.caption2.weight(.bold)).foregroundStyle(statusColor).lineLimit(1)
+                }
                 if let notice = online.inviteNotice {
                     Text(notice).font(.caption2.monospaced().weight(.semibold))
                         .foregroundStyle(.yellow.opacity(0.9)).lineLimit(1)
@@ -794,6 +815,7 @@ private struct TeamSideBadge: View {
 
 private struct MatchHUD: View {
     let state: WorldState
+    let localTeam: Team
     let allowedBounces: Int
     let allowedTouches: Int
     let online: OnlineMatchCoordinator?
@@ -801,15 +823,13 @@ private struct MatchHUD: View {
     let actionIcon: String
     let action: () -> Void
 
+    /// The scoreboard sits the way the court does: each side's score over its
+    /// own half, so it changes ends with the teams between sets.
+    private var leftTeam: Team { state.team(onHalfAt: -1) }
+
     var body: some View {
         HStack {
-            score(
-                team: .cyan,
-                value: state.match.score.cyan,
-                bounces: state.match.floorContacts.cyan,
-                touches: state.match.shipTouches.cyan,
-                stake: state.match.stake(for: .cyan)
-            )
+            score(team: leftTeam)
             Spacer()
             VStack(spacing: 2) {
                 // The format line steps aside when a point is actually on
@@ -822,19 +842,13 @@ private struct MatchHUD: View {
                 }
                 if state.match.setsToWin > 1 { setPips }
                 if let online {
-                    Label(online.status.label, systemImage: signalIcon)
+                    Label(online.statusLabel, systemImage: signalIcon)
                         .font(.caption2.weight(.bold))
                         .foregroundStyle(statusColor)
                 }
             }
             Spacer()
-            score(
-                team: .orange,
-                value: state.match.score.orange,
-                bounces: state.match.floorContacts.orange,
-                touches: state.match.shipTouches.orange,
-                stake: state.match.stake(for: .orange)
-            )
+            score(team: leftTeam.opponent)
             Button(action: action) {
                 Image(systemName: actionIcon).frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
             }
@@ -851,23 +865,23 @@ private struct MatchHUD: View {
         }
     }
 
-    /// One pip per set a side needs, filled as they take them, cyan on the
-    /// left and orange on the right.
+    /// One pip per set a side needs, filled as they take them, each side's
+    /// pips on the half that side is flying.
     private var setPips: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 3) {
-                ForEach(0..<state.match.setsToWin, id: \.self) { index in
-                    Circle().fill(index < state.match.sets.cyan ? Color.cyan : .white.opacity(0.18)).frame(width: 6, height: 6)
-                }
-            }
-            HStack(spacing: 3) {
-                ForEach(0..<state.match.setsToWin, id: \.self) { index in
-                    Circle().fill(index < state.match.sets.orange ? Color.orange : .white.opacity(0.18)).frame(width: 6, height: 6)
+            ForEach([leftTeam, leftTeam.opponent], id: \.self) { team in
+                HStack(spacing: 3) {
+                    ForEach(0..<state.match.setsToWin, id: \.self) { index in
+                        Circle().fill(index < state.match.sets[team] ? Self.tint(team) : .white.opacity(0.18))
+                            .frame(width: 6, height: 6)
+                    }
                 }
             }
         }
-        .accessibilityLabel("Sets \(state.match.sets.cyan) to \(state.match.sets.orange)")
+        .accessibilityLabel("Sets: you \(state.match.sets[localTeam]), rival \(state.match.sets[localTeam.opponent])")
     }
+
+    private static func tint(_ team: Team) -> Color { team == .cyan ? .cyan : .orange }
 
     /// Names the side and what the next point takes. Carries the team tint
     /// as a filled capsule so it reads from across the room mid-rally.
@@ -886,10 +900,25 @@ private struct MatchHUD: View {
             .accessibilityIdentifier("stake-callout")
     }
 
-    private func score(team: Team, value: Int, bounces: Int, touches: Int, stake: Stake) -> some View {
-        let tint = team == .cyan ? Color.cyan : .orange
+    private func score(team: Team) -> some View {
+        let tint = Self.tint(team)
+        let value = state.match.score[team]
+        let bounces = state.match.floorContacts[team]
+        let touches = state.match.shipTouches[team]
+        let stake = state.match.stake(for: team)
+        let isLocal = team == localTeam
         return HStack(spacing: 12) {
-            Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
+            VStack(spacing: 3) {
+                Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
+                if isLocal {
+                    Text("YOU")
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(tint, in: Capsule())
+                        .accessibilityIdentifier("hud-you-tag")
+                }
+            }
             Text(value.formatted())
                 .font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
                 // A ring on the number itself, so the side that is serving
@@ -921,7 +950,8 @@ private struct MatchHUD: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(team.rawValue) score \(value), \(touches) of \(allowedTouches) touches used, "
+            (isLocal ? "Your side, " : "Rival side, ")
+                + "\(team.rawValue) score \(value), \(touches) of \(allowedTouches) touches used, "
                 + "\(bounces) of \(allowedBounces) bounces used"
                 + (stake == .none ? "" : stake == .matchPoint ? ", match point" : ", set point")
         )
@@ -1305,12 +1335,15 @@ private struct ResultsOverlay: View {
         VStack(spacing: 14) {
             Text(didLocalPlayerWin ? "YOU WIN" : "YOU LOSE")
                 .font(.caption.monospaced().bold()).tracking(3)
+            // Yours first, in your colour, whichever colour you flew.
             if state.match.setsToWin > 1 {
-                Text("\(state.match.sets.cyan)  —  \(state.match.sets.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
-                Text("SETS · LAST SET \(state.match.score.cyan)–\(state.match.score.orange)")
+                scoreLine(state.match.sets)
+                Text("YOU — RIVAL · SETS · LAST SET \(state.match.score[localTeam])–\(state.match.score[localTeam.opponent])")
                     .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
             } else {
-                Text("\(state.match.score.cyan)  —  \(state.match.score.orange)").font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
+                scoreLine(state.match.score)
+                Text("YOU — RIVAL")
+                    .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
             }
             if plan.canPlayAgain {
                 Button("PLAY AGAIN", action: playAgain)
@@ -1332,6 +1365,18 @@ private struct ResultsOverlay: View {
         .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("results-screen")
+    }
+
+    private func scoreLine(_ tally: Score) -> some View {
+        let rival = localTeam.opponent
+        return HStack(spacing: 18) {
+            Text(tally[localTeam].formatted()).foregroundStyle(localTeam == .cyan ? Color.cyan : .orange)
+            Text("—").foregroundStyle(.secondary)
+            Text(tally[rival].formatted()).foregroundStyle(rival == .cyan ? Color.cyan : .orange)
+        }
+        .font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("You \(tally[localTeam]), rival \(tally[rival])")
     }
 
     private var didLocalPlayerWin: Bool {

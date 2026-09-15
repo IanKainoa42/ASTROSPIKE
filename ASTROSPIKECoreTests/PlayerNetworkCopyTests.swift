@@ -11,7 +11,7 @@ struct PlayerNetworkCopyTests {
             #expect(!text.contains("#"), "\(kind): \(text)")
             #expect(!text.isEmpty, "\(kind) has no copy")
         }
-        #expect(PlayerNetworkCopy.GameCenter.notAuthenticated.message == "Sign in to Game Center")
+        #expect(PlayerNetworkCopy.GameCenter.notAuthenticated.message == "Sign in to Game Center in Settings")
         #expect(PlayerNetworkCopy.GameCenter.cancelled.message == "Search cancelled")
         #expect(PlayerNetworkCopy.GameCenter.communicationsFailure.message == "Couldn't reach Game Center")
         #expect(PlayerNetworkCopy.GameCenter.other.message == "Couldn't reach Game Center. Try again.")
@@ -30,6 +30,15 @@ struct PlayerNetworkCopyTests {
         #expect(PlayerNetworkCopy.CloudKit.network.message == "No network. Pull to refresh.")
         #expect(PlayerNetworkCopy.CloudKit.notAuthenticated.message == "Sign in to iCloud")
         #expect(PlayerNetworkCopy.CloudKit.other.message == "Couldn't reach iCloud. Pull to refresh.")
+    }
+
+    @Test("The bay names who the pilot is waiting on")
+    func matchmakingHeadlineNamesThePilot() {
+        #expect(PlayerNetworkCopy.Matchmaking.joining("Ian") == "JOINING IAN…")
+        #expect(PlayerNetworkCopy.Matchmaking.rejoining("Maya") == "REJOINING MAYA…")
+        #expect(PlayerNetworkCopy.Matchmaking.waiting(for: ["Maya"]) == "WAITING FOR MAYA…")
+        #expect(PlayerNetworkCopy.Matchmaking.waiting(for: ["Maya", "Jo", "Sam"]) == "WAITING FOR MAYA +2…")
+        #expect(PlayerNetworkCopy.Matchmaking.waiting(for: []) == "WAITING FOR PILOTS…")
     }
 
     @Test("Invite replies are something a waiting pilot can act on")

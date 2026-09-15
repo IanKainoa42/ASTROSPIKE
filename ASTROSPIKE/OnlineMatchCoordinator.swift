@@ -45,6 +45,22 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var isLoadingInvitees = false
     /// The latest word from an invited pilot, shown in the warm-up bay.
     private(set) var inviteNotice: String?
+    /// Who the bay is waiting on, while it is waiting: JOINING IAN…,
+    /// WAITING FOR MAYA…. Nil in a quick match, which really is finding one.
+    var matchmakingHeadline: String? {
+        guard case .matching = status else { return nil }
+        return matchmakingHeadlineText
+    }
+    /// The status line every HUD shows.
+    var statusLabel: String { matchmakingHeadline ?? status.label }
+
+    #if DEBUG
+    /// `--joining-preview`: the bay as an invitee sees it, without Game Center.
+    func previewMatchmaking(headline: String) {
+        matchmakingHeadlineText = headline
+        status = .matching
+    }
+    #endif
 
     private(set) var status: Status = .signedOut
     private(set) var isMatchReady = false
@@ -305,19 +321,63 @@ final class OnlineMatchCoordinator: NSObject,
     private let codec = WireCodec()
     private var isListenerRegistered = false
     private var pendingMatchmakingIntent: MatchmakingIntent?
+    /// GameKit answers the sign-in handler when it is installed and when the
+    /// app comes back to the foreground -- never because a pilot tapped. So
+    /// the handler goes in once, and a second ask is judged on its answer.
+    private var authHandlerInstalled = false
+    private var authHandlerAnswered = false
+    /// A sign-in sheet GameKit handed over with nothing on screen to show it
+    /// from. Shown the next time the pilot asks, rather than dropped.
+    private var pendingSignInSheet: UIViewController?
+    private var signInWatchdog: Task<Void, Never>?
+    private static let signInTimeoutSeconds = 15
+    /// The bay's headline while an invite is out or being joined.
+    private var matchmakingHeadlineText: String?
+    /// Invitations out during the current seat hold, so they can be withdrawn.
+    private var seatHoldCallback = SeatHoldCallback()
+    /// A packet this recent means the pilot is still at the table.
+    private static let recentlyHeardSeconds: TimeInterval = 2
 
     func authenticate() {
-        guard !GKLocalPlayer.local.isAuthenticated else {
+        let step = GameCenterSignIn.nextStep(
+            isAuthenticated: GKLocalPlayer.local.isAuthenticated,
+            hasSignInSheet: pendingSignInSheet != nil,
+            handlerInstalled: authHandlerInstalled,
+            handlerAnswered: authHandlerAnswered
+        )
+        switch step {
+        case .proceed:
             signedIn()
-            return
+        case .presentSheet:
+            guard let sheet = pendingSignInSheet else { return }
+            pendingSignInSheet = nil
+            showSignIn(sheet)
+        case .waitForAnswer:
+            status = .authenticating
+            startSignInWatchdog()
+        case .sendToSettings:
+            // Setting the handler again here is what used to hang QUICK MATCH
+            // on SIGNING IN…: GameKit had already answered and never did again.
+            note("AUTH: GAME CENTER ALREADY SAID NO · SEND TO SETTINGS")
+            pendingMatchmakingIntent = nil
+            status = .failed(message: PlayerNetworkCopy.GameCenter.notAuthenticated.message)
+        case .installHandler:
+            installAuthenticateHandler()
         }
+    }
+
+    private func installAuthenticateHandler() {
+        authHandlerInstalled = true
         status = .authenticating
+        startSignInWatchdog()
         GKLocalPlayer.local.authenticateHandler = { [weak self] viewController, error in
             Task { @MainActor in
                 guard let self else { return }
+                self.authHandlerAnswered = true
+                self.signInWatchdog?.cancel()
+                self.signInWatchdog = nil
                 if let viewController {
-                    self.note("AUTH: SHOWING SIGN-IN")
-                    self.present(viewController)
+                    self.showSignIn(viewController)
                 } else if GKLocalPlayer.local.isAuthenticated {
                     self.signedIn()
                 } else if let error {
@@ -331,6 +391,37 @@ final class OnlineMatchCoordinator: NSObject,
                     self.status = .signedOut
                 }
             }
+        }
+    }
+
+    private func showSignIn(_ sheet: UIViewController) {
+        if present(sheet) {
+            note("AUTH: SHOWING SIGN-IN")
+            status = .authenticating
+            return
+        }
+        // Nothing on screen to show it from yet. Keep it for the next tap.
+        note("AUTH: SIGN-IN SHEET HELD · NOTHING TO PRESENT FROM")
+        pendingSignInSheet = sheet
+        if pendingMatchmakingIntent != nil {
+            pendingMatchmakingIntent = nil
+            status = .failed(message: PlayerNetworkCopy.GameCenter.other.message)
+        } else {
+            status = .signedOut
+        }
+    }
+
+    /// GameKit can also simply never answer. SIGNING IN… gets a way past itself.
+    private func startSignInWatchdog() {
+        signInWatchdog?.cancel()
+        signInWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.signInTimeoutSeconds))
+            guard let self, !Task.isCancelled else { return }
+            self.signInWatchdog = nil
+            guard case .authenticating = self.status else { return }
+            self.note("AUTH: NO ANSWER FROM GAME CENTER IN \(Self.signInTimeoutSeconds)s")
+            self.pendingMatchmakingIntent = nil
+            self.status = .failed(message: PlayerNetworkCopy.GameCenter.other.message)
         }
     }
 
@@ -453,15 +544,32 @@ final class OnlineMatchCoordinator: NSObject,
                 guard response != .accepted else { return }
                 self.declinedInvites += 1
                 // Everyone we asked said no, so there is nothing to wait for.
-                if self.declinedInvites >= recipientCount, case .matching = self.status, self.match == nil {
+                // GameKit hands the inviter a match before anyone answers, so
+                // "no match yet" was the wrong test: the refusal landed on a
+                // match already being set and FINDING PILOT sat there until
+                // the connect timeout.
+                let awaitingTable = self.lifecycle.phase == .configuring
+                    || (self.lifecycle.phase == .idle && self.status == .matching)
+                if OnlineSeating.invitationsExhausted(
+                    recipientCount: recipientCount,
+                    declined: self.declinedInvites,
+                    awaitingTable: awaitingTable,
+                    connectedPeers: self.match?.players.count ?? 0
+                ) {
+                    self.note("EVERY INVITE REFUSED · CALLING IT")
+                    self.matchmakingGeneration += 1
                     GKMatchmaker.shared().cancel()
                     self.status = .failed(message: "\(player.displayName): \(Self.playerPhrase(response))")
+                    self.leaveMatch(preservingStatus: true)
                 } else {
                     self.tryStartAsHost()
                 }
             }
         }
         inviteNotice = nil
+        matchmakingHeadlineText = recipients.map {
+            PlayerNetworkCopy.Matchmaking.waiting(for: $0.map(\.displayName))
+        }
         if let recipients {
             note("INVITING \(recipients.map(\.displayName).joined(separator: ", "))")
         } else {
@@ -551,9 +659,14 @@ final class OnlineMatchCoordinator: NSObject,
         role = inviteOnly ? .inviter : .automatch
         declinedInvites = 0
         matchmakingGeneration += 1
+        matchmakingHeadlineText = nil
         note(inviteOnly ? "MATCHMAKER: INVITE PICKER OPEN" : "MATCHMAKER: QUICK MATCH SEARCHING")
         status = .matching
-        present(controller)
+        guard present(controller) else {
+            note("MATCHMAKER: NOTHING TO PRESENT FROM")
+            status = .failed(message: "Matchmaker unavailable")
+            return
+        }
     }
 
     private static func describe(_ response: GKInviteRecipientResponse) -> String {
@@ -955,12 +1068,13 @@ final class OnlineMatchCoordinator: NSObject,
                     self.heartbeatTask?.cancel()
                     self.heartbeatTask = nil
                     if let winner = self.pendingForfeitWinner ?? self.localTeam { self.onForfeit?(winner) }
+                    self.withdrawCallbacks()
                     self.disconnectTransport()
                     return
                 }
                 self.status = .reconnecting(seconds: remaining)
                 if remaining == Self.seatHoldSeconds - Self.reinviteDelaySeconds {
-                    self.reinviteDroppedPilots()
+                    self.callBackDroppedPilots(automatic: true)
                 }
             }
         }
@@ -973,6 +1087,16 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        withdrawCallbacks()
+        // The `.ready` route closes a hold without a connection change, which
+        // left the lifecycle in `.reconnecting`: the next drop then got no
+        // hold at all, and any invite was taken for a rejoin.
+        _ = lifecycle.acceptConnection()
+        // Everyone seated has just proven they are here. Judging the returning
+        // pilot by a packet from before the drop would call them silent at
+        // once, open a second hold, and send a second call-back.
+        let localID = GKLocalPlayer.local.gamePlayerID
+        liveness.begin(peers: seating.keys.filter { $0 != localID }, at: Self.now)
         if var session {
             _ = session.remoteReconnected(at: 0)
             self.session = session
@@ -993,16 +1117,27 @@ final class OnlineMatchCoordinator: NSObject,
         onReconnect?()
     }
 
-    /// Ask Game Center to invite whoever dropped back into this same match.
-    /// Runs on its own a few seconds into the hold, and again from the arena
-    /// button for as long as the chair is held.
+    /// The arena's RE-INVITE PILOT button: asks again every time it is pressed.
     func reinviteDroppedPilots() {
+        callBackDroppedPilots(automatic: false)
+    }
+
+    /// Ask Game Center to invite whoever dropped back into this same match.
+    /// The automatic call-back goes to each pilot once per hold; every
+    /// invite sent is remembered so it can be withdrawn when the hold ends.
+    private func callBackDroppedPilots(automatic: Bool) {
         guard let match, case .reconnecting = status else { return }
-        var present = Set(match.players.map(\.gamePlayerID))
-        present.insert(GKLocalPlayer.local.gamePlayerID)
-        let missing = seating.keys.filter { !present.contains($0) }.compactMap { knownPlayers[$0] }
+        let gone = SeatHoldCallback.missing(
+            seated: seating.keys,
+            localID: GKLocalPlayer.local.gamePlayerID,
+            inMatch: Set(match.players.map(\.gamePlayerID)),
+            ready: readyPeers,
+            heardRecently: liveness.heard(within: Self.recentlyHeardSeconds, at: Self.now)
+        )
+        let ids = automatic ? seatHoldCallback.automatic(gone) : seatHoldCallback.manual(gone)
+        let missing = ids.compactMap { knownPlayers[$0] }
         guard !missing.isEmpty else {
-            note("NOBODY TO RE-INVITE")
+            note(gone.isEmpty ? "NOBODY TO RE-INVITE" : "CALL-BACK ALREADY OUT")
             return
         }
         let request = GKMatchRequest()
@@ -1024,14 +1159,26 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    private func present(_ controller: UIViewController) {
+    /// The hold is over, whichever way. A call-back still out is withdrawn, or
+    /// the pilot keeps getting invites to a match they are already back in.
+    private func withdrawCallbacks() {
+        let outstanding = seatHoldCallback.close().compactMap { knownPlayers[$0] }
+        guard !outstanding.isEmpty else { return }
+        for player in outstanding { GKMatchmaker.shared().cancelPendingInvite(to: player) }
+        note("CALL-BACK WITHDRAWN: \(outstanding.map(\.displayName).joined(separator: ", "))")
+    }
+
+    /// False when there is nothing on screen to present from, so the caller
+    /// can say so instead of leaving the pilot on a spinner.
+    private func present(_ controller: UIViewController) -> Bool {
         guard let presenter = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?.rootViewController else { return }
+            .first(where: \.isKeyWindow)?.rootViewController else { return false }
         var top = presenter
         while let presented = top.presentedViewController { top = presented }
         top.present(controller, animated: true)
+        return true
     }
 
     func matchmakerViewControllerWasCancelled(_ viewController: GKMatchmakerViewController) {
@@ -1087,6 +1234,9 @@ final class OnlineMatchCoordinator: NSObject,
                 seatLateArrival(playerID, displayName: displayName)
             }
             if case .reconnecting = status {
+                // A connection is a pilot who is here: the silence clock must
+                // not call them gone again before their first packet lands.
+                liveness.heard(playerID, at: Self.now)
                 // Their chair was held. They come back on a fresh match
                 // object with no seat, so they need the plan again; their
                 // `.ready` is what closes the hold.
@@ -1187,7 +1337,12 @@ final class OnlineMatchCoordinator: NSObject,
         GKMatchmaker.shared().cancel()
         role = .invitee
         declinedInvites = 0
-        inviteNotice = "JOINING \(senderDisplayName.uppercased())"
+        // The headline, not a footnote: an invitee sat in the bay under
+        // FINDING PILOT with no word that they were on their way in.
+        inviteNotice = nil
+        matchmakingHeadlineText = rejoining
+            ? PlayerNetworkCopy.Matchmaking.rejoining(senderDisplayName)
+            : PlayerNetworkCopy.Matchmaking.joining(senderDisplayName)
         status = .matching
         GKMatchmaker.shared().match(for: invite) { [weak self] match, error in
             nonisolated(unsafe) let match = match
@@ -1225,6 +1380,7 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func leaveMatch(preservingStatus: Bool) {
+        withdrawCallbacks()
         disconnectTransport()
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -1260,6 +1416,7 @@ final class OnlineMatchCoordinator: NSObject,
         hostTuning = .defaults
         knownPlayers = [:]
         resumingAfterDrop = false
+        matchmakingHeadlineText = nil
         onSnapshot = nil
         onResync = nil
         onEvent = nil
@@ -1282,6 +1439,7 @@ final class OnlineMatchCoordinator: NSObject,
     func finishCompletedMatch() {
         guard lifecycle.acceptsGameplayData else { return }
         lifecycle.finish()
+        withdrawCallbacks()
         isMatchReady = false
         reconnectTask?.cancel()
         reconnectTask = nil

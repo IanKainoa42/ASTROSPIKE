@@ -341,6 +341,12 @@ public struct WorldState: Codable, Equatable, Sendable {
     public func halfSign(of team: Team) -> Double {
         self.team(onHalfAt: -1) == team ? -1 : 1
     }
+
+    /// -1 or +1: the goal face `team` scores in. The face on your own half is
+    /// the one you defend, so the one to score in is always across the net.
+    public func attackFaceSign(of team: Team) -> Double {
+        halfSign(of: team.opponent)
+    }
 }
 
 public struct SimulationConfiguration: Equatable, Sendable {

@@ -156,6 +156,104 @@ public enum OnlineSeating {
         guard let hostID, hostID != localID, droppedID == hostID else { return false }
         return remainingPeerIDs.allSatisfy { $0 == droppedID || localID < $0 }
     }
+
+    /// Every pilot who was asked has said no, and nobody has reached the
+    /// table: there is nothing left to wait for. Only for sent invitations --
+    /// an automatch has no recipients to run out of -- and only while the
+    /// table is still being set, because GameKit hands the inviter a match
+    /// before anyone answers, and a decline landing on that match used to
+    /// leave FINDING PILOT up until the connect timeout.
+    public static func invitationsExhausted(
+        recipientCount: Int,
+        declined: Int,
+        awaitingTable: Bool,
+        connectedPeers: Int
+    ) -> Bool {
+        recipientCount > 0 && declined >= recipientCount && awaitingTable && connectedPeers == 0
+    }
+}
+
+/// What asking for Game Center should do right now.
+///
+/// GameKit answers its sign-in handler when the handler is installed and when
+/// the app comes back to the foreground -- never because a pilot tapped a
+/// button. Installing it again after it has already said "not signed in"
+/// waits for an answer that is not coming, which is how QUICK MATCH sat on
+/// SIGNING IN… forever.
+public enum GameCenterSignInStep: Equatable, Sendable {
+    /// Signed in: carry on.
+    case proceed
+    /// GameKit handed over its sign-in sheet and it is still usable.
+    case presentSheet
+    /// Nothing asked yet this launch: install the handler and let GameKit decide.
+    case installHandler
+    /// Installed and GameKit is still deciding: wait, but not forever.
+    case waitForAnswer
+    /// GameKit already said no, and will not ask again until the pilot signs
+    /// in from Settings and comes back.
+    case sendToSettings
+}
+
+public enum GameCenterSignIn {
+    public static func nextStep(
+        isAuthenticated: Bool,
+        hasSignInSheet: Bool,
+        handlerInstalled: Bool,
+        handlerAnswered: Bool
+    ) -> GameCenterSignInStep {
+        if isAuthenticated { return .proceed }
+        if hasSignInSheet { return .presentSheet }
+        guard handlerInstalled else { return .installHandler }
+        return handlerAnswered ? .sendToSettings : .waitForAnswer
+    }
+}
+
+/// Who gets called back while a dropped pilot's chair is held, and whose
+/// invite has to be withdrawn once the hold is over.
+///
+/// The automatic call-back used to go out on every hold and was never
+/// withdrawn, so a pilot who dropped and came straight back kept finding
+/// invites from a match they were already sitting in.
+public struct SeatHoldCallback: Equatable, Sendable {
+    /// Everyone invited during the hold under way, by player ID.
+    public private(set) var invited: Set<String> = []
+
+    public init() {}
+
+    /// Seated pilots who are really gone: not in the match, not ready, and
+    /// not still sending packets. Never the local pilot.
+    public static func missing(
+        seated: some Sequence<String>,
+        localID: String,
+        inMatch: Set<String>,
+        ready: Set<String>,
+        heardRecently: Set<String>
+    ) -> [String] {
+        seated.filter {
+            $0 != localID && !inMatch.contains($0) && !ready.contains($0) && !heardRecently.contains($0)
+        }.sorted()
+    }
+
+    /// The automatic call-back: each missing pilot at most once per hold.
+    public mutating func automatic(_ missing: [String]) -> [String] {
+        let fresh = missing.filter { !invited.contains($0) }
+        invited.formUnion(fresh)
+        return fresh
+    }
+
+    /// The pilot pressed RE-INVITE, so everyone missing is asked again --
+    /// and remembered, so that invite is withdrawn with the hold too.
+    public mutating func manual(_ missing: [String]) -> [String] {
+        invited.formUnion(missing)
+        return missing
+    }
+
+    /// The hold is over, whichever way. Hands back who still has an invite
+    /// out, and starts the next hold with a clean slate.
+    public mutating func close() -> [String] {
+        defer { invited = [] }
+        return invited.sorted()
+    }
 }
 
 /// What the silence detector decided this second.
@@ -207,6 +305,12 @@ public struct PeerLivenessMonitor: Equatable, Sendable {
     /// still proves the pilot is there, and that is all this is asking.
     public mutating func heard(_ peerID: String, at now: TimeInterval) {
         lastHeard[peerID] = now
+    }
+
+    /// Pilots with a packet in the last `seconds`. They are still at the
+    /// table, whatever GameKit says, and need no invite back.
+    public func heard(within seconds: TimeInterval, at now: TimeInterval) -> Set<String> {
+        Set(lastHeard.filter { now - $0.value < seconds }.keys)
     }
 
     /// Forget everything. A monitor carried into the next match would measure

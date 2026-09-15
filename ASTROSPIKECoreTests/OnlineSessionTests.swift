@@ -261,3 +261,128 @@ struct PeerLivenessTests {
         #expect(monitor.check(peers: ["guest"], at: 5_001) == .unchanged)
     }
 }
+
+@Suite("Game Center sign-in")
+struct GameCenterSignInTests {
+    @Test("A pilot already signed in goes straight through")
+    func signedInProceeds() {
+        #expect(GameCenterSignIn.nextStep(
+            isAuthenticated: true, hasSignInSheet: false, handlerInstalled: true, handlerAnswered: true
+        ) == .proceed)
+    }
+
+    @Test("The first ask of a launch installs the handler")
+    func firstAskInstalls() {
+        #expect(GameCenterSignIn.nextStep(
+            isAuthenticated: false, hasSignInSheet: false, handlerInstalled: false, handlerAnswered: false
+        ) == .installHandler)
+    }
+
+    @Test("Asking again after Game Center said no goes to Settings instead of SIGNING IN forever")
+    func askingAgainAfterNoSendsToSettings() {
+        #expect(GameCenterSignIn.nextStep(
+            isAuthenticated: false, hasSignInSheet: false, handlerInstalled: true, handlerAnswered: true
+        ) == .sendToSettings)
+    }
+
+    @Test("Asking while Game Center is still deciding waits for it")
+    func askingMidAnswerWaits() {
+        #expect(GameCenterSignIn.nextStep(
+            isAuthenticated: false, hasSignInSheet: false, handlerInstalled: true, handlerAnswered: false
+        ) == .waitForAnswer)
+    }
+
+    @Test("A sign-in sheet that could not be shown is shown on the next ask")
+    func heldSheetIsShown() {
+        #expect(GameCenterSignIn.nextStep(
+            isAuthenticated: false, hasSignInSheet: true, handlerInstalled: true, handlerAnswered: true
+        ) == .presentSheet)
+    }
+}
+
+@Suite("Declined invitations")
+struct DeclinedInvitationTests {
+    @Test("Everyone asked said no and nobody is at the table: stop waiting")
+    func everyoneDeclinedEndsTheWait() {
+        #expect(OnlineSeating.invitationsExhausted(
+            recipientCount: 1, declined: 1, awaitingTable: true, connectedPeers: 0
+        ))
+    }
+
+    @Test("One of two invitees declining still waits for the other")
+    func oneOfTwoKeepsWaiting() {
+        #expect(!OnlineSeating.invitationsExhausted(
+            recipientCount: 2, declined: 1, awaitingTable: true, connectedPeers: 0
+        ))
+    }
+
+    @Test("A quick match has nobody to run out of")
+    func automatchNeverExhausts() {
+        #expect(!OnlineSeating.invitationsExhausted(
+            recipientCount: 0, declined: 1, awaitingTable: true, connectedPeers: 0
+        ))
+    }
+
+    @Test("A pilot already connected is not called off by a late refusal")
+    func connectedPilotKeepsTheTable() {
+        #expect(!OnlineSeating.invitationsExhausted(
+            recipientCount: 2, declined: 2, awaitingTable: true, connectedPeers: 1
+        ))
+    }
+
+    @Test("A table that is already playing is not called off")
+    func playingTableIsLeftAlone() {
+        #expect(!OnlineSeating.invitationsExhausted(
+            recipientCount: 1, declined: 1, awaitingTable: false, connectedPeers: 0
+        ))
+    }
+}
+
+@Suite("Seat hold call-back")
+struct SeatHoldCallbackTests {
+    @Test("Only pilots who are really gone are called back")
+    func missingIsOnlyTheGone() {
+        let missing = SeatHoldCallback.missing(
+            seated: ["local", "zulu", "inMatch", "ready", "chatty", "alpha"],
+            localID: "local",
+            inMatch: ["inMatch"],
+            ready: ["ready"],
+            heardRecently: ["chatty"]
+        )
+        #expect(missing == ["alpha", "zulu"])
+    }
+
+    @Test("The automatic call-back asks each pilot once per hold")
+    func automaticAsksOnce() {
+        var callback = SeatHoldCallback()
+        #expect(callback.automatic(["guest"]) == ["guest"])
+        #expect(callback.automatic(["guest"]).isEmpty)
+        #expect(callback.automatic(["guest", "wing"]) == ["wing"])
+    }
+
+    @Test("RE-INVITE asks again, and that invite is withdrawn with the hold too")
+    func manualAsksAgainAndIsRemembered() {
+        var callback = SeatHoldCallback()
+        _ = callback.automatic(["guest"])
+        #expect(callback.manual(["guest", "wing"]) == ["guest", "wing"])
+        #expect(callback.close() == ["guest", "wing"])
+    }
+
+    @Test("Closing the hold hands back every invite still out and starts the next hold clean")
+    func closeWithdrawsAndResets() {
+        var callback = SeatHoldCallback()
+        _ = callback.automatic(["guest"])
+        #expect(callback.close() == ["guest"])
+        #expect(callback.close().isEmpty)
+        #expect(callback.automatic(["guest"]) == ["guest"])
+    }
+
+    @Test("A packet in the last two seconds counts as still here")
+    func heardRecentlyIsAWindow() {
+        var monitor = PeerLivenessMonitor(silenceSeconds: 5)
+        monitor.begin(peers: ["guest", "wing"], at: 0)
+        monitor.heard("guest", at: 9)
+        #expect(monitor.heard(within: 2, at: 10) == ["guest"])
+        #expect(monitor.heard(within: 2, at: 11).isEmpty)
+    }
+}

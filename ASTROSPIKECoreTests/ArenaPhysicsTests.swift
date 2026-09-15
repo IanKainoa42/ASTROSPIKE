@@ -310,6 +310,32 @@ struct ArenaPhysicsTests {
         #expect(engine.state.match.score == Score(cyan: 0, orange: 1))
     }
 
+    @Test(
+        "The goal a pilot is told to score in scores for their team, at either end",
+        arguments: [false, true], [Team.cyan, Team.orange]
+    )
+    func attackFaceScoresForTheAttacker(sidesSwapped: Bool, attacker: Team) {
+        var engine = SimulationEngine.testing()
+        engine.state.sidesSwapped = sidesSwapped
+        engine.state.ships[.cyan]!.position.y = -0.40
+        engine.state.ships[.orange]!.position.y = -0.40
+        // The same rising drive as the own goal above, aimed at the face the
+        // arena labels SCORE for this team.
+        let sign = engine.state.attackFaceSign(of: attacker)
+        engine.state.ball = BallState(
+            position: SIMD2(0.30 * sign, 0.29),
+            velocity: SIMD2(-2 * sign, 0.3),
+            radius: BallState.nominalRadius
+        )
+
+        for tick in UInt64(0) ..< 30 where engine.state.match.phase == .playing {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+        }
+
+        #expect(engine.state.match.score[attacker] == 1)
+        #expect(engine.state.match.score[attacker.opponent] == 0)
+    }
+
     @Test("Each half belongs to the team on it, whichever end that team started at")
     func halvesBelongToTheTeamOnThem() {
         var state = SimulationEngine.testing().state

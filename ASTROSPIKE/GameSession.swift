@@ -192,6 +192,8 @@ final class GameSession {
         scene.arena = mode.court
         scene.tractorRange = engine.configuration.tractorRange
         scene.snapshot = state
+        // After the snapshot: the goal calls are drawn for the ends in it.
+        scene.localTeam = mode == .warmup ? nil : localSeat.team
         if mode == .warmup { scene.rings = rings.rings }
         if let winner = finishedAs {
             engine.finishByForfeit(winner: winner)
