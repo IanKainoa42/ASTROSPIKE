@@ -329,6 +329,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// A sign-in sheet GameKit handed over with nothing on screen to show it
     /// from. Shown the next time the pilot asks, rather than dropped.
     private var pendingSignInSheet: UIViewController?
+    private weak var presentedSignInSheet: UIViewController?
     private var signInWatchdog: Task<Void, Never>?
     private static let signInTimeoutSeconds = 15
     /// The bay's headline while an invite is out or being joined.
@@ -397,7 +398,11 @@ final class OnlineMatchCoordinator: NSObject,
     private func showSignIn(_ sheet: UIViewController) {
         if present(sheet) {
             note("AUTH: SHOWING SIGN-IN")
+            presentedSignInSheet = sheet
             status = .authenticating
+            // If the pilot swipes the sheet away and GameKit stays quiet,
+            // SIGNING IN… must still time out.
+            startSignInWatchdog()
             return
         }
         // Nothing on screen to show it from yet. Keep it for the next tap.
@@ -419,6 +424,11 @@ final class OnlineMatchCoordinator: NSObject,
             guard let self, !Task.isCancelled else { return }
             self.signInWatchdog = nil
             guard case .authenticating = self.status else { return }
+            // Still typing an Apple ID password: give them another window.
+            if self.presentedSignInSheet?.presentingViewController != nil {
+                self.startSignInWatchdog()
+                return
+            }
             self.note("AUTH: NO ANSWER FROM GAME CENTER IN \(Self.signInTimeoutSeconds)s")
             self.pendingMatchmakingIntent = nil
             self.status = .failed(message: PlayerNetworkCopy.GameCenter.other.message)
