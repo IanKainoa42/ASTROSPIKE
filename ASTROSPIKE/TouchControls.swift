@@ -29,7 +29,9 @@ struct TouchControls: View {
     /// four thumb positions serve both, so nobody hunts for a trigger that
     /// does nothing.
     var loadout: Loadout = .ship
+    var playerTint: Color = .cyan
 
+    @AppStorage("clusterControls") private var clusterControls = false
     @State private var leftPressed = false
     @State private var rightPressed = false
     @State private var thrustPressed = false
@@ -85,7 +87,9 @@ struct TouchControls: View {
                 marginLayout(
                     local: local,
                     steeringWidth: steeringWidth,
-                    engineWidth: engineWidth
+                    engineWidth: engineWidth,
+                    leftMargin: leftMargin,
+                    rightMargin: rightMargin
                 )
             } else {
                 fullBleedLayout
@@ -102,7 +106,13 @@ struct TouchControls: View {
     /// climbs from the bottom corner: thrust sits on the ground with its
     /// inner edge on the wall, the tractor pad directly above it straddling
     /// the wall, and fire up and out toward the screen corner.
-    private func marginLayout(local: CGRect, steeringWidth: CGFloat, engineWidth: CGFloat) -> some View {
+    private func marginLayout(
+        local: CGRect,
+        steeringWidth: CGFloat,
+        engineWidth: CGFloat,
+        leftMargin: CGFloat,
+        rightMargin: CGFloat
+    ) -> some View {
         let wall = leftHanded ? arenaFrame.minX - local.minX : arenaFrame.maxX - local.minX
         let edge: CGFloat = 6
         let gap: CGFloat = 10
@@ -142,10 +152,22 @@ struct TouchControls: View {
         let window = windowFrame.isEmpty ? local : windowFrame
         let steeringSpan = max(steeringWidth + steeringReach, window.width / 3)
         let steeringHeight = max(190, window.height * 0.60)
-        let steeringX = (leftHanded ? window.maxX - steeringSpan : window.minX) - local.minX
+        let thumbSideIsLeft = leftHanded
+        let steeringX: CGFloat = clusterControls
+            ? ((thumbSideIsLeft ? window.minX : window.maxX - steeringSpan) - local.minX)
+            : ((leftHanded ? window.maxX - steeringSpan : window.minX) - local.minX)
         let steeringY = window.maxY - local.minY - steeringHeight
 
         return ZStack(alignment: .topLeading) {
+            if clusterControls {
+                let emptyMargin = thumbSideIsLeft ? rightMargin : leftMargin
+                let emptyX = thumbSideIsLeft ? local.width - emptyMargin / 2 : emptyMargin / 2
+                Text("EMPTY")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.12))
+                    .tracking(2)
+                    .position(x: emptyX, y: local.height - 40)
+            }
             placeable("steering", scale: bakedScale) {
                 steeringPad(chrome: CGSize(width: steeringSpan - 8, height: steeringHeight - 8))
                     .frame(width: steeringSpan, height: steeringHeight)
@@ -169,7 +191,7 @@ struct TouchControls: View {
             }
             placeable("thrust", scale: bakedScale) {
                 ControlZone(
-                    icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
+                    icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
                     active: thrustPressed, chrome: thrust, bottomPadding: 0,
                     pressChanged: setThrustPressed
                 )
@@ -312,7 +334,7 @@ struct TouchControls: View {
     private func steeringPad(chrome: CGSize) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 26)
-                .fill(padWash(tint: .cyan, active: leftPressed || rightPressed))
+                .fill(padWash(tint: playerTint, active: leftPressed || rightPressed))
                 .frame(width: chrome.width, height: chrome.height)
             steeringSeam
                 .frame(width: seamWidth, height: max(0, chrome.height - 48))
@@ -320,13 +342,13 @@ struct TouchControls: View {
                 HStack(spacing: 4) {
                     Image(systemName: "rotate.left")
                         .font(.system(size: 31, weight: .semibold))
-                        .foregroundStyle(Color.cyan.opacity(leftPressed ? 0.58 : 0.34))
-                        .shadow(color: .cyan.opacity(leftPressed ? 0.5 : 0), radius: 11)
+                        .foregroundStyle(playerTint.opacity(leftPressed ? 0.58 : 0.34))
+                        .shadow(color: playerTint.opacity(leftPressed ? 0.5 : 0), radius: 11)
                     Spacer(minLength: 0)
                     Image(systemName: "rotate.right")
                         .font(.system(size: 31, weight: .semibold))
-                        .foregroundStyle(Color.cyan.opacity(rightPressed ? 0.58 : 0.34))
-                        .shadow(color: .cyan.opacity(rightPressed ? 0.5 : 0), radius: 11)
+                        .foregroundStyle(playerTint.opacity(rightPressed ? 0.58 : 0.34))
+                        .shadow(color: playerTint.opacity(rightPressed ? 0.5 : 0), radius: 11)
                 }
                 .padding(.horizontal, 10)
                 trimSliderIndicator(width: chrome.width - 24)
@@ -385,7 +407,7 @@ struct TouchControls: View {
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0),
-                        .init(color: Color.cyan.opacity(leftPressed || rightPressed ? 0.34 : 0.24),
+                        .init(color: playerTint.opacity(leftPressed || rightPressed ? 0.34 : 0.24),
                               location: 0.5),
                         .init(color: .clear, location: 1)
                     ],
@@ -406,11 +428,11 @@ struct TouchControls: View {
             HStack(spacing: 0) {
                 ControlZone(
                     icon: "rotate.left", label: "Rotate left", identifier: "rotate-left-control",
-                    tint: .cyan, active: leftPressed, chrome: steeringChrome, pressChanged: nil
+                    tint: playerTint, active: leftPressed, chrome: steeringChrome, pressChanged: nil
                 )
                 ControlZone(
                     icon: "rotate.right", label: "Rotate right", identifier: "rotate-right-control",
-                    tint: .cyan, active: rightPressed, chrome: steeringChrome, pressChanged: nil
+                    tint: playerTint, active: rightPressed, chrome: steeringChrome, pressChanged: nil
                 )
             }
             steeringSeam
@@ -438,7 +460,7 @@ struct TouchControls: View {
                 )
             }
             ControlZone(
-                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: .orange,
+                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
                 active: thrustPressed, chrome: thrustChrome, pressChanged: setThrustPressed
             )
         }
@@ -458,9 +480,9 @@ struct TouchControls: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(width: totalWidth, height: 4)
             Capsule()
-                .fill(Color.cyan.opacity(abs(torque) > 0 ? (isPegged ? 1.0 : 0.85) : 0.25))
+                .fill(playerTint.opacity(abs(torque) > 0 ? (isPegged ? 1.0 : 0.85) : 0.25))
                 .frame(width: isPegged ? 24 : 16, height: 6)
-                .shadow(color: .cyan.opacity(abs(torque) > 0 ? 0.8 : 0), radius: isPegged ? 6 : 3)
+                .shadow(color: playerTint.opacity(abs(torque) > 0 ? 0.8 : 0), radius: isPegged ? 6 : 3)
                 .offset(x: currentOffset)
                 .animation(.easeOut(duration: 0.08), value: torque)
         }

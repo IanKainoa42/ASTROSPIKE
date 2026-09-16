@@ -477,14 +477,14 @@ private struct GameView: View {
                         localTeam: localTeam,
                         allowedBounces: allowedBounces,
                         allowedTouches: allowedTouches,
-                        online: mode == .online && diagnosticsOverride == nil ? online : nil,
+                        online: mode == .online ? online : nil,
                         actionLabel: mode == .online ? "Leave online match" : "Pause match",
-                        actionIcon: mode == .online ? "xmark" : "pause.fill"
+                        actionIcon: mode == .online ? "xmark" : "slider.horizontal.3"
                     ) {
                         if mode == .online {
                             showLeaveConfirmation = true
                         } else {
-                            session.togglePause()
+                            if !session.isPaused { session.togglePause() }
                             showPause = true
                         }
                     }
@@ -509,10 +509,20 @@ private struct GameView: View {
                     .accessibilityIdentifier("reinvite-button")
                 }
                 if mode != .warmup {
+                    let left = session.state.team(onHalfAt: -1)
+                    let right = left.opponent
                     HStack {
-                        if localHomeSide == .orange { Spacer() }
-                        TeamSideBadge(team: localTeam)
-                        if localHomeSide == .cyan { Spacer() }
+                        TeamSideBadge(
+                            title: left == localTeam ? "YOU" : (mode == .online ? "OPPONENT" : "CPU"),
+                            team: left,
+                            isLocal: left == localTeam
+                        )
+                        Spacer()
+                        TeamSideBadge(
+                            title: right == localTeam ? "YOU" : (mode == .online ? "OPPONENT" : "CPU"),
+                            team: right,
+                            isLocal: right == localTeam
+                        )
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 4)
@@ -521,7 +531,8 @@ private struct GameView: View {
                               tractor: $session.tractor,
                               largeControls: largeControls, leftHanded: leftHanded,
                               arenaFrame: Self.arenaFrame(in: geometry),
-                              windowFrame: TouchControls.windowFrame(in: geometry))
+                              windowFrame: TouchControls.windowFrame(in: geometry),
+                              playerTint: localTeam == .cyan ? .cyan : .orange)
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
             // the ship without displacing the thumb controls.
@@ -537,12 +548,31 @@ private struct GameView: View {
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
             if let seconds = session.setBreakCountdown {
                 CountdownView(value: seconds, title: session.lastPointText, caption: "SWITCH SIDES")
-            } else if session.state.match.phase == .serve, let text = session.lastPointText {
-                Text(text)
-                    .font(.system(size: 30, weight: .black, design: .rounded)).tracking(2)
-                    .padding(.horizontal, 24).padding(.vertical, 13)
-                    .background(.black.opacity(0.66), in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.35)))
+            } else if session.state.match.phase == .serve {
+                VStack(spacing: 8) {
+                    if let text = session.lastPointText {
+                        Text(text)
+                            .font(.system(size: 26, weight: .black, design: .rounded)).tracking(2)
+                            .padding(.horizontal, 20).padding(.vertical, 10)
+                            .background(.black.opacity(0.66), in: Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.35)))
+                    }
+                    let servingSide = session.state.team(onHalfAt: session.state.serveDriftSign)
+                    let isLocalServe = servingSide == localTeam
+                    let serveColor = servingSide == .cyan ? Color.cyan : Color.orange
+                    HStack(spacing: 6) {
+                        Image(systemName: "tennisball.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(isLocalServe ? "YOUR SERVE" : (mode == .online ? "OPPONENT SERVE" : "CPU SERVE"))
+                            .font(.system(size: 13, weight: .black, design: .monospaced))
+                            .tracking(1.4)
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
+                    .background(serveColor, in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.4), lineWidth: 1))
+                    .accessibilityIdentifier("serve-banner")
+                }
             }
             if let linkFailure, session.state.match.phase != .finished {
                 LinkLostOverlay(message: linkFailure, exit: leaveGame)
@@ -555,6 +585,20 @@ private struct GameView: View {
                     playAgain: playAgain,
                     challenge: challengeNext,
                     exit: leaveGame
+                )
+            }
+            if showPause {
+                CourtPauseOverlay(
+                    tuning: tuning,
+                    restartDrop: { session.restartRally(with: tuning.configuration) },
+                    resume: {
+                        showPause = false
+                        session.resume()
+                    },
+                    quit: {
+                        showPause = false
+                        leaveGame()
+                    }
                 )
             }
         }
@@ -577,23 +621,13 @@ private struct GameView: View {
             if mode == .online { online.leaveMatch() }
         }
         .onChange(of: online.status) { _, status in
-            // Apple's picker was cancelled under the bay: nothing is pending, so
-            // there is nothing to warm up for.
             if mode == .warmup, case .ready = status { exit() }
-            // Every way an online match can end badly that is not the seat
-            // hold -- a send that threw, a GameKit match error, a timeout that
-            // took the transport down -- used to reach this screen as nothing
-            // at all: the arena stayed up, the ship stayed flyable, and the
-            // pilot found out they had been dropped by never scoring again.
             guard mode == .online else { return }
             if case let .failed(message) = status {
                 linkFailure = message
             } else if case .connected = status {
                 linkFailure = nil
             } else if case .reconnecting = status {
-                // The seat is on hold, which has its own countdown and its own
-                // way out. A LINK LOST card over the top of it says the match
-                // is over while the match is still waiting for them.
                 linkFailure = nil
             }
         }
@@ -601,7 +635,6 @@ private struct GameView: View {
             session.applyTuning(tuning.configuration)
         }
         .onChange(of: online.remoteHulls) { _, hulls in
-            // The peer profiles can land after the session is built.
             if mode == .online {
                 for (seat, hull) in hulls {
                     session.scene.setHull(hull, for: seat)
@@ -610,16 +643,6 @@ private struct GameView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             session.setApplicationActive(phase == .active)
-        }
-        .sheet(isPresented: $showPause, onDismiss: { session.resume() }) {
-            PauseView(
-                tuning: tuning,
-                restartDrop: { session.restartRally(with: tuning.configuration) },
-                resume: { showPause = false; session.resume() },
-                exit: { showPause = false; leaveGame() }
-            )
-            .presentationDetents([.large])
-            .interactiveDismissDisabled()
         }
         }
     }
@@ -797,11 +820,13 @@ private struct WarmupHUD: View {
 }
 
 private struct TeamSideBadge: View {
+    let title: String
     let team: Team
+    var isLocal: Bool = false
 
     var body: some View {
         let color = team == .cyan ? Color.cyan : .orange
-        Text("YOU • \(team.rawValue.uppercased())")
+        Text("\(title) • \(team.rawValue.uppercased())")
             .font(.caption2.monospaced().weight(.black))
             .tracking(1.2)
             .foregroundStyle(color)
@@ -809,7 +834,7 @@ private struct TeamSideBadge: View {
             .padding(.vertical, 6)
             .background(.black.opacity(0.42), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.7), lineWidth: 1.5))
-            .accessibilityLabel("Your side: \(team.rawValue.capitalized)")
+            .accessibilityLabel(isLocal ? "Your side: \(team.rawValue.capitalized)" : "\(title): \(team.rawValue.capitalized)")
     }
 }
 
@@ -838,7 +863,7 @@ private struct MatchHUD: View {
                 if let headline = state.match.headlineStake {
                     stakeCallout(headline)
                 } else {
-                    Text(formatLabel).font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.white.opacity(0.55))
+                    rulesChip
                 }
                 if state.match.setsToWin > 1 { setPips }
                 if let online {
@@ -850,9 +875,16 @@ private struct MatchHUD: View {
             Spacer()
             score(team: leftTeam.opponent)
             Button(action: action) {
-                Image(systemName: actionIcon).frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
+                Image(systemName: actionIcon)
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(width: 34, height: 34)
+                    .background(.black.opacity(0.45), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.25)))
+                    .contentShape(Rectangle())
             }
-            .accessibilityLabel(actionLabel).accessibilityIdentifier("match-action-button")
+            .buttonStyle(.plain)
+            .accessibilityLabel(actionLabel)
+            .accessibilityIdentifier("match-action-button")
         }
         .padding(.horizontal, 24).padding(.top, 10)
     }
@@ -863,6 +895,22 @@ private struct MatchHUD: View {
         case 3: "BEST OF 5 • SETS TO 7"
         default: "FIRST TO 7 • WIN BY 2"
         }
+    }
+
+    private var rulesChip: some View {
+        let isServe = state.match.phase == .serve
+        return Text(formatLabel)
+            .font(.system(size: 12, weight: .black, design: .monospaced))
+            .tracking(1.2)
+            .foregroundStyle(isServe ? .white : .white.opacity(0.85))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 4)
+            .background(.black.opacity(0.55), in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(isServe ? Color.yellow : Color.white.opacity(0.35), lineWidth: isServe ? 2 : 1)
+            )
+            .accessibilityIdentifier("match-rules-chip")
     }
 
     /// One pip per set a side needs, filled as they take them, each side's
@@ -910,14 +958,12 @@ private struct MatchHUD: View {
         return HStack(spacing: 12) {
             VStack(spacing: 3) {
                 Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
-                if isLocal {
-                    Text("YOU")
-                        .font(.system(size: 10, weight: .black, design: .monospaced))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(tint, in: Capsule())
-                        .accessibilityIdentifier("hud-you-tag")
-                }
+                Text(isLocal ? "YOU" : (online == nil ? "CPU" : "OPP"))
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(tint, in: Capsule())
+                    .accessibilityIdentifier(isLocal ? "hud-you-tag" : "hud-opponent-tag")
             }
             Text(value.formatted())
                 .font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
@@ -1128,6 +1174,7 @@ private struct SettingsView: View {
     var replayIntro: (() -> Void)?
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
+    @AppStorage("clusterControls") private var clusterControls = false
     @AppStorage("haptics") private var haptics = true
     @AppStorage("arrangePads") private var arrangePads = false
     var body: some View {
@@ -1135,6 +1182,7 @@ private struct SettingsView: View {
             Form {
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
+                Toggle("Cluster controls to thumb side", isOn: $clusterControls)
                 Toggle("Arrange pads (drag them in a match)", isOn: $arrangePads)
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
@@ -1278,25 +1326,34 @@ struct TuningSlider: View {
     }
 }
 
-private struct PauseView: View {
+private struct CourtPauseOverlay: View {
     @Bindable var tuning: FlightTuningStore
     let restartDrop: () -> Void
     let resume: () -> Void
-    let exit: () -> Void
+    let quit: () -> Void
+
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 18) {
-                Text("PAUSED").font(.largeTitle).fontWeight(.black)
-                Button("Resume", action: resume).buttonStyle(.borderedProminent).tint(.cyan).accessibilityIdentifier("resume-button")
-                NavigationLink("Flight Tuning") {
-                    FlightTuningView(tuning: tuning, restartDrop: restartDrop)
-                }
-                .buttonStyle(.bordered)
-                Button("Exit Match", role: .destructive, action: exit).buttonStyle(.bordered)
+        ZStack {
+            Color.black.opacity(0.65).ignoresSafeArea()
+            NavigationStack {
+                FlightTuningView(tuning: tuning, restartDrop: restartDrop)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Resume", action: resume)
+                                .accessibilityIdentifier("resume-button")
+                        }
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Quit", role: .destructive, action: quit)
+                                .accessibilityIdentifier("quit-match-paused")
+                        }
+                    }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityIdentifier("pause-screen")
+            .frame(maxWidth: 620, maxHeight: 460)
+            .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.25)))
+            .padding(20)
         }
+        .accessibilityIdentifier("pause-screen")
     }
 }
 

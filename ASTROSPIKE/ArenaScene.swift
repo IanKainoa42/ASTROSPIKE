@@ -160,10 +160,10 @@ final class ArenaScene: SKScene {
     /// court reads as two teams first and four ships second.
     static func hullColor(for seat: Seat) -> SKColor {
         switch seat {
-        case .cyan: .cyan
-        case .orange: .orange
-        case .cyanWing: SKColor(red: 0.62, green: 0.92, blue: 1, alpha: 1)
-        case .orangeWing: SKColor(red: 1, green: 0.80, blue: 0.50, alpha: 1)
+        case .cyan: SKColor(red: 0.0, green: 0.92, blue: 1.0, alpha: 1)
+        case .orange: SKColor(red: 1.0, green: 0.45, blue: 0.0, alpha: 1)
+        case .cyanWing: SKColor(red: 0.45, green: 0.88, blue: 1.0, alpha: 1)
+        case .orangeWing: SKColor(red: 1.0, green: 0.65, blue: 0.30, alpha: 1)
         }
     }
 
@@ -172,8 +172,8 @@ final class ArenaScene: SKScene {
             guard let ship = shipNodes[seat], let exhaust = exhaustNodes[seat] else { continue }
             let color = Self.hullColor(for: seat)
             ship.fillColor = color
-            ship.strokeColor = .white
-            ship.lineWidth = seat.isWing ? 2.5 : 1.5
+            ship.strokeColor = color
+            ship.lineWidth = seat.isWing ? 2.5 : 2.0
             ship.glowWidth = 8
             ship.isHidden = true
             // A soft vapour sprite hung from the tail, anchored at its top so
@@ -181,7 +181,7 @@ final class ArenaScene: SKScene {
             exhaust.anchorPoint = CGPoint(x: 0.5, y: 1)
             exhaust.position = CGPoint(x: 0, y: -16)
             exhaust.color = color
-            exhaust.colorBlendFactor = 0.6
+            exhaust.colorBlendFactor = 1.0
             exhaust.blendMode = .add
             exhaust.zPosition = -1
             exhaust.isHidden = true
@@ -267,8 +267,8 @@ final class ArenaScene: SKScene {
 
         addSideLabel(for: leftTeam, at: point(-0.72, 0.68))
         addSideLabel(for: leftTeam.opponent, at: point(0.72, 0.68))
-        addCrossingLimit(for: leftTeam, fromLeft: true)
-        addCrossingLimit(for: leftTeam.opponent, fromLeft: false)
+        addCrossingLimit(for: leftTeam, onHalfAt: -1)
+        addCrossingLimit(for: leftTeam.opponent, onHalfAt: 1)
 
         for index in 0..<56 {
             let seed = Double(index * 7919 % 101) / 101
@@ -659,10 +659,11 @@ final class ArenaScene: SKScene {
         team == .cyan ? .cyan : .orange
     }
 
-    /// The furthest a team flying from the given half may push into the other.
-    private func addCrossingLimit(for intrudingTeam: Team, fromLeft: Bool) {
-        let x = fromLeft ? arena.opponentCrossingLimit : -arena.opponentCrossingLimit
-        let color = Self.color(intrudingTeam)
+    /// The crossing limit on the given half: matched to the side that owns that half
+    /// so court ownership is unambiguous.
+    private func addCrossingLimit(for owningTeam: Team, onHalfAt sign: Double) {
+        let x = sign * arena.opponentCrossingLimit
+        let color = Self.color(owningTeam)
         let path = CGMutablePath()
         var y = arena.floorY + 0.04
         while y < arena.ceilingY {
@@ -709,7 +710,16 @@ final class ArenaScene: SKScene {
             ballSeam.zRotation = CGFloat(ballSpinAngle)
         }
         ballSpinTick = snapshot.tick
-        // No speed glow: the faster it moves the more its edge matters.
+        // Ball tint by last touch (possession cue)
+        if let toucher = snapshot.lastBallToucher {
+            let color = Self.color(toucher)
+            ball.strokeColor = color.withAlphaComponent(0.95)
+            ball.lineWidth = 3
+        } else {
+            ball.strokeColor = SKColor(white: 0.30, alpha: 1)
+            ball.lineWidth = 2
+        }
+        ball.glowWidth = 0
         updateTrails(snapshot)
         updateBolts(snapshot)
     }
@@ -914,8 +924,8 @@ final class ArenaScene: SKScene {
         let scale = Double(shipNode.xScale)
         let puff = SKSpriteNode(texture: Self.puffTexture)
         puff.color = team == .cyan
-            ? SKColor(red: 0.45, green: 0.8, blue: 1, alpha: 1)
-            : SKColor(red: 1, green: 0.66, blue: 0.38, alpha: 1)
+            ? SKColor(red: 0.0, green: 0.88, blue: 1.0, alpha: 1)
+            : SKColor(red: 1.0, green: 0.40, blue: 0.0, alpha: 1)
         puff.colorBlendFactor = 1
         puff.blendMode = .add
         puff.zPosition = -3
@@ -928,7 +938,7 @@ final class ArenaScene: SKScene {
             .group([
                 .scale(by: 2.2, duration: life),
                 .sequence([
-                    .fadeAlpha(to: 0.22, duration: life * 0.12),
+                    .fadeAlpha(to: 0.38, duration: life * 0.12),
                     .fadeOut(withDuration: life * 0.88),
                 ]),
             ]),
@@ -990,8 +1000,8 @@ final class ArenaScene: SKScene {
 
         let puff = SKSpriteNode(texture: Self.puffTexture)
         puff.color = team == .cyan
-            ? SKColor(red: 0.55, green: 0.86, blue: 1, alpha: 1)
-            : SKColor(red: 1, green: 0.72, blue: 0.42, alpha: 1)
+            ? SKColor(red: 0.0, green: 0.90, blue: 1.0, alpha: 1)
+            : SKColor(red: 1.0, green: 0.42, blue: 0.0, alpha: 1)
         puff.colorBlendFactor = 1
         puff.blendMode = .add
         puff.zPosition = -2
@@ -1013,7 +1023,7 @@ final class ArenaScene: SKScene {
                 .move(to: destination, duration: life),
                 .scale(by: 3.1, duration: life),
                 .sequence([
-                    .fadeAlpha(to: 0.32, duration: life * 0.16),
+                    .fadeAlpha(to: 0.48, duration: life * 0.16),
                     .fadeOut(withDuration: life * 0.84),
                 ]),
             ]),
@@ -1032,7 +1042,8 @@ final class ArenaScene: SKScene {
         ballTrail.append(point(snapshot.ball.position.x, snapshot.ball.position.y))
         ballTrail = Array(ballTrail.suffix(16))
         trailLayer.removeAllChildren()
-        let ballTrailNode = trail(points: ballTrail, color: .white)
+        let trailColor: SKColor = snapshot.lastBallToucher.map { Self.color($0) } ?? .white
+        let ballTrailNode = trail(points: ballTrail, color: trailColor)
         ballTrailNode.lineWidth = 2 + min(6, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y) * 0.25)
         ballTrailNode.glowWidth = 0
         trailLayer.addChild(ballTrailNode)
@@ -1045,7 +1056,7 @@ final class ArenaScene: SKScene {
         let node = SKShapeNode(path: path)
         node.strokeColor = color.withAlphaComponent(0.32)
         node.lineWidth = 3
-        node.glowWidth = 2
+        node.glowWidth = 0
         return node
     }
 
