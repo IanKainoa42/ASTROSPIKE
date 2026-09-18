@@ -185,6 +185,18 @@ struct OnboardingFlow: View {
     }
 
     private var hangar: some View {
+        // Same deal as IntroPage: the bay fits an iPad with room to spare and
+        // is centred there, and scrolls on a phone instead of losing its top.
+        ViewThatFits(in: .vertical) {
+            hangarColumn
+            ScrollView(.vertical, showsIndicators: false) { hangarColumn }
+                .scrollBounceBehavior(.basedOnSize)
+        }
+        .padding(.horizontal, 28).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var hangarColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("04 • HANGAR").font(.caption.monospaced().weight(.black)).tracking(3)
                 .foregroundStyle(.white.opacity(0.55))
@@ -192,8 +204,7 @@ struct OnboardingFlow: View {
                 .font(.system(size: 30, weight: .black, design: .rounded))
             HangarView(profile: profile, entitlements: entitlements, store: store, compact: true)
         }
-        .padding(.horizontal, 28).padding(.top, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -209,23 +220,30 @@ private struct IntroPage<Content: View, Side: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 32) {
             // A phone in landscape has less height than these pages need, so
-            // the column scrolls rather than losing its last line under the
-            // BACK and NEXT buttons.
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(kicker).font(.caption.monospaced().weight(.black)).tracking(3)
-                        .foregroundStyle(.white.opacity(0.55))
-                    content
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 8)
+            // there the column scrolls rather than losing its last line under
+            // the BACK and NEXT buttons. An iPad has height to spare: take the
+            // column as it comes and let the page centre it, instead of a
+            // scroll view that fills the screen and strands the text at the top.
+            ViewThatFits(in: .vertical) {
+                column
+                ScrollView(.vertical, showsIndicators: false) { column }
+                    .scrollBounceBehavior(.basedOnSize)
             }
-            .scrollBounceBehavior(.basedOnSize)
             side
                 .frame(maxWidth: sideWidth)
         }
-        .padding(.horizontal, 28).padding(.top, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 28).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var column: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(kicker).font(.caption.monospaced().weight(.black)).tracking(3)
+                .foregroundStyle(.white.opacity(0.55))
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 8)
     }
 }
 
