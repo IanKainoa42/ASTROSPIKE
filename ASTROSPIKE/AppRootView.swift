@@ -477,9 +477,12 @@ private struct GameView: View {
                         localTeam: localTeam,
                         allowedBounces: allowedBounces,
                         allowedTouches: allowedTouches,
-                        online: mode == .online ? online : nil,
+                        // The diagnostics preview is a staged snapshot with
+                        // no Game Center behind it; handing the HUD the live
+                        // coordinator would print GAME CENTER OFFLINE under it.
+                        online: mode == .online && diagnosticsOverride == nil ? online : nil,
                         actionLabel: mode == .online ? "Leave online match" : "Pause match",
-                        actionIcon: mode == .online ? "xmark" : "slider.horizontal.3"
+                        actionIcon: mode == .online ? "xmark" : "pause.fill"
                     ) {
                         if mode == .online {
                             showLeaveConfirmation = true
