@@ -357,11 +357,11 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var thrustRampRate: Double
     public var torqueAcceleration: Double
     public var ballGravityMultiplier: Double
-    /// How big the ball is. A slider rather than a constant because it is
-    /// what makes spin aimable: bolts are 0.007 across, so at the nominal
-    /// 0.042 a clip off the ball's edge is luck, and a bigger ball is a
-    /// target you can deliberately hit off-centre. The arena's goal mouth is
-    /// cut to match -- see `ArenaGeometry.portalCollar`.
+    /// How big the ball is. Bigger than nominal because that is what makes
+    /// spin aimable: bolts are 0.007 across, so at the nominal 0.042 a clip
+    /// off the ball's edge is luck, and a bigger ball is a target you can
+    /// deliberately hit off-centre. The arena's goal mouth is cut to match
+    /// -- see `ArenaGeometry.portalCollar`.
     public var ballRadius: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double

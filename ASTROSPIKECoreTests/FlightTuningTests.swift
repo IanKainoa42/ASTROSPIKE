@@ -22,43 +22,55 @@ struct FlightTuningTests {
         }
     }
 
-    @Test("Tuned values survive store reconstruction")
+    @Test("Match rules survive store reconstruction")
     func valuesPersist() throws {
         try withIsolatedDefaults { defaults in
             let first = FlightTuningStore(defaults: defaults)
-            first.gravityMagnitude = 1.4
-            first.thrustAcceleration = 4.25
-            first.rotationAcceleration = 2.5
-            first.ballGravityMultiplier = 0.58
-            first.ballDropHeight = 0.02
-            first.ballDropSpeed = 0.09
             first.allowedBouncesPerHit = 4
+            first.allowedTouchesPerSide = 5
+            first.setsToWin = 3
 
             let restored = FlightTuningStore(defaults: defaults)
             #expect(restored.snapshot == first.snapshot)
         }
     }
 
-    @Test("The ball ships at twice nominal and the slider carries into the physics")
-    func ballSizeIsTunable() throws {
+    @Test("Physics knobs are baked: a value left by an old slider is dropped on launch")
+    func retiredSliderValuesAreForgotten() throws {
+        try withIsolatedDefaults { defaults in
+            // What a tester on an earlier build could have dialled in.
+            defaults.set(3.7, forKey: "tuning.gravityMagnitude")
+            defaults.set(BallState.nominalRadius * 3, forKey: "tuning.ballRadius")
+            defaults.set(4.5, forKey: "tuning.tractorStrength")
+
+            let store = FlightTuningStore(defaults: defaults)
+            #expect(store.snapshot == .defaults)
+            #expect(defaults.object(forKey: "tuning.gravityMagnitude") == nil)
+            #expect(defaults.object(forKey: "tuning.ballRadius") == nil)
+            #expect(defaults.object(forKey: "tuning.tractorStrength") == nil)
+
+            // In memory it still moves, for the online preset and the bay;
+            // it just never comes back on the next launch.
+            store.gravityMagnitude = 1.4
+            #expect(store.configuration.gravity.y == -1.4)
+            #expect(FlightTuningStore(defaults: defaults).gravityMagnitude == FlightTuningSnapshot.defaults.gravityMagnitude)
+        }
+    }
+
+    @Test("The ball ships at one and a half times nominal and the size carries into the physics")
+    func ballSizeIsBaked() throws {
         try withIsolatedDefaults { defaults in
             // The shipped size. A bolt is 0.007 across, so at nominal the
             // edge of the ball was not a thing anyone could aim at.
-            #expect(FlightTuningSnapshot.defaults.ballRadius == BallState.nominalRadius * 2)
+            #expect(FlightTuningSnapshot.defaults.ballRadius == BallState.nominalRadius * 1.5)
             let store = FlightTuningStore(defaults: defaults)
-            #expect(store.configuration.ballRadius == BallState.nominalRadius * 2)
+            #expect(store.configuration.ballRadius == BallState.nominalRadius * 1.5)
+            #expect(SimulationConfiguration.online.ballRadius == BallState.nominalRadius * 1.5)
 
-            store.ballRadius = BallState.nominalRadius * 2.5
-            #expect(FlightTuningStore(defaults: defaults).ballRadius == BallState.nominalRadius * 2.5)
-            #expect(store.configuration.ballRadius == BallState.nominalRadius * 2.5)
-
-            // Neither end of the slider can hand the engine a ball the court
-            // was never cut for.
-            store.ballRadius = BallState.nominalRadius * 12
-            #expect(FlightTuningStore(defaults: defaults).ballRadius
+            // The engine never takes a ball the court was not cut for.
+            #expect(SimulationConfiguration(ballRadius: BallState.nominalRadius * 12).ballRadius
                 == BallState.nominalRadius * ArenaGeometry.maximumRadiusScale)
-            store.ballRadius = 0.001
-            #expect(FlightTuningStore(defaults: defaults).ballRadius == BallState.nominalRadius)
+            #expect(SimulationConfiguration(ballRadius: 0.001).ballRadius == BallState.nominalRadius)
         }
     }
 
@@ -93,7 +105,7 @@ struct FlightTuningTests {
         }
     }
 
-    @Test("Untouched sliders fly the same physics as an online match")
+    @Test("A fresh store flies the same physics as an online match")
     func defaultsMatchOnlinePreset() throws {
         try withIsolatedDefaults { defaults in
             let store = FlightTuningStore(defaults: defaults)
