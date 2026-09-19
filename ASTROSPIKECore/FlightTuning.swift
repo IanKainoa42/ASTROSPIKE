@@ -6,17 +6,16 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public var thrustAcceleration: Double
     public var rotationAcceleration: Double
     public var ballGravityMultiplier: Double
-    /// How big the ball is, in arena units. Ships at twice nominal: a bolt is
-    /// 0.007 across, so against a 0.042 ball clipping the edge on purpose was
-    /// not a shot anyone could take, and spin arrived by accident. Rides the
-    /// wire with the rest of the host's tuning, because the two boards have
-    /// to agree on the size of the thing they are both simulating.
+    /// How big the ball is, in arena units. Ships at one and a half times
+    /// nominal: a bolt is 0.007 across, so against a 0.042 ball clipping the
+    /// edge on purpose was not a shot anyone could take, and spin arrived by
+    /// accident. Rides the wire with the rest of the host's tuning, because
+    /// the two boards have to agree on the size of the thing they are both
+    /// simulating.
     public var ballRadius: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
-    /// How hard the tractor beam reels the ball in. Ian's own knob -- the
-    /// beam is the one control that is felt rather than seen, so the strength
-    /// it pulls at is a setting rather than a baked constant.
+    /// How hard the tractor beam reels the ball in.
     public var tractorStrength: Double
     public var allowedBouncesPerHit: Int
     public var allowedTouchesPerSide: Int
@@ -28,13 +27,15 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
 
     /// The one baseline every mode flies. The online preset and the warm-up
     /// bay are built from these same numbers, so a quick game against a bot
-    /// and a duel over Game Center feel identical until a slider moves.
+    /// and a duel over Game Center feel identical. The physics numbers are
+    /// baked: the sliders that used to move them are gone from the shipped
+    /// app, so only the match rules below are a pilot's to change.
     public static let defaults = FlightTuningSnapshot(
         gravityMagnitude: 0.5,
         thrustAcceleration: 2.75,
         rotationAcceleration: 5.5,
         ballGravityMultiplier: 0.2,
-        ballRadius: BallState.nominalRadius * 2,
+        ballRadius: BallState.nominalRadius * 1.5,
         ballDropHeight: 0.10,
         ballDropSpeed: 0.06,
         tractorStrength: 2.6,
@@ -60,35 +61,25 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     }
 }
 
+/// The pilot's tuning. Only the match rules are persisted: the physics
+/// knobs (gravity, thrust, ball size, tractor pull and the rest) used to sit
+/// behind sliders and are now baked, so a value a tester dialled in on an
+/// earlier build is dropped on launch rather than flown forever with no way
+/// to put it back. They stay settable in memory for the online preset and
+/// the tests.
 @MainActor
 @Observable
 public final class FlightTuningStore {
     @ObservationIgnored private let defaults: UserDefaults
 
-    public var gravityMagnitude: Double {
-        didSet { persist(gravityMagnitude, key: Keys.gravityMagnitude) }
-    }
-    public var thrustAcceleration: Double {
-        didSet { persist(thrustAcceleration, key: Keys.thrustAcceleration) }
-    }
-    public var rotationAcceleration: Double {
-        didSet { persist(rotationAcceleration, key: Keys.rotationAcceleration) }
-    }
-    public var ballGravityMultiplier: Double {
-        didSet { persist(ballGravityMultiplier, key: Keys.ballGravityMultiplier) }
-    }
-    public var ballRadius: Double {
-        didSet { persist(ballRadius, key: Keys.ballRadius) }
-    }
-    public var ballDropHeight: Double {
-        didSet { persist(ballDropHeight, key: Keys.ballDropHeight) }
-    }
-    public var ballDropSpeed: Double {
-        didSet { persist(ballDropSpeed, key: Keys.ballDropSpeed) }
-    }
-    public var tractorStrength: Double {
-        didSet { persist(tractorStrength, key: Keys.tractorStrength) }
-    }
+    public var gravityMagnitude: Double
+    public var thrustAcceleration: Double
+    public var rotationAcceleration: Double
+    public var ballGravityMultiplier: Double
+    public var ballRadius: Double
+    public var ballDropHeight: Double
+    public var ballDropSpeed: Double
+    public var tractorStrength: Double
     public var allowedBouncesPerHit: Int {
         didSet { defaults.set(allowedBouncesPerHit, forKey: Keys.allowedBouncesPerHit) }
     }
@@ -102,24 +93,15 @@ public final class FlightTuningStore {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let baked = FlightTuningSnapshot.defaults
-        gravityMagnitude = Self.load(defaults, key: Keys.gravityMagnitude, fallback: baked.gravityMagnitude, range: 0.5 ... 4)
-        thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 1 ... 10)
-        rotationAcceleration = Self.load(defaults, key: Keys.rotationAcceleration, fallback: baked.rotationAcceleration, range: 0.5 ... 8)
-        ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
-        ballRadius = Self.load(
-            defaults,
-            key: Keys.ballRadius,
-            fallback: baked.ballRadius,
-            range: BallState.nominalRadius ... BallState.nominalRadius * ArenaGeometry.maximumRadiusScale
-        )
-        ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: -0.30 ... 0.10)
-        ballDropSpeed = Self.load(defaults, key: Keys.ballDropSpeed, fallback: baked.ballDropSpeed, range: 0 ... 0.8)
-        tractorStrength = Self.load(
-            defaults,
-            key: Keys.tractorStrength,
-            fallback: baked.tractorStrength,
-            range: 1 ... 4.5
-        )
+        gravityMagnitude = baked.gravityMagnitude
+        thrustAcceleration = baked.thrustAcceleration
+        rotationAcceleration = baked.rotationAcceleration
+        ballGravityMultiplier = baked.ballGravityMultiplier
+        ballRadius = baked.ballRadius
+        ballDropHeight = baked.ballDropHeight
+        ballDropSpeed = baked.ballDropSpeed
+        tractorStrength = baked.tractorStrength
+        Keys.retired.forEach(defaults.removeObject(forKey:))
         allowedBouncesPerHit = Self.load(
             defaults,
             key: Keys.allowedBouncesPerHit,
@@ -169,20 +151,6 @@ public final class FlightTuningStore {
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
 
-    private func persist(_ value: Double, key: String) {
-        defaults.set(value, forKey: key)
-    }
-
-    private static func load(
-        _ defaults: UserDefaults,
-        key: String,
-        fallback: Double,
-        range: ClosedRange<Double>
-    ) -> Double {
-        guard defaults.object(forKey: key) != nil else { return fallback }
-        return min(range.upperBound, max(range.lowerBound, defaults.double(forKey: key)))
-    }
-
     private static func load(
         _ defaults: UserDefaults,
         key: String,
@@ -205,7 +173,8 @@ public final class FlightTuningStore {
         static let allowedBouncesPerHit = "tuning.allowedBouncesPerHit"
         static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
         static let setsToWin = "tuning.setsToWin"
-        static let all = [
+        /// Keys earlier builds wrote from sliders that no longer exist.
+        static let retired = [
             gravityMagnitude,
             thrustAcceleration,
             rotationAcceleration,
@@ -214,6 +183,8 @@ public final class FlightTuningStore {
             ballDropHeight,
             ballDropSpeed,
             tractorStrength,
+        ]
+        static let all = retired + [
             allowedBouncesPerHit,
             allowedTouchesPerSide,
             setsToWin,

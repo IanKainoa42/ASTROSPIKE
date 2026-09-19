@@ -36,19 +36,11 @@ final class ASTROSPIKEUITests: XCTestCase {
             )
         ).firstMatch
         reveal(bounceIncrement, in: settingsForm)
-        let flightTuning = app.buttons["Flight Tuning"]
-        reveal(flightTuning, in: settingsForm)
-        flightTuning.tap()
-
-        // Flight Tuning is a ScrollView of GroupBoxes, not a Form -- asking for
-        // a collection view here matches the Settings form still on screen
-        // mid-push, and then swipes at something that has gone away.
-        let tuningPage = app.scrollViews.firstMatch
-        XCTAssertTrue(tuningPage.waitForExistence(timeout: 3))
-        for name in ["Gravity", "Thrust", "Rotation", "Ball size", "Ball gravity", "Drop height", "Drop speed"] {
-            reveal(app.sliders[name], in: tuningPage)
-        }
-        reveal(app.buttons["Reset Defaults"], in: tuningPage)
+        // The developer sliders are gone from the shipped app: no Flight
+        // Tuning page, and no ball or tractor slider on the Settings form.
+        XCTAssertFalse(app.buttons["Flight Tuning"].exists)
+        XCTAssertFalse(app.sliders["Ball size"].exists)
+        XCTAssertFalse(app.sliders["Pull strength"].exists)
     }
 
     /// Scroll `element` into reach, one bounded loop per element asserted on --
@@ -105,6 +97,8 @@ final class ASTROSPIKEUITests: XCTestCase {
 
         app.buttons["Pause match"].tap()
         XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Restart Drop"].exists)
+        XCTAssertFalse(app.sliders["Gravity"].exists)
         app.buttons["Resume"].tap()
         XCTAssertFalse(app.buttons["Resume"].exists)
     }

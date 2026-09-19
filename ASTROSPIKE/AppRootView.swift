@@ -477,9 +477,12 @@ private struct GameView: View {
                         localTeam: localTeam,
                         allowedBounces: allowedBounces,
                         allowedTouches: allowedTouches,
-                        online: mode == .online ? online : nil,
+                        // The diagnostics preview is a staged snapshot with
+                        // no Game Center behind it; handing the HUD the live
+                        // coordinator would print GAME CENTER OFFLINE under it.
+                        online: mode == .online && diagnosticsOverride == nil ? online : nil,
                         actionLabel: mode == .online ? "Leave online match" : "Pause match",
-                        actionIcon: mode == .online ? "xmark" : "slider.horizontal.3"
+                        actionIcon: mode == .online ? "xmark" : "pause.fill"
                     ) {
                         if mode == .online {
                             showLeaveConfirmation = true
@@ -589,7 +592,6 @@ private struct GameView: View {
             }
             if showPause {
                 CourtPauseOverlay(
-                    tuning: tuning,
                     restartDrop: { session.restartRally(with: tuning.configuration) },
                     resume: {
                         showPause = false
@@ -1206,34 +1208,6 @@ private struct SettingsView: View {
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
-                Section("Ball") {
-                    TuningSlider(
-                        title: "Ball size",
-                        value: $tuning.ballRadius,
-                        range: BallState.nominalRadius ... BallState.nominalRadius * ArenaGeometry.maximumRadiusScale,
-                        step: BallState.nominalRadius / 10,
-                        readout: { "\(($0 / BallState.nominalRadius).formatted(.number.precision(.fractionLength(1))))×" }
-                    )
-                    Text("""
-                        A bolt is a tenth the width of the ball at 1×, so clipping the edge to \
-                        put spin on it is luck. A bigger ball is a target you can hit off-centre \
-                        on purpose. The goal mouth is cut to match, so it stays passable.
-                        """)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Section("Tractor Beam") {
-                    TuningSlider(
-                        title: "Pull strength",
-                        value: $tuning.tractorStrength,
-                        range: 1 ... 4.5,
-                        step: 0.1,
-                        readout: { $0.formatted(.number.precision(.fractionLength(1))) }
-                    )
-                    Text("How hard the beam reels the ball in. Applies to solo matches immediately.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
                 Section("Match Rules") {
                     Stepper(
                         "Touches per side: \(tuning.allowedTouchesPerSide)",
@@ -1255,13 +1229,6 @@ private struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                #if DEBUG
-                Section("Developer") {
-                    NavigationLink("Flight Tuning") {
-                        FlightTuningView(tuning: tuning)
-                    }
-                }
-                #endif
                 if let replayIntro {
                     Section("Intro") {
                         Button("Replay intro", action: replayIntro)
@@ -1275,70 +1242,9 @@ private struct SettingsView: View {
     }
 }
 
-private struct FlightTuningView: View {
-    @Bindable var tuning: FlightTuningStore
-    var restartDrop: (() -> Void)?
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                HStack(alignment: .top, spacing: 16) {
-                    GroupBox("Ship") {
-                        VStack(spacing: 14) {
-                            TuningSlider(title: "Gravity", value: $tuning.gravityMagnitude, range: 0.5 ... 4, step: 0.1)
-                            TuningSlider(title: "Thrust", value: $tuning.thrustAcceleration, range: 2 ... 10, step: 0.25)
-                            TuningSlider(title: "Rotation", value: $tuning.rotationAcceleration, range: 0.5 ... 8, step: 0.25)
-                        }
-                    }
-                    GroupBox("Ball Drop") {
-                        VStack(spacing: 14) {
-                            TuningSlider(
-                                title: "Ball size",
-                                value: $tuning.ballRadius,
-                                range: BallState.nominalRadius ... BallState.nominalRadius * ArenaGeometry.maximumRadiusScale,
-                                step: BallState.nominalRadius / 10,
-                                readout: { "\(($0 / BallState.nominalRadius).formatted(.number.precision(.fractionLength(1))))×" }
-                            )
-                            TuningSlider(title: "Ball gravity", value: $tuning.ballGravityMultiplier, range: 0.1 ... 1.2, step: 0.02)
-                            TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: -0.30 ... 0.10, step: 0.01)
-                            TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)
-                            TuningSlider(title: "Tractor pull", value: $tuning.tractorStrength, range: 1 ... 4.5, step: 0.1)
-                        }
-                    }
-                    GroupBox("Match Rule") {
-                        Stepper(
-                            "Touches per side: \(tuning.allowedTouchesPerSide)",
-                            value: $tuning.allowedTouchesPerSide,
-                            in: 1 ... 6
-                        )
-                        Stepper(
-                            "Bounces per hit: \(tuning.allowedBouncesPerHit)",
-                            value: $tuning.allowedBouncesPerHit,
-                            in: 1 ... 5
-                        )
-                    }
-                }
-                Text("Solo flight only. Ship and gravity changes apply immediately; drop height and speed apply on the next drop.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let restartDrop {
-                    Button("Restart Drop", action: restartDrop)
-                        .buttonStyle(.borderedProminent)
-                        .tint(.cyan)
-                }
-                Button("Reset Defaults", role: .destructive) { tuning.reset() }
-                    .buttonStyle(.bordered)
-            }
-            .padding(20)
-        }
-        .navigationTitle("Flight Tuning")
-        .navigationBarTitleDisplayMode(.inline)
-        .accessibilityIdentifier("flight-tuning-screen")
-    }
-}
-
-/// Shared with the circuit's own sliders, which live in `RaceTuningView`.
+/// The circuit's own sliders, in `RaceTuningView`. The court's flight
+/// sliders are gone: the ship and ball are baked, and only the match rules
+/// in Settings are a pilot's to change.
 struct TuningSlider: View {
     let title: String
     @Binding var value: Double
@@ -1368,8 +1274,10 @@ struct TuningSlider: View {
     }
 }
 
+/// Paused, on the court. Resume, drop a fresh ball, or leave. The flight
+/// sliders that used to live here are gone with the rest of the developer
+/// tuning; the match flies the baked physics.
 private struct CourtPauseOverlay: View {
-    @Bindable var tuning: FlightTuningStore
     let restartDrop: () -> Void
     let resume: () -> Void
     let quit: () -> Void
@@ -1377,20 +1285,22 @@ private struct CourtPauseOverlay: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.65).ignoresSafeArea()
-            NavigationStack {
-                FlightTuningView(tuning: tuning, restartDrop: restartDrop)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Resume", action: resume)
-                                .accessibilityIdentifier("resume-button")
-                        }
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("Quit", role: .destructive, action: quit)
-                                .accessibilityIdentifier("quit-match-paused")
-                        }
-                    }
+            VStack(spacing: 18) {
+                Text("PAUSED")
+                    .font(.title2.weight(.black)).tracking(4)
+                    .foregroundStyle(.white)
+                Button("Resume", action: resume)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                    .accessibilityIdentifier("resume-button")
+                Button("Restart Drop", action: restartDrop)
+                    .buttonStyle(.bordered)
+                Button("Quit", role: .destructive, action: quit)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("quit-match-paused")
             }
-            .frame(maxWidth: 620, maxHeight: 460)
+            .padding(28)
+            .frame(maxWidth: 360)
             .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.25)))
             .padding(20)
