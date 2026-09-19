@@ -136,7 +136,11 @@ struct OnboardingFlow: View {
     }
 
     private var fly: some View {
-        IntroPage(kicker: "01 • FLY") {
+        // The pad row is built from fixed-width chips and is 456pt across, so
+        // it needs a column of its own width. Capped at 340 like the other
+        // pages it overflowed its column and ran off the right edge of the
+        // screen, clipping the THRUST pad.
+        IntroPage(kicker: "01 • FLY", sideWidth: ControlsDiagram.width) {
             Text("STEER, THRUST, FIRE, PULL.")
                 .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
@@ -181,6 +185,18 @@ struct OnboardingFlow: View {
     }
 
     private var hangar: some View {
+        // Same deal as IntroPage: the bay fits an iPad with room to spare and
+        // is centred there, and scrolls on a phone instead of losing its top.
+        ViewThatFits(in: .vertical) {
+            hangarColumn
+            ScrollView(.vertical, showsIndicators: false) { hangarColumn }
+                .scrollBounceBehavior(.basedOnSize)
+        }
+        .padding(.horizontal, 28).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var hangarColumn: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("04 • HANGAR").font(.caption.monospaced().weight(.black)).tracking(3)
                 .foregroundStyle(.white.opacity(0.55))
@@ -188,36 +204,46 @@ struct OnboardingFlow: View {
                 .font(.system(size: 30, weight: .black, design: .rounded))
             HangarView(profile: profile, entitlements: entitlements, store: store, compact: true)
         }
-        .padding(.horizontal, 28).padding(.top, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct IntroPage<Content: View, Side: View>: View {
     let kicker: String
+    /// Widest the side column may get. The Canvas diagrams fill whatever they
+    /// are given, so 340 suits them; a page whose side has a fixed intrinsic
+    /// width must pass that width or the side draws outside its column.
+    var sideWidth: CGFloat = 340
     @ViewBuilder let content: Content
     @ViewBuilder let side: Side
 
     var body: some View {
         HStack(alignment: .top, spacing: 32) {
             // A phone in landscape has less height than these pages need, so
-            // the column scrolls rather than losing its last line under the
-            // BACK and NEXT buttons.
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(kicker).font(.caption.monospaced().weight(.black)).tracking(3)
-                        .foregroundStyle(.white.opacity(0.55))
-                    content
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 8)
+            // there the column scrolls rather than losing its last line under
+            // the BACK and NEXT buttons. An iPad has height to spare: take the
+            // column as it comes and let the page centre it, instead of a
+            // scroll view that fills the screen and strands the text at the top.
+            ViewThatFits(in: .vertical) {
+                column
+                ScrollView(.vertical, showsIndicators: false) { column }
+                    .scrollBounceBehavior(.basedOnSize)
             }
-            .scrollBounceBehavior(.basedOnSize)
             side
-                .frame(maxWidth: 340)
+                .frame(maxWidth: sideWidth)
         }
-        .padding(.horizontal, 28).padding(.top, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 28).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var column: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(kicker).font(.caption.monospaced().weight(.black)).tracking(3)
+                .foregroundStyle(.white.opacity(0.55))
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 8)
     }
 }
 
@@ -249,20 +275,29 @@ private extension LabelStyle where Self == TrailingIconLabelStyle {
 
 /// Thumb pads as they appear in the match, with the ship above them.
 private struct ControlsDiagram: View {
+    private static let padWidth: CGFloat = 70
+    private static let spacing: CGFloat = 10
+    private static let thumbGap: CGFloat = 20
+    private static let inset: CGFloat = 18
+    /// Five fixed-width pads, five gaps, the gap between the thumbs and the
+    /// card's own inset. Nothing here compresses, so the column that holds the
+    /// card has to be this wide.
+    static let width = padWidth * 5 + spacing * 5 + thumbGap + inset * 2
+
     var body: some View {
         VStack(spacing: 18) {
             HullBadge(hull: .lancet, team: .cyan).frame(width: 90, height: 100)
                 .rotationEffect(.degrees(-18))
-            HStack(spacing: 10) {
+            HStack(spacing: Self.spacing) {
                 pad("arrow.counterclockwise", "LEFT", .cyan)
                 pad("arrow.clockwise", "RIGHT", .cyan)
-                Spacer(minLength: 20)
+                Spacer(minLength: Self.thumbGap)
                 pad("arrow.down.to.line.compact", "PULL", .purple)
                 pad("bolt.fill", "FIRE", .yellow)
                 pad("flame.fill", "THRUST", .orange)
             }
         }
-        .padding(18)
+        .padding(Self.inset)
         .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.12)))
         .accessibilityHidden(true)
@@ -273,7 +308,7 @@ private struct ControlsDiagram: View {
             Image(systemName: icon).font(.title2).foregroundStyle(tint)
             Text(title).font(.system(size: 9, weight: .black)).tracking(1)
         }
-        .frame(width: 70, height: 64)
+        .frame(width: Self.padWidth, height: 64)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.5)))
     }
