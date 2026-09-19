@@ -623,8 +623,8 @@ private struct GameView: View {
         .onChange(of: online.status) { _, status in
             if mode == .warmup, case .ready = status { exit() }
             guard mode == .online else { return }
-            if case let .failed(message) = status {
-                linkFailure = message
+            if case let .failed(reason) = status {
+                linkFailure = reason.message
             } else if case .connected = status {
                 linkFailure = nil
             } else if case .reconnecting = status {
