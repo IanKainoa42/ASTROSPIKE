@@ -116,14 +116,15 @@ public struct HoopGeometry: Equatable, Sendable {
 
     public init(
         centerY: Double = 0.16,
+        ballRadius: Double = BallState.nominalRadius,
         // The clearance the hoop was tuned with, kept past the ball's own
         // radius: a bigger ball gets a wider window, not a tighter one.
-        innerHalfWidth: Double = BallState.nominalRadius + 0.034,
+        innerHalfWidth: Double? = nil,
         rimRadius: Double = 0.014,
         netDepth: Double = 0.11
     ) {
         self.centerY = centerY
-        self.innerHalfWidth = innerHalfWidth
+        self.innerHalfWidth = innerHalfWidth ?? (ballRadius + 0.034)
         self.rimRadius = rimRadius
         self.netDepth = netDepth
     }
@@ -173,17 +174,25 @@ public struct ArenaGeometry: Equatable, Sendable {
         floorY: Double = -0.64,
         ceilingY: Double = 0.64,
         netHalfWidth: Double = 0.018,
+        // The ball this court is cut for. Only the goal mouth cares: a bigger
+        // ball needs a taller face to fly through, and the mouth can only
+        // grow downward because the collar above it is fixed.
+        ballRadius: Double = BallState.nominalRadius,
         // Hangs one collar below the underside of the hump (see
         // `portalMouthTopY`), which keeps the goal the same size it has
         // always been now that the top of the net is buried in the roof.
-        netBottomY: Double = 0.184,
+        // Nil derives it from `ballRadius`, and never rides above the tuned
+        // 0.184: a ball at or under nominal leaves the court untouched.
+        netBottomY: Double? = nil,
         cornerRadiusX: Double = 0.30,
         cornerRadiusY: Double = 0.16,
         // Three ball radii of ledge: big enough to catch a shot that arrives
         // a little under the mouth, small enough that it is still the mouth,
-        // not the lip, that you are shooting at.
-        lipLength: Double = 0.11,
-        lipRise: Double = 0.035,
+        // not the lip, that you are shooting at. Nil keeps it three radii of
+        // whatever the ball now is -- a ledge narrower than the ball it is
+        // meant to catch would just be something to bounce off.
+        lipLength: Double? = nil,
+        lipRise: Double? = nil,
         netStyle: NetStyle = .roofPortal,
         // Dead level with the middle of the court, so the slab covers exactly
         // the bottom half of the arena.
@@ -194,17 +203,48 @@ public struct ArenaGeometry: Equatable, Sendable {
         self.floorY = floorY
         self.ceilingY = ceilingY
         self.netHalfWidth = netHalfWidth
-        self.netBottomY = netBottomY
+        self.netBottomY = netBottomY ?? min(
+            Self.tunedNetBottomY,
+            (ceilingY - cornerRadiusY) - Self.portalCollar
+                - Self.minimumMouthClearance * ballRadius * 2
+        )
         self.cornerRadiusX = cornerRadiusX
         self.cornerRadiusY = cornerRadiusY
-        self.lipLength = lipLength
-        self.lipRise = lipRise
+        let ledge = lipLength ?? (Self.tunedLipLength * (ballRadius / BallState.nominalRadius))
+        self.lipLength = ledge
+        // The tilt is the ledge's slope, and the slope is what makes a ball
+        // roll in rather than sit there -- so it is kept, not the raw height.
+        self.lipRise = lipRise ?? (Self.tunedLipRise * (ledge / Self.tunedLipLength))
         self.netStyle = netStyle
         self.netTopY = netTopY
         self.hoop = hoop
     }
 
+    /// The ledge the court was tuned with, on a nominal ball: three ball
+    /// radii long and a third of that in rise. A scaled ball scales both by
+    /// the same ratio, phrased as a multiple of these rather than rebuilt
+    /// from the radius, so a nominal court comes out bit-for-bit identical
+    /// instead of one ulp away from the one Ian tuned.
+    public static let tunedLipLength = 0.11
+    public static let tunedLipRise = 0.035
+
+    /// How far the ball may be scaled past nominal. Past this the goal mouth
+    /// has to hang so low that the slab covers more than the bottom half of
+    /// the arena, which is a different court rather than a bigger ball.
+    public static let maximumRadiusScale = 3.0
+
+    /// Where the slab has always ended. Kept as the ceiling on the derived
+    /// value so nothing about the shipped court moves until the ball does.
+    public static let tunedNetBottomY = 0.184
+
     public static let standard = ArenaGeometry()
+
+    /// The standard court cut for a ball of `radius`. The goal mouth is the
+    /// only thing that moves: it hangs lower as the ball grows so the ball
+    /// can still fly through it.
+    public static func standard(ballRadius: Double) -> ArenaGeometry {
+        ArenaGeometry(ballRadius: ballRadius)
+    }
 
     /// Volleyball: the net comes down off the roof and stands up out of the
     /// floor, covering the bottom half of the arena. Nothing passes through
@@ -221,6 +261,16 @@ public struct ArenaGeometry: Equatable, Sendable {
         netStyle: .none,
         hoop: HoopGeometry()
     )
+
+    /// The hoop court cut for a ball of `radius`: the window between the
+    /// posts keeps its tuned clearance rather than closing on a bigger ball.
+    public static func basketball(ballRadius: Double) -> ArenaGeometry {
+        ArenaGeometry(
+            ballRadius: ballRadius,
+            netStyle: .none,
+            hoop: HoopGeometry(ballRadius: ballRadius)
+        )
+    }
 
     /// The hump and the lips are parts of the roof-hung goal. Without one
     /// the roof is flat and the middle is clear.
@@ -245,13 +295,26 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// width of the slab.
     public var humpUndersideY: Double { ceilingY - cornerRadiusY }
 
+    /// The collar between the hump and the top of the goal: one diameter of
+    /// the ball the arena was *tuned* at, and it stays that whatever the ball
+    /// grows to. It used to scale with the live ball, which ate the mouth
+    /// from above at exactly the moment the ball needed more of it -- at
+    /// twice nominal the face was 0.128 tall against a 0.168 ball and the
+    /// goal simply closed. A grown ball buys clearance at the bottom instead,
+    /// in `netBottomY`.
+    public static let portalCollar = BallState.nominalRadius * 2
+
+    /// How much taller than the ball the mouth is kept when the ball is
+    /// scaled up. The shipped court is far roomier than this; the number is
+    /// a floor that keeps the goal passable, not the feel it was tuned to.
+    public static let minimumMouthClearance = 1.5
+
     /// The face is a portal only below this line. Above it the slab is a
     /// solid collar hanging from the hump, because the underside is tangent
     /// to the face -- without the band, a ball riding down the last of the
     /// slope would be touching the portal at the exact instant it is touching
-    /// the hump. One ball diameter of collar, so anything that scores is
-    /// clear of the hump.
-    public var portalMouthTopY: Double { humpUndersideY - BallState.nominalRadius * 2 }
+    /// the hump.
+    public var portalMouthTopY: Double { humpUndersideY - Self.portalCollar }
 
     /// The net *is* the goal, and it is a portal rather than a wall: a ball
     /// driven into the open part of either face passes through and is gone.

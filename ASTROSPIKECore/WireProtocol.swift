@@ -57,7 +57,12 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 20: teams change ends between sets. WorldState carries sidesSwapped
     //     and setBreak, and every floor, crossing and goal is scored by the
     //     team on that half rather than by its colour's old end.
-    public static let currentVersion: UInt16 = 20
+    // 21: the ball's size is a slider, and it rides the wire with the rest
+    //     of the host's tuning -- FlightTuningSnapshot carries ballRadius, so
+    //     a build 77 peer cannot decode the seating plan at all, and the goal
+    //     mouth is cut to the ball, so it would not score the same rally
+    //     either.
+    public static let currentVersion: UInt16 = 21
 
     public var version: UInt16
     public var sequence: UInt64

@@ -357,6 +357,12 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var thrustRampRate: Double
     public var torqueAcceleration: Double
     public var ballGravityMultiplier: Double
+    /// How big the ball is. A slider rather than a constant because it is
+    /// what makes spin aimable: bolts are 0.007 across, so at the nominal
+    /// 0.042 a clip off the ball's edge is luck, and a bigger ball is a
+    /// target you can deliberately hit off-centre. The arena's goal mouth is
+    /// cut to match -- see `ArenaGeometry.portalCollar`.
+    public var ballRadius: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var serveDelay: Double
@@ -407,6 +413,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         thrustRampRate: Double = 0,
         torqueAcceleration: Double = 3,
         ballGravityMultiplier: Double = 0.95,
+        ballRadius: Double = BallState.nominalRadius,
         ballDropHeight: Double = 0.06,
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
@@ -434,6 +441,10 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.thrustRampRate = thrustRampRate
         self.torqueAcceleration = torqueAcceleration
         self.ballGravityMultiplier = ballGravityMultiplier
+        self.ballRadius = min(
+            BallState.nominalRadius * ArenaGeometry.maximumRadiusScale,
+            max(BallState.nominalRadius, ballRadius)
+        )
         self.ballDropHeight = ballDropHeight
         self.ballDropSpeed = ballDropSpeed
         self.serveDelay = max(0, serveDelay)
@@ -560,6 +571,11 @@ public struct SimulationEngine: Sendable {
         self.configuration = configuration
         rules.updateAllowedFloorBounces(configuration.allowedFloorBounces)
         rules.updateAllowedShipTouches(configuration.allowedShipTouches)
+        // The ball in play grows with the slider rather than waiting for the
+        // next serve: the whole point of the knob is to see what the size
+        // feels like while you are flying. A ball that ends up overlapping a
+        // wall is pushed back out by the next step's contact resolve.
+        state.ball.radius = configuration.ballRadius
     }
 
     /// How many sets take the match: 1 for a single game, 2 for best of
@@ -617,7 +633,8 @@ public struct SimulationEngine: Sendable {
         state.serveDriftSign = mirrored ? 1 : -1
         state.ball = BallState(
             position: SIMD2(0, configuration.ballDropHeight),
-            velocity: serveVelocity
+            velocity: serveVelocity,
+            radius: configuration.ballRadius
         )
         state.serveTicksRemaining = 0
         state.bolts.removeAll()
@@ -801,7 +818,7 @@ public struct SimulationEngine: Sendable {
         state.ball = BallState(
             position: SIMD2(0, configuration.ballDropHeight),
             velocity: .zero,
-            radius: state.ball.radius
+            radius: configuration.ballRadius
         )
         state.bolts.removeAll()
         // A fresh ball has nobody's fingerprints on it -- and no hull is still

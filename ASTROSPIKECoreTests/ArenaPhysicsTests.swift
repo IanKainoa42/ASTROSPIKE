@@ -4,6 +4,11 @@ import simd
 
 @Suite("Arena physics")
 struct ArenaPhysicsTests {
+    /// The whole range the ball-size slider offers. Every claim about the
+    /// goal structure is made at all three: the shipped default is 2x, so a
+    /// suite that only ever checked 1x would be testing a court nobody plays.
+    static let ballScales = [1.0, 2.0, 3.0]
+    static let ballRadii = ballScales.map { BallState.nominalRadius * $0 }
     @Test("The hump is the corner arc, mirrored into the middle of the roof")
     func humpMirrorsTheCornerCurvature() {
         let arena = ArenaGeometry.standard
@@ -22,34 +27,70 @@ struct ArenaPhysicsTests {
         #expect(arena.humpSurfacePoint(arena.humpSampleCount - 2).y > arena.ceilingY - 0.01)
     }
 
-    @Test("The portal mouth hangs clear of the hump and stays aimable")
-    func portalMouthClearsTheHump() {
-        let arena = ArenaGeometry.standard
-        let ballRadius = BallState(position: .zero).radius
+    @Test("The portal mouth hangs clear of the hump and stays aimable", arguments: ballRadii)
+    func portalMouthClearsTheHump(ballRadius: Double) {
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
 
-        // A whole ball of collar under the hump, so anything that scores is
-        // clear of the slope rather than grazing the point where the two meet.
-        #expect(arena.portalMouthTopY <= arena.humpUndersideY - ballRadius * 2)
+        // A fixed collar under the hump, so anything that scores is clear of
+        // the slope rather than grazing the point where the two meet. It is
+        // one *nominal* diameter whatever the ball is: scaling it with the
+        // ball ate the mouth from above at the moment the ball needed more of
+        // it, and at 2x the goal closed entirely.
+        #expect(arena.portalMouthTopY <= arena.humpUndersideY - BallState.nominalRadius * 2)
+        #expect(abs(arena.humpUndersideY - arena.portalMouthTopY - BallState.nominalRadius * 2) < 1e-12)
         // And the mouth left below it is still comfortably taller than the
         // ball, so a lifted drive can find it.
-        #expect(arena.portalFaceHeight > ballRadius * 4)
+        #expect(arena.portalFaceHeight >= ArenaGeometry.minimumMouthClearance * ballRadius * 2)
         // It stays a slab, not a wall: thin, dead centre, so the middle of the
         // court is a target rather than an obstruction.
         #expect(arena.netHalfWidth < arena.halfWidth * 0.05)
+    }
+
+    @Test("A nominal ball leaves the shipped court untouched")
+    func nominalBallKeepsTheTunedCourt() {
+        // The scaling only ever opens the mouth. Everything about the court
+        // Ian tuned by hand has to be bit-for-bit what it was.
+        let arena = ArenaGeometry.standard(ballRadius: BallState.nominalRadius)
+        #expect(arena == ArenaGeometry.standard)
+        #expect(arena.netBottomY == ArenaGeometry.tunedNetBottomY)
+        #expect(abs(arena.lipLength - 0.11) < 1e-12)
+        #expect(abs(arena.lipRise - 0.035) < 1e-12)
+        #expect(arena.portalFaceHeight > BallState.nominalRadius * 4)
+    }
+
+    @Test("A ball driven at the mouth still scores, whatever size it is", arguments: ballRadii)
+    func theGoalStaysPassable(ballRadius: Double) {
+        // The point of cutting the mouth to the ball. Straight at the middle
+        // of the face from just outside it, on both sides.
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
+        for side in [1.0, -1.0] {
+            let result = ballOnlyStep(
+                position: SIMD2(
+                    side * (arena.netHalfWidth + ballRadius + 0.01),
+                    (arena.netBottomY + arena.portalMouthTopY) / 2
+                ),
+                velocity: SIMD2(-side * 4, 0),
+                ballRadius: ballRadius
+            )
+            #expect(result.scored, "side \(side) radius \(ballRadius)")
+        }
     }
 
     /// One tick of physics with the ships parked out of the way, so the only
     /// thing the ball can meet is the goal structure.
     private func ballOnlyStep(
         position: SIMD2<Double>,
-        velocity: SIMD2<Double>
+        velocity: SIMD2<Double>,
+        ballRadius: Double = BallState.nominalRadius
     ) -> (scored: Bool, engine: SimulationEngine) {
         let ships: [Seat: ShipState] = [
             .cyan: ShipState(position: SIMD2(-1.4, -0.4), angle: 0, isDestroyed: true, homeSide: .cyan),
             .orange: ShipState(position: SIMD2(1.4, -0.4), angle: .pi, isDestroyed: true, homeSide: .orange),
         ]
         var engine = SimulationEngine(
-            state: WorldState(ships: ships, ball: BallState(position: position))
+            state: WorldState(ships: ships, ball: BallState(position: position, radius: ballRadius)),
+            configuration: SimulationConfiguration(ballRadius: ballRadius),
+            arena: .standard(ballRadius: ballRadius)
         )
         engine.state.ball.velocity = velocity
         let before = engine.state.match.score.cyan + engine.state.match.score.orange
@@ -72,31 +113,41 @@ struct ArenaPhysicsTests {
         #expect(result.engine.state.ball.velocity.y < 0)
     }
 
-    @Test("No shot anywhere scores through the underside of a lip")
-    func noGoalsThroughTheBottomBar() {
-        let arena = ArenaGeometry.standard
-        let configuration = SimulationConfiguration()
+    @Test("No shot anywhere scores through the underside of a lip", arguments: ballRadii)
+    func noGoalsThroughTheBottomBar(ballRadius: Double) {
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
+        let configuration = SimulationConfiguration(ballRadius: ballRadius)
         let dt = configuration.stepDuration
         // Classify against the same swept segment the engine integrates --
         // gravity included -- and with a hair off the radius, so a ball that
         // grazes the very underside of the ledge by a fraction of a percent
         // is not read as one that went through it.
-        let radius = BallState(position: .zero).radius * 0.99
+        let radius = ballRadius * 0.99
         var leaks = 0
         var goals = 0
         // Both lips. `lipContact` mirrors through `abs(position.x)`, so a bug
         // that only leaks on one side is possible in principle -- a one-sided
         // grid could never turn this test red.
+        // `ballOnlyStep` steps the engine exactly once, so nothing further
+        // than one tick of the fastest shot -- plus its own radius -- can
+        // reach the mouth at any angle. Scaling the grid by the radius alone
+        // put most of the 3x rows out of reach and the sweep stopped scoring
+        // enough to prove anything; the span has to carry that fixed step.
+        let span = ballRadius + 12.0 * dt
         for side in [1.0, -1.0] {
             for xStep in 0 ... 24 {
-                let x = side * (0.058 + Double(xStep) * 0.008)
+                let x = side * (arena.netHalfWidth + ballRadius * 0.95 + span * Double(xStep) * 0.07)
                 for yStep in 0 ... 24 {
-                    let y = 0.09 + Double(yStep) * 0.006
+                    let y = arena.netBottomY + span * (-1.0 + Double(yStep) * 0.07)
                     for speed in [3.0, 5.0, 8.0, 12.0] {
                         for degrees in stride(from: 100.0, through: 260.0, by: 10.0) {
                             let angle = degrees * .pi / 180
                             let velocity = SIMD2(side * cos(angle), sin(angle)) * speed
-                            let result = ballOnlyStep(position: SIMD2(x, y), velocity: velocity)
+                            let result = ballOnlyStep(
+                                position: SIMD2(x, y),
+                                velocity: velocity,
+                                ballRadius: ballRadius
+                            )
                             guard result.scored else { continue }
                             goals += 1
                             // Would this shot's own sweep have been sitting under
@@ -117,14 +168,14 @@ struct ArenaPhysicsTests {
             }
         }
         // The sweep has to actually be scoring goals, or "no leaks" is vacuous.
-        #expect(goals > 1000)
-        #expect(leaks == 0)
+        #expect(goals > 1000, "goals \(goals) leaks \(leaks) radius \(ballRadius)")
+        #expect(leaks == 0, "goals \(goals) leaks \(leaks) radius \(ballRadius)")
     }
 
-    @Test("A ball that starts a tick wedged under a lip stays under it")
-    func aWedgedBallCannotComeUpThroughTheLip() {
-        let arena = ArenaGeometry.standard
-        let radius = BallState(position: .zero).radius
+    @Test("A ball that starts a tick wedged under a lip stays under it", arguments: ballRadii)
+    func aWedgedBallCannotComeUpThroughTheLip(ballRadius: Double) {
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
+        let radius = ballRadius
         // A knock off the cap can leave the ball's centre a fraction of a
         // radius under the ledge. The lip is a line, so a drive up and in from
         // there put the centre over the top by the swept check's first sample:
@@ -138,7 +189,8 @@ struct ArenaPhysicsTests {
                 for drive in [SIMD2(2.0, 2.0), SIMD2(3, 4), SIMD2(4, 6)] {
                     let result = ballOnlyStep(
                         position: root + edge * 0.5 - up * (radius * depth),
-                        velocity: SIMD2(-side * drive.x, drive.y)
+                        velocity: SIMD2(-side * drive.x, drive.y),
+                        ballRadius: ballRadius
                     )
                     #expect(!result.scored, "side \(side) depth \(depth) drive \(drive)")
                     #expect(result.engine.state.ball.velocity.y < 0, "side \(side) depth \(depth) drive \(drive)")
@@ -147,10 +199,10 @@ struct ArenaPhysicsTests {
         }
     }
 
-    @Test("A ball tucked under the lip beside the cap has not reached a face")
-    func thePocketUnderTheLipIsNotTheMouth() {
-        let arena = ArenaGeometry.standard
-        let radius = BallState(position: .zero).radius
+    @Test("A ball tucked under the lip beside the cap has not reached a face", arguments: ballRadii)
+    func thePocketUnderTheLipIsNotTheMouth(ballRadius: Double) {
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
+        let radius = ballRadius
         // Beside the rounded bottom of the net, under the root of the lip, is
         // open space. The face plane reaches down there but the mouth does not:
         // it starts where the cap does. Placed from the geometry rather than
@@ -161,18 +213,19 @@ struct ArenaPhysicsTests {
                     side * (arena.netHalfWidth + radius + 0.001),
                     arena.netBottomY - radius * 0.9
                 ),
-                velocity: SIMD2(-side * 0.5, 0)
+                velocity: SIMD2(-side * 0.5, 0),
+                ballRadius: ballRadius
             )
-            #expect(!result.scored, "side \(side)")
+            #expect(!result.scored, "side \(side) radius \(ballRadius)")
         }
     }
 
-    @Test("No goal is scored across a face below the bottom of the mouth")
-    func noGoalsBelowTheMouth() {
-        let arena = ArenaGeometry.standard
-        let configuration = SimulationConfiguration()
+    @Test("No goal is scored across a face below the bottom of the mouth", arguments: ballRadii)
+    func noGoalsBelowTheMouth(ballRadius: Double) {
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
+        let configuration = SimulationConfiguration(ballRadius: ballRadius)
         let dt = configuration.stepDuration
-        let radius = BallState(position: .zero).radius
+        let radius = ballRadius
         let limit = arena.netHalfWidth + radius
         var goals = 0
         var belowMouth = 0
@@ -185,7 +238,11 @@ struct ArenaPhysicsTests {
                         for degrees in stride(from: -60.0, through: 60.0, by: 15.0) {
                             let angle = degrees * .pi / 180
                             let velocity = SIMD2(-side * cos(angle), sin(angle)) * speed
-                            let result = ballOnlyStep(position: SIMD2(x, y), velocity: velocity)
+                            let result = ballOnlyStep(
+                                position: SIMD2(x, y),
+                                velocity: velocity,
+                                ballRadius: ballRadius
+                            )
                             guard result.scored else { continue }
                             goals += 1
                             // Where did this tick's own sweep cross the face plane?
@@ -203,10 +260,9 @@ struct ArenaPhysicsTests {
         #expect(belowMouth == 0)
     }
 
-    @Test("The lips tilt inward and are wider than a ball")
-    func lipsFeedTheMouth() {
-        let arena = ArenaGeometry.standard
-        let ballRadius = BallState(position: .zero).radius
+    @Test("The lips tilt inward and are wider than a ball", arguments: ballRadii)
+    func lipsFeedTheMouth(ballRadius: Double) {
+        let arena = ArenaGeometry.standard(ballRadius: ballRadius)
 
         for sign in [-1.0, 1.0] {
             let root = arena.lipRoot(sign: sign)

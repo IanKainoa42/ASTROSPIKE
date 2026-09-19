@@ -30,11 +30,14 @@ enum GameMode: Hashable {
     /// The court this mode is played on. The arena carries the whole of what
     /// makes a mode different -- the hump, the net, the hoop -- so the engine
     /// and the renderer only have to agree on this one value.
-    var court: ArenaGeometry {
+    ///
+    /// It is cut for the ball that will be played on it: the goal mouth has
+    /// to be taller than the ball is wide, and the ball is a slider now.
+    func court(ballRadius: Double) -> ArenaGeometry {
         switch self {
         case .volleyball: .volleyball
-        case .basketball: .basketball
-        case .solo, .doubles, .online, .warmup: .standard
+        case .basketball: .basketball(ballRadius: ballRadius)
+        case .solo, .doubles, .online, .warmup: .standard(ballRadius: ballRadius)
         }
     }
 
@@ -170,7 +173,7 @@ final class GameSession {
         }
         // The court goes on before the roster: the opening ball is staged as
         // part of seating, and it is staged into this arena.
-        initialEngine.updateArena(mode.court)
+        initialEngine.updateArena(mode.court(ballRadius: configuration.ballRadius))
         initialEngine.configureRoster(roster)
         // Whoever runs the rules picks the length. A guest's board plays to
         // the host's format, which arrived with the seating plan, never to
@@ -183,13 +186,21 @@ final class GameSession {
         engine = initialEngine
         state = initialEngine.state
         for (seat, difficulty) in botSeats {
-            pilots[seat] = AIController(difficulty: difficulty, configuration: configuration, arena: mode.court)
+            pilots[seat] = AIController(
+                difficulty: difficulty,
+                configuration: configuration,
+                arena: mode.court(ballRadius: configuration.ballRadius)
+            )
         }
         if mode != .online, ProcessInfo.processInfo.arguments.contains("--demo") {
-            demoAI = AIController(difficulty: .pilot, configuration: configuration, arena: mode.court)
+            demoAI = AIController(
+                difficulty: .pilot,
+                configuration: configuration,
+                arena: mode.court(ballRadius: configuration.ballRadius)
+            )
         }
         scene.scaleMode = .resizeFill
-        scene.arena = mode.court
+        scene.arena = mode.court(ballRadius: configuration.ballRadius)
         scene.tractorRange = engine.configuration.tractorRange
         scene.snapshot = state
         // After the snapshot: the goal calls are drawn for the ends in it.
@@ -256,9 +267,18 @@ final class GameSession {
         isPaused = !active
     }
 
+    /// The court as it currently stands, cut for the ball now in play. Read
+    /// off the engine rather than a stored value so it can never disagree
+    /// with the physics the ball is actually obeying.
+    private var court: ArenaGeometry { mode.court(ballRadius: engine.configuration.ballRadius) }
+
     func applyTuning(_ configuration: SimulationConfiguration) {
         guard mode.isOffline else { return }
         engine.updateConfiguration(configuration)
+        // The mouth is cut to the ball, so moving the size slider re-cuts
+        // the court under the ball in the same breath.
+        engine.updateArena(mode.court(ballRadius: configuration.ballRadius))
+        scene.arena = engine.arena
         scene.tractorRange = engine.configuration.tractorRange
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
@@ -293,11 +313,11 @@ final class GameSession {
             pilots[seat] = AIController(
                 difficulty: difficulty,
                 configuration: engine.configuration,
-                arena: mode.court
+                arena: court
             )
         }
         if demoAI != nil {
-            demoAI = AIController(difficulty: .pilot, configuration: engine.configuration, arena: mode.court)
+            demoAI = AIController(difficulty: .pilot, configuration: engine.configuration, arena: court)
         }
         SoundBank.shared.stopEverything()
         thrustingTeams = []
@@ -484,7 +504,7 @@ final class GameSession {
     }
 
     private func announceShipCues(inputs: [Seat: PlayerInput]) {
-        let limit = mode.court.opponentCrossingLimit
+        let limit = court.opponentCrossingLimit
         var offsideNow: Set<Seat> = []
         var thrustingNow: Set<Team> = []
         // Both ships on a team share one voice, so the burn is panned to the
@@ -547,7 +567,14 @@ final class GameSession {
             // Keep the online physics: a rebuilt engine defaults to the solo
             // tuning, and the guest's own ship then flies a different game
             // between snapshots.
-            var rolled = SimulationEngine(state: authoritative, configuration: self.engine.configuration)
+            var rolled = SimulationEngine(
+                state: authoritative,
+                configuration: self.engine.configuration,
+                // Not just the tuning: the court is cut from the ball, and a
+                // rebuilt engine would default to the nominal one -- the guest
+                // would roll forward against a goal mouth the host has not got.
+                arena: self.engine.arena
+            )
             // The snapshot left the host a ping ago. Re-run the ticks the guest
             // has already flown since, with the inputs it actually gave, so the
             // world never steps backwards on arrival.
@@ -572,14 +599,22 @@ final class GameSession {
                     authoritative: hostShip
                 )
             }
-            self.engine = SimulationEngine(state: resolved, configuration: self.engine.configuration)
+            self.engine = SimulationEngine(
+                state: resolved,
+                configuration: self.engine.configuration,
+                arena: self.engine.arena
+            )
             self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.localSeat)
             self.state = resolved
             self.announceStakes()
         }
         online.onResync = { [weak self] authoritative in
             guard let self else { return }
-            self.engine = SimulationEngine(state: authoritative, configuration: self.engine.configuration)
+            self.engine = SimulationEngine(
+                state: authoritative,
+                configuration: self.engine.configuration,
+                arena: self.engine.arena
+            )
             self.smoothing.reset()
             self.localInputHistory = [:]
             self.state = authoritative

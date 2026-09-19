@@ -632,6 +632,10 @@ private struct GameView: View {
             }
         }
         .onChange(of: tuning.snapshot) { _, _ in
+            // Online runs on the host's numbers, which arrived with the
+            // seating plan. Now that the court is cut from the ball, a local
+            // slider would move one side's goal mouth and nobody else's.
+            guard mode != .online else { return }
             session.applyTuning(tuning.configuration)
         }
         .onChange(of: online.remoteHulls) { _, hulls in
@@ -777,11 +781,26 @@ private struct WarmupHUD: View {
                     .accessibilityIdentifier("matchmaking-headline")
                 } else {
                     Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption2.weight(.bold)).foregroundStyle(statusColor).lineLimit(1)
+                        .font(.caption2.weight(.bold)).foregroundStyle(statusColor)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
                 if let notice = online.inviteNotice {
-                    Text(notice).font(.caption2.monospaced().weight(.semibold))
-                        .foregroundStyle(.yellow.opacity(0.9)).lineLimit(1)
+                    // Why nothing is happening, not a footnote about it. A
+                    // build mismatch used to arrive here as one clipped
+                    // yellow line between two scoreboards, which is the same
+                    // as not saying it at all -- so it wraps, and it is
+                    // boxed like the headline above it.
+                    Text(notice)
+                        .font(.caption2.monospaced().weight(.bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3).minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.orange.opacity(0.7), lineWidth: 1))
+                        .frame(maxWidth: 340)
+                        .accessibilityIdentifier("invite-notice")
                 }
             }
             .accessibilityElement(children: .combine)
@@ -1187,6 +1206,22 @@ private struct SettingsView: View {
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
+                Section("Ball") {
+                    TuningSlider(
+                        title: "Ball size",
+                        value: $tuning.ballRadius,
+                        range: BallState.nominalRadius ... BallState.nominalRadius * ArenaGeometry.maximumRadiusScale,
+                        step: BallState.nominalRadius / 10,
+                        readout: { "\(($0 / BallState.nominalRadius).formatted(.number.precision(.fractionLength(1))))×" }
+                    )
+                    Text("""
+                        A bolt is a tenth the width of the ball at 1×, so clipping the edge to \
+                        put spin on it is luck. A bigger ball is a target you can hit off-centre \
+                        on purpose. The goal mouth is cut to match, so it stays passable.
+                        """)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Section("Tractor Beam") {
                     TuningSlider(
                         title: "Pull strength",
@@ -1257,6 +1292,13 @@ private struct FlightTuningView: View {
                     }
                     GroupBox("Ball Drop") {
                         VStack(spacing: 14) {
+                            TuningSlider(
+                                title: "Ball size",
+                                value: $tuning.ballRadius,
+                                range: BallState.nominalRadius ... BallState.nominalRadius * ArenaGeometry.maximumRadiusScale,
+                                step: BallState.nominalRadius / 10,
+                                readout: { "\(($0 / BallState.nominalRadius).formatted(.number.precision(.fractionLength(1))))×" }
+                            )
                             TuningSlider(title: "Ball gravity", value: $tuning.ballGravityMultiplier, range: 0.1 ... 1.2, step: 0.02)
                             TuningSlider(title: "Drop height", value: $tuning.ballDropHeight, range: -0.30 ... 0.10, step: 0.01)
                             TuningSlider(title: "Drop speed", value: $tuning.ballDropSpeed, range: 0 ... 0.8, step: 0.01)

@@ -45,7 +45,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         // mid-push, and then swipes at something that has gone away.
         let tuningPage = app.scrollViews.firstMatch
         XCTAssertTrue(tuningPage.waitForExistence(timeout: 3))
-        for name in ["Gravity", "Thrust", "Rotation", "Ball gravity", "Drop height", "Drop speed"] {
+        for name in ["Gravity", "Thrust", "Rotation", "Ball size", "Ball gravity", "Drop height", "Drop speed"] {
             reveal(app.sliders[name], in: tuningPage)
         }
         reveal(app.buttons["Reset Defaults"], in: tuningPage)
