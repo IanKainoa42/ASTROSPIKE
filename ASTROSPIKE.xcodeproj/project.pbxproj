@@ -72,6 +72,7 @@
 		CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5488DBEBDCDC52A967D49F5A /* AppRootView.swift */; };
 		CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */; };
 		D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AED5437E5592EACB25579F /* ArenaScene.swift */; };
+		DC6201369B4C58B4F1EE74FA /* OnlineFailureReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */; };
 		DE0C9433C7AFD7FC5912429C /* PrivacyDisclosureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */; };
 		DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088700D916D7C71D0559E240 /* TrackEngine.swift */; };
 		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
@@ -82,6 +83,7 @@
 		F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B202192D985A9E29E73E1 /* LobbyView.swift */; };
 		FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056582DB470999C16355D1FE /* HullStore.swift */; };
 		FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5637738B4E3686D57BD33184 /* WarmupRings.swift */; };
+		FF566FF80493C069F905DC2F /* OnlineFailureReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8675D87BC800DE3BD658AD5 /* OnlineFailureReason.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -141,6 +143,7 @@
 		079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopy.swift; sourceTree = "<group>"; };
 		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
 		0B581A251E3DC103CDFB31F3 /* TrackScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackScene.swift; sourceTree = "<group>"; };
+		1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineFailureReasonTests.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
 		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
 		1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopyTests.swift; sourceTree = "<group>"; };
@@ -207,6 +210,7 @@
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
 		E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsLoopTests.swift; sourceTree = "<group>"; };
 		E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaceTuningView.swift; sourceTree = "<group>"; };
+		E8675D87BC800DE3BD658AD5 /* OnlineFailureReason.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineFailureReason.swift; sourceTree = "<group>"; };
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
@@ -261,6 +265,7 @@
 				6E6C209D8015028776DDD2A2 /* MatchRules.swift */,
 				DBF5E91B39BF78BC48AAE5C2 /* Module.swift */,
 				495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */,
+				E8675D87BC800DE3BD658AD5 /* OnlineFailureReason.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
 				079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */,
 				088700D916D7C71D0559E240 /* TrackEngine.swift */,
@@ -351,6 +356,7 @@
 				07221F436E712100C50841C1 /* LobbyTests.swift */,
 				9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */,
 				2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */,
+				1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */,
 				8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */,
 				3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */,
 				1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */,
@@ -529,6 +535,7 @@
 				76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */,
 				BBBA3565C6702D7A98DF61A9 /* Module.swift in Sources */,
 				E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */,
+				FF566FF80493C069F905DC2F /* OnlineFailureReason.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
 				8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */,
 				DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */,
@@ -583,6 +590,7 @@
 				769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */,
 				0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */,
 				CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */,
+				DC6201369B4C58B4F1EE74FA /* OnlineFailureReasonTests.swift in Sources */,
 				9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */,
 				B7FEFEAFECBEAD002D3FDA7D /* PerformanceAndSoakTests.swift in Sources */,
 				4CEC3317A8917605AAC45A0C /* PlayerNetworkCopyTests.swift in Sources */,
