@@ -6,6 +6,12 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public var thrustAcceleration: Double
     public var rotationAcceleration: Double
     public var ballGravityMultiplier: Double
+    /// How big the ball is, in arena units. Ships at twice nominal: a bolt is
+    /// 0.007 across, so against a 0.042 ball clipping the edge on purpose was
+    /// not a shot anyone could take, and spin arrived by accident. Rides the
+    /// wire with the rest of the host's tuning, because the two boards have
+    /// to agree on the size of the thing they are both simulating.
+    public var ballRadius: Double
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     /// How hard the tractor beam reels the ball in. Ian's own knob -- the
@@ -28,6 +34,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         thrustAcceleration: 2.75,
         rotationAcceleration: 5.5,
         ballGravityMultiplier: 0.2,
+        ballRadius: BallState.nominalRadius * 2,
         ballDropHeight: 0.10,
         ballDropSpeed: 0.06,
         tractorStrength: 2.6,
@@ -43,6 +50,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
             maximumThrustAcceleration: thrustAcceleration,
             torqueAcceleration: rotationAcceleration,
             ballGravityMultiplier: ballGravityMultiplier,
+            ballRadius: ballRadius,
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
             allowedFloorBounces: allowedBouncesPerHit,
@@ -68,6 +76,9 @@ public final class FlightTuningStore {
     }
     public var ballGravityMultiplier: Double {
         didSet { persist(ballGravityMultiplier, key: Keys.ballGravityMultiplier) }
+    }
+    public var ballRadius: Double {
+        didSet { persist(ballRadius, key: Keys.ballRadius) }
     }
     public var ballDropHeight: Double {
         didSet { persist(ballDropHeight, key: Keys.ballDropHeight) }
@@ -95,6 +106,12 @@ public final class FlightTuningStore {
         thrustAcceleration = Self.load(defaults, key: Keys.thrustAcceleration, fallback: baked.thrustAcceleration, range: 1 ... 10)
         rotationAcceleration = Self.load(defaults, key: Keys.rotationAcceleration, fallback: baked.rotationAcceleration, range: 0.5 ... 8)
         ballGravityMultiplier = Self.load(defaults, key: Keys.ballGravityMultiplier, fallback: baked.ballGravityMultiplier, range: 0.1 ... 1.2)
+        ballRadius = Self.load(
+            defaults,
+            key: Keys.ballRadius,
+            fallback: baked.ballRadius,
+            range: BallState.nominalRadius ... BallState.nominalRadius * ArenaGeometry.maximumRadiusScale
+        )
         ballDropHeight = Self.load(defaults, key: Keys.ballDropHeight, fallback: baked.ballDropHeight, range: -0.30 ... 0.10)
         ballDropSpeed = Self.load(defaults, key: Keys.ballDropSpeed, fallback: baked.ballDropSpeed, range: 0 ... 0.8)
         tractorStrength = Self.load(
@@ -124,6 +141,7 @@ public final class FlightTuningStore {
             thrustAcceleration: thrustAcceleration,
             rotationAcceleration: rotationAcceleration,
             ballGravityMultiplier: ballGravityMultiplier,
+            ballRadius: ballRadius,
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
             tractorStrength: tractorStrength,
@@ -141,6 +159,7 @@ public final class FlightTuningStore {
         thrustAcceleration = baked.thrustAcceleration
         rotationAcceleration = baked.rotationAcceleration
         ballGravityMultiplier = baked.ballGravityMultiplier
+        ballRadius = baked.ballRadius
         ballDropHeight = baked.ballDropHeight
         ballDropSpeed = baked.ballDropSpeed
         tractorStrength = baked.tractorStrength
@@ -179,6 +198,7 @@ public final class FlightTuningStore {
         static let thrustAcceleration = "tuning.thrustAcceleration"
         static let rotationAcceleration = "tuning.rotationAcceleration"
         static let ballGravityMultiplier = "tuning.ballGravityMultiplier"
+        static let ballRadius = "tuning.ballRadius"
         static let ballDropHeight = "tuning.ballDropHeight"
         static let ballDropSpeed = "tuning.ballDropSpeed"
         static let tractorStrength = "tuning.tractorStrength"
@@ -190,6 +210,7 @@ public final class FlightTuningStore {
             thrustAcceleration,
             rotationAcceleration,
             ballGravityMultiplier,
+            ballRadius,
             ballDropHeight,
             ballDropSpeed,
             tractorStrength,

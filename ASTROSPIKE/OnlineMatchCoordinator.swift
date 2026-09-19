@@ -299,6 +299,14 @@ final class OnlineMatchCoordinator: NSObject,
     private var handshakeTask: Task<Void, Never>?
     /// How long to keep re-sending `.ready` before giving up on the peer.
     private static let handshakeTimeoutSeconds = 20
+
+    /// What a build mismatch looks like to the pilot. Short enough for the
+    /// status line, which is one tight row in the bay HUD; the notice under
+    /// it carries the name and what to do about it.
+    private static let mismatchFailure = "Different app versions · both update"
+    private static func mismatchNotice(_ name: String) -> String {
+        "\(name.uppercased()) IS ON AN OLDER BUILD · UPDATE BOTH APPS IN TESTFLIGHT, THEN INVITE AGAIN"
+    }
     private static let connectTimeoutSeconds = 30
     private var lastAuthoritativeState: WorldState?
     private var pendingResync: WorldState?
@@ -900,8 +908,15 @@ final class OnlineMatchCoordinator: NSObject,
                         self.note("HANDSHAKE TIMED OUT: RETURNING PILOT NEVER SENT READY")
                         return
                     }
-                    self.note("HANDSHAKE TIMED OUT: PEER NEVER SENT READY")
-                    self.status = .failed(reason: .handshakeTimeout)
+                    // A peer we could never decode did answer -- we just
+                    // could not read it. Never blame them for silence.
+                    if !self.mismatchedPeers.isEmpty {
+                        self.note("HANDSHAKE TIMED OUT: PEER IS ON ANOTHER WIRE VERSION")
+                        self.status = .failed(message: Self.mismatchFailure)
+                    } else {
+                        self.note("HANDSHAKE TIMED OUT: PEER NEVER SENT READY")
+                        self.status = .failed(message: "Pilot never answered · try again")
+                    }
                     self.leaveMatch(preservingStatus: true)
                     return
                 }
@@ -992,12 +1007,19 @@ final class OnlineMatchCoordinator: NSObject,
             if mismatchedPeers.insert(playerID).inserted {
                 let name = seatedPilotNames[playerID] ?? "PILOT"
                 note("WIRE MISMATCH: \(name) IS ON WIRE \(version), WE ARE \(WireEnvelope.currentVersion)")
-                let notice = OnlineNoticeReason.wireVersionMismatch(
-                    pilotName: name,
-                    remoteVersion: version,
-                    localVersion: WireEnvelope.currentVersion
-                )
-                inviteNotice = notice.message
+                inviteNotice = Self.mismatchNotice(name)
+                // Sitting on this until the handshake times out ends in
+                // "Pilot never answered", which is both wrong and useless:
+                // they did answer, we cannot read it, and no amount of
+                // waiting fixes a build. Say the real reason now, while the
+                // host is still in the bay wondering why nothing connects.
+                // A pilot mid-reconnect keeps their hold -- the forfeit
+                // clock is already running and a terminal status here would
+                // cut it short.
+                if case .reconnecting = status {} else {
+                    status = .failed(message: Self.mismatchFailure)
+                    leaveMatch(preservingStatus: true)
+                }
             }
             return
         } catch {

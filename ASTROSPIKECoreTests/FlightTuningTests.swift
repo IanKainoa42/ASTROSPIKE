@@ -39,6 +39,42 @@ struct FlightTuningTests {
         }
     }
 
+    @Test("The ball ships at twice nominal and the slider carries into the physics")
+    func ballSizeIsTunable() throws {
+        try withIsolatedDefaults { defaults in
+            // The shipped size. A bolt is 0.007 across, so at nominal the
+            // edge of the ball was not a thing anyone could aim at.
+            #expect(FlightTuningSnapshot.defaults.ballRadius == BallState.nominalRadius * 2)
+            let store = FlightTuningStore(defaults: defaults)
+            #expect(store.configuration.ballRadius == BallState.nominalRadius * 2)
+
+            store.ballRadius = BallState.nominalRadius * 2.5
+            #expect(FlightTuningStore(defaults: defaults).ballRadius == BallState.nominalRadius * 2.5)
+            #expect(store.configuration.ballRadius == BallState.nominalRadius * 2.5)
+
+            // Neither end of the slider can hand the engine a ball the court
+            // was never cut for.
+            store.ballRadius = BallState.nominalRadius * 12
+            #expect(FlightTuningStore(defaults: defaults).ballRadius
+                == BallState.nominalRadius * ArenaGeometry.maximumRadiusScale)
+            store.ballRadius = 0.001
+            #expect(FlightTuningStore(defaults: defaults).ballRadius == BallState.nominalRadius)
+        }
+    }
+
+    @Test("Every serve stages a ball of the tuned size")
+    func servesUseTheTunedBall() {
+        var engine = SimulationEngine.testing()
+        engine.updateConfiguration(SimulationConfiguration(ballRadius: BallState.nominalRadius * 2))
+        // Immediately, so the slider is felt while flying rather than at the
+        // next drop...
+        #expect(engine.state.ball.radius == BallState.nominalRadius * 2)
+        // ...and the next serve stages the same ball rather than a fresh
+        // nominal one.
+        engine.restartMatch()
+        #expect(engine.state.ball.radius == BallState.nominalRadius * 2)
+    }
+
     @Test("Reset restores every baked default")
     func resetRestoresDefaults() throws {
         try withIsolatedDefaults { defaults in
