@@ -17,7 +17,7 @@ final class OnlineMatchCoordinator: NSObject,
         case matching
         case connected
         case reconnecting(seconds: Int)
-        case failed(message: String)
+        case failed(reason: OnlineFailureReason)
 
         var label: String {
             switch self {
@@ -28,9 +28,16 @@ final class OnlineMatchCoordinator: NSObject,
             case .connected: "LINK STABLE"
             case let .reconnecting(seconds):
                 "LINK LOST · SEAT HELD \(seconds / 60):\(String(format: "%02d", seconds % 60))"
-            case let .failed(message): message.uppercased()
+            case let .failed(reason): reason.message.uppercased()
             }
         }
+    }
+
+    /// The specific failure reason when status is `.failed`, for UI surfaces
+    /// that need more than a label (e.g. LinkLostOverlay).
+    var failureReason: OnlineFailureReason? {
+        if case let .failed(reason) = status { return reason }
+        return nil
     }
 
     private enum MatchmakingIntent: Equatable {
@@ -369,7 +376,7 @@ final class OnlineMatchCoordinator: NSObject,
             // on SIGNING IN…: GameKit had already answered and never did again.
             note("AUTH: GAME CENTER ALREADY SAID NO · SEND TO SETTINGS")
             pendingMatchmakingIntent = nil
-            status = .failed(message: PlayerNetworkCopy.GameCenter.notAuthenticated.message)
+            status = .failed(reason: .gameCenterNotAuthenticated)
         case .installHandler:
             installAuthenticateHandler()
         }
@@ -393,7 +400,7 @@ final class OnlineMatchCoordinator: NSObject,
                     let detail = self.describe(error)
                     self.note("AUTH FAILED: \(detail)")
                     self.pendingMatchmakingIntent = nil
-                    self.status = .failed(message: self.playerFacingGameCenter(error))
+                    self.status = .failed(reason: .fromGameCenterError(self.gameCenterKind(error)))
                 } else {
                     self.note("AUTH: SIGNED OUT")
                     self.pendingMatchmakingIntent = nil
@@ -418,7 +425,7 @@ final class OnlineMatchCoordinator: NSObject,
         pendingSignInSheet = sheet
         if pendingMatchmakingIntent != nil {
             pendingMatchmakingIntent = nil
-            status = .failed(message: PlayerNetworkCopy.GameCenter.other.message)
+            status = .failed(reason: .gameCenterOther)
         } else {
             status = .signedOut
         }
@@ -439,7 +446,7 @@ final class OnlineMatchCoordinator: NSObject,
             }
             self.note("AUTH: NO ANSWER FROM GAME CENTER IN \(Self.signInTimeoutSeconds)s")
             self.pendingMatchmakingIntent = nil
-            self.status = .failed(message: PlayerNetworkCopy.GameCenter.other.message)
+            self.status = .failed(reason: .gameCenterSignInTimeout)
         }
     }
 
@@ -457,7 +464,7 @@ final class OnlineMatchCoordinator: NSObject,
         if player.isPersonalizedCommunicationRestricted { flags.append("COMMS RESTRICTED") }
         note("SIGNED IN: \(player.displayName)" + (flags.isEmpty ? "" : " · " + flags.joined(separator: ", ")))
         if player.isMultiplayerGamingRestricted {
-            status = .failed(message: "Multiplayer restricted by Screen Time")
+            status = .failed(reason: .multiplayerRestricted)
             pendingMatchmakingIntent = nil
             return
         }
@@ -558,7 +565,11 @@ final class OnlineMatchCoordinator: NSObject,
                 guard let self, generation == self.matchmakingGeneration else { return }
                 let word = Self.describe(response)
                 self.note("INVITE → \(player.displayName): \(word)")
-                self.inviteNotice = "\(player.displayName.uppercased()) · \(Self.playerPhrase(response))"
+                let notice = OnlineNoticeReason.inviteResponse(
+                    pilotName: player.displayName,
+                    kind: Self.inviteKind(response)
+                )
+                self.inviteNotice = notice.message
                 guard response != .accepted else { return }
                 self.declinedInvites += 1
                 // Everyone we asked said no, so there is nothing to wait for.
@@ -577,7 +588,11 @@ final class OnlineMatchCoordinator: NSObject,
                     self.note("EVERY INVITE REFUSED · CALLING IT")
                     self.matchmakingGeneration += 1
                     GKMatchmaker.shared().cancel()
-                    self.status = .failed(message: "\(player.displayName): \(Self.playerPhrase(response))")
+                    let refusalReason = OnlineFailureReason.refusalReason(from: Self.inviteKind(response))
+                    self.status = .failed(reason: .allInvitesRefused(
+                        lastPilotName: player.displayName,
+                        lastReason: refusalReason
+                    ))
                     self.leaveMatch(preservingStatus: true)
                 } else {
                     self.tryStartAsHost()
@@ -602,11 +617,11 @@ final class OnlineMatchCoordinator: NSObject,
                 if let error {
                     let detail = self.describe(error)
                     self.note("MATCHMAKING FAILED: \(detail)")
-                    self.status = .failed(message: self.playerFacingGameCenter(error))
+                    self.status = .failed(reason: .fromGameCenterError(self.gameCenterKind(error)))
                     return
                 }
                 guard let match else {
-                    self.status = .failed(message: "No match returned")
+                    self.status = .failed(reason: .noMatchReturned)
                     return
                 }
                 let names = match.players.map(\.displayName).joined(separator: ", ")
@@ -668,7 +683,7 @@ final class OnlineMatchCoordinator: NSObject,
         }
         guard let controller = GKMatchmakerViewController(matchRequest: request) else {
             note("MATCHMAKER: CONTROLLER UNAVAILABLE")
-            status = .failed(message: "Matchmaker unavailable")
+            status = .failed(reason: .matchmakerUnavailable)
             return
         }
         controller.matchmakerDelegate = self
@@ -682,7 +697,7 @@ final class OnlineMatchCoordinator: NSObject,
         status = .matching
         guard present(controller) else {
             note("MATCHMAKER: NOTHING TO PRESENT FROM")
-            status = .failed(message: "Matchmaker unavailable")
+            status = .failed(reason: .matchmakerUnavailable)
             return
         }
     }
@@ -757,7 +772,7 @@ final class OnlineMatchCoordinator: NSObject,
                   self.match.map(ObjectIdentifier.init) == matchIdentifier,
                   self.lifecycle.phase == .configuring else { return }
             self.note("CONNECT TIMED OUT: PILOT NEVER JOINED")
-            self.status = .failed(message: "Pilot never connected · try again")
+            self.status = .failed(reason: .connectTimeout)
             self.leaveMatch(preservingStatus: true)
         }
     }
@@ -948,7 +963,7 @@ final class OnlineMatchCoordinator: NSObject,
             try match.sendData(toAllPlayers: data, with: mode)
         } catch {
             note("SEND FAILED: \(describe(error))")
-            status = .failed(message: "Network send failed")
+            status = .failed(reason: .networkSendFailed)
         }
     }
 
@@ -1099,7 +1114,7 @@ final class OnlineMatchCoordinator: NSObject,
                 guard let self, !Task.isCancelled else { return }
                 if remaining == 0 {
                     self.note("SEAT HOLD EXPIRED · FORFEIT")
-                    self.status = .failed(message: "Opponent forfeited")
+                    self.status = .failed(reason: .opponentForfeited)
                     self.isMatchReady = false
                     self.lifecycle.finish()
                     self.heartbeatTask?.cancel()
@@ -1228,7 +1243,7 @@ final class OnlineMatchCoordinator: NSObject,
         let detail = describe(error)
         note("MATCHMAKER FAILED: \(detail)")
         viewController.dismiss(animated: true)
-        status = .failed(message: playerFacingGameCenter(error))
+        status = .failed(reason: .fromGameCenterError(gameCenterKind(error)))
     }
 
     func matchmakerViewController(_ viewController: GKMatchmakerViewController, didFind match: GKMatch) {
@@ -1330,7 +1345,8 @@ final class OnlineMatchCoordinator: NSObject,
 
     nonisolated func match(_ match: GKMatch, didFailWithError error: Error?) {
         let diagnostic = error.map { describe($0) }
-        let visible = error.map { playerFacingGameCenter($0) }
+        let reason: OnlineFailureReason = error.map { .fromGameCenterError(gameCenterKind($0)) }
+            ?? .matchFailed(underlyingMessage: nil)
         Task { @MainActor [weak self] in
             guard let self, self.match === match else { return }
             let detail = diagnostic ?? "The match ended"
@@ -1338,7 +1354,7 @@ final class OnlineMatchCoordinator: NSObject,
             // A log line was the whole of it, which is how a pilot got dropped
             // with the arena still up and nothing on screen to say so.
             guard self.lifecycle.acceptsNetworkMessages else { return }
-            self.status = .failed(message: visible ?? "The match ended")
+            self.status = .failed(reason: reason)
         }
     }
 
@@ -1389,11 +1405,14 @@ final class OnlineMatchCoordinator: NSObject,
                 if let error {
                     let detail = self.describe(error)
                     self.note("INVITE JOIN FAILED: \(detail)")
-                    self.status = .failed(message: self.playerFacingGameCenter(error))
+                    let reason: OnlineFailureReason = .inviteJoinFailed(
+                        underlyingMessage: self.playerFacingGameCenter(error)
+                    )
+                    self.status = .failed(reason: reason)
                     return
                 }
                 guard let match else {
-                    self.status = .failed(message: "Could not open invitation")
+                    self.status = .failed(reason: .couldNotOpenInvitation)
                     return
                 }
                 self.configure(match)
