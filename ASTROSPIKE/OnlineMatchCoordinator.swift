@@ -98,6 +98,10 @@ final class OnlineMatchCoordinator: NSObject,
     private var heardSeats: Set<Seat> = []
     /// Peers whose packets carry another wire version, noted once each.
     private var mismatchedPeers: Set<String> = []
+    /// Why the first mismatched peer could not be read, kept so the failure
+    /// that lands later (at once, or when the handshake times out) names
+    /// the build gap rather than blaming a pilot who did answer.
+    private var mismatchReason: OnlineFailureReason?
     /// The hulls the peers fly, once their profiles arrive. A seat missing
     /// here keeps its default, so the scene never shows a wrong hull.
     private(set) var remoteHulls: [Seat: Hull] = [:]
@@ -300,10 +304,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// How long to keep re-sending `.ready` before giving up on the peer.
     private static let handshakeTimeoutSeconds = 20
 
-    /// What a build mismatch looks like to the pilot. Short enough for the
-    /// status line, which is one tight row in the bay HUD; the notice under
-    /// it carries the name and what to do about it.
-    private static let mismatchFailure = "Different app versions · both update"
+    /// The notice under the status line on a build mismatch: the name and
+    /// what to do about it. The status line itself comes from
+    /// `OnlineFailureReason.wireVersionMismatch`.
     private static func mismatchNotice(_ name: String) -> String {
         "\(name.uppercased()) IS ON AN OLDER BUILD · UPDATE BOTH APPS IN TESTFLIGHT, THEN INVITE AGAIN"
     }
@@ -747,6 +750,7 @@ final class OnlineMatchCoordinator: NSObject,
         readyPeers = []
         seating = [:]
         mismatchedPeers = []
+        mismatchReason = nil
         remoteHulls = [:]
         inputBuffers = [:]
         heardSeats = []
@@ -912,10 +916,10 @@ final class OnlineMatchCoordinator: NSObject,
                     // could not read it. Never blame them for silence.
                     if !self.mismatchedPeers.isEmpty {
                         self.note("HANDSHAKE TIMED OUT: PEER IS ON ANOTHER WIRE VERSION")
-                        self.status = .failed(message: Self.mismatchFailure)
+                        self.status = .failed(reason: self.mismatchReason ?? .handshakeTimeout)
                     } else {
                         self.note("HANDSHAKE TIMED OUT: PEER NEVER SENT READY")
-                        self.status = .failed(message: "Pilot never answered · try again")
+                        self.status = .failed(reason: .handshakeTimeout)
                     }
                     self.leaveMatch(preservingStatus: true)
                     return
@@ -1008,6 +1012,12 @@ final class OnlineMatchCoordinator: NSObject,
                 let name = seatedPilotNames[playerID] ?? "PILOT"
                 note("WIRE MISMATCH: \(name) IS ON WIRE \(version), WE ARE \(WireEnvelope.currentVersion)")
                 inviteNotice = Self.mismatchNotice(name)
+                let reason = OnlineFailureReason.wireVersionMismatch(
+                    remoteVersion: version,
+                    localVersion: WireEnvelope.currentVersion,
+                    pilotName: name
+                )
+                if mismatchReason == nil { mismatchReason = reason }
                 // Sitting on this until the handshake times out ends in
                 // "Pilot never answered", which is both wrong and useless:
                 // they did answer, we cannot read it, and no amount of
@@ -1017,7 +1027,7 @@ final class OnlineMatchCoordinator: NSObject,
                 // clock is already running and a terminal status here would
                 // cut it short.
                 if case .reconnecting = status {} else {
-                    status = .failed(message: Self.mismatchFailure)
+                    status = .failed(reason: reason)
                     leaveMatch(preservingStatus: true)
                 }
             }
@@ -1454,6 +1464,7 @@ final class OnlineMatchCoordinator: NSObject,
         heardSeats = []
         liveness.reset()
         mismatchedPeers = []
+        mismatchReason = nil
         remoteHulls = [:]
         isMatchReady = false
         isAuthoritative = false
