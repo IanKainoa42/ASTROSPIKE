@@ -53,6 +53,8 @@
 		9D240A566AA6F14812EB8F8C /* RaceTuningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */; };
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
+		A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D871F54459735F6332B8CFC /* StandingInviteTests.swift */; };
+		A61FACE961EBBD01FCDED5CD /* LinkLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E28FE156CD107D158B232 /* LinkLogView.swift */; };
 		A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */; };
 		A8A27D1780F192AA000EECBC /* TrackSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */; };
 		A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */; };
@@ -76,6 +78,7 @@
 		DE0C9433C7AFD7FC5912429C /* PrivacyDisclosureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */; };
 		DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088700D916D7C71D0559E240 /* TrackEngine.swift */; };
 		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
+		E11DB57ED3D16C9DC60D3C8D /* StandingInvite.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2AF5602E676640836669183 /* StandingInvite.swift */; };
 		EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9B354B5E4A268F1331755 /* AIController.swift */; };
 		EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */; };
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
@@ -176,6 +179,7 @@
 		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
 		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B8F43E674683CFA8668873B /* HullShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullShapes.swift; sourceTree = "<group>"; };
+		4D871F54459735F6332B8CFC /* StandingInviteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandingInviteTests.swift; sourceTree = "<group>"; };
 		508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ASTROSPIKECore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
 		5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuningTests.swift; sourceTree = "<group>"; };
@@ -198,11 +202,13 @@
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
 		9739AF060E01614EDB007C1C /* LegalLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalLinks.swift; sourceTree = "<group>"; };
+		998E28FE156CD107D158B232 /* LinkLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkLogView.swift; sourceTree = "<group>"; };
 		9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRulesTests.swift; sourceTree = "<group>"; };
 		A3A9B354B5E4A268F1331755 /* AIController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIController.swift; sourceTree = "<group>"; };
 		A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothing.swift; sourceTree = "<group>"; };
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
 		AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B2AF5602E676640836669183 /* StandingInvite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandingInvite.swift; sourceTree = "<group>"; };
 		B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioCenter.swift; sourceTree = "<group>"; };
 		BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideCyan.mp3; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
@@ -268,6 +274,7 @@
 				E8675D87BC800DE3BD658AD5 /* OnlineFailureReason.swift */,
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
 				079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */,
+				B2AF5602E676640836669183 /* StandingInvite.swift */,
 				088700D916D7C71D0559E240 /* TrackEngine.swift */,
 				812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */,
 				0229900C8172E2E47EE8513F /* TrackTuning.swift */,
@@ -312,6 +319,7 @@
 				4B8F43E674683CFA8668873B /* HullShapes.swift */,
 				394FFF2162051CDBC12CE239 /* Info.plist */,
 				859573897DB0229481CD4EC8 /* KeyboardControls.swift */,
+				998E28FE156CD107D158B232 /* LinkLogView.swift */,
 				D734BE128C9E77556BF0D012 /* LobbyService.swift */,
 				415B202192D985A9E29E73E1 /* LobbyView.swift */,
 				1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */,
@@ -364,6 +372,7 @@
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
 				E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
+				4D871F54459735F6332B8CFC /* StandingInviteTests.swift */,
 				8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */,
 				FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */,
 				4405102C04B2CE798F18AD89 /* WarmupTests.swift */,
@@ -538,6 +547,7 @@
 				FF566FF80493C069F905DC2F /* OnlineFailureReason.swift in Sources */,
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
 				8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */,
+				E11DB57ED3D16C9DC60D3C8D /* StandingInvite.swift in Sources */,
 				DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */,
 				80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */,
 				B4C588645F32130C5896505D /* TrackTuning.swift in Sources */,
@@ -559,6 +569,7 @@
 				EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */,
 				58B4CF56A2EA0B283E718739 /* HullShapes.swift in Sources */,
 				3B4A3F293F1B1ED87909975D /* KeyboardControls.swift in Sources */,
+				A61FACE961EBBD01FCDED5CD /* LinkLogView.swift in Sources */,
 				8D4415BEF5D274D18341CD57 /* LobbyService.swift in Sources */,
 				F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */,
 				73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */,
@@ -598,6 +609,7 @@
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,
 				2B482102C2AED82F18584933 /* ResultsLoopTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
+				A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */,
 				5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */,
 				31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */,
 				3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */,
@@ -761,7 +773,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 81;
+				CURRENT_PROJECT_VERSION = 82;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -821,7 +833,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 81;
+				CURRENT_PROJECT_VERSION = 82;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

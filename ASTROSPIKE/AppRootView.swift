@@ -761,6 +761,8 @@ private struct WarmupHUD: View {
     let online: OnlineMatchCoordinator
     let leave: () -> Void
 
+    @State private var isShowingLog = false
+
     var body: some View {
         HStack {
             stat(title: "KEEP-UP", value: session.state.match.shipTouches.cyan,
@@ -786,6 +788,30 @@ private struct WarmupHUD: View {
                         .font(.caption2.weight(.bold)).foregroundStyle(statusColor)
                         .lineLimit(1).minimumScaleFactor(0.6)
                 }
+                // The newest line of the link log, live, where the waiting
+                // actually happens. A pilot sitting on JOINING MAYA… for a
+                // minute should be able to see that the invite went out,
+                // that she accepted, and what the app is waiting on now --
+                // without the match having to fail first. Tapping opens the
+                // whole transcript, which is the thing worth sending back
+                // when something goes wrong on hardware.
+                if let latest = online.eventLog.last {
+                    Button { isShowingLog = true } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "list.bullet.rectangle").font(.system(size: 9))
+                            Text(latest)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .lineLimit(1).minimumScaleFactor(0.6)
+                        }
+                        .foregroundStyle(.white.opacity(0.66))
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .frame(maxWidth: 360)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Latest link event: \(latest). Open link log")
+                    .accessibilityIdentifier("warmup-link-event")
+                }
                 if let notice = online.inviteNotice {
                     // Why nothing is happening, not a footnote about it. A
                     // build mismatch used to arrive here as one clipped
@@ -805,7 +831,12 @@ private struct WarmupHUD: View {
                         .accessibilityIdentifier("invite-notice")
                 }
             }
-            .accessibilityElement(children: .combine)
+            // A container, not one combined element: the log button inside
+            // it has to stay reachable.
+            .accessibilityElement(children: .contain)
+            .sheet(isPresented: $isShowingLog) {
+                LinkLogView(transcript: online.linkTranscript(), events: online.eventLog)
+            }
             Spacer()
             stat(title: "HOOPS", value: session.ringsPopped,
                  detail: "GOALS \(session.state.match.score.cyan)", tint: .yellow)

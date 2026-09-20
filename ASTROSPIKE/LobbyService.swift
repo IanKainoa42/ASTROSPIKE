@@ -56,6 +56,14 @@ final class LobbyService {
     /// Set by the app from the pilot profile; published with the heartbeat.
     var localHull: Hull = .lancet
 
+    /// Every standing invite either end of this pilot can see, rebuilt on
+    /// each refresh. Empty when the lobby is unreachable, which reads as
+    /// "no invites" rather than a stuck spinner.
+    private(set) var inviteBook = StandingInviteBook()
+    /// Standing invites this pilot has answered on this device, so a reply
+    /// that has not round-tripped through CloudKit yet still clears the row.
+    private var answeredLocally: Set<String> = []
+
     /// The duel this pilot is hosting, mirrored to CloudKit as the score moves.
     private(set) var hostedDuel: LiveMatch?
     private var hostedDuelRecord: CKRecord?
@@ -209,7 +217,23 @@ final class LobbyService {
         do {
             async let pilots = records(ofType: Records.pilot, since: now.addingTimeInterval(-LobbySnapshot.staleAfter * 2))
             async let duels = records(ofType: Records.duel, since: now.addingTimeInterval(-3600))
+            // A standing invite outlives every other record here, so its
+            // window is its own lifetime plus a margin rather than the hour
+            // a duel gets -- read it any narrower and yesterday's ask, which
+            // is the entire point of the feature, is invisible.
+            let inviteWindow = now.addingTimeInterval(-(StandingInviteBook.lifetime + 3600))
+            async let invites = records(ofType: Records.standingInvite, since: inviteWindow)
+            async let inviteReplies = records(ofType: Records.inviteReply, since: inviteWindow)
             let tournaments = try await loadTournaments(since: now.addingTimeInterval(-7 * 86_400))
+            let book = StandingInviteBook(
+                invites: try await invites.compactMap(Records.standingInvite(from:)),
+                replies: try await inviteReplies.compactMap(Records.inviteReply(from:))
+            )
+            // Only from the second poll on: on the first, every waiting ask
+            // is "new", and a pilot opening the lobby would get a burst of
+            // INVITE WAITING lines for invites that arrived yesterday.
+            if lastRefresh != nil { noteInviteChanges(from: inviteBook, to: book, at: now) }
+            inviteBook = book
             snapshot = LobbySnapshot(
                 pilots: try await pilots.compactMap(Records.pilot(from:)),
                 matches: try await duels.compactMap(Records.duel(from:)),
@@ -491,6 +515,155 @@ final class LobbyService {
         }
     }
 
+    // MARK: - Standing invites
+
+    /// Invites a pilot for whenever they are next free, as well as right now.
+    ///
+    /// A Game Center invitation only exists while the pilot who sent it is
+    /// sitting in matchmaking, so an opponent who is asleep, at work, or
+    /// simply not holding their phone never sees it. This writes the ask
+    /// down first, so it survives both apps closing; the live invite that
+    /// follows is the optimistic case, not the only one.
+    func inviteAnytime(pilotID: String, name: String, using online: OnlineMatchCoordinator) {
+        // Durable first, live second, in that order and not concurrently.
+        // Both paths report failure through `notice`, and the ask that
+        // keeps is the one Ian asked for -- it must not have its message
+        // overwritten by the optimistic invite that may not have been
+        // wanted anyway.
+        Task { [weak self] in
+            await self?.openStandingInvite(pilotID: pilotID, name: name)
+            self?.invite(pilotID: pilotID, name: name, using: online)
+        }
+    }
+
+    /// Writes (or refreshes) the durable ask. The record name is fixed per
+    /// pair, so asking twice moves the clock forward instead of stacking a
+    /// second row on the other pilot's screen.
+    func openStandingInvite(pilotID: String, name: String) async {
+        guard canPublish, let localID else {
+            note("STANDING INVITE: NOT PUBLISHED · \(availability.label)")
+            return
+        }
+        let now = Date.now
+        let invite = StandingInvite(
+            id: StandingInvite.id(hostID: localID, guestID: pilotID),
+            hostID: localID,
+            hostName: localName,
+            hostHull: localHull,
+            guestID: pilotID,
+            guestName: name,
+            createdAt: now,
+            expiresAt: inviteBook.expiry(from: now)
+        )
+        let record = CKRecord(recordType: Records.standingInvite, recordID: CKRecord.ID(recordName: invite.id))
+        Records.write(invite, into: record)
+        do {
+            _ = try await save(record, policy: .allKeys)
+            note("STANDING INVITE → \(name.uppercased()) · KEEPS 24H")
+            // A fresh ask supersedes whatever the last one was answered, so
+            // drop the stale reply rather than leaving the row pre-declined.
+            answeredLocally.remove(invite.id)
+            await refresh()
+        } catch {
+            let detail = describe(error)
+            note("STANDING INVITE FAILED: \(detail)")
+            notice = playerFacing(error)
+        }
+    }
+
+    /// Takes an unanswered ask back. Only the host can: it is their record.
+    func withdrawStandingInvite(_ invite: StandingInvite) async {
+        guard canPublish, invite.hostID == localID else { return }
+        let record = CKRecord(recordType: Records.standingInvite, recordID: CKRecord.ID(recordName: invite.id))
+        var pulled = invite
+        pulled.withdrawn = true
+        Records.write(pulled, into: record)
+        do {
+            _ = try await save(record, policy: .allKeys)
+            note("STANDING INVITE WITHDRAWN · \(invite.guestName.uppercased())")
+            await refresh()
+        } catch {
+            note("WITHDRAW FAILED: \(describe(error))")
+            notice = playerFacing(error)
+        }
+    }
+
+    /// Answers an ask addressed to this pilot.
+    ///
+    /// Accepting sends the live Game Center invitation **back to the host**,
+    /// rather than waiting for the host's device to notice and send one out.
+    /// That is deliberate: GameKit delivers an invite as a push, so the
+    /// pilot who originally asked can have had the app closed all day and
+    /// still get tapped on the shoulder. Nothing had to keep running, and
+    /// nothing fires without a pilot on one end pressing a button.
+    func answerStandingInvite(
+        _ invite: StandingInvite,
+        accept: Bool,
+        using online: OnlineMatchCoordinator
+    ) {
+        guard let localID, invite.guestID == localID else { return }
+        // Clear the row now. The write below may be slow or may fail on a
+        // read-only lobby, and either way the pilot has answered.
+        answeredLocally.insert(invite.id)
+        note("STANDING INVITE \(accept ? "ACCEPTED" : "DECLINED") · \(invite.hostName.uppercased())")
+        if accept { self.invite(pilotID: invite.hostID, name: invite.hostName, using: online) }
+        Task { await publishReply(to: invite, accepted: accept) }
+    }
+
+    private func publishReply(to invite: StandingInvite, accepted: Bool) async {
+        guard canPublish, let localID else { return }
+        let reply = StandingInviteReply(
+            inviteID: invite.id, guestID: localID, accepted: accepted, repliedAt: .now
+        )
+        let record = CKRecord(recordType: Records.inviteReply, recordID: CKRecord.ID(recordName: reply.id))
+        Records.write(reply, into: record)
+        do {
+            _ = try await save(record, policy: .allKeys)
+            await refresh()
+        } catch {
+            // Deliberately put the row back. `answeredLocally` is in-memory
+            // and optimistic: it exists so the row clears the instant the
+            // pilot taps, not to remember an answer the host never got. An
+            // unsent reply is an unanswered invite, and the ask should be
+            // there to answer again rather than silently swallowed.
+            answeredLocally.remove(invite.id)
+            note("REPLY FAILED: \(describe(error)) · ASK IS BACK")
+            notice = playerFacing(error)
+        }
+    }
+
+    /// Asks pointed at this pilot that still want an answer.
+    var standingInviteInbox: [StandingInvite] {
+        guard let localID else { return [] }
+        return inviteBook.inbox(for: localID, at: .now)
+            .filter { !answeredLocally.contains($0.id) }
+    }
+
+    /// Asks this pilot has out that nobody has answered yet.
+    var standingInviteOutbox: [StandingInvite] {
+        guard let localID else { return [] }
+        return inviteBook.outbox(from: localID, at: .now)
+    }
+
+    func hasStandingInvite(to pilotID: String) -> Bool {
+        guard let localID else { return false }
+        return inviteBook.hasOpenInvite(from: localID, to: pilotID, at: .now)
+    }
+
+    /// Says out loud what changed between two polls, so the log reads as a
+    /// story rather than a snapshot: a new ask arriving, one being answered.
+    private func noteInviteChanges(from old: StandingInviteBook, to new: StandingInviteBook, at now: Date) {
+        guard let localID else { return }
+        let seen = Set(old.inbox(for: localID, at: now).map(\.id))
+        for arrival in new.inbox(for: localID, at: now) where !seen.contains(arrival.id) {
+            note("INVITE WAITING FROM \(arrival.hostName.uppercased())")
+        }
+        let settledBefore = Set(old.answers(for: localID, at: now).map(\.invite.id))
+        for (invite, status) in new.answers(for: localID, at: now) where !settledBefore.contains(invite.id) {
+            note("\(invite.guestName.uppercased()) \(status.label) YOUR INVITE")
+        }
+    }
+
     // MARK: - Plumbing
 
     private func save(_ record: CKRecord, policy: CKModifyRecordsOperation.RecordSavePolicy) async throws -> CKRecord {
@@ -560,6 +733,8 @@ private enum Records {
     static let tournament = "Tournament"
     static let entry = "TournamentEntry"
     static let report = "TournamentReport"
+    static let standingInvite = "StandingInvite"
+    static let inviteReply = "StandingInviteReply"
 
     static let updatedAt = "updatedAt"
     static let startedAt = "startedAt"
@@ -586,6 +761,64 @@ private enum Records {
         return PilotPresence(
             id: record.recordID.recordName, name: name, hull: hull,
             activity: activity, matchID: record["matchID"] as? String, updatedAt: updated
+        )
+    }
+
+    // MARK: Standing invites
+
+    static func write(_ invite: StandingInvite, into record: CKRecord) {
+        record["hostID"] = invite.hostID as NSString
+        record["hostName"] = invite.hostName as NSString
+        record["hostHull"] = invite.hostHull.rawValue as NSString
+        record["guestID"] = invite.guestID as NSString
+        record["guestName"] = invite.guestName as NSString
+        record[startedAt] = invite.createdAt as NSDate
+        record["expiresAt"] = invite.expiresAt as NSDate
+        record["withdrawn"] = (invite.withdrawn ? 1 : 0) as NSNumber
+        // Every record type in the lobby carries `updatedAt` so one window
+        // query shape serves all of them, and `refresh()` filters on it.
+        // These two dates must stay separate: `startedAt` is when the ask
+        // was made and decides its 24-hour life, while `updatedAt` is when
+        // the record last moved. Collapse them and a withdrawal made on a
+        // day-old invite would land outside the query window, so the guest
+        // would go on seeing an ask the host had already taken back.
+        record[updatedAt] = Date.now as NSDate
+    }
+
+    static func standingInvite(from record: CKRecord) -> StandingInvite? {
+        guard let hostID = record["hostID"] as? String,
+              let hostName = record["hostName"] as? String,
+              let guestID = record["guestID"] as? String,
+              let guestName = record["guestName"] as? String,
+              let createdAt = record[startedAt] as? Date,
+              let expiresAt = record["expiresAt"] as? Date else { return nil }
+        return StandingInvite(
+            id: record.recordID.recordName,
+            hostID: hostID,
+            hostName: hostName,
+            hostHull: (record["hostHull"] as? String).flatMap(Hull.init(rawValue:)) ?? .lancet,
+            guestID: guestID,
+            guestName: guestName,
+            createdAt: createdAt,
+            expiresAt: expiresAt,
+            withdrawn: (record["withdrawn"] as? Int ?? 0) != 0
+        )
+    }
+
+    static func write(_ reply: StandingInviteReply, into record: CKRecord) {
+        record["inviteID"] = reply.inviteID as NSString
+        record["guestID"] = reply.guestID as NSString
+        record["accepted"] = (reply.accepted ? 1 : 0) as NSNumber
+        record[updatedAt] = reply.repliedAt as NSDate
+    }
+
+    static func inviteReply(from record: CKRecord) -> StandingInviteReply? {
+        guard let inviteID = record["inviteID"] as? String,
+              let guestID = record["guestID"] as? String,
+              let accepted = record["accepted"] as? Int,
+              let repliedAt = record[updatedAt] as? Date else { return nil }
+        return StandingInviteReply(
+            inviteID: inviteID, guestID: guestID, accepted: accepted != 0, repliedAt: repliedAt
         )
     }
 

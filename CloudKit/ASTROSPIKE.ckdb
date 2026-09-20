@@ -17,6 +17,43 @@ DEFINE SCHEMA
         GRANT READ TO "_world"
     );
 
+    RECORD TYPE StandingInvite (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        "expiresAt"     TIMESTAMP QUERYABLE SORTABLE,
+        "guestID"       STRING QUERYABLE,
+        "guestName"     STRING,
+        "hostHull"      STRING,
+        "hostID"        STRING QUERYABLE,
+        "hostName"      STRING,
+        "startedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        "updatedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        "withdrawn"     INT64 QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE StandingInviteReply (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE QUERYABLE,
+        "accepted"      INT64 QUERYABLE,
+        "guestID"       STRING QUERYABLE,
+        "inviteID"      STRING QUERYABLE,
+        "updatedAt"     TIMESTAMP QUERYABLE SORTABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
     RECORD TYPE Duel (
         "___createTime"       TIMESTAMP,
         "___createdBy"        REFERENCE,

@@ -348,3 +348,24 @@ public struct PeerLivenessMonitor: Equatable, Sendable {
         return .resumed(returned.sorted())
     }
 }
+
+/// How long to wait for a table to actually fill, by how it was called.
+///
+/// These are two different clocks wearing one number. An automatch is
+/// machine-to-machine: Game Center either finds somebody in half a minute or
+/// it is not going to. An invitation is a *person* -- the push has to land,
+/// the phone has to come out of a pocket, the passcode has to be typed, the
+/// app has to cold-start. Thirty seconds of that is barely the notification
+/// banner, and the pilot who tapped INVITE saw CONNECTION TIMEOUT while
+/// their opponent was still unlocking. Give the human path minutes.
+public enum OnlineTimeouts {
+    public static let automatchConnectSeconds = 30
+    public static let inviteConnectSeconds = 150
+
+    public static func connectSeconds(role: OnlineMatchRole) -> Int {
+        switch role {
+        case .automatch: automatchConnectSeconds
+        case .inviter, .invitee: inviteConnectSeconds
+        }
+    }
+}

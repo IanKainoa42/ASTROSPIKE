@@ -111,6 +111,8 @@ final class OnlineMatchCoordinator: NSObject,
     /// Rolling on-device log of Game Center events, oldest first.
     private(set) var eventLog: [String] = []
 
+    private static let eventLogDepth = 250
+
     private static let logger = Logger(subsystem: "com.iankainoa.ASTROSPIKE", category: "GameCenter")
     private static let clock: DateFormatter = {
         let formatter = DateFormatter()
@@ -185,7 +187,41 @@ final class OnlineMatchCoordinator: NSObject,
     private func note(_ message: String) {
         Self.logger.info("\(message, privacy: .public)")
         eventLog.append("\(Self.clock.string(from: .now)) \(message)")
-        if eventLog.count > 12 { eventLog.removeFirst(eventLog.count - 12) }
+        // Deep enough to hold a whole sign-in → invite → connect → drop →
+        // rejoin run. Multiplayer is only ever debugged after the fact, from
+        // whatever the pilot can send back, and a twelve-line window threw
+        // the start of every story away before the end of it happened.
+        if eventLog.count > Self.eventLogDepth {
+            eventLog.removeFirst(eventLog.count - Self.eventLogDepth)
+        }
+    }
+
+    /// The whole link log as plain text, with enough of a header to be
+    /// worth reading a week later: which build, which device, which pilot.
+    ///
+    /// Game Center cannot run in the simulator, so every multiplayer defect
+    /// this app has ever had was found on hardware, away from a debugger,
+    /// and reported from memory. This is the thing to send instead.
+    func linkTranscript(lobbyEvents: [String] = []) -> String {
+        let bundle = Bundle.main
+        let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let device = UIDevice.current
+        var lines = [
+            "ASTROSPIKE LINK LOG",
+            "\(Date.now.formatted(date: .abbreviated, time: .standard))",
+            "APP \(version) (\(build)) · WIRE \(WireEnvelope.currentVersion)",
+            "\(device.model) · iOS \(device.systemVersion)",
+            "PILOT \(GKLocalPlayer.local.isAuthenticated ? GKLocalPlayer.local.displayName : "not signed in")",
+            "STATE \(status.label) · ROLE \(roleLabel)",
+            "",
+            "-- GAME CENTER --",
+        ]
+        lines += eventLog.isEmpty ? ["(nothing yet)"] : eventLog
+        if !lobbyEvents.isEmpty {
+            lines += ["", "-- LOBBY --"] + lobbyEvents
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// Compact, readable description of a GameKit failure: `GK<code> <NAME>`.
@@ -310,7 +346,10 @@ final class OnlineMatchCoordinator: NSObject,
     private static func mismatchNotice(_ name: String) -> String {
         "\(name.uppercased()) IS ON AN OLDER BUILD · UPDATE BOTH APPS IN TESTFLIGHT, THEN INVITE AGAIN"
     }
-    private static let connectTimeoutSeconds = 30
+    /// How long a table gets to fill, by how it was called. An automatch is
+    /// a server search; an invitation is a person who has to be pushed,
+    /// unlocked and cold-started. See `OnlineTimeouts`.
+    private var connectTimeoutSeconds: Int { OnlineTimeouts.connectSeconds(role: role) }
     private var lastAuthoritativeState: WorldState?
     private var pendingResync: WorldState?
     /// Game Center ID of whoever runs the rules. A guest that outlives the
@@ -770,12 +809,14 @@ final class OnlineMatchCoordinator: NSObject,
     private func beginConnectWait() {
         handshakeTask?.cancel()
         let matchIdentifier = match.map(ObjectIdentifier.init)
+        let window = connectTimeoutSeconds
+        note("WAITING UP TO \(window)s FOR THE TABLE TO FILL")
         handshakeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(Self.connectTimeoutSeconds))
+            try? await Task.sleep(for: .seconds(window))
             guard let self, !Task.isCancelled,
                   self.match.map(ObjectIdentifier.init) == matchIdentifier,
                   self.lifecycle.phase == .configuring else { return }
-            self.note("CONNECT TIMED OUT: PILOT NEVER JOINED")
+            self.note("CONNECT TIMED OUT AFTER \(window)s: PILOT NEVER JOINED")
             self.status = .failed(reason: .connectTimeout)
             self.leaveMatch(preservingStatus: true)
         }
