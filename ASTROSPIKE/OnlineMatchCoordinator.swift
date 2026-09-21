@@ -58,8 +58,21 @@ final class OnlineMatchCoordinator: NSObject,
         guard case .matching = status else { return nil }
         return matchmakingHeadlineText
     }
+    /// Seconds left on the door while an invitation is out and unanswered,
+    /// nil when nothing is being waited on.
+    ///
+    /// An invited pilot gets five minutes to pick their phone up, which is
+    /// the right window and far too long to sit under a headline that never
+    /// changes. A number that ticks is the difference between "it's working"
+    /// and "it's hung".
+    private(set) var doorSecondsRemaining: Int?
+
     /// The status line every HUD shows.
-    var statusLabel: String { matchmakingHeadline ?? status.label }
+    var statusLabel: String {
+        guard let headline = matchmakingHeadline else { return status.label }
+        guard let left = doorSecondsRemaining else { return headline }
+        return "\(headline) · \(left)s"
+    }
 
     #if DEBUG
     /// `--joining-preview`: the bay as an invitee sees it, without Game Center.
@@ -820,11 +833,22 @@ final class OnlineMatchCoordinator: NSObject,
         let matchIdentifier = match.map(ObjectIdentifier.init)
         let window = connectTimeoutSeconds
         note("WAITING UP TO \(window)s FOR THE TABLE TO FILL")
+        doorSecondsRemaining = window
         handshakeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(window))
+            // A second at a time rather than one long sleep, so the bay can
+            // show the door closing instead of a headline that sits still
+            // for five minutes and reads as a hang.
+            for left in stride(from: window - 1, through: 0, by: -1) {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled,
+                      self.match.map(ObjectIdentifier.init) == matchIdentifier,
+                      self.lifecycle.phase == .configuring else { return }
+                self.doorSecondsRemaining = left
+            }
             guard let self, !Task.isCancelled,
                   self.match.map(ObjectIdentifier.init) == matchIdentifier,
                   self.lifecycle.phase == .configuring else { return }
+            self.doorSecondsRemaining = nil
             self.note("CONNECT TIMED OUT AFTER \(window)s: PILOT NEVER JOINED")
             self.status = .failed(reason: .connectTimeout)
             self.leaveMatch(preservingStatus: true)
@@ -870,6 +894,7 @@ final class OnlineMatchCoordinator: NSObject,
         guard lifecycle.phase == .configuring,
               let seat = seating[GKLocalPlayer.local.gamePlayerID] else { return }
         handshakeTask?.cancel()
+        doorSecondsRemaining = nil
         localSeat = seat
         note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
         session = OnlineSessionStateMachine(
@@ -948,6 +973,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// arrives, and fail visibly instead of sitting on FINDING PILOT forever.
     private func beginHandshake() {
         handshakeTask?.cancel()
+        doorSecondsRemaining = nil
         let matchIdentifier = match.map(ObjectIdentifier.init)
         note("HANDSHAKE: WAITING FOR PILOT READY")
         handshakeTask = Task { @MainActor [weak self] in
@@ -1199,6 +1225,7 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        doorSecondsRemaining = nil
         withdrawCallbacks()
         // The `.ready` route closes a hold without a connection change, which
         // left the lifecycle in `.reconnecting`: the next drop then got no
@@ -1504,6 +1531,7 @@ final class OnlineMatchCoordinator: NSObject,
         finishTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        doorSecondsRemaining = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
         session = nil
@@ -1562,6 +1590,7 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        doorSecondsRemaining = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
         finishTask?.cancel()
