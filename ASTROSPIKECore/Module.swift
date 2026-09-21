@@ -386,6 +386,10 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// deliberate second hit, whose median gap is 20 ticks near the wall.
     public var ballTouchDebounce: Double
     /// Spring that pushes a ship back once it is past the halfway marker.
+    /// 18 lets a flat-out run (about 2.7 at the marker, a full court's
+    /// run-up with thrust held) just touch the far wall; 2.4 stops 0.03
+    /// short and 2.0 stops 0.08 short. At 30 even a flat-out run stopped
+    /// 0.07 short.
     public var crossingPushBack: Double
     /// Drag applied past the marker, ramping in with depth.
     public var crossingDrag: Double
@@ -432,7 +436,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         serveDelay: Double = 1.35,
         minimumBallSeparationSpeed: Double = 0.45,
         ballTouchDebounce: Double = 0.1,
-        crossingPushBack: Double = 30,
+        crossingPushBack: Double = 18,
         crossingDrag: Double = 5.0,
         allowedFloorBounces: Int = 1,
         allowedShipTouches: Int = 3,

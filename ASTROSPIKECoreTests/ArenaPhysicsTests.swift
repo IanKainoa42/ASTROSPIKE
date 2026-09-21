@@ -741,6 +741,10 @@ struct ArenaPhysicsTests {
         var deepest = engine.state.ships[.cyan]!.position.x
         var wasExpelled = false
         for tick in UInt64(0) ..< 300 {
+            // Park the serve up in cyan's corner: left alone it drops at
+            // centre and lands inside the window, scoring a point that has
+            // nothing to do with the crossing.
+            engine.state.ball = BallState(position: SIMD2(-0.7, 0.4), velocity: .zero)
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
             let x = engine.state.ships[.cyan]!.position.x
             deepest = max(deepest, x)
@@ -753,6 +757,36 @@ struct ArenaPhysicsTests {
         // sampled at the end, because a loose ship drifts once it is clear.
         #expect(deepest > limit)
         #expect(wasExpelled)
+    }
+
+    @Test("Only a flat-out run past the marker reaches the far wall")
+    func flatOutRunJustTouchesTheWall() {
+        // How far the hull's leading edge gets, entering at `speed` with the
+        // thrust held level (tilted just enough to hold height).
+        func deepest(entering speed: Double) -> Double {
+            var engine = SimulationEngine(state: WorldState(ships: [
+                .cyan: ShipState(
+                    position: SIMD2(0.47, 0.1),
+                    velocity: SIMD2(speed, 0),
+                    angle: asin(0.5 / 2.75),
+                    homeSide: .cyan
+                ),
+                .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
+            ]), configuration: FlightTuningSnapshot.defaults.configuration)
+            var reach = -1.0
+            for tick in UInt64(0) ..< 240 {
+                engine.state.ball = BallState(position: SIMD2(-0.7, 0.4), velocity: .zero)
+                engine.step(inputs: [.cyan: PlayerInput(tick: tick, torque: 0, thrust: true, fire: false)])
+                let ship = engine.state.ships[.cyan]!
+                reach = max(reach, ship.position.x + ShipHitbox.shared.extent(along: SIMD2(1, 0), angle: ship.angle))
+            }
+            return reach
+        }
+        let wall = SimulationEngine.testing().arena.halfWidth
+        // A full court's run-up arrives at about 2.7: that one gets there.
+        #expect(deepest(entering: 2.7) >= wall - 1e-9)
+        // Anything short of flat out is still thrown back first.
+        #expect(deepest(entering: 2.3) < wall - 0.02)
     }
 
     @Test("The ground is a landing on either half, never a crash")
