@@ -24,6 +24,8 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["Done"].tap()
 
         app.buttons["SETTINGS"].tap()
+        // The one flight preference a pilot keeps: steering feel, per device.
+        XCTAssertTrue(app.sliders["Turning sensitivity"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["Large controls"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.switches["Swap controls for left-handed play"].exists)
         let settingsForm = app.collectionViews.firstMatch

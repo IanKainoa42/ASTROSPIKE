@@ -1229,9 +1229,26 @@ private struct SettingsView: View {
     @AppStorage("clusterControls") private var clusterControls = false
     @AppStorage("haptics") private var haptics = true
     @AppStorage("arrangePads") private var arrangePads = false
+    @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TuningSlider(
+                        title: "Turning sensitivity",
+                        value: $steeringSensitivity,
+                        range: SteeringCurve.sensitivityRange,
+                        step: 0.05,
+                        readout: { "\(Int(($0 * 100).rounded()))%" }
+                    )
+                    .accessibilityIdentifier("turning-sensitivity")
+                    Button("Reset to default") { steeringSensitivity = 1 }
+                        .disabled(steeringSensitivity == 1)
+                } header: {
+                    Text("Steering")
+                } footer: {
+                    Text("Higher turns harder the moment you press the steering pad and needs less slide to reach a full turn. Top turning speed is the same at every setting.")
+                }
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
                 Toggle("Cluster controls to thumb side", isOn: $clusterControls)

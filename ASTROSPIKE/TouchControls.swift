@@ -624,7 +624,9 @@ private final class SteeringCaptureView: UIView {
     var onTorqueChanged: ((Double) -> Void)?
     var onActiveChanged: ((Bool, Bool) -> Void)?
 
-    private let curve = SteeringCurve.standard
+    /// Re-read at every touch-down so a change in Settings applies to the
+    /// next press without rebuilding the pad.
+    private var curve = SteeringCurve.standard
     private var activeTouchID: ObjectIdentifier?
     private var virtualCenterX: CGFloat = 0
     /// Whether the thumb is currently against the stop, so the detent tick
@@ -635,6 +637,8 @@ private final class SteeringCaptureView: UIView {
         super.touchesBegan(touches, with: event)
         guard activeTouchID == nil, let touch = touches.first else { return }
         activeTouchID = ObjectIdentifier(touch)
+        let stored = UserDefaults.standard.object(forKey: SteeringCurve.sensitivityKey) as? Double
+        curve = .sensitivity(stored ?? 1)
         let anchor = touch.location(in: self)
         virtualCenterX = CGFloat(curve.virtualCenter(
             anchorX: Double(anchor.x),

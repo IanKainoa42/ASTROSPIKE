@@ -52,6 +52,33 @@ struct FlightControlMappingTests {
 @Suite("Steering curve")
 struct SteeringCurveTests {
     let curve = SteeringCurve.standard
+
+    @Test("Sensitivity 1 is the standard curve; the ends clamp")
+    func sensitivityDefaultIsStandard() {
+        #expect(SteeringCurve.sensitivity(1) == .standard)
+        #expect(SteeringCurve.sensitivity(9) == .sensitivity(1.5))
+        #expect(SteeringCurve.sensitivity(0) == .sensitivity(0.5))
+    }
+
+    @Test("Higher sensitivity presses harder and pegs sooner, never past full")
+    func sensitivityShapesThePress() {
+        let width = 400.0
+        let anchor = 100.0
+        var previousPress = 0.0
+        var previousPegTravel = Double.infinity
+        for s in [0.5, 1.0, 1.5] {
+            let c = SteeringCurve.sensitivity(s)
+            let centre = c.virtualCenter(anchorX: anchor, width: width)
+            let press = c.torque(x: anchor, virtualCenter: centre)
+            #expect(press > previousPress)
+            #expect(abs(press - 0.5 * s) < 1e-9)
+            #expect(c.sharpenTravel < previousPegTravel)
+            // Full deflection is still exactly 1, however far past it you go.
+            #expect(c.torque(x: anchor - c.sharpenTravel - 50, virtualCenter: centre) == 1)
+            previousPress = press
+            previousPegTravel = c.sharpenTravel
+        }
+    }
     let width: Double = 400
 
     private func torqueSweep(anchorX: Double, to endX: Double, steps: Int = 240) -> [Double] {

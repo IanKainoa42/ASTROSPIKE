@@ -139,6 +139,19 @@ public struct SteeringCurve: Sendable, Equatable {
 
     public static let standard = SteeringCurve()
 
+    /// The pilot's turning-sensitivity preference, 0.5 ... 1.5, with 1 the
+    /// standard curve exactly. It only reshapes the pad: a press lands on a
+    /// harder turn and reaches full deflection in less travel. Full torque is
+    /// the same at every setting, so it never changes how fast a ship can
+    /// turn -- online, neither side gains anything by moving it.
+    public static let sensitivityRange = 0.5 ... 1.5
+    public static let sensitivityKey = "steeringSensitivity"
+
+    public static func sensitivity(_ value: Double) -> SteeringCurve {
+        let s = min(sensitivityRange.upperBound, max(sensitivityRange.lowerBound, value))
+        return SteeringCurve(sharpenTravel: 30 / s, initialTorque: 0.5 * s)
+    }
+
     /// Points of travel between neutral and full deflection. Derived rather
     /// than set, so `sharpenTravel` survives a change of `gamma`: a steeper
     /// gamma pushes the half-torque point further out, and the span grows to
