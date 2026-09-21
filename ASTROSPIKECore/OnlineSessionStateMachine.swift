@@ -359,8 +359,13 @@ public struct PeerLivenessMonitor: Equatable, Sendable {
 /// banner, and the pilot who tapped INVITE saw CONNECTION TIMEOUT while
 /// their opponent was still unlocking. Give the human path minutes.
 public enum OnlineTimeouts {
-    public static let automatchConnectSeconds = 30
-    public static let inviteConnectSeconds = 150
+    /// Automatch found a table but nobody connected. No invitation is out, so
+    /// there is nothing to hold the door open for.
+    public static let automatchConnectSeconds = 45
+    /// An invitation is out and unanswered. The door stays open this long, so
+    /// a pilot who picks their phone up minutes later still lands on the court
+    /// without being asked a second time. Matches AstroCross.
+    public static let inviteConnectSeconds = 300
 
     public static func connectSeconds(role: OnlineMatchRole) -> Int {
         switch role {

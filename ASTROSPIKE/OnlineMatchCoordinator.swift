@@ -613,6 +613,16 @@ final class OnlineMatchCoordinator: NSObject,
                 )
                 self.inviteNotice = notice.message
                 guard response != .accepted else { return }
+                let refusalReason = OnlineFailureReason.refusalReason(from: Self.inviteKind(response))
+                // Game Center giving up on delivery is not the pilot saying no.
+                // The invitation is still sitting on their phone, so hold the
+                // door for the rest of the connect window instead of tearing
+                // the search down and making them get asked all over again.
+                guard refusalReason.isTerminal else {
+                    self.note("INVITE STILL OPEN ON \(player.displayName)'S PHONE · HOLDING THE DOOR")
+                    self.tryStartAsHost()
+                    return
+                }
                 self.declinedInvites += 1
                 // Everyone we asked said no, so there is nothing to wait for.
                 // GameKit hands the inviter a match before anyone answers, so
@@ -630,7 +640,6 @@ final class OnlineMatchCoordinator: NSObject,
                     self.note("EVERY INVITE REFUSED · CALLING IT")
                     self.matchmakingGeneration += 1
                     GKMatchmaker.shared().cancel()
-                    let refusalReason = OnlineFailureReason.refusalReason(from: Self.inviteKind(response))
                     self.status = .failed(reason: .allInvitesRefused(
                         lastPilotName: player.displayName,
                         lastReason: refusalReason

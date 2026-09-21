@@ -96,6 +96,20 @@ public enum InviteRefusalReason: Equatable, Sendable {
     case unableToConnect
     case noAnswer
     case other
+
+    /// A final answer: nothing more will come from this pilot without a new
+    /// invitation. `noAnswer` and `unableToConnect` are deliberately *not*
+    /// terminal -- `.noAnswer` means Game Center stopped chasing, not that
+    /// the invite died. It is still sitting on the friend's phone, and
+    /// accepting it later still lands them on the court. Counting it as a
+    /// refusal is what tore the whole search down the moment one pilot was
+    /// slow to look at their phone.
+    public var isTerminal: Bool {
+        switch self {
+        case .declined, .failed, .incompatible, .other: true
+        case .unableToConnect, .noAnswer: false
+        }
+    }
 }
 
 // MARK: - Player-Facing Copy

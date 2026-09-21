@@ -338,6 +338,32 @@ struct DeclinedInvitationTests {
     }
 }
 
+@Suite("What actually ends an invitation")
+struct InviteTerminalityTests {
+    @Test("Silence is not a no")
+    func silenceIsNotARefusal() {
+        // Game Center stopped chasing. The invite is still on their phone.
+        #expect(!InviteRefusalReason.noAnswer.isTerminal)
+        #expect(!InviteRefusalReason.unableToConnect.isTerminal)
+    }
+
+    @Test("A real answer ends it")
+    func realAnswersAreTerminal() {
+        #expect(InviteRefusalReason.declined.isTerminal)
+        #expect(InviteRefusalReason.failed.isTerminal)
+        #expect(InviteRefusalReason.incompatible.isTerminal)
+        #expect(InviteRefusalReason.other.isTerminal)
+    }
+
+    @Test("Every Game Center response maps to a terminality")
+    func everyResponseIsClassified() {
+        for kind in PlayerNetworkCopy.Invite.allCases where kind != .accepted {
+            let reason = OnlineFailureReason.refusalReason(from: kind)
+            #expect(reason.isTerminal == (kind != .noAnswer && kind != .unableToConnect))
+        }
+    }
+}
+
 @Suite("Seat hold call-back")
 struct SeatHoldCallbackTests {
     @Test("Only pilots who are really gone are called back")
