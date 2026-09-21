@@ -108,6 +108,18 @@ public struct ShipHitbox: Equatable, Sendable {
     /// How far the nose reaches ahead of the ship's centre, skin included.
     public var noseReach: Double { (polygon.map(\.x).max() ?? 0) + Self.skin }
 
+    /// The farthest point of the hull from its centre: the circle other
+    /// hulls and the arena's curved parts meet.
+    public var reach: Double { polygon.map { simd_length($0) }.max() ?? 0 }
+
+    /// How far the hull sticks out along a world `direction` when the ship
+    /// is turned to `angle` -- what a flat wall meets.
+    public func extent(along direction: SIMD2<Double>, angle: Double) -> Double {
+        let axis = SIMD2(cos(angle), sin(angle))
+        let left = SIMD2(-axis.y, axis.x)
+        return polygon.map { simd_dot(axis * $0.x + left * $0.y, direction) }.max() ?? 0
+    }
+
     /// First time in 0...1 a point moving from `start` to `end` (ship frame)
     /// comes within `radius` of the hull. Nil when it never does, or when it
     /// starts already inside -- the same rule the old circle fixtures kept.

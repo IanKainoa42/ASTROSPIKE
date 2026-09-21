@@ -106,4 +106,37 @@ struct ShipHitboxTests {
         #expect(lancet > -.infinity, "the ball never reached the Lancet")
         #expect(anvil > lancet + 10 * s)
     }
+
+    @Test("A ship settles on the floor on its drawn tail")
+    func shipRestsOnItsTail() {
+        var engine = SimulationEngine.testing()
+        engine.state.ball.position = SIMD2(0.5, 0.3)
+        engine.state.ships[.cyan]!.position = SIMD2(-0.45, engine.arena.floorY + 0.1)
+        engine.state.ships[.cyan]!.velocity = .zero
+        engine.state.ships[.cyan]!.angle = .pi / 2
+        for tick in 0 ..< 120 {
+            engine.step(inputs: [.cyan: .idle(tick: UInt64(tick))])
+        }
+        let ship = engine.state.ships[.cyan]!
+        // The Lancet's tail fins are 19 units behind its centre.
+        let height = ship.position.y - engine.arena.floorY
+        #expect(abs(height - ShipHitbox.shared.extent(along: SIMD2(0, -1), angle: ship.angle)) < 1e-9)
+        #expect(height < 0.03)
+    }
+
+    @Test("Two ships only bump where their drawn hulls meet")
+    func shipsBumpAtTheirArt() {
+        // One step closes 0.005, so `gap` is where the centres would end up.
+        func bumped(gap: Double) -> Bool {
+            var engine = SimulationEngine.testing()
+            engine.state.ball.position = SIMD2(0.5, 0.3)
+            engine.state.ships[.cyan] = ShipState(position: SIMD2(-0.2, 0), velocity: SIMD2(0.3, 0), angle: .pi / 2)
+            engine.state.ships[.orange] = ShipState(position: SIMD2(-0.2 + gap + 0.005, 0), velocity: SIMD2(-0.3, 0), angle: .pi / 2)
+            engine.step(inputs: [:])
+            return engine.state.ships[.cyan]!.velocity.x < 0.2
+        }
+        let touching = 2 * ShipHitbox.shared.reach
+        #expect(!bumped(gap: touching + 0.004))
+        #expect(bumped(gap: touching - 0.004))
+    }
 }

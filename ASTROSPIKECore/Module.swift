@@ -706,6 +706,7 @@ public struct SimulationEngine: Sendable {
             ship.position += ship.velocity * dt
             resolveArenaCollision(
                 for: &ship,
+                hitbox: shipHitboxes[seat] ?? .shared,
                 from: previousShipPositions[seat] ?? ship.position,
                 effects: &collisionEffects
             )
@@ -1146,11 +1147,15 @@ public struct SimulationEngine: Sendable {
 
         let relativeStart = previousFirst - previousSecond
         let relativeEnd = first.position - second.position
+        // Each hull is a circle out to its farthest drawn point, so two ships
+        // bump where their art meets rather than a hull-length apart.
+        let radius = (shipHitboxes[firstSeat] ?? .shared).reach
+            + (shipHitboxes[secondSeat] ?? .shared).reach
         guard let hitTime = sweptCircleTime(
             from: relativeStart,
             to: relativeEnd,
             center: .zero,
-            radius: 0.096
+            radius: radius
         ) else { return }
 
         let impactSpeed = simd_length(first.velocity - second.velocity)
@@ -1177,10 +1182,13 @@ public struct SimulationEngine: Sendable {
 
     private mutating func resolveArenaCollision(
         for ship: inout ShipState,
+        hitbox: ShipHitbox,
         from previousPosition: SIMD2<Double>,
         effects: inout [SimulationEvent]
     ) {
-        let radius = 0.048
+        // Curved parts meet the hull's bounding circle; the flat walls meet
+        // whatever part of the drawn hull points at them.
+        let radius = hitbox.reach
 
         // Nothing about the net stops a hull: it is a goal, and defending a
         // goal means being able to fly into it. The lips are part of the net,
@@ -1235,20 +1243,24 @@ public struct SimulationEngine: Sendable {
             }
         }
 
-        if ship.position.y - radius <= arena.floorY {
-            ship.position.y = arena.floorY + radius
+        let below = hitbox.extent(along: SIMD2(0, -1), angle: ship.angle)
+        let above = hitbox.extent(along: SIMD2(0, 1), angle: ship.angle)
+        let left = hitbox.extent(along: SIMD2(-1, 0), angle: ship.angle)
+        let right = hitbox.extent(along: SIMD2(1, 0), angle: ship.angle)
+        if ship.position.y - below <= arena.floorY {
+            ship.position.y = arena.floorY + below
             ship.velocity.y = max(0, -ship.velocity.y * 0.12)
         }
-        if ship.position.y + radius >= arena.ceilingY {
-            ship.position.y = arena.ceilingY - radius
+        if ship.position.y + above >= arena.ceilingY {
+            ship.position.y = arena.ceilingY - above
             ship.velocity.y = min(0, -ship.velocity.y * 0.3)
         }
-        if ship.position.x - radius <= -arena.halfWidth {
-            ship.position.x = -arena.halfWidth + radius
+        if ship.position.x - left <= -arena.halfWidth {
+            ship.position.x = -arena.halfWidth + left
             ship.velocity.x = max(0, -ship.velocity.x * 0.3)
         }
-        if ship.position.x + radius >= arena.halfWidth {
-            ship.position.x = arena.halfWidth - radius
+        if ship.position.x + right >= arena.halfWidth {
+            ship.position.x = arena.halfWidth - right
             ship.velocity.x = min(0, -ship.velocity.x * 0.3)
         }
     }
