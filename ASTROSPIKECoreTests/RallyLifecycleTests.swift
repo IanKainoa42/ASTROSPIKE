@@ -7,7 +7,7 @@ struct RallyLifecycleTests {
     /// randomised near-wall situations: without the buffer this hull is struck
     /// three separate times inside a handful of ticks, which is the entire
     /// touch allowance gone in under 60ms. Re-swept when surfaces started
-    /// gripping the ball, which moved every bounce of the old rattle.
+    /// gripping the ball, and again when hulls got their drawn-size hitbox.
     private func rattleAgainstTheWall(debounce: Double? = nil) -> SimulationEngine {
         var configuration = SimulationConfiguration()
         if let debounce { configuration.ballTouchDebounce = debounce }
@@ -15,15 +15,15 @@ struct RallyLifecycleTests {
             state: WorldState(
                 ships: [
                     .cyan: ShipState(
-                        position: SIMD2(-0.864797, -0.465901),
-                        velocity: SIMD2(1.200220, -0.801959),
-                        angle: 0.582852
+                        position: SIMD2(-0.858729, -0.421778),
+                        velocity: SIMD2(0.377983, -0.791238),
+                        angle: 2.181934
                     ),
                     .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
                 ],
                 ball: BallState(
-                    position: SIMD2(-0.932278, -0.548562),
-                    velocity: SIMD2(1.770773, -0.266915)
+                    position: SIMD2(-0.859656, -0.515194),
+                    velocity: SIMD2(-0.763752, -0.259653)
                 ),
                 match: MatchRuleState(phase: .playing)
             ),
@@ -35,7 +35,7 @@ struct RallyLifecycleTests {
         var collisions = 0
         for _ in 0 ..< ticks {
             engine.step(inputs: [
-                .cyan: PlayerInput(tick: engine.state.tick, torque: 0.83083, thrust: false)
+                .cyan: PlayerInput(tick: engine.state.tick, torque: -0.701665, thrust: false)
             ])
             if engine.lastEvents.contains(where: {
                 if case .collisionEffect = $0 { true } else { false }

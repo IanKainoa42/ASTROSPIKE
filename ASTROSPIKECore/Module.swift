@@ -526,6 +526,9 @@ public struct SimulationEngine: Sendable {
     public private(set) var lastEvents: [SimulationEvent]
     public private(set) var arena: ArenaGeometry
     private var rules: MatchRules
+    /// Per-seat ball hitboxes. A seat missing here flies `ShipHitbox.shared`,
+    /// so every hull meets the ball the same way unless one is set.
+    public var shipHitboxes: [Seat: ShipHitbox] = [:]
 
     public init(
         state: WorldState,
@@ -715,7 +718,7 @@ public struct SimulationEngine: Sendable {
             let onOwnHalf = configuration.sandbox
                 || ship.position.x * homeSign >= -arena.humpBaseX
             if input.fire, onOwnHalf, ship.fireCooldownTicks == 0, state.match.phase == .playing {
-                fireBolt(from: &ship, owner: seat.team)
+                fireBolt(from: &ship, seat: seat)
             }
             // Unlike the cannon, the beam works anywhere on the court — a
             // pilot can reach into the far half and reel the ball back out.
@@ -941,16 +944,16 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    private mutating func fireBolt(from ship: inout ShipState, owner: Team) {
+    private mutating func fireBolt(from ship: inout ShipState, seat: Seat) {
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let lifetime = UInt64((configuration.boltLifetime / configuration.stepDuration).rounded())
         guard lifetime > 0, configuration.boltSpeed > 0 else { return }
         state.bolts.append(BoltState(
             id: state.nextBoltID,
-            owner: owner,
+            owner: seat.team,
             // Leaves from just past the nose so it cannot spawn inside a ball
             // already resting against the hull.
-            position: ship.position + axis * 0.075,
+            position: ship.position + axis * ((shipHitboxes[seat] ?? .shared).noseReach + 0.005),
             velocity: axis * configuration.boltSpeed,
             ticksRemaining: lifetime
         ))
@@ -1046,11 +1049,16 @@ public struct SimulationEngine: Sendable {
             bolt.position += bolt.velocity * dt
             bolt.ticksRemaining -= 1
 
-            if !ballStruck, let contact = sweptCircleTime(
+            // A bolt already overlapping the ball at the start of the step is
+            // a hit at once: the ball moves too, so a bolt can finish one step
+            // a hair outside it and start the next inside, where the sweep
+            // alone would let it pass straight through.
+            let reach = state.ball.radius + BoltState.radius
+            if !ballStruck, let contact = simd_length(previous - state.ball.position) <= reach ? 0 : sweptCircleTime(
                 from: previous - state.ball.position,
                 to: bolt.position - state.ball.position,
                 center: .zero,
-                radius: state.ball.radius + BoltState.radius
+                radius: reach
             ) {
                 ballStruck = true
                 let speed = simd_length(bolt.velocity)
@@ -1559,56 +1567,42 @@ public struct SimulationEngine: Sendable {
         contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
-        struct Fixture {
-            var previousCenter: SIMD2<Double>
-            var center: SIMD2<Double>
-            var radius: Double
-        }
-
         let ballEnd = state.ball.position
-        var earliest: (seat: Seat, fixture: Fixture, t: Double)?
+        var earliest: (seat: Seat, t: Double)?
         for seat in Seat.allCases {
             guard let ship = state.ships[seat], !ship.isDestroyed,
                   let previousShipPosition = previousShipPositions[seat] else { continue }
+            let hitbox = shipHitboxes[seat] ?? .shared
             let axis = SIMD2(cos(ship.angle), sin(ship.angle))
-            let fixtures = [
-                Fixture(
-                    previousCenter: previousShipPosition - axis * 0.033,
-                    center: ship.position - axis * 0.033,
-                    radius: 0.035
-                ),
-                Fixture(
-                    previousCenter: previousShipPosition,
-                    center: ship.position,
-                    radius: 0.041
-                ),
-                Fixture(
-                    previousCenter: previousShipPosition + axis * 0.044,
-                    center: ship.position + axis * 0.044,
-                    radius: 0.026
-                ),
-            ]
-            for fixture in fixtures {
-                guard let t = sweptCircleTime(
-                    from: previousBallPosition - fixture.previousCenter,
-                    to: ballEnd - fixture.center,
-                    center: .zero,
-                    radius: state.ball.radius + fixture.radius
-                ) else { continue }
-                if earliest == nil || t < earliest!.t {
-                    earliest = (seat, fixture, t)
-                }
+            let left = SIMD2(-axis.y, axis.x)
+            func local(_ offset: SIMD2<Double>) -> SIMD2<Double> {
+                SIMD2(simd_dot(offset, axis), simd_dot(offset, left))
+            }
+            guard let t = hitbox.sweepTime(
+                from: local(previousBallPosition - previousShipPosition),
+                to: local(ballEnd - ship.position),
+                radius: state.ball.radius + ShipHitbox.skin
+            ) else { continue }
+            if earliest == nil || t < earliest!.t {
+                earliest = (seat, t)
             }
         }
 
-        guard let hit = earliest, var ship = state.ships[hit.seat] else { return }
+        guard let hit = earliest, var ship = state.ships[hit.seat],
+              let previousShipPosition = previousShipPositions[hit.seat] else { return }
+        let hitbox = shipHitboxes[hit.seat] ?? .shared
+        let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+        let left = SIMD2(-axis.y, axis.x)
         let ballContact = previousBallPosition + (ballEnd - previousBallPosition) * hit.t
-        let fixtureContact = hit.fixture.previousCenter
-            + (hit.fixture.center - hit.fixture.previousCenter) * hit.t
-        var normal = ballContact - fixtureContact
+        let shipAtContact = previousShipPosition + (ship.position - previousShipPosition) * hit.t
+        let offset = ballContact - shipAtContact
+        let localBall = SIMD2(simd_dot(offset, axis), simd_dot(offset, left))
+        let localSurface = hitbox.closestPoint(to: localBall)
+        let surface = axis * localSurface.x + left * localSurface.y
+        var normal = offset - surface
         let normalLength = simd_length(normal)
         normal = normalLength > 0.000_001 ? normal / normalLength : SIMD2(-1, 0)
-        state.ball.position = hit.fixture.center + normal * (state.ball.radius + hit.fixture.radius)
+        state.ball.position = ship.position + surface + normal * (state.ball.radius + ShipHitbox.skin)
 
         let relativeVelocity = state.ball.velocity - ship.velocity
         let inwardSpeed = simd_dot(relativeVelocity, normal)

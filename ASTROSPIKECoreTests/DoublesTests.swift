@@ -104,7 +104,10 @@ struct DoublesTests {
             let tick = engine.state.tick
             let input = wing.input(for: engine.state, seat: .orangeWing, tick: tick)
             #expect(input.fire == false)
+            // Pin the lead as well as the ball: left idle it falls to the
+            // floor and ends up farther from the ball than the wing.
             engine.state.ball = BallState(position: SIMD2(0.25, 0.10), velocity: .zero)
+            engine.state.ships[.orange] = ShipState(position: SIMD2(0.30, -0.10), angle: .pi / 2)
             engine.step(inputs: [.orangeWing: input])
             wingPositions.append(engine.state.ships[.orangeWing]!.position)
         }

@@ -831,7 +831,7 @@ struct ArenaPhysicsTests {
         )
         var separation = 0.0
 
-        for tick in UInt64(0) ..< 40 {
+        for tick in UInt64(0) ..< 80 {
             engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
             if engine.state.ball.velocity.x > 0 {
                 separation = simd_length(

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import simd
 @testable import ASTROSPIKECore
@@ -266,6 +267,8 @@ struct AIControllerTests {
         var controller = AIController(difficulty: .pilot, configuration: engine.configuration)
         var longestContact = 0
         var contact = 0
+        var trail: [SIMD2<Double>] = []
+        var slowestNearby = Double.infinity
 
         for tick in UInt64(0) ..< 3_600 {
             engine.step(inputs: [
@@ -273,14 +276,40 @@ struct AIControllerTests {
                 .orange: controller.input(for: engine.state, team: .orange, tick: tick),
             ])
             guard let ship = engine.state.ships[.orange] else { break }
-            let riding = simd_distance(engine.state.ball.position, ship.position) < 0.17
-            contact = riding ? contact + 1 : 0
+            // Contact is the drawn hull plus its skin, not a radius round the
+            // centre: with the hitbox cut to the drawn ship the AI lines up
+            // 0.018 closer, and a 0.17 radius started counting a chase that
+            // was pushing the ball along the back wall as a stall.
+            let offset = engine.state.ball.position - ship.position
+            let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+            let local = SIMD2(simd_dot(offset, axis), axis.x * offset.y - axis.y * offset.x)
+            let touching = ShipHitbox.shared.distance(from: local)
+                < engine.state.ball.radius + ShipHitbox.skin + 0.004
+            contact = touching ? contact + 1 : 0
             longestContact = max(longestContact, contact)
+
+            // Hovering at a distance -- the beam, or a nose parked under the
+            // ball -- never touches it, so also watch the ball itself: close
+            // to the ship, it must still be travelling.
+            if engine.state.match.phase == .playing {
+                trail.append(engine.state.ball.position)
+                if trail.count > 60 {
+                    trail.removeFirst()
+                    if simd_length(offset) < 0.17 {
+                        let travelled = zip(trail, trail.dropFirst()).reduce(0) { $0 + simd_distance($1.0, $1.1) }
+                        slowestNearby = min(slowestNearby, travelled)
+                    }
+                }
+            } else {
+                trail.removeAll()
+            }
             if engine.state.match.phase == .finished { break }
         }
 
-        // Half a second of unbroken contact is a strike; anything longer is a stall.
+        // Half a second of unbroken contact is a stall, not a strike.
         #expect(longestContact < 60)
+        // A held ball barely moves; the slowest real exchange travels 0.12.
+        #expect(slowestNearby > 0.05)
     }
 
     /// Openings for the exchange test. A duel is chaotic, so a single thirty-second

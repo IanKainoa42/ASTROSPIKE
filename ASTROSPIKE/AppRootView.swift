@@ -1230,6 +1230,7 @@ private struct SettingsView: View {
     @AppStorage("haptics") private var haptics = true
     @AppStorage("arrangePads") private var arrangePads = false
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
+    @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
     var body: some View {
         NavigationStack {
             Form {
@@ -1284,6 +1285,14 @@ private struct SettingsView: View {
                     }
                 }
                 Section("Team symbols") { Label("Cyan uses a bar", systemImage: "minus"); Label("Orange uses a diamond", systemImage: "diamond.fill") }
+                Section {
+                    Toggle("Hull-shaped hitboxes", isOn: $hullShapedHitboxes)
+                        .accessibilityIdentifier("hull-shaped-hitboxes")
+                } header: {
+                    Text("Developer")
+                } footer: {
+                    Text("Off: every hull hits the ball with the Lancet's shape. On: each hull hits with its own outline. Takes effect next match; online matches always use the shared shape.")
+                }
             }.navigationTitle("Settings")
         }
         .accessibilityIdentifier("settings-screen")

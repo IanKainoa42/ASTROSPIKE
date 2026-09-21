@@ -102,8 +102,9 @@ public struct AIController: InputSource, Sendable {
     private static let thrustAlignment = 0.7
     private static let turnGain = 4.0
     private static let turnDeadzone = 0.06
-    /// Ship centre to ball centre for a nose-on contact.
-    static let strikeStandoff = 0.107
+    /// Ship centre to ball centre for a nose-on contact: the nose plus the
+    /// same 0.037 of ball the standoff was tuned with.
+    static let strikeStandoff = ShipHitbox.shared.noseReach + 0.037
     /// Room kept behind the ball so the ship can build speed into the strike.
     private static let strikeRunup = 0.18
     /// Seconds before contact that the run-in begins.
@@ -318,7 +319,7 @@ public struct AIController: InputSource, Sendable {
         // A hull only pushes the ball along the line joining their centres, so
         // the only contact that sends it where the plan aimed is a nose-on
         // one -- and the standoff the run-up is measured against is to the
-        // nose fixture, 0.044 out along the ship's axis. Point anywhere else
+        // nose tip, `ShipHitbox.shared.noseReach` out along the axis. Point anywhere else
         // and the ship arrives at a range where nothing is touching, closes
         // anyway, and shoves the ball off some arbitrary flank. So for the
         // last half of the drive the nose goes down the shot line and nothing

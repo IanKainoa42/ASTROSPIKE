@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import simd
 @testable import ASTROSPIKECore
@@ -278,6 +279,15 @@ struct BoltAndWashTests {
     func hullGlanceSpinsTheBall() {
         func struck(offset: Double) -> BallState {
             var engine = playing()
+            // A round hull, so "square" and "glancing" mean the same thing
+            // wherever the ball meets it: this is about grip, not hull shape.
+            engine.shipHitboxes[.cyan] = ShipHitbox(HullOutline(
+                silhouette: (0 ..< 24).map { index in
+                    let angle = Double(index) / 24 * 2 * .pi
+                    return SIMD2(cos(angle), sin(angle)) * 30
+                },
+                details: []
+            ))
             var ship = engine.state.ships[.cyan]!
             ship.position = .init(-0.4, 0.1)
             ship.velocity = .zero

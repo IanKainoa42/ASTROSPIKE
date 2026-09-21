@@ -222,6 +222,11 @@ final class GameSession {
                 Hull.defaultHull(forSeat: seat)
             }
             scene.setHull(hull, for: seat)
+            // Developer toggle: each hull meets the ball with its own shape.
+            // Offline only -- both ends of an online match have to agree.
+            if mode != .online, UserDefaults.standard.bool(forKey: ShipHitbox.perHullKey) {
+                engine.shipHitboxes[seat] = ShipHitbox(hull.spec.outline)
+            }
         }
     }
 

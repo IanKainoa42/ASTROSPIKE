@@ -696,10 +696,9 @@ final class ArenaScene: SKScene {
         if !didBuild { buildArena() }
         for seat in Seat.allCases { update(seat: seat, state: snapshot.ships[seat]) }
         ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
-        // The node is drawn 10pt across for a 0.038 ball; a bigger ball draws
-        // bigger rather than being squeezed back to the old size.
-        let ballScale = CGFloat(snapshot.ball.radius / 0.038)
-        ball.setScale(ballScale)
+        // The node is built 10pt in radius; scale it to the ball's world
+        // radius so what you see is what the ship hits.
+        ball.setScale(CGFloat(snapshot.ball.radius) * pointsPerWorldUnit / 10)
         // Turn the seam by however far the ball spun since the last drawn
         // snapshot, counted in engine ticks so a guest that skips a few
         // draws still shows the turn it missed.
@@ -839,8 +838,8 @@ final class ArenaScene: SKScene {
         shipNode.isHidden = state.isDestroyed
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
-        let unit = min(arenaRect.width / 2, arenaRect.height) / 1.7
-        shipNode.setScale(unit / 473)
+        // Drawn at the scale the ball's hitbox is built at (`ShipHitbox`).
+        shipNode.setScale(CGFloat(ShipHitbox.worldPerOutlineUnit) * pointsPerWorldUnit)
         shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)
         // `thrustLevel` is not a dial -- `thrustRampRate` is 0 and initial
         // thrust equals maximum, so it is either 0 or whatever the slider
@@ -1105,6 +1104,16 @@ final class ArenaScene: SKScene {
     /// landscape, safe area included. Sized so a pad still fits beside an
     /// iPhone's rounded corners.
     static let controlMarginFraction: CGFloat = 0.20
+
+    /// Points per world unit for things drawn round (ball, hulls). The court
+    /// is stretched a little differently on each axis; the geometric mean
+    /// splits that so a hit from the side and one from above both look close.
+    private var pointsPerWorldUnit: CGFloat {
+        let rect = arenaRect
+        let x = rect.width / CGFloat(arena.halfWidth * 2)
+        let y = rect.height / CGFloat(arena.ceilingY - arena.floorY)
+        return (x * y).squareRoot()
+    }
 
     /// Derived from the geometry rather than hardcoded, so shortening the
     /// court cannot silently desync the render from the simulation.

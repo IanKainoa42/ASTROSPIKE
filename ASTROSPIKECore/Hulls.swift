@@ -1,9 +1,9 @@
 import Foundation
 import simd
 
-/// Every hull a pilot can fly. Hulls are cosmetic: the simulation's collision
-/// fixtures never change, so a Bulwark and a Lancet bounce the ball the same
-/// way. This keeps online play fair and keeps hull unlocks review-safe.
+/// Every hull a pilot can fly. Hulls are cosmetic: every hull meets the ball
+/// with the same `ShipHitbox.shared`, so a Bulwark and a Lancet bounce it the
+/// same way. This keeps online play fair and keeps hull unlocks review-safe.
 public enum Hull: String, Codable, CaseIterable, Sendable, Identifiable {
     case lancet, anvil, manta, kestrel
     case bulwark, wraith, hornet, comet
@@ -63,8 +63,8 @@ public struct HullOutline: Equatable, Sendable {
         self.details = details
     }
 
-    /// Every hull must stay inside this box so the three collision fixtures in
-    /// the simulation keep reading true against the picture on screen.
+    /// Every hull stays inside this box so no silhouette strays far from the
+    /// shared hitbox it is flown with.
     public static let envelope = (minX: -22.0, maxX: 22.0, minY: -19.0, maxY: 30.0)
 
     public var fitsEnvelope: Bool {
@@ -73,6 +73,115 @@ public struct HullOutline: Equatable, Sendable {
             $0.x >= Self.envelope.minX && $0.x <= Self.envelope.maxX
                 && $0.y >= Self.envelope.minY && $0.y <= Self.envelope.maxY
         }
+    }
+}
+
+/// Where the ball meets a hull: the drawn silhouette, at the size it is drawn.
+/// Every hull shares the Lancet's shape unless a developer asks for each
+/// hull's own (`SimulationEngine.shipHitboxes`).
+public struct ShipHitbox: Equatable, Sendable {
+    /// World units per outline unit. The arena draws hulls at this scale, so
+    /// a hitbox built from an outline is the ship on screen.
+    public static let worldPerOutlineUnit = 1.92 / (3.4 * 473)
+
+    /// Padding around the outline the ball meets. At the bare outline a
+    /// needle nose is so thin the pilot AI returned 1 ball in 16 (9 with the
+    /// old circles); this much gives back 7 and still reads as touching.
+    public static let skin = 0.016
+
+    /// UserDefaults key for the developer toggle that gives each hull its own hitbox.
+    public static let perHullKey = "hullShapedHitboxes"
+
+    /// Every hull's hitbox by default: the original, the regular ship.
+    public static let shared = ShipHitbox(HullCatalog.spec(for: .lancet).outline)
+
+    /// Silhouette in the ship frame, world units: x along the nose, y to its left.
+    public let polygon: [SIMD2<Double>]
+
+    public init(_ outline: HullOutline) {
+        let s = Self.worldPerOutlineUnit
+        // Outline +y is the nose and +x is starboard; the renderer turns it
+        // by `angle - pi/2`, which puts outline +x on the ship's right.
+        polygon = outline.silhouette.map { SIMD2($0.y * s, -$0.x * s) }
+    }
+
+    /// How far the nose reaches ahead of the ship's centre, skin included.
+    public var noseReach: Double { (polygon.map(\.x).max() ?? 0) + Self.skin }
+
+    /// First time in 0...1 a point moving from `start` to `end` (ship frame)
+    /// comes within `radius` of the hull. Nil when it never does, or when it
+    /// starts already inside -- the same rule the old circle fixtures kept.
+    public func sweepTime(from start: SIMD2<Double>, to end: SIMD2<Double>, radius: Double) -> Double? {
+        guard distance(from: start) > radius, !contains(start) else { return nil }
+        let delta = end - start
+        guard simd_dot(delta, delta) > 0.000_000_1 else { return nil }
+        var earliest: Double?
+        func consider(_ t: Double) {
+            guard (0 ... 1).contains(t), earliest.map({ t < $0 }) ?? true else { return }
+            earliest = t
+        }
+        for index in polygon.indices {
+            let a = polygon[index]
+            let b = polygon[(index + 1) % polygon.count]
+            // The rounded end at the corner.
+            let offset = start - a
+            let qa = simd_dot(delta, delta)
+            let qb = 2 * simd_dot(offset, delta)
+            let qc = simd_dot(offset, offset) - radius * radius
+            let discriminant = qb * qb - 4 * qa * qc
+            if discriminant >= 0 { consider((-qb - discriminant.squareRoot()) / (2 * qa)) }
+            // The flat face, pushed out by the radius on whichever side the
+            // path starts.
+            let edge = b - a
+            let length = simd_length(edge)
+            guard length > 0 else { continue }
+            let along = edge / length
+            let normal = SIMD2(-along.y, along.x)
+            let startSide = simd_dot(offset, normal)
+            let closing = simd_dot(delta, normal)
+            let side: Double = startSide >= 0 ? 1 : -1
+            guard closing * side < 0 else { continue }
+            let t = (side * radius - startSide) / closing
+            let hit = start + delta * t - a
+            let projection = simd_dot(hit, along)
+            if projection >= 0, projection <= length { consider(t) }
+        }
+        return earliest
+    }
+
+    /// The nearest point on the hull's outline.
+    public func closestPoint(to point: SIMD2<Double>) -> SIMD2<Double> {
+        var best = polygon[0]
+        var bestDistance = Double.infinity
+        for index in polygon.indices {
+            let a = polygon[index]
+            let edge = polygon[(index + 1) % polygon.count] - a
+            let span = simd_dot(edge, edge)
+            let t = span > 0 ? min(1, max(0, simd_dot(point - a, edge) / span)) : 0
+            let candidate = a + edge * t
+            let d = simd_distance(point, candidate)
+            if d < bestDistance { bestDistance = d; best = candidate }
+        }
+        return best
+    }
+
+    func distance(from point: SIMD2<Double>) -> Double {
+        simd_distance(point, closestPoint(to: point))
+    }
+
+    /// Even-odd point in polygon.
+    func contains(_ point: SIMD2<Double>) -> Bool {
+        var inside = false
+        var j = polygon.count - 1
+        for i in polygon.indices {
+            let a = polygon[i], b = polygon[j]
+            if (a.y > point.y) != (b.y > point.y),
+               point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x {
+                inside.toggle()
+            }
+            j = i
+        }
+        return inside
     }
 }
 
