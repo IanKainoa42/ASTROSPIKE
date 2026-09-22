@@ -87,6 +87,11 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var isAuthoritative = false
     private(set) var localSeat: Seat?
     var localTeam: Team? { localSeat?.team }
+    /// Bumped each time a fresh table is seated. The arena keys on it: a
+    /// `GameSession` captures its seat and roster when it is built, and one
+    /// left over from an earlier match flew the old seat while this end sent
+    /// inputs for the new one. A pilot rejoining a held seat keeps theirs.
+    private(set) var seatingGeneration = 0
     /// The host's seating plan, Game Center player ID to seat.
     private(set) var seating: [String: Seat] = [:]
     var filledSeats: Set<Seat> { Set(seating.values) }
@@ -900,6 +905,7 @@ final class OnlineMatchCoordinator: NSObject,
         handshakeTask?.cancel()
         doorSecondsRemaining = nil
         localSeat = seat
+        if !resumingAfterDrop { seatingGeneration += 1 }
         note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
         session = OnlineSessionStateMachine(
             localTeam: seat.team,

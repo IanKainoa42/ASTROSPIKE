@@ -111,7 +111,8 @@ struct AppRootView: View {
                 ) {
                     self.gameMode = nil
                 }
-                .id(gameMode)
+                // A new online table needs a new session, not the last one's.
+                .id([AnyHashable(gameMode), AnyHashable(gameMode == .online ? online.seatingGeneration : 0)])
                 .onAppear { resultsPreviewWinner = nil }
                 .transition(.opacity.combined(with: .scale(scale: 1.03)))
             } else if showOnboarding {
