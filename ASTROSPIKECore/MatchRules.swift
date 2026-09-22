@@ -244,6 +244,11 @@ public struct MatchRules: Sendable {
                 // not spend a touch must not spend a bounce either.
                 state.floorContacts = SideCounts()
                 if counted {
+                    // A real touch by the other side is a change of hands even
+                    // when the ball never crossed the line -- a poach back
+                    // into your own half must not let you carry a stalled
+                    // tally into what is, for scoring, a fresh possession.
+                    state.shipTouches[team.opponent] = 0
                     state.shipTouches[team] += 1
                     if state.shipTouches[team] > allowedShipTouches {
                         return awardPoint(to: team.opponent, reason: .touchLimit)

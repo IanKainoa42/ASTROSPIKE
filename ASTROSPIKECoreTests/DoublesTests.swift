@@ -175,4 +175,17 @@ struct DoublesTests {
         let four: [String: Seat] = ["G:1": .cyan, "G:2": .cyanWing, "G:3": .orange, "G:4": .orangeWing]
         #expect(OnlineSeating.seatingAfterHold(seating: four, dropped: ["G:3", "G:4"]) == nil)
     }
+
+    @Test("The host seats the pilots who are here when the count sticks")
+    func seatsPastAStuckCount() {
+        // Everyone accounted for: seat at once.
+        #expect(OnlineSeating.shouldSeat(expected: 0, declined: 0, connectedPeers: 1, graceElapsed: false))
+        // Game Center still says one more is coming, but they are already in.
+        #expect(!OnlineSeating.shouldSeat(expected: 1, declined: 0, connectedPeers: 1, graceElapsed: false))
+        #expect(OnlineSeating.shouldSeat(expected: 1, declined: 0, connectedPeers: 1, graceElapsed: true))
+        // Nobody at the table is never a reason to seat it.
+        #expect(!OnlineSeating.shouldSeat(expected: 0, declined: 0, connectedPeers: 0, graceElapsed: true))
+        // A decline still opens the door without waiting out the grace.
+        #expect(OnlineSeating.shouldSeat(expected: 1, declined: 1, connectedPeers: 1, graceElapsed: false))
+    }
 }

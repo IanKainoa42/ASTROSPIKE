@@ -43,6 +43,26 @@ struct MatchRulesTests {
         #expect(events == [.point(scoringTeam: .orange, reason: .touchLimit)])
     }
 
+    @Test("The other side touching the ball clears your tally, even without it crossing over")
+    func opponentTouchResetsYourCount() {
+        var rules = MatchRules(allowedFloorBounces: 2, allowedShipTouches: 3)
+        for _ in 0 ..< 3 {
+            #expect(rules.resolve([.ballTouchedShip(team: .cyan, counted: true)]).isEmpty)
+        }
+        #expect(rules.state.shipTouches[.cyan] == 3)
+        // Orange pokes it back into cyan's half without a center crossing.
+        #expect(rules.resolve([.ballTouchedShip(team: .orange, counted: true)]).isEmpty)
+        #expect(rules.state.shipTouches[.cyan] == 0)
+        #expect(rules.state.shipTouches[.orange] == 1)
+
+        // Cyan gets a fresh three, not a fourth that concedes at once.
+        for _ in 0 ..< 3 {
+            #expect(rules.resolve([.ballTouchedShip(team: .cyan, counted: true)]).isEmpty)
+        }
+        let events = rules.resolve([.ballTouchedShip(team: .cyan, counted: true)])
+        #expect(events == [.point(scoringTeam: .orange, reason: .touchLimit)])
+    }
+
     @Test("Third floor contact concedes a point")
     func thirdBounceScores() {
         var rules = MatchRules(allowedFloorBounces: 2)

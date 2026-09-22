@@ -395,6 +395,9 @@ final class OnlineMatchCoordinator: NSObject,
     private static let seatHoldSeconds = 120
     /// Seconds into the hold before Game Center is asked to call them back.
     private static let reinviteDelaySeconds = 3
+    /// How long the host waits for Game Center's expected count to settle
+    /// before seating the pilots who are already at the table.
+    private static let seatGraceSeconds = 8
     private var pendingPing: UInt64?
     /// Stamps this board put on the wire. An echo carrying one of these is our
     /// own round trip coming home, never something to answer.
@@ -860,6 +863,10 @@ final class OnlineMatchCoordinator: NSObject,
                       self.match.map(ObjectIdentifier.init) == matchIdentifier,
                       self.lifecycle.phase == .configuring else { return }
                 self.doorSecondsRemaining = left
+                // Game Center's count of who is still coming can stick at one
+                // with the pilot already connected. Past the grace window,
+                // seat whoever is in the match rather than wait it out.
+                if window - left >= Self.seatGraceSeconds { self.tryStartAsHost(graceElapsed: true) }
             }
             guard let self, !Task.isCancelled,
                   self.match.map(ObjectIdentifier.init) == matchIdentifier,
@@ -876,15 +883,22 @@ final class OnlineMatchCoordinator: NSObject,
     /// both ends see the same player list, so the lowest Game Center player
     /// ID hosts with no negotiation and nothing that can come back nil.
     /// Guests do nothing here: their seat arrives in a `.seating` message.
-    private func tryStartAsHost() {
+    private func tryStartAsHost(graceElapsed: Bool = false) {
         guard let match, lifecycle.phase == .configuring else { return }
-        guard match.expectedPlayerCount <= declinedInvites else { return }
         // A decline can zero the expected count before the pilot who accepted
         // has actually connected. Seating the table then puts a bot in their
         // chair and leaves them knocking on a match that already started.
-        guard !match.players.isEmpty else {
-            note("WAITING FOR A PILOT TO CONNECT BEFORE SEATING")
+        guard OnlineSeating.shouldSeat(
+            expected: match.expectedPlayerCount,
+            declined: declinedInvites,
+            connectedPeers: match.players.count,
+            graceElapsed: graceElapsed
+        ) else {
+            if match.players.isEmpty { note("WAITING FOR A PILOT TO CONNECT BEFORE SEATING") }
             return
+        }
+        if graceElapsed, match.expectedPlayerCount > declinedInvites {
+            note("STILL EXPECTING \(match.expectedPlayerCount) · SEATING WHO IS HERE")
         }
         let localID = GKLocalPlayer.local.gamePlayerID
         let peerIDs = match.players.map(\.gamePlayerID).sorted()

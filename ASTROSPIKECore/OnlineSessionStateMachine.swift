@@ -159,6 +159,24 @@ public enum OnlineSeating {
         return bereft.isSubset(of: manned) ? staying : nil
     }
 
+    /// Whether the host should seat the table now.
+    ///
+    /// Game Center's `expectedPlayerCount` is the only word we get on who is
+    /// still coming, and it does not always fall to zero once an invitee is
+    /// in the match: both boards then sit there, one reading "joining", the
+    /// other counting down five minutes, with the link already up. So the
+    /// count opens the door early and the grace window opens it anyway --
+    /// anyone who turns up after kick-off takes a bot's chair.
+    public static func shouldSeat(
+        expected: Int,
+        declined: Int,
+        connectedPeers: Int,
+        graceElapsed: Bool
+    ) -> Bool {
+        guard connectedPeers > 0 else { return false }
+        return expected <= declined || graceElapsed
+    }
+
     public static func localHosts(
         localID: String,
         peerIDs: some Sequence<String>,
