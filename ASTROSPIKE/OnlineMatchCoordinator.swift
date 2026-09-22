@@ -577,10 +577,10 @@ final class OnlineMatchCoordinator: NSObject,
         guard GKLocalPlayer.local.isAuthenticated, !isLoadingInvitees else { return }
         isLoadingInvitees = true
         GKLocalPlayer.local.loadRecentPlayers { [weak self] recent, recentError in
+            // GameKit hands these back on its own queue; they are only ever
+            // read on the main actor from here on.
+            nonisolated(unsafe) let recent = recent
             GKLocalPlayer.local.loadFriends { friends, friendsError in
-                // GameKit hands these back on its own queue; they are only ever
-                // read on the main actor from here on.
-                nonisolated(unsafe) let recent = recent
                 nonisolated(unsafe) let friends = friends
                 Task { @MainActor in
                     guard let self else { return }
@@ -1342,8 +1342,9 @@ final class OnlineMatchCoordinator: NSObject,
 
     nonisolated func match(_ match: GKMatch, didReceive data: Data, fromRemotePlayer player: GKPlayer) {
         let playerID = player.gamePlayerID
+        let matchID = ObjectIdentifier(match)
         Task { @MainActor [weak self] in
-            guard let self, self.match === match else { return }
+            guard let self, self.match.map(ObjectIdentifier.init) == matchID else { return }
             self.receive(data, from: playerID)
         }
     }
@@ -1352,8 +1353,9 @@ final class OnlineMatchCoordinator: NSObject,
         let displayName = player.displayName
         let playerID = player.gamePlayerID
         nonisolated(unsafe) let safePlayer = player
+        let matchID = ObjectIdentifier(match)
         Task { @MainActor [weak self] in
-            guard let self, self.match === match else { return }
+            guard let self, self.match.map(ObjectIdentifier.init) == matchID else { return }
             self.knownPlayers[playerID] = safePlayer
             self.handlePeerConnectionChange(displayName: displayName, playerID: playerID, state: state)
         }
@@ -1434,8 +1436,9 @@ final class OnlineMatchCoordinator: NSObject,
         let diagnostic = error.map { describe($0) }
         let reason: OnlineFailureReason = error.map { .fromGameCenterError(gameCenterKind($0)) }
             ?? .matchFailed(underlyingMessage: nil)
+        let matchID = ObjectIdentifier(match)
         Task { @MainActor [weak self] in
-            guard let self, self.match === match else { return }
+            guard let self, self.match.map(ObjectIdentifier.init) == matchID else { return }
             let detail = diagnostic ?? "The match ended"
             self.note("MATCH FAILED: \(detail)")
             // A log line was the whole of it, which is how a pilot got dropped
