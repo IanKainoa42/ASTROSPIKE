@@ -165,8 +165,9 @@ final class GameSession {
             countdown = 1
         case .online:
             let filled = online?.filledSeats ?? Seat.singles
-            // Three pilots play doubles with the host flying the empty wing.
-            roster = filled.count > 2 ? Seat.doubles : Seat.singles
+            // Three pilots, or a team-up of two, play doubles with the host
+            // flying the empty chairs.
+            roster = OnlineSeating.roster(filled: filled, teamUp: online?.teamUp ?? false)
             if online?.isAuthoritative == true {
                 for seat in roster.subtracting(filled) { botSeats[seat] = .pilot }
             }
@@ -205,6 +206,7 @@ final class GameSession {
         scene.snapshot = state
         // After the snapshot: the goal calls are drawn for the ends in it.
         scene.localTeam = mode == .warmup ? nil : localSeat.team
+        scene.localSeat = mode == .warmup ? nil : localSeat
         if mode == .warmup { scene.rings = rings.rings }
         if let winner = finishedAs {
             engine.finishByForfeit(winner: winner)
@@ -402,6 +404,17 @@ final class GameSession {
         if mode == .online, let online, online.isAuthoritative {
             for seat in pilots.keys where online.filledSeats.contains(seat) {
                 pilots[seat] = nil
+            }
+            // A teammate whose hold ran out left their chair empty: a bot
+            // flies it so the one who stayed is not a pilot short. So does
+            // a guest who took over hosting from a host that ran the bots.
+            for seat in engine.state.ships.keys where seat != localSeat
+                && pilots[seat] == nil && !online.filledSeats.contains(seat) {
+                pilots[seat] = AIController(
+                    difficulty: .pilot,
+                    configuration: engine.configuration,
+                    arena: mode.court(ballRadius: engine.configuration.ballRadius)
+                )
             }
         }
         for seat in pilots.keys.sorted() {

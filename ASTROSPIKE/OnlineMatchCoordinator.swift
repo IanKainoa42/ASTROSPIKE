@@ -42,8 +42,8 @@ final class OnlineMatchCoordinator: NSObject,
 
     private enum MatchmakingIntent: Equatable {
         case quickMatch
-        case friendInvite
-        case invite([GKPlayer])
+        case friendInvite(teamUp: Bool)
+        case invite([GKPlayer], teamUp: Bool)
     }
 
     /// Everyone the local pilot can invite without leaving the app: recent
@@ -90,6 +90,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// The host's seating plan, Game Center player ID to seat.
     private(set) var seating: [String: Seat] = [:]
     var filledSeats: Set<Seat> { Set(seating.values) }
+    /// The host called a team-up: its guests fly beside it and the empty
+    /// chairs go to bots. A guest takes this from the seating plan.
+    private(set) var teamUp = false
     /// Display names of everyone at the table, by Game Center player ID.
     var seatedPilotNames: [String: String] {
         var names = [GKLocalPlayer.local.gamePlayerID: GKLocalPlayer.local.displayName]
@@ -346,6 +349,9 @@ final class OnlineMatchCoordinator: NSObject,
     private var declinedInvites = 0
     /// The team that walked out, so the forfeit goes to the other side.
     private var pendingForfeitWinner: Team?
+    /// Who the current hold is for. When it runs out and their side still
+    /// has a human, their chair goes to a bot instead of the match ending.
+    private var droppedPilots: Set<String> = []
     private var session: OnlineSessionStateMachine?
     private var reconnectTask: Task<Void, Never>?
     private var finishTask: Task<Void, Never>?
@@ -535,8 +541,8 @@ final class OnlineMatchCoordinator: NSObject,
             pendingMatchmakingIntent = nil
             switch intent {
             case .quickMatch: startQuickMatch()
-            case .friendInvite: presentMatchmaker(inviteOnly: true)
-            case let .invite(players): invite(players)
+            case let .friendInvite(teamUp): presentMatchmaker(inviteOnly: true, teamUp: teamUp)
+            case let .invite(players, teamUp): invite(players, teamUp: teamUp)
             }
         }
     }
@@ -547,20 +553,21 @@ final class OnlineMatchCoordinator: NSObject,
 
     /// Apple's picker, kept as the fallback for pilots who are not in the
     /// in-app list. It is modal, so there is no warm-up bay behind it.
-    func presentFriendInvite() {
-        presentMatchmaker(inviteOnly: true)
+    func presentFriendInvite(teamUp: Bool = false) {
+        presentMatchmaker(inviteOnly: true, teamUp: teamUp)
     }
 
     /// Automatch without the modal picker, so the pilot warms up in the bay
     /// while Game Center searches.
     func startQuickMatch() {
-        startMatchmaking(recipients: nil)
+        startMatchmaking(recipients: nil, teamUp: false)
     }
 
     /// Sends Game Center invitations straight from the app and returns at
     /// once, so the pilot waits in the bay instead of in a modal sheet.
-    func invite(_ players: [GKPlayer]) {
-        startMatchmaking(recipients: players)
+    /// A team-up seats them on the inviter's side instead of across the net.
+    func invite(_ players: [GKPlayer], teamUp: Bool = false) {
+        startMatchmaking(recipients: players, teamUp: teamUp)
     }
 
     /// Drops a search or an outstanding invite. Safe when nothing is pending.
@@ -596,9 +603,9 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    private func startMatchmaking(recipients: [GKPlayer]?) {
+    private func startMatchmaking(recipients: [GKPlayer]?, teamUp: Bool) {
         guard GKLocalPlayer.local.isAuthenticated else {
-            pendingMatchmakingIntent = recipients.map { .invite($0) } ?? .quickMatch
+            pendingMatchmakingIntent = recipients.map { .invite($0, teamUp: teamUp) } ?? .quickMatch
             authenticate()
             return
         }
@@ -608,8 +615,10 @@ final class OnlineMatchCoordinator: NSObject,
         request.minPlayers = 2
         request.maxPlayers = partySize
         request.defaultNumberOfPlayers = partySize
-        request.inviteMessage = partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
+        request.inviteMessage = teamUp ? "Team up with me in ASTROSPIKE"
+            : partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
         request.recipients = recipients
+        self.teamUp = teamUp
         let recipientCount = recipients?.count ?? 0
         role = recipients != nil ? .inviter : .automatch
         declinedInvites = 0
@@ -729,17 +738,19 @@ final class OnlineMatchCoordinator: NSObject,
         sendQuietly(.ping(nanoseconds: sentAt), to: nil, mode: .unreliable)
     }
 
-    private func presentMatchmaker(inviteOnly: Bool) {
+    private func presentMatchmaker(inviteOnly: Bool, teamUp: Bool = false) {
         guard GKLocalPlayer.local.isAuthenticated else {
-            pendingMatchmakingIntent = inviteOnly ? .friendInvite : .quickMatch
+            pendingMatchmakingIntent = inviteOnly ? .friendInvite(teamUp: teamUp) : .quickMatch
             authenticate()
             return
         }
         let request = GKMatchRequest()
         request.minPlayers = 2
-        request.maxPlayers = 2
+        // A team-up can bring up to three friends; a duel is one on one.
+        request.maxPlayers = teamUp ? 4 : 2
         request.defaultNumberOfPlayers = 2
-        request.inviteMessage = "Duel me in ASTROSPIKE"
+        request.inviteMessage = teamUp ? "Team up with me in ASTROSPIKE" : "Duel me in ASTROSPIKE"
+        self.teamUp = teamUp
         request.recipientResponseHandler = { [weak self] player, response in
             Task { @MainActor in
                 self?.note("INVITE → \(player.displayName): \(Self.describe(response))")
@@ -876,14 +887,7 @@ final class OnlineMatchCoordinator: NSObject,
             note("WAITING FOR HOST TO SEAT THE TABLE")
             return
         }
-        // Leads first, then wings, so three pilots are two against one plus
-        // a bot on the empty wing rather than a lopsided pair.
-        let order: [Seat] = [.cyan, .orange, .cyanWing, .orangeWing]
-        var plan: [String: Seat] = [:]
-        for (index, id) in ([localID] + peerIDs).prefix(order.count).enumerated() {
-            plan[id] = order[index]
-        }
-        seating = plan
+        seating = OnlineSeating.plan(localID: localID, peerIDs: peerIDs, teamUp: teamUp)
         hostID = localID
         hostTuning = preferredTuning
         isAuthoritative = true
@@ -956,6 +960,7 @@ final class OnlineMatchCoordinator: NSObject,
             let name = seatedPilotNames[dropped] ?? "PILOT"
             note("SILENT LINK: NOTHING FROM \(name) IN \(Int(Self.peerSilenceSeconds))s")
             for id in gone { readyPeers.remove(id) }
+            droppedPilots.formUnion(gone)
             pendingForfeitWinner = seating[dropped]?.team.opponent
             beginReconnectWindow()
         case .resumed(let returned):
@@ -1029,7 +1034,7 @@ final class OnlineMatchCoordinator: NSObject,
 
     private func sendHandshake() {
         if isAuthoritative, !seating.isEmpty {
-            send(.seating(plan: seating, tuning: hostTuning), mode: .reliable)
+            send(.seating(plan: seating, tuning: hostTuning, teamUp: teamUp), mode: .reliable)
         }
         send(.ready, mode: .reliable)
         send(.profile(seat: localSeat ?? .cyan, hull: localHull), mode: .reliable)
@@ -1119,17 +1124,20 @@ final class OnlineMatchCoordinator: NSObject,
                 note("FIRST INPUT FROM \(seat.label) AT TICK \(value.tick)")
             }
             if buffer.accept(value, at: Self.now) { inputBuffers[seat] = buffer }
-        case let .seating(plan, tuning):
+        case let .seating(plan, tuning, teamUp):
             guard lifecycle.acceptsNetworkMessages, plan[GKLocalPlayer.local.gamePlayerID] != nil else { return }
             if lifecycle.phase == .configuring {
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
+                self.teamUp = teamUp
                 isAuthoritative = false
                 startConfiguredMatch()
             } else if !isAuthoritative {
                 // A guest that took over hosting reseated the table: remember
                 // who runs the rules now, so the next drop is judged right.
+                // A reseat can also bench a pilot whose hold ran out.
+                seating = plan
                 hostID = playerID
                 hostTuning = tuning
             }
@@ -1199,6 +1207,10 @@ final class OnlineMatchCoordinator: NSObject,
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
                 if remaining == 0 {
+                    if let benched = OnlineSeating.seatingAfterHold(seating: self.seating, dropped: self.droppedPilots) {
+                        self.benchDroppedPilots(keeping: benched)
+                        return
+                    }
                     self.note("SEAT HOLD EXPIRED · FORFEIT")
                     self.status = .failed(reason: .opponentForfeited)
                     self.isMatchReady = false
@@ -1218,11 +1230,35 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// The hold ran out on a pilot whose teammate is still here. A bot takes
+    /// their chair -- the host flies it -- and the match plays on. Every
+    /// board runs its own hold clock, so each one reseats itself the same
+    /// way; the host's reseat confirms it.
+    private func benchDroppedPilots(keeping staying: [String: Seat]) {
+        let names = droppedPilots.map { seatedPilotNames[$0] ?? "PILOT" }.joined(separator: ", ")
+        note("SEAT HOLD EXPIRED · BOT TAKES \(names)'S CHAIR")
+        seating = staying
+        let localID = GKLocalPlayer.local.gamePlayerID
+        let peers = staying.keys.filter { $0 != localID }
+        readyPeers.formIntersection(peers)
+        if let hostID, staying[hostID] == nil,
+           peers.allSatisfy({ localID < $0 }) {
+            // The host was the one benched: the lowest ID left runs the rules.
+            isAuthoritative = true
+            self.hostID = localID
+        }
+        if isAuthoritative, !peers.isEmpty {
+            send(.seating(plan: seating, tuning: hostTuning, teamUp: teamUp), mode: .reliable)
+        }
+        completeReconnect()
+    }
+
     /// The returning pilot has seated and said `.ready`: the hold is over.
     /// The host restarts the rally and resyncs everyone from its board.
     private func completeReconnect() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        droppedPilots = []
         handshakeTask?.cancel()
         handshakeTask = nil
         doorSecondsRemaining = nil
@@ -1392,6 +1428,7 @@ final class OnlineMatchCoordinator: NSObject,
             onConnectionPaused?(false)
         case .disconnected:
             readyPeers.remove(playerID)
+            droppedPilots.insert(playerID)
             // Whoever left loses it for their side, whichever side that is.
             pendingForfeitWinner = seating[playerID]?.team.opponent
             let localID = GKLocalPlayer.local.gamePlayerID
@@ -1417,8 +1454,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// empty chair -- the one a bot has been keeping warm -- and a fresh
     /// seating plan so their own board can start.
     private func seatLateArrival(_ playerID: String, displayName: String) {
-        let order: [Seat] = [.cyan, .orange, .cyanWing, .orangeWing]
-        guard let seat = order.first(where: { !filledSeats.contains($0) }) else {
+        guard let seat = OnlineSeating.order(teamUp: teamUp).first(where: { !filledSeats.contains($0) }) else {
             note("NO CHAIR LEFT FOR \(displayName)")
             return
         }
@@ -1555,6 +1591,8 @@ final class OnlineMatchCoordinator: NSObject,
         role = .automatch
         declinedInvites = 0
         pendingForfeitWinner = nil
+        droppedPilots = []
+        teamUp = false
         pingMilliseconds = nil
         pendingPing = nil
         ownPings = []

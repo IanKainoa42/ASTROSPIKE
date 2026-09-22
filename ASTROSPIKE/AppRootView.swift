@@ -33,6 +33,8 @@ struct AppRootView: View {
         _store = State(initialValue: HullStore(entitlements: entitlements))
         let arguments = ProcessInfo.processInfo.arguments
         let demoMode = arguments.contains("--demo")
+        // `--doubles` drops straight into a two-a-side match, for sim checks.
+        let doublesMode = arguments.contains("--doubles")
         let diagnosticsPreviewMode = arguments.contains("--online-diagnostics-preview")
         let resultsPreview = arguments.contains("--results-win") || arguments.contains("--results-lose")
         diagnosticsPreview = diagnosticsPreviewMode ? OnlineDiagnosticsSnapshot(
@@ -63,6 +65,7 @@ struct AppRootView: View {
         _gameMode = State(initialValue: diagnosticsPreviewMode ? .online
             : warmupMode ? .warmup
             : resultsPreview ? .solo(.rookie)
+            : doublesMode ? .doubles(.pilot)
             : demoMode ? .solo(.pilot) : nil)
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
@@ -194,6 +197,12 @@ struct AppRootView: View {
                     gameMode = .solo(difficulty)
                 }
                 .presentationDetents([.medium])
+            case .doubles:
+                DifficultyPicker(title: "CHOOSE THE RIVAL PAIR") { difficulty in
+                    sheet = nil
+                    gameMode = .doubles(difficulty)
+                }
+                .presentationDetents([.medium])
             case .tutorial:
                 FlightTutorial()
             case .settings:
@@ -216,13 +225,13 @@ struct AppRootView: View {
                 }
                 .presentationDetents([.large])
             case .invite:
-                InviteSheet(online: online) {
+                InviteSheet(online: online) { teamUp in
                     sheet = nil
                     // Let the sheet finish dismissing before Game Center's own
                     // picker takes the top of the stack.
                     Task {
                         try? await Task.sleep(for: .milliseconds(450))
-                        online.presentFriendInvite()
+                        online.presentFriendInvite(teamUp: teamUp)
                     }
                 }
                 .presentationDetents([.medium, .large])
@@ -257,19 +266,30 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, tutorial, settings, hangar, invite, lobby, modes
+    case difficulty, doubles, tutorial, settings, hangar, invite, lobby, modes
     var id: String { rawValue }
 }
 
 private struct InviteSheet: View {
     let online: OnlineMatchCoordinator
-    let openPicker: () -> Void
+    let openPicker: (_ teamUp: Bool) -> Void
+    /// Team up: the pilots you pick fly on your side, bots fill the rest.
+    @State private var teamUp = false
+    @State private var picked: Set<String> = []
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Text("Pick a pilot. You fly in the warm-up bay while they answer.")
+                    Picker("Match", selection: $teamUp) {
+                        Text("DUEL").tag(false)
+                        Text("TEAM UP").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("invite-format")
+                    Text(teamUp
+                         ? "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
+                         : "Pick a pilot. You fly in the warm-up bay while they answer.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("RECENT PILOTS AND FRIENDS") {
@@ -282,21 +302,45 @@ private struct InviteSheet: View {
                         }
                     }
                     ForEach(online.invitees, id: \.gamePlayerID) { player in
-                        Button { online.invite([player]) } label: {
+                        let isPicked = picked.contains(player.gamePlayerID)
+                        Button {
+                            guard teamUp else { online.invite([player]); return }
+                            if isPicked {
+                                picked.remove(player.gamePlayerID)
+                            } else if picked.count < 3 {
+                                picked.insert(player.gamePlayerID)
+                            }
+                        } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.cyan)
                                 Text(player.displayName).font(.headline)
                                 Spacer()
-                                Image(systemName: "paperplane.fill").foregroundStyle(.secondary)
+                                Image(systemName: teamUp ? (isPicked ? "checkmark.circle.fill" : "circle") : "paperplane.fill")
+                                    .foregroundStyle(isPicked ? .cyan : .secondary)
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Invite \(player.displayName)")
+                        .accessibilityLabel(teamUp ? "Team up with \(player.displayName)" : "Invite \(player.displayName)")
+                        .accessibilityAddTraits(isPicked ? .isSelected : [])
+                    }
+                }
+                if teamUp {
+                    Section {
+                        Button {
+                            online.invite(online.invitees.filter { picked.contains($0.gamePlayerID) }, teamUp: true)
+                        } label: {
+                            Label(picked.isEmpty ? "PICK A TEAMMATE" : "SEND TEAM-UP (\(picked.count))",
+                                  systemImage: "paperplane.fill")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .disabled(picked.isEmpty)
+                        .accessibilityIdentifier("invite-team-up-send")
                     }
                 }
                 Section {
-                    Button(action: openPicker) {
+                    Button { openPicker(teamUp) } label: {
                         Label("Game Center picker", systemImage: "person.2.wave.2.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -306,7 +350,7 @@ private struct InviteSheet: View {
                     Text("Apple's picker reaches anyone, but it is a modal sheet: no bay while you wait.")
                 }
             }
-            .navigationTitle("INVITE A PILOT")
+            .navigationTitle(teamUp ? "TEAM UP" : "INVITE A PILOT")
             .navigationBarTitleDisplayMode(.inline)
         }
         .task { online.loadInvitees() }
@@ -358,7 +402,12 @@ private struct HomeView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(spacing: 12) {
-                    MenuButton(title: "SOLO FLIGHT", subtitle: "ROOKIE • PILOT • ACE", icon: "person.fill") { sheet = .difficulty }
+                    // Side by side: a fifth full-width row pushes the bottom
+                    // of the menu off an iPhone in landscape.
+                    HStack(spacing: 12) {
+                        MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
+                        MenuButton(title: "DOUBLES", subtitle: "YOU + WINGMAN", icon: "person.2.fill", compact: true) { sheet = .doubles }
+                    }
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
                     MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
                     // Volleyball, basketball and the circuit are parked (Ian may spin them into
@@ -514,15 +563,16 @@ private struct GameView: View {
                 if mode != .warmup {
                     let left = session.state.team(onHalfAt: -1)
                     let right = left.opponent
+                    let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
                     HStack {
                         TeamSideBadge(
-                            title: left == localTeam ? "YOU" : (mode == .online ? "OPPONENT" : "CPU"),
+                            title: left == localTeam ? you : (mode == .online ? "OPPONENT" : "CPU"),
                             team: left,
                             isLocal: left == localTeam
                         )
                         Spacer()
                         TeamSideBadge(
-                            title: right == localTeam ? "YOU" : (mode == .online ? "OPPONENT" : "CPU"),
+                            title: right == localTeam ? you : (mode == .online ? "OPPONENT" : "CPU"),
                             team: right,
                             isLocal: right == localTeam
                         )
@@ -1162,10 +1212,11 @@ private struct ModeCard: View {
 }
 
 private struct DifficultyPicker: View {
+    var title = "CHOOSE YOUR RIVAL"
     let choose: (AIDifficulty) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("CHOOSE YOUR RIVAL").font(.title.bold())
+            Text(title).font(.title.bold())
             HStack(spacing: 12) {
                 ForEach(AIDifficulty.allCases, id: \.self) { difficulty in
                     Button { choose(difficulty) } label: {
@@ -1453,15 +1504,22 @@ private struct ResultsOverlay: View {
 
 private struct MenuButton: View {
     let title: String, subtitle: String, icon: String
+    /// Half-width: no chevron, and the title shrinks before it truncates.
+    var compact = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
-                Image(systemName: icon).font(.title2).frame(width: 34)
-                VStack(alignment: .leading, spacing: 2) { Text(title).font(.headline.weight(.black)).tracking(1); Text(subtitle).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.52)) }
-                Spacer(); Image(systemName: "chevron.right")
+            HStack(spacing: compact ? 10 : 16) {
+                Image(systemName: icon).font(.title2).frame(width: compact ? 28 : 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline.weight(.black)).tracking(compact ? 0 : 1).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(subtitle).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.52)).lineLimit(1).minimumScaleFactor(0.7)
+                }
+                Spacer(minLength: 0)
+                if !compact { Image(systemName: "chevron.right") }
             }
-            .padding(.horizontal, 20).frame(minHeight: 68)
+            .padding(.horizontal, compact ? 14 : 20).frame(minHeight: 68)
+            .contentShape(RoundedRectangle(cornerRadius: 18))
             .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
         }

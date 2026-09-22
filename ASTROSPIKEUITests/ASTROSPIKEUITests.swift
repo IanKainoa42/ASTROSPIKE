@@ -6,7 +6,8 @@ final class ASTROSPIKEUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments.append("--skip-onboarding")
         app.launch()
-        XCTAssertTrue(app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["SOLO FLIGHT, ONE ON ONE"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["DOUBLES, YOU + WINGMAN"].exists)
         XCTAssertTrue(app.buttons["QUICK MATCH, AUTOMATIC ONLINE DUEL"].exists)
         XCTAssertTrue(app.buttons["LOBBY, WHO'S ONLINE • LIVE DUELS • BRACKETS"].exists)
         XCTAssertTrue(app.buttons["INVITE"].exists)
@@ -79,7 +80,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments.append("--skip-onboarding")
         app.launch()
-        app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].tap()
+        app.buttons["SOLO FLIGHT, ONE ON ONE"].tap()
         XCTAssertTrue(app.buttons["ROOKIE, Patient learner"].waitForExistence(timeout: 3))
         app.buttons["ROOKIE, Patient learner"].tap()
         XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
@@ -188,7 +189,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["BACK TO MENU"].waitForExistence(timeout: 5))
         app.buttons["BACK TO MENU"].tap()
-        XCTAssertTrue(app.buttons["SOLO FLIGHT, ROOKIE • PILOT • ACE"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["SOLO FLIGHT, ONE ON ONE"].waitForExistence(timeout: 5))
     }
 
     @MainActor

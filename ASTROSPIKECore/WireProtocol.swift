@@ -10,8 +10,9 @@ public enum WirePayload: Codable, Equatable, Sendable {
     case profile(seat: Seat, hull: Hull)
     /// The host's seating plan, Game Center player ID to seat, and the host's
     /// sliders, physics and format. Guests fly exactly this rather than
-    /// negotiating or reading their own settings.
-    case seating(plan: [String: Seat], tuning: FlightTuningSnapshot)
+    /// negotiating or reading their own settings. `teamUp` is the host's
+    /// call that its guests fly beside it: doubles, whoever turned up.
+    case seating(plan: [String: Seat], tuning: FlightTuningSnapshot, teamUp: Bool)
     case ping(nanoseconds: UInt64)
     case resync(WorldState)
 }
@@ -62,7 +63,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     a build 77 peer cannot decode the seating plan at all, and the goal
     //     mouth is cut to the ball, so it would not score the same rally
     //     either.
-    public static let currentVersion: UInt16 = 21
+    // 22: seating carries teamUp -- two friends can fly on the same side
+    //     against bots, and a build 88 guest would seat itself in a duel.
+    public static let currentVersion: UInt16 = 22
 
     public var version: UInt16
     public var sequence: UInt64

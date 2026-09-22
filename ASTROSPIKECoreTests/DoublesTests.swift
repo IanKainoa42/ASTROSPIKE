@@ -123,7 +123,7 @@ struct DoublesTests {
         let profile = WireEnvelope(sequence: 2, payload: .profile(seat: .cyanWing, hull: .manta))
         let seating = WireEnvelope(
             sequence: 3,
-            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], tuning: FlightTuningSnapshot.defaults)
+            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], tuning: FlightTuningSnapshot.defaults, teamUp: true)
         )
         var snapshotEngine = doublesEngine()
         snapshotEngine.step(inputs: [:])
@@ -131,6 +131,48 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 21)
+        #expect(WireEnvelope.currentVersion == 22)
+    }
+
+    @Test("A team-up seats the invited friend beside the host")
+    func teamUpSeating() {
+        let plan = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:2"], teamUp: true)
+        #expect(plan == ["G:1": .cyan, "G:2": .cyanWing])
+        #expect(Set(plan.values.map(\.team)) == [.cyan])
+        let four = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:4", "G:2", "G:3"], teamUp: true)
+        #expect(four == ["G:1": .cyan, "G:2": .cyanWing, "G:3": .orange, "G:4": .orangeWing])
+    }
+
+    @Test("A duel still puts the second pilot across the net")
+    func duelSeating() {
+        let plan = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:2"], teamUp: false)
+        #expect(plan == ["G:1": .cyan, "G:2": .orange])
+        let three = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:3", "G:2"], teamUp: false)
+        #expect(three == ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing])
+    }
+
+    @Test("Two friends teamed up play doubles, not a duel")
+    func teamUpRoster() {
+        #expect(OnlineSeating.roster(filled: [.cyan, .cyanWing], teamUp: true) == Seat.doubles)
+        #expect(OnlineSeating.roster(filled: [.cyan, .orange], teamUp: false) == Seat.singles)
+        #expect(OnlineSeating.roster(filled: [.cyan, .orange, .cyanWing], teamUp: false) == Seat.doubles)
+    }
+
+    @Test("A teammate walking out hands their chair to a bot")
+    func teammateDropBenches() {
+        let teamUp: [String: Seat] = ["G:1": .cyan, "G:2": .cyanWing]
+        #expect(OnlineSeating.seatingAfterHold(seating: teamUp, dropped: ["G:2"]) == ["G:1": .cyan])
+        let four: [String: Seat] = ["G:1": .cyan, "G:2": .cyanWing, "G:3": .orange, "G:4": .orangeWing]
+        #expect(OnlineSeating.seatingAfterHold(seating: four, dropped: ["G:3"])?.count == 3)
+    }
+
+    @Test("The last human on a side walking out is still a forfeit")
+    func lastHumanDropForfeits() {
+        let duel: [String: Seat] = ["G:1": .cyan, "G:2": .orange]
+        #expect(OnlineSeating.seatingAfterHold(seating: duel, dropped: ["G:2"]) == nil)
+        let three: [String: Seat] = ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing]
+        #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2"]) == nil)
+        let four: [String: Seat] = ["G:1": .cyan, "G:2": .cyanWing, "G:3": .orange, "G:4": .orangeWing]
+        #expect(OnlineSeating.seatingAfterHold(seating: four, dropped: ["G:3", "G:4"]) == nil)
     }
 }

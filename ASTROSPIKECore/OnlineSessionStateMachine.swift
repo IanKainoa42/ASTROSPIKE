@@ -120,6 +120,45 @@ public enum OnlineMatchRole: Equatable, Sendable {
 /// The two decisions the table needs that must come out the same on every
 /// phone: who seats it, and when everyone seated has answered.
 public enum OnlineSeating {
+    /// The order chairs are handed out in. A duel puts the second pilot
+    /// across the net, so three pilots are two against one plus a bot on the
+    /// empty wing. A team-up puts the second pilot beside the host, so two
+    /// friends fly together against bots and a fourth makes it two a side.
+    public static func order(teamUp: Bool) -> [Seat] {
+        teamUp ? [.cyan, .cyanWing, .orange, .orangeWing] : [.cyan, .orange, .cyanWing, .orangeWing]
+    }
+
+    /// The host's plan: itself first, then every peer by player ID.
+    public static func plan(localID: String, peerIDs: [String], teamUp: Bool) -> [String: Seat] {
+        let order = order(teamUp: teamUp)
+        var plan: [String: Seat] = [:]
+        for (index, id) in ([localID] + peerIDs.sorted()).prefix(order.count).enumerated() {
+            plan[id] = order[index]
+        }
+        return plan
+    }
+
+    /// Doubles whenever the host called a team-up, however few accepted, or
+    /// whenever more than two pilots sat down.
+    public static func roster(filled: Set<Seat>, teamUp: Bool) -> Set<Seat> {
+        teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
+    }
+
+    /// When a dropped pilot's hold runs out: the plan to play on with, their
+    /// chair handed to a bot, or nil for a forfeit. The match goes on only
+    /// when every team that lost a pilot still has a human flying for it --
+    /// a teammate walking out should not cost the one who stayed.
+    public static func seatingAfterHold(
+        seating: [String: Seat],
+        dropped: Set<String>
+    ) -> [String: Seat]? {
+        let staying = seating.filter { !dropped.contains($0.key) }
+        let bereft = Set(seating.filter { dropped.contains($0.key) }.values.map(\.team))
+        guard !bereft.isEmpty, !staying.isEmpty else { return nil }
+        let manned = Set(staying.values.map(\.team))
+        return bereft.isSubset(of: manned) ? staying : nil
+    }
+
     public static func localHosts(
         localID: String,
         peerIDs: some Sequence<String>,

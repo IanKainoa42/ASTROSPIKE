@@ -27,6 +27,10 @@ final class ArenaScene: SKScene {
     /// One hull and one exhaust per seat, built up front and hidden while
     /// the seat is empty.
     private var shipNodes: [Seat: SKShapeNode] = [:]
+    /// YOU and ALLY over the two ships on the pilot's side in doubles, where
+    /// two hulls share a colour and nothing else says which one you fly.
+    private var markerNodes: [Seat: SKLabelNode] = [:]
+    var localSeat: Seat?
     private var exhaustNodes: [Seat: SKSpriteNode] = [:]
     /// The hull's own exhaust width, kept so the idle ember can be pinned
     /// narrower than a wide hull's lit plume.
@@ -77,6 +81,14 @@ final class ArenaScene: SKScene {
             shipNodes[seat] = ship
             exhaustNodes[seat] = exhaust
             actorLayer.addChild(ship)
+            let marker = SKLabelNode(fontNamed: "Menlo-Bold")
+            marker.fontSize = 11
+            marker.fontColor = Self.hullColor(for: seat)
+            marker.verticalAlignmentMode = .bottom
+            marker.zPosition = 6
+            marker.isHidden = true
+            markerNodes[seat] = marker
+            actorLayer.addChild(marker)
         }
         actorLayer.addChild(ball)
         for seat in Seat.allCases {
@@ -834,8 +846,20 @@ final class ArenaScene: SKScene {
 
     private func update(seat: Seat, state: ShipState?) {
         guard let shipNode = shipNodes[seat], let exhaust = exhaustNodes[seat] else { return }
-        guard let state else { shipNode.isHidden = true; return }
+        let marker = markerNodes[seat]
+        guard let state else { shipNode.isHidden = true; marker?.isHidden = true; return }
         shipNode.isHidden = state.isDestroyed
+        if let marker {
+            let doubles = (snapshot?.ships.count ?? 0) > 2
+            let text: String? = !doubles || localSeat == nil ? nil
+                : seat == localSeat ? "YOU" : seat == localSeat?.partner ? "ALLY" : nil
+            marker.isHidden = text == nil || state.isDestroyed
+            if let text {
+                marker.text = text
+                let spot = point(state.position.x, state.position.y)
+                marker.position = CGPoint(x: spot.x, y: spot.y + 22)
+            }
+        }
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
         // Drawn at the scale the ball's hitbox is built at (`ShipHitbox`).
