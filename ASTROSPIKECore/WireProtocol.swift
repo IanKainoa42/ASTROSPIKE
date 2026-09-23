@@ -69,7 +69,12 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     doubles is played with two -- and a guest's engine follows the
     //     host's rulebook instead of keeping its own. A build 92 peer cannot
     //     decode a snapshot at all.
-    public static let currentVersion: UInt16 = 23
+    // 24: the touch cap is gone -- a hull may play the ball as often as it
+    //     likes, only the floor is a fault. FlightTuningSnapshot lost
+    //     allowedTouchesPerSide and PointReason lost touchLimit, so a build
+    //     93 peer cannot decode the seating plan, and one that could would
+    //     call a fault this build plays through.
+    public static let currentVersion: UInt16 = 24
 
     public var version: UInt16
     public var sequence: UInt64

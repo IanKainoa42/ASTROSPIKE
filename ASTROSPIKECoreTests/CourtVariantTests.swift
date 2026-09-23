@@ -70,7 +70,6 @@ struct VolleyballCourtTests {
     func firstBounceScores() {
         let configuration = SimulationConfiguration.volleyball(from: SimulationConfiguration())
         #expect(configuration.allowedFloorBounces == 0)
-        #expect(configuration.allowedShipTouches == 3)
 
         var rules = MatchRules(state: MatchRuleState(phase: .playing), allowedFloorBounces: 0)
         let events = rules.resolve([.ballTouchedFloor(side: .cyan)])

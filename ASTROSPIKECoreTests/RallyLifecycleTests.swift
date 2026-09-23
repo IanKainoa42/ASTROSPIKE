@@ -44,7 +44,7 @@ struct RallyLifecycleTests {
         return collisions
     }
 
-    @Test("A ball rattling on a hull spends one touch, not three")
+    @Test("A ball rattling on a hull tallies one touch, not three")
     func rattleCountsOnce() {
         var engine = rattleAgainstTheWall()
         let collisions = flyTheRattle(&engine, ticks: 20)
@@ -55,7 +55,7 @@ struct RallyLifecycleTests {
         #expect(engine.state.match.shipTouches[.cyan] == 1)
     }
 
-    @Test("Without the buffer that same rattle burns the whole allowance")
+    @Test("Without the buffer that same rattle tallies three")
     func rattleWithoutTheBufferCostsThree() {
         var engine = rattleAgainstTheWall(debounce: 0)
         _ = flyTheRattle(&engine, ticks: 20)
@@ -122,14 +122,14 @@ struct RallyLifecycleTests {
         return engine
     }
 
-    @Test("A hull touch spends a touch on your own half")
+    @Test("A hull touch on your own half is tallied")
     func ownHalfTouchCounts() {
         let engine = dropOntoCyan(atX: -0.30)
         #expect(engine.state.lastBallToucher == .cyan, "the hull has to reach the ball")
         #expect(engine.state.match.shipTouches[.cyan] == 1)
     }
 
-    @Test("A hull touch on the far half spends nothing")
+    @Test("A hull touch on the far half is not tallied")
     func farHalfTouchIsFree() {
         let engine = dropOntoCyan(atX: 0.30)
         #expect(engine.state.lastBallToucher == .cyan, "the hull has to reach the ball")

@@ -27,7 +27,6 @@ struct FlightTuningTests {
         try withIsolatedDefaults { defaults in
             let first = FlightTuningStore(defaults: defaults)
             first.allowedBouncesPerHit = 4
-            first.allowedTouchesPerSide = 5
             first.setsToWin = 3
 
             let restored = FlightTuningStore(defaults: defaults)

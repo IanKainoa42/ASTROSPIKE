@@ -47,7 +47,7 @@ final class FeedbackCenter {
 
     func point(team: Team, reason: PointReason = .goal) {
         // A goal has its own recorded fanfare; everything else that ends a
-        // rally -- a bounce, a touch limit, a crash -- keeps the short tone,
+        // rally -- a bounce, a crash -- keeps the short tone,
         // because those happen several times a set and a fanfare would wear
         // out long before the match did.
         if reason == .goal {

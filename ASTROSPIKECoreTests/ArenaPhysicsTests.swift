@@ -829,8 +829,15 @@ struct ArenaPhysicsTests {
         engine.state.ships[.cyan]!.position = SIMD2(-0.55, 0.20)
         engine.state.ships[.orange]!.position = SIMD2(0.55, 0.20)
         engine.state.ball = BallState(position: SIMD2(-0.55, 0.60), velocity: SIMD2(0, -0.2))
-        var longestContact = 0
-        var contact = 0
+        // Touches are free, so nothing in the rulebook ends this: a ship
+        // holding station under the ball keeps it up for as long as it
+        // likes, and that is legal keep-up. What the physics has to
+        // guarantee is that the ball is never *carried* -- every contact
+        // pops it clear, so it hops on the hull rather than sitting on it.
+        // Sitting is being within contact reach and moving with the hull.
+        var longestRest = 0
+        var rest = 0
+        var touches = 0
 
         for tick in UInt64(0) ..< 900 {
             // Both players hold station, which is exactly how a ball gets ridden.
@@ -839,18 +846,23 @@ struct ArenaPhysicsTests {
                 let holding = ship.position.y < 0.20 || ship.velocity.y < -0.05
                 return (seat, PlayerInput(tick: tick, torque: 0, thrust: holding))
             })
+            let before = engine.state.match.shipTouches.cyan
             engine.step(inputs: inputs)
             guard engine.state.match.phase == .playing else { break }
-            let riding = Seat.singles.contains { seat in
+            if engine.state.match.shipTouches.cyan > before { touches += 1 }
+            let resting = Seat.singles.contains { seat in
                 guard let ship = engine.state.ships[seat] else { return false }
-                return simd_distance(engine.state.ball.position, ship.position) < 0.125
+                let reach = simd_distance(engine.state.ball.position, ship.position) < 0.105
+                let together = simd_length(engine.state.ball.velocity - ship.velocity) < 0.08
+                return reach && together
             }
-            contact = riding ? contact + 1 : 0
-            longestContact = max(longestContact, contact)
+            rest = resting ? rest + 1 : 0
+            longestRest = max(longestRest, rest)
         }
 
-        // Half a second of unbroken contact is a bounce; four seconds is a stall.
-        #expect(longestContact < 120)
+        #expect(touches >= 6, "the scenario has to keep the ball on the hull to prove anything")
+        // A quarter of a second sitting still on a hull is a carry.
+        #expect(longestRest < 30)
     }
 
     @Test("Even a gentle touch pushes the ball clear of the hull")

@@ -18,7 +18,6 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// How hard the tractor beam reels the ball in.
     public var tractorStrength: Double
     public var allowedBouncesPerHit: Int
-    public var allowedTouchesPerSide: Int
     /// 1 = single game, 2 = best of three, 3 = best of five. This is the one
     /// place the shipped default lives -- `MatchRuleState`'s own `setsToWin`
     /// default stays at 1 because a bare rule state is a single set by
@@ -40,7 +39,6 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         ballDropSpeed: 0.06,
         tractorStrength: 2.6,
         allowedBouncesPerHit: 3,
-        allowedTouchesPerSide: 3,
         setsToWin: 2
     )
 
@@ -55,7 +53,6 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
             ballDropHeight: ballDropHeight,
             ballDropSpeed: ballDropSpeed,
             allowedFloorBounces: allowedBouncesPerHit,
-            allowedShipTouches: allowedTouchesPerSide,
             tractorStrength: tractorStrength
         )
     }
@@ -83,9 +80,6 @@ public final class FlightTuningStore {
     public var allowedBouncesPerHit: Int {
         didSet { defaults.set(allowedBouncesPerHit, forKey: Keys.allowedBouncesPerHit) }
     }
-    public var allowedTouchesPerSide: Int {
-        didSet { defaults.set(allowedTouchesPerSide, forKey: Keys.allowedTouchesPerSide) }
-    }
     public var setsToWin: Int {
         didSet { defaults.set(setsToWin, forKey: Keys.setsToWin) }
     }
@@ -108,12 +102,6 @@ public final class FlightTuningStore {
             fallback: baked.allowedBouncesPerHit,
             range: 1 ... 5
         )
-        allowedTouchesPerSide = Self.load(
-            defaults,
-            key: Keys.allowedTouchesPerSide,
-            fallback: baked.allowedTouchesPerSide,
-            range: 1 ... 6
-        )
         setsToWin = Self.load(defaults, key: Keys.setsToWin, fallback: baked.setsToWin, range: 1 ... 3)
     }
 
@@ -128,7 +116,6 @@ public final class FlightTuningStore {
             ballDropSpeed: ballDropSpeed,
             tractorStrength: tractorStrength,
             allowedBouncesPerHit: allowedBouncesPerHit,
-            allowedTouchesPerSide: allowedTouchesPerSide,
             setsToWin: setsToWin
         )
     }
@@ -146,7 +133,6 @@ public final class FlightTuningStore {
         ballDropSpeed = baked.ballDropSpeed
         tractorStrength = baked.tractorStrength
         allowedBouncesPerHit = baked.allowedBouncesPerHit
-        allowedTouchesPerSide = baked.allowedTouchesPerSide
         setsToWin = baked.setsToWin
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
@@ -173,7 +159,9 @@ public final class FlightTuningStore {
         static let allowedBouncesPerHit = "tuning.allowedBouncesPerHit"
         static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
         static let setsToWin = "tuning.setsToWin"
-        /// Keys earlier builds wrote from sliders that no longer exist.
+        /// Keys earlier builds wrote from sliders that no longer exist. The
+        /// touch cap went in build 94: touches are free now, so a stepper
+        /// value from before would set a rule that no longer exists.
         static let retired = [
             gravityMagnitude,
             thrustAcceleration,
@@ -183,10 +171,10 @@ public final class FlightTuningStore {
             ballDropHeight,
             ballDropSpeed,
             tractorStrength,
+            allowedTouchesPerSide,
         ]
         static let all = retired + [
             allowedBouncesPerHit,
-            allowedTouchesPerSide,
             setsToWin,
         ]
     }

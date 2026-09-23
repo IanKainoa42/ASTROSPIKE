@@ -588,7 +588,6 @@ private struct GameView: View {
                         state: session.state,
                         localTeam: localTeam,
                         allowedBounces: allowedBounces,
-                        allowedTouches: allowedTouches,
                         // The diagnostics preview is a staged snapshot with
                         // no Game Center behind it; handing the HUD the live
                         // coordinator would print GAME CENTER OFFLINE under it.
@@ -790,13 +789,6 @@ private struct GameView: View {
         // both come off `SimulationConfiguration`, not the pilot's sliders.
         case .volleyball: 0
         case .basketball, .online, .warmup: 3
-        }
-    }
-
-    private var allowedTouches: Int {
-        switch mode {
-        case .solo, .doubles: tuning.allowedTouchesPerSide
-        case .volleyball, .basketball, .online, .warmup: 3
         }
     }
 
@@ -1007,7 +999,6 @@ private struct MatchHUD: View {
     let state: WorldState
     let localTeam: Team
     let allowedBounces: Int
-    let allowedTouches: Int
     let online: OnlineMatchCoordinator?
     let actionLabel: String
     let actionIcon: String
@@ -1117,7 +1108,6 @@ private struct MatchHUD: View {
         let tint = Self.tint(team)
         let value = state.match.score[team]
         let bounces = state.match.floorContacts[team]
-        let touches = state.match.shipTouches[team]
         let stake = state.match.stake(for: team)
         let isLocal = team == localTeam
         return HStack(spacing: 12) {
@@ -1141,20 +1131,12 @@ private struct MatchHUD: View {
                             .stroke(tint, lineWidth: stake == .matchPoint ? 3 : 1.5)
                     }
                 }
-            // Up arrows are touches, down arrows are bounces -- which way the
-            // ball was headed when it spent one.
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 1) {
-                    ForEach(0..<allowedTouches, id: \.self) { index in
-                        Image(systemName: "arrow.up")
-                            .foregroundStyle(index < touches ? tint : .white.opacity(0.16))
-                    }
-                }
-                HStack(spacing: 1) {
-                    ForEach(0..<allowedBounces, id: \.self) { index in
-                        Image(systemName: "arrow.down")
-                            .foregroundStyle(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
-                    }
+            // Down arrows are bounces spent this possession. Touches are
+            // free, so there is nothing to meter for them.
+            HStack(spacing: 1) {
+                ForEach(0..<allowedBounces, id: \.self) { index in
+                    Image(systemName: "arrow.down")
+                        .foregroundStyle(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
                 }
             }
             .font(.system(size: 10, weight: .black))
@@ -1162,8 +1144,7 @@ private struct MatchHUD: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             (isLocal ? "Your side, " : "Rival side, ")
-                + "\(team.rawValue) score \(value), \(touches) of \(allowedTouches) touches used, "
-                + "\(bounces) of \(allowedBounces) bounces used"
+                + "\(team.rawValue) score \(value), \(bounces) of \(allowedBounces) bounces used"
                 + (stake == .none ? "" : stake == .matchPoint ? ", match point" : ", set point")
         )
     }
@@ -1224,7 +1205,7 @@ private struct ModePicker: View {
                     title: "VOLLEYBALL",
                     icon: "volleyball.fill",
                     tint: .cyan,
-                    detail: "The net stands up out of the floor and covers the bottom half of the arena. Nothing goes through it — play it over the top. Three touches a trip, and the first time the ball touches the ground the rally is over."
+                    detail: "The net stands up out of the floor and covers the bottom half of the arena. Nothing goes through it — play it over the top. Touch it as often as you like, but the first time the ball touches the ground the rally is over."
                 ) { start(.volleyball(difficulty)) }
 
                 ModeCard(
@@ -1309,10 +1290,10 @@ private struct FlightTutorial: View {
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
                     TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court but you can only fire from your own half, and they never hurt a ship.")
                     TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
-                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Three touches a trip on your own half, three bounces a touch.")
+                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Touch it as often as you like; three bounces on your floor between touches, and the fourth is theirs.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
                     TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
-                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal, a fourth touch, or a fourth bounce. After every set the teams switch sides and keep their colours, so everyone plays both halves.")
+                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal or a fourth bounce. Touches are unlimited. After every set the teams switch sides and keep their colours, so everyone plays both halves.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }
@@ -1373,11 +1354,6 @@ private struct SettingsView: View {
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
                 Section("Match Rules") {
                     Stepper(
-                        "Touches per side: \(tuning.allowedTouchesPerSide)",
-                        value: $tuning.allowedTouchesPerSide,
-                        in: 1 ... 6
-                    )
-                    Stepper(
                         "Bounces per hit: \(tuning.allowedBouncesPerHit)",
                         value: $tuning.allowedBouncesPerHit,
                         in: 1 ... 5
@@ -1388,7 +1364,7 @@ private struct SettingsView: View {
                         Text("Best of 5").tag(3)
                     }
                     .accessibilityIdentifier("match-length")
-                    Text("Touches and bounces apply to solo matches; online uses three of each. Match length applies to solo matches and to any online match you host.")
+                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length applies to solo matches and to any online match you host.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

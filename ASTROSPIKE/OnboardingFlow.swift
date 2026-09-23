@@ -173,11 +173,11 @@ struct OnboardingFlow: View {
 
     private var rules: some View {
         IntroPage(kicker: "03 • RULES") {
-            Text("THREE TOUCHES. THREE BOUNCES.")
+            Text("TOUCH ALL YOU LIKE. THREE BOUNCES.")
                 .font(.system(size: 26, weight: .black, design: .rounded))
                 .fixedSize(horizontal: false, vertical: true)
-            IntroLine(icon: "hand.tap.fill", tint: .cyan, title: "TOUCHES", text: "Your hull may touch the ball three times per trip on your own half. A fourth is their point. Bolts, and touches on their half, are free.")
-            IntroLine(icon: "circle.bottomhalf.filled", tint: .orange, title: "BOUNCES", text: "The ball may bounce on your floor three times between touches. A fourth and it’s theirs.")
+            IntroLine(icon: "hand.tap.fill", tint: .cyan, title: "TOUCHES", text: "Your hull may play the ball as many times as you like, on either half. Keep it up all day. Every touch clears your bounces.")
+            IntroLine(icon: "circle.bottomhalf.filled", tint: .orange, title: "BOUNCES", text: "The ball may bounce on your floor three times between touches. A fourth and it’s theirs. Bolts and the beam don’t clear them.")
             IntroLine(icon: "burst.fill", tint: .white.opacity(0.8), title: "NO WRECKS", text: "Walls, floor, roof and the other ship all just rebound. Only the ball scores.")
         } side: {
             RulesDiagram()
@@ -429,9 +429,8 @@ private struct GoalDiagram: View {
 private struct RulesDiagram: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            meter(title: "TOUCHES", used: 2, total: 3, symbol: "arrow.up")
             meter(title: "BOUNCES", used: 1, total: 3, symbol: "arrow.down")
-            Text("These live under each score in the HUD. Full means the next one costs you the point.")
+            Text("This lives under each score in the HUD. Full means the next bounce costs you the point.")
                 .font(.caption).foregroundStyle(.white.opacity(0.6))
                 .fixedSize(horizontal: false, vertical: true)
         }

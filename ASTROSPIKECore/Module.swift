@@ -406,7 +406,6 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// Drag applied past the marker, ramping in with depth.
     public var crossingDrag: Double
     public var allowedFloorBounces: Int
-    public var allowedShipTouches: Int
     /// Bolt muzzle speed, arena units per second.
     public var boltSpeed: Double
     /// Seconds a bolt flies before it fizzles. Long enough at `boltSpeed`
@@ -452,7 +451,6 @@ public struct SimulationConfiguration: Equatable, Sendable {
         crossingPushBack: Double = 18,
         crossingDrag: Double = 5.0,
         allowedFloorBounces: Int = 1,
-        allowedShipTouches: Int = 3,
         boltSpeed: Double = 2.6,
         boltLifetime: Double = 0.8,
         boltCooldown: Double = 0.45,
@@ -484,7 +482,6 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.crossingPushBack = max(0, crossingPushBack)
         self.crossingDrag = max(0, crossingDrag)
         self.allowedFloorBounces = min(5, max(0, allowedFloorBounces))
-        self.allowedShipTouches = min(6, max(1, allowedShipTouches))
         self.boltSpeed = max(0, boltSpeed)
         self.boltLifetime = max(0, boltLifetime)
         self.boltCooldown = max(0, boltCooldown)
@@ -532,13 +529,12 @@ public struct SimulationConfiguration: Equatable, Sendable {
         var configuration = base
         configuration.ballDropHeight = 0.34
         configuration.allowedFloorBounces = 0
-        configuration.allowedShipTouches = 3
         return configuration
     }
 
     /// Basketball. The ball is put in play well under the rim so a serve can
-    /// never drop through it on its own, and the bounce and touch caps are
-    /// moot -- the hoop court keeps its own book, where nothing is a fault.
+    /// never drop through it on its own, and the bounce cap is moot -- the
+    /// hoop court keeps its own book, where nothing is a fault.
     public static func basketball(from base: SimulationConfiguration) -> SimulationConfiguration {
         var configuration = base
         configuration.ballDropHeight = -0.20
@@ -579,8 +575,7 @@ public struct SimulationEngine: Sendable {
         self.arena = arena
         self.rules = MatchRules(
             state: state.match,
-            allowedFloorBounces: configuration.allowedFloorBounces,
-            allowedShipTouches: configuration.allowedShipTouches
+            allowedFloorBounces: configuration.allowedFloorBounces
         )
     }
 
@@ -624,7 +619,6 @@ public struct SimulationEngine: Sendable {
     public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
         self.configuration = configuration
         rules.updateAllowedFloorBounces(configuration.allowedFloorBounces)
-        rules.updateAllowedShipTouches(configuration.allowedShipTouches)
         // The ball in play grows with the slider rather than waiting for the
         // next serve: the whole point of the knob is to see what the size
         // feels like while you are flying. A ball that ends up overlapping a
@@ -1055,9 +1049,9 @@ public struct SimulationEngine: Sendable {
     /// The exhaust is a real jet: a ball sitting in it gets shoved down the
     /// plume. Strongest at the nozzle, gone at `exhaustWashRange`, and only
     /// inside a cone behind the tail, so flying past the ball does nothing.
-    /// It is not a touch -- nothing has hit anything -- so it never counts
-    /// against the touch limit, which is what makes hovering under a ball to
-    /// cushion it a real option rather than a foul.
+    /// It is not a touch -- nothing has hit anything -- so it never clears
+    /// the bounce allowance the way a hull does: hovering under a ball to
+    /// cushion it keeps it off the floor, it does not reset the count.
     private static let exhaustWashCone = 0.80
 
     private mutating func applyExhaustWash(dt: Double, ballIndex: Int) {
@@ -1081,7 +1075,7 @@ public struct SimulationEngine: Sendable {
     /// The tractor beam is the cannon's opposite: a cone ahead of the nose
     /// that draws the ball in and bleeds its speed off, strongest at the
     /// nose and gone at `tractorRange`. Like the wash it is not a touch, so
-    /// reeling a ball in never counts against the touch limit -- the touch
+    /// reeling a ball in never clears the bounce allowance -- the touch
     /// comes when it lands on the hull.
     /// The cosine of the cone's half-angle: higher is narrower. 0.86 is a
     /// touch under 31 degrees: a long thin reach rather than a wide fan.

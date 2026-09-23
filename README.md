@@ -33,8 +33,8 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - A ship contact always pushes the ball clear of the hull, so the ball can never be carried, ridden, or hovered with.
 - Nothing in the arena destroys a ship. The ground, the roof bulge, the outer walls, the ceiling, and the other ship are all rebounds.
 - Ships may clear the net freely. Past the halfway marker the far half pushes back in proportion to how deep the ship is and bleeds its speed, so crossing is always possible and always costs more the further it goes.
-- A goal, a second floor bounce since the last hit, or a fourth touch on one trip awards one point. Those are the only three ways to score.
-- Each ship hit refreshes the bounce allowance but not the touch tally, so touch/bounce/touch/bounce is not a way to stall on your own half.
+- A goal, or one floor bounce too many since the last hit, awards one point. Those are the only two ways to score. There is no touch limit: a hull may play the ball as often as it likes, on either half.
+- Each ship hit refreshes the bounce allowance, so keeping the ball up on your own hull is always legal; only letting it drop is a fault.
 - Crossing the center plane resets the entered side's bounce count and ends the possession for both sides.
 - First to 7 wins with a two-point lead; 11 is the hard cap.
 - After every non-winning point, only the ball respawns high over the middle, nudged slightly toward the conceding side. Both ships keep flying under live input during the prototype's 1.35-second serve hold, then the ball drops immediately with no reset or countdown.

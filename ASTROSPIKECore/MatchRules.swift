@@ -15,7 +15,6 @@ public enum MatchPhase: String, Codable, Equatable, Sendable {
 public enum PointReason: String, Codable, Equatable, Sendable {
     case goal
     case thirdBounce
-    case touchLimit
     case crash
     case netContact
     case forfeit
@@ -62,8 +61,10 @@ public struct MatchRuleState: Codable, Equatable, Sendable {
     /// Points in the set being played.
     public var score: Score
     public var floorContacts: SideCounts
-    /// Ship touches taken during the current possession. Reset when the ball
-    /// crosses the net, so the cap is per trip rather than per rally.
+    /// Ship touches taken during the current possession. There is no cap
+    /// on them -- a hull may play the ball as often as it likes, only the
+    /// floor is a fault -- so this is a tally, not an allowance. The
+    /// warm-up bay reads it as the keep-up streak.
     public var shipTouches: SideCounts
     public var phase: MatchPhase
     /// Sets already won. A single-game match never gets past 1–0.
@@ -164,18 +165,15 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
 public struct MatchRules: Sendable {
     public private(set) var state: MatchRuleState
     public private(set) var allowedFloorBounces: Int
-    public private(set) var allowedShipTouches: Int
 
     public init(
         state: MatchRuleState = MatchRuleState(),
-        allowedFloorBounces: Int = 1,
-        allowedShipTouches: Int = 3
+        allowedFloorBounces: Int = 1
     ) {
         self.state = state
         // Zero is a legal setting: volleyball ends the rally on the first
         // touch of the floor rather than the second.
         self.allowedFloorBounces = min(5, max(0, allowedFloorBounces))
-        self.allowedShipTouches = min(6, max(1, allowedShipTouches))
     }
 
     public mutating func updateAllowedFloorBounces(_ value: Int) {
@@ -185,10 +183,6 @@ public struct MatchRules: Sendable {
     /// 1 = single game, 2 = best of three, 3 = best of five.
     public mutating func updateSetsToWin(_ value: Int) {
         state.setsToWin = min(3, max(1, value))
-    }
-
-    public mutating func updateAllowedShipTouches(_ value: Int) {
-        allowedShipTouches = min(6, max(1, value))
     }
 
     public mutating func beginNextRally() {
@@ -237,22 +231,17 @@ public struct MatchRules: Sendable {
         for contact in contacts {
             switch contact {
             case let .ballTouchedShip(team, counted):
-                // A hit still refreshes the bounce allowance -- but the touch
-                // tally does not reset, so touch/bounce/touch/bounce is no
-                // longer an unlimited way to stall on your own half. The
-                // refresh happens even on a free contact: a rattle that does
-                // not spend a touch must not spend a bounce either.
+                // A hit refreshes the bounce allowance, and that is all it
+                // does to the book: touches are never a fault, so keeping the
+                // ball up on your own hull for as long as you like is legal.
+                // The refresh happens even on a free contact -- a rattle
+                // that does not count as a touch must not spend a bounce.
                 state.floorContacts = SideCounts()
                 if counted {
-                    // A real touch by the other side is a change of hands even
-                    // when the ball never crossed the line -- a poach back
-                    // into your own half must not let you carry a stalled
-                    // tally into what is, for scoring, a fresh possession.
+                    // A real touch by the other side is a change of hands
+                    // even when the ball never crossed the line.
                     state.shipTouches[team.opponent] = 0
                     state.shipTouches[team] += 1
-                    if state.shipTouches[team] > allowedShipTouches {
-                        return awardPoint(to: team.opponent, reason: .touchLimit)
-                    }
                 }
             case let .ballCrossedCenter(team):
                 state.floorContacts[team] = 0

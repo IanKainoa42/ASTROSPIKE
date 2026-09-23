@@ -131,7 +131,7 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 23)
+        #expect(WireEnvelope.currentVersion == 24)
     }
 
     @Test("A team-up seats the invited friend beside the host")
@@ -267,10 +267,12 @@ struct DoublesTests {
         func dropBall(follows: Bool) -> SimulationEngine {
             var engine = doublesEngine()
             engine.followsHost = follows
-            // A ball dead on the cyan floor, over and over.
+            // A ball dropped onto the cyan floor, over and over: the moment
+            // it comes off the deck it is put back above it, clear of every
+            // hull, so the only thing that can end a rally is the floor.
             for _ in 0 ..< 600 {
-                if engine.state.match.phase == .playing {
-                    engine.state.ball = BallState(position: SIMD2(-0.50, -0.55), velocity: SIMD2(0, -3))
+                if engine.state.match.phase == .playing, engine.state.ball.velocity.y >= 0 {
+                    engine.state.ball = BallState(position: SIMD2(-0.30, -0.60), velocity: SIMD2(0, -3))
                 }
                 engine.step(inputs: [:])
             }

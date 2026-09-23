@@ -780,7 +780,6 @@ private extension SimulationEvent {
         switch reason {
         case .goal: return "\(scorer) GOAL"
         case .thirdBounce: return "BOUNCE LIMIT (\(bounceAllowance)) — \(scorer)"
-        case .touchLimit: return "TOO MANY TOUCHES — \(scorer)"
         case .crash: return "CRASH — \(scorer)"
         case .netContact: return "NET / CROSS — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"
