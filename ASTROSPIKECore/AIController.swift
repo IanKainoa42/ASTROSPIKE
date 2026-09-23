@@ -167,6 +167,10 @@ public struct AIController: InputSource, Sendable {
     /// a side do not race each other to the same ball.
     public mutating func input(for state: WorldState, seat: Seat, tick: UInt64) -> PlayerInput {
         guard let ship = state.ships[seat] else { return .idle(tick: tick) }
+        // With two balls in play each pilot flies one of them. The whole
+        // planner reads `state.ball`, so the chosen ball is swapped into that
+        // slot on a private copy rather than threaded through every helper.
+        let state = Self.focused(state, on: Self.focusBall(in: state, seat: seat, ship: ship))
         let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
         let supporting = supportsPartner(state: state, seat: seat, ship: ship)
 
@@ -365,7 +369,37 @@ public struct AIController: InputSource, Sendable {
     /// Where the second ship on a side waits: back by its own wall at
     /// mid-height, out from under the ball and off the lead's run-up.
     private func supportPost(homeSign: Double) -> SIMD2<Double> {
-        SIMD2(homeSign * 0.76, arena.floorY + 0.34)
+        SIMD2(homeSign * 0.76 * arena.widthScale, arena.floorY + 0.34 * arena.heightScale)
+    }
+
+    /// Which ball this seat plays. The nearest one, unless a live partner is
+    /// nearer to it still and there is another ball to take -- then the
+    /// pair split the court instead of both chasing the same ball.
+    static func focusBall(in state: WorldState, seat: Seat, ship: ShipState) -> Int {
+        guard state.balls.count > 1 else { return 0 }
+        let byDistance = state.balls.indices.sorted {
+            simd_distance(state.balls[$0].position, ship.position)
+                < simd_distance(state.balls[$1].position, ship.position)
+        }
+        let nearest = byDistance[0]
+        guard let partner = state.ships[seat.partner], !partner.isDestroyed else { return nearest }
+        let partnerNearest = state.balls.indices.min {
+            simd_distance(state.balls[$0].position, partner.position)
+                < simd_distance(state.balls[$1].position, partner.position)
+        }
+        guard partnerNearest == nearest else { return nearest }
+        let mine = simd_distance(state.balls[nearest].position, ship.position)
+        let theirs = simd_distance(state.balls[nearest].position, partner.position)
+        // Same tie-break as `supportsPartner`: the wing yields close calls.
+        let partnerOwnsIt = seat.isWing ? theirs < mine + 0.06 : theirs + 0.10 < mine
+        return partnerOwnsIt ? byDistance[1] : nearest
+    }
+
+    private static func focused(_ state: WorldState, on index: Int) -> WorldState {
+        guard index != 0 else { return state }
+        var copy = state
+        copy.balls.swapAt(0, index)
+        return copy
     }
 
     /// True when the partner is the one who should play this ball. The wing
@@ -614,7 +648,7 @@ public struct AIController: InputSource, Sendable {
 
     /// Ready position while the ball is on the far side of the net.
     private func guardPost(homeSign: Double) -> SIMD2<Double> {
-        SIMD2(homeSign * 0.42, arena.floorY + 0.50)
+        SIMD2(homeSign * 0.42 * arena.widthScale, arena.floorY + 0.50 * arena.heightScale)
     }
 
     /// The shot to play from `point`: which way to send the ball, and how

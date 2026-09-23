@@ -7,11 +7,23 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.launchArguments.append("--skip-onboarding")
         app.launch()
         XCTAssertTrue(app.buttons["SOLO FLIGHT, ONE ON ONE"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["DOUBLES, YOU + WINGMAN"].exists)
+        XCTAssertTrue(app.buttons["DOUBLES, BOT OR FRIEND ON YOUR WING"].exists)
         XCTAssertTrue(app.buttons["QUICK MATCH, AUTOMATIC ONLINE DUEL"].exists)
         XCTAssertTrue(app.buttons["LOBBY, WHO'S ONLINE • LIVE DUELS • BRACKETS"].exists)
         XCTAssertTrue(app.buttons["INVITE"].exists)
         XCTAssertTrue(app.frame.width > app.frame.height)
+    }
+
+    @MainActor
+    func testDoublesAsksWhoFliesBesideYou() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
+        app.launch()
+        app.buttons["DOUBLES, BOT OR FRIEND ON YOUR WING"].tap()
+        XCTAssertTrue(app.staticTexts["WHO FLIES BESIDE YOU?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["doubles-friend"].exists)
+        app.buttons["doubles-bot"].tap()
+        XCTAssertTrue(app.staticTexts["CHOOSE THE RIVAL PAIR"].waitForExistence(timeout: 3))
     }
 
     @MainActor

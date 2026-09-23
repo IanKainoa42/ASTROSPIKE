@@ -10,7 +10,7 @@ import simd
 public struct GuestSmoothing: Sendable {
     public var decayRate: Double
     public var snapDistance: Double
-    private var ballOffset = SIMD2<Double>(repeating: 0)
+    private var ballOffsets: [SIMD2<Double>] = []
     private var shipOffsets: [Seat: SIMD2<Double>] = [:]
 
     public init(decayRate: Double = 14, snapDistance: Double = 0.25) {
@@ -18,12 +18,15 @@ public struct GuestSmoothing: Sendable {
         self.snapDistance = snapDistance
     }
 
-    public var ballError: Double { simd_length(ballOffset) }
+    public var ballError: Double { ballOffsets.map(simd_length).max() ?? 0 }
 
     /// Records the gap between the frame on screen and the corrected state.
     /// The local ship is left alone: prediction and reconciliation own it.
     public mutating func capture(displayed: WorldState, corrected: WorldState, excluding local: Seat?) {
-        ballOffset = clamped(displayed.ball.position - corrected.ball.position)
+        ballOffsets = corrected.balls.indices.map { index in
+            guard index < displayed.balls.count else { return .zero }
+            return clamped(displayed.balls[index].position - corrected.balls[index].position)
+        }
         for (seat, ship) in corrected.ships where seat != local {
             guard let shown = displayed.ships[seat] else { continue }
             shipOffsets[seat] = clamped(shown.position - ship.position)
@@ -32,18 +35,20 @@ public struct GuestSmoothing: Sendable {
 
     public mutating func decay(dt: Double) {
         let factor = exp(-decayRate * max(0, dt))
-        ballOffset *= factor
+        for index in ballOffsets.indices { ballOffsets[index] *= factor }
         for seat in shipOffsets.keys { shipOffsets[seat]! *= factor }
     }
 
     public mutating func reset() {
-        ballOffset = .zero
+        ballOffsets = []
         shipOffsets = [:]
     }
 
     public func apply(to state: WorldState) -> WorldState {
         var shown = state
-        shown.ball.position += ballOffset
+        for (index, offset) in ballOffsets.enumerated() where index < shown.balls.count {
+            shown.balls[index].position += offset
+        }
         for (seat, offset) in shipOffsets { shown.ships[seat]?.position += offset }
         return shown
     }

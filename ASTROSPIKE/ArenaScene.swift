@@ -35,11 +35,9 @@ final class ArenaScene: SKScene {
     /// The hull's own exhaust width, kept so the idle ember can be pinned
     /// narrower than a wide hull's lit plume.
     private var exhaustWidths: [Seat: CGFloat] = [:]
-    private let ball = SKShapeNode(circleOfRadius: 10)
-    /// The one mark on the ball that turns with it. The lit face and the
-    /// shine stay where the light is; only the seam shows the spin.
-    private let ballSeam = SKShapeNode()
-    private var ballSpinAngle = 0.0
+    /// One node per ball the engine can field. Doubles plays two; a duel
+    /// plays one and the second sits hidden.
+    private let balls = (0 ..< SimulationConfiguration.maximumBallCount).map { _ in BallNode() }
     private var ballSpinTick: UInt64?
     private static let tickDuration = SimulationConfiguration().stepDuration
     private var boltNodes: [UInt64: SKNode] = [:]
@@ -48,7 +46,7 @@ final class ArenaScene: SKScene {
     /// How far the beam reaches, taken from the engine that does the pulling
     /// so the drawing can never disagree with the grab.
     var tractorRange = SimulationConfiguration().tractorRange
-    private var ballTrail: [CGPoint] = []
+    private var ballTrails: [[CGPoint]] = []
     private var wakeAnchors: [Seat: CGPoint] = [:]
     private var plumeBudgets: [Seat: Double] = [:]
     private var plumeSeed = 0
@@ -90,7 +88,7 @@ final class ArenaScene: SKScene {
             markerNodes[seat] = marker
             actorLayer.addChild(marker)
         }
-        actorLayer.addChild(ball)
+        for ball in balls { actorLayer.addChild(ball) }
         for seat in Seat.allCases {
             let beam = SKShapeNode()
             // The node's alpha multiplies this one, so the breath below is
@@ -200,56 +198,6 @@ final class ArenaScene: SKScene {
             ship.addChild(exhaust)
             setHull(Hull.defaultHull(forSeat: seat), for: seat)
         }
-        // The ball is the one thing a pilot is always aiming at, so it is
-        // built to read as a hard object: an opaque body, a machined rim, and
-        // a lit face turned up-left. No glow anywhere on it -- a halo blurs
-        // the very edge you are trying to hit.
-        ball.fillColor = SKColor(white: 0.72, alpha: 1)
-        ball.strokeColor = SKColor(white: 0.30, alpha: 1)
-        ball.lineWidth = 2
-        ball.glowWidth = 0
-        // The lit face: a second disc offset toward the light. Two flat tones
-        // with a crisp step between them read as a sphere without any blur.
-        let ballLit = SKShapeNode(circleOfRadius: 8)
-        ballLit.position = CGPoint(x: -1.4, y: 1.7)
-        ballLit.fillColor = SKColor(white: 0.97, alpha: 1)
-        ballLit.strokeColor = .clear
-        ballLit.glowWidth = 0
-        // The view ignores sibling order, so the layers on the ball are
-        // stacked by z rather than by the order they were added.
-        ballLit.zPosition = 0.1
-        ball.addChild(ballLit)
-        // The seam: an S across the face, dark enough to read on both tones.
-        let seam = CGMutablePath()
-        seam.move(to: CGPoint(x: -8.2, y: 0))
-        seam.addCurve(
-            to: CGPoint(x: 8.2, y: 0),
-            control1: CGPoint(x: -3, y: 6.5),
-            control2: CGPoint(x: 3, y: -6.5)
-        )
-        ballSeam.path = seam
-        ballSeam.strokeColor = SKColor(white: 0.36, alpha: 0.9)
-        ballSeam.lineWidth = 2
-        ballSeam.lineCap = .round
-        ballSeam.glowWidth = 0
-        ballSeam.zPosition = 0.2
-        ball.addChild(ballSeam)
-        // The S looks the same after half a turn, so on its own a spinning
-        // ball can look still. One dot in one lobe breaks the symmetry.
-        let ballMark = SKShapeNode(circleOfRadius: 1.8)
-        ballMark.position = CGPoint(x: -4.2, y: -3.4)
-        ballMark.fillColor = SKColor(white: 0.30, alpha: 0.95)
-        ballMark.strokeColor = .clear
-        ballMark.glowWidth = 0
-        ballSeam.addChild(ballMark)
-        // The specular: small, hard, and off to one side.
-        let ballShine = SKShapeNode(circleOfRadius: 2.6)
-        ballShine.position = CGPoint(x: -3.6, y: 4.2)
-        ballShine.fillColor = .white
-        ballShine.strokeColor = .clear
-        ballShine.glowWidth = 0
-        ballShine.zPosition = 0.3
-        ball.addChild(ballShine)
     }
 
     private func buildArena() {
@@ -707,30 +655,27 @@ final class ArenaScene: SKScene {
         }
         if !didBuild { buildArena() }
         for seat in Seat.allCases { update(seat: seat, state: snapshot.ships[seat]) }
-        ball.position = point(snapshot.ball.position.x, snapshot.ball.position.y)
-        // The node is built 10pt in radius; scale it to the ball's world
-        // radius so what you see is what the ship hits.
-        ball.setScale(CGFloat(snapshot.ball.radius) * pointsPerWorldUnit / 10)
-        // Turn the seam by however far the ball spun since the last drawn
+        // Turn each seam by however far its ball spun since the last drawn
         // snapshot, counted in engine ticks so a guest that skips a few
         // draws still shows the turn it missed.
-        if let last = ballSpinTick, snapshot.tick > last {
-            let ticks = Double(min(snapshot.tick - last, 30))
-            ballSpinAngle = (ballSpinAngle + snapshot.ball.spin * ticks * Self.tickDuration)
-                .truncatingRemainder(dividingBy: 2 * .pi)
-            ballSeam.zRotation = CGFloat(ballSpinAngle)
-        }
+        let spunTicks = ballSpinTick.map { snapshot.tick > $0 ? Double(min(snapshot.tick - $0, 30)) : 0 } ?? 0
         ballSpinTick = snapshot.tick
-        // Ball tint by last touch (possession cue)
-        if let toucher = snapshot.lastBallToucher {
-            let color = Self.color(toucher)
-            ball.strokeColor = color.withAlphaComponent(0.95)
-            ball.lineWidth = 3
-        } else {
-            ball.strokeColor = SKColor(white: 0.30, alpha: 1)
-            ball.lineWidth = 2
+        let tint = snapshot.lastBallToucher.map { Self.color($0) }
+        for (index, node) in balls.enumerated() {
+            guard index < snapshot.balls.count else {
+                node.isHidden = true
+                continue
+            }
+            let ball = snapshot.balls[index]
+            node.isHidden = false
+            node.position = point(ball.position.x, ball.position.y)
+            // The node is built 10pt in radius; scale it to the ball's world
+            // radius so what you see is what the ship hits.
+            node.setScale(CGFloat(ball.radius) * pointsPerWorldUnit / 10)
+            node.spin(by: ball.spin * spunTicks * Self.tickDuration)
+            // Ball tint by last touch (possession cue)
+            node.tint(tint)
         }
-        ball.glowWidth = 0
         updateTrails(snapshot)
         updateBolts(snapshot)
     }
@@ -785,7 +730,7 @@ final class ArenaScene: SKScene {
         for event in events {
             switch event {
             case let .point(scoringTeam, reason):
-                ballTrail.removeAll()
+                ballTrails.removeAll()
                 if reason == .goal {
                     // One portal, dead centre -- the ball went through it and
                     // is gone, so the burst is where it vanished.
@@ -804,7 +749,7 @@ final class ArenaScene: SKScene {
             case let .collisionEffect(position, _):
                 sparks(at: point(position.x, position.y), color: .white)
             case .rallyReset, .setEnded:
-                ballTrail.removeAll()
+                ballTrails.removeAll()
                 wakeAnchors.removeAll()
             case .matchEnded:
                 break
@@ -915,7 +860,7 @@ final class ArenaScene: SKScene {
         beam.path = path
         beam.isHidden = false
         // Leans up as the ball comes into its grip.
-        let distance = simd_length(snapshot.ball.position - tip)
+        let distance = snapshot.balls.map { simd_length($0.position - tip) }.min() ?? range
         let grip = max(0, 1 - distance / range)
         // A slow breath, phased off the tick so both peers see the same one.
         // There is no update loop here, and wall clock would drift apart.
@@ -1058,18 +1003,23 @@ final class ArenaScene: SKScene {
         guard !reduceMotion else {
             trailLayer.removeAllChildren()
             plumeLayer.removeAllChildren()
-            ballTrail.removeAll()
+            ballTrails.removeAll()
             wakeAnchors.removeAll()
             return
         }
-        ballTrail.append(point(snapshot.ball.position.x, snapshot.ball.position.y))
-        ballTrail = Array(ballTrail.suffix(16))
+        if ballTrails.count != snapshot.balls.count {
+            ballTrails = Array(repeating: [], count: snapshot.balls.count)
+        }
         trailLayer.removeAllChildren()
         let trailColor: SKColor = snapshot.lastBallToucher.map { Self.color($0) } ?? .white
-        let ballTrailNode = trail(points: ballTrail, color: trailColor)
-        ballTrailNode.lineWidth = 2 + min(6, hypot(snapshot.ball.velocity.x, snapshot.ball.velocity.y) * 0.25)
-        ballTrailNode.glowWidth = 0
-        trailLayer.addChild(ballTrailNode)
+        for (index, ball) in snapshot.balls.enumerated() {
+            ballTrails[index].append(point(ball.position.x, ball.position.y))
+            ballTrails[index] = Array(ballTrails[index].suffix(16))
+            let ballTrailNode = trail(points: ballTrails[index], color: trailColor)
+            ballTrailNode.lineWidth = 2 + min(6, hypot(ball.velocity.x, ball.velocity.y) * 0.25)
+            ballTrailNode.glowWidth = 0
+            trailLayer.addChild(ballTrailNode)
+        }
     }
 
     private func trail(points: [CGPoint], color: SKColor) -> SKShapeNode {
@@ -1147,5 +1097,88 @@ final class ArenaScene: SKScene {
         let worldHeight = arena.ceilingY - arena.floorY
         return CGPoint(x: rect.midX + CGFloat(x / worldWidth) * rect.width,
                        y: rect.midY + CGFloat(y / worldHeight) * rect.height)
+    }
+}
+
+/// The ball as drawn: an opaque body, a machined rim, a lit face turned
+/// up-left and a seam that turns with the spin. It is built to read as a
+/// hard object -- no glow anywhere on it, because a halo blurs the very edge
+/// you are trying to hit. Built 10pt in radius and scaled to the world.
+final class BallNode: SKShapeNode {
+    /// The one mark on the ball that turns with it. The lit face and the
+    /// shine stay where the light is; only the seam shows the spin.
+    private let seam = SKShapeNode()
+    private var spinAngle = 0.0
+
+    override init() {
+        super.init()
+        path = CGPath(ellipseIn: CGRect(x: -10, y: -10, width: 20, height: 20), transform: nil)
+        fillColor = SKColor(white: 0.72, alpha: 1)
+        strokeColor = SKColor(white: 0.30, alpha: 1)
+        lineWidth = 2
+        glowWidth = 0
+        // The lit face: a second disc offset toward the light. Two flat tones
+        // with a crisp step between them read as a sphere without any blur.
+        let lit = SKShapeNode(circleOfRadius: 8)
+        lit.position = CGPoint(x: -1.4, y: 1.7)
+        lit.fillColor = SKColor(white: 0.97, alpha: 1)
+        lit.strokeColor = .clear
+        lit.glowWidth = 0
+        // The view ignores sibling order, so the layers on the ball are
+        // stacked by z rather than by the order they were added.
+        lit.zPosition = 0.1
+        addChild(lit)
+        // The seam: an S across the face, dark enough to read on both tones.
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -8.2, y: 0))
+        path.addCurve(
+            to: CGPoint(x: 8.2, y: 0),
+            control1: CGPoint(x: -3, y: 6.5),
+            control2: CGPoint(x: 3, y: -6.5)
+        )
+        seam.path = path
+        seam.strokeColor = SKColor(white: 0.36, alpha: 0.9)
+        seam.lineWidth = 2
+        seam.lineCap = .round
+        seam.glowWidth = 0
+        seam.zPosition = 0.2
+        addChild(seam)
+        // The S looks the same after half a turn, so on its own a spinning
+        // ball can look still. One dot in one lobe breaks the symmetry.
+        let mark = SKShapeNode(circleOfRadius: 1.8)
+        mark.position = CGPoint(x: -4.2, y: -3.4)
+        mark.fillColor = SKColor(white: 0.30, alpha: 0.95)
+        mark.strokeColor = .clear
+        mark.glowWidth = 0
+        seam.addChild(mark)
+        // The specular: small, hard, and off to one side.
+        let shine = SKShapeNode(circleOfRadius: 2.6)
+        shine.position = CGPoint(x: -3.6, y: 4.2)
+        shine.fillColor = .white
+        shine.strokeColor = .clear
+        shine.glowWidth = 0
+        shine.zPosition = 0.3
+        addChild(shine)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func spin(by radians: Double) {
+        guard radians != 0 else { return }
+        spinAngle = (spinAngle + radians).truncatingRemainder(dividingBy: 2 * .pi)
+        seam.zRotation = CGFloat(spinAngle)
+    }
+
+    /// Rim colour by whoever touched a ball last: the possession cue.
+    func tint(_ color: SKColor?) {
+        if let color {
+            strokeColor = color.withAlphaComponent(0.95)
+            lineWidth = 3
+        } else {
+            strokeColor = SKColor(white: 0.30, alpha: 1)
+            lineWidth = 2
+        }
+        glowWidth = 0
     }
 }

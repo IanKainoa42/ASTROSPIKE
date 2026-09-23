@@ -39,4 +39,21 @@ struct GuestSmoothingTests {
         #expect(smoothing.ballError == 0)
         #expect(abs(smoothing.apply(to: truth).ball.position.x - 0.4) < 0.000_001)
     }
+
+    @Test("Each ball gets its own offset")
+    func perBallOffsets() {
+        var smoothing = GuestSmoothing()
+        var displayed = WorldState(ships: [:], extraBalls: [BallState(position: SIMD2(0.50, 0.10))])
+        var corrected = displayed
+        displayed.balls[1].position.x += 0.05
+        smoothing.capture(displayed: displayed, corrected: corrected, excluding: nil)
+        #expect(abs(smoothing.ballError - 0.05) < 1e-9)
+        let shown = smoothing.apply(to: corrected)
+        #expect(shown.balls[0].position == corrected.balls[0].position)
+        #expect(abs(shown.balls[1].position.x - 0.55) < 1e-9)
+        // A ball the display never had is not offset, and the count may shrink.
+        corrected.balls.removeLast()
+        smoothing.capture(displayed: displayed, corrected: corrected, excluding: nil)
+        #expect(smoothing.apply(to: corrected).balls.count == 1)
+    }
 }

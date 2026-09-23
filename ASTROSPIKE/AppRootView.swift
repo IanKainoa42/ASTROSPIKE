@@ -199,11 +199,17 @@ struct AppRootView: View {
                 }
                 .presentationDetents([.medium])
             case .doubles:
-                DifficultyPicker(title: "CHOOSE THE RIVAL PAIR") { difficulty in
+                DoublesSheet(online: online) { difficulty in
                     sheet = nil
                     gameMode = .doubles(difficulty)
+                } teamUp: { teamUp in
+                    sheet = nil
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        online.presentFriendInvite(teamUp: teamUp)
+                    }
                 }
-                .presentationDetents([.medium])
+                .presentationDetents([.large])
             case .tutorial:
                 FlightTutorial()
             case .settings:
@@ -271,12 +277,68 @@ private enum MenuSheet: String, Identifiable {
     var id: String { rawValue }
 }
 
+/// DOUBLES asks one question first: who flies beside you. A bot wingman
+/// drops into the difficulty picker; a friend goes to the team-up invite
+/// with TEAM UP already chosen.
+private struct DoublesSheet: View {
+    let online: OnlineMatchCoordinator
+    let chooseBot: (AIDifficulty) -> Void
+    let teamUp: (_ teamUp: Bool) -> Void
+    @State private var wingman: Wingman?
+
+    private enum Wingman { case bot, friend }
+
+    var body: some View {
+        switch wingman {
+        case nil:
+            VStack(alignment: .leading, spacing: 16) {
+                Text("WHO FLIES BESIDE YOU?").font(.title.bold())
+                Text("Two a side on the big court, two balls in play.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    choice("BOT WINGMAN", detail: "A bot on your wing against two bots. Pick their level next.",
+                           icon: "cpu", identifier: "doubles-bot") { wingman = .bot }
+                    choice("A FRIEND", detail: "Invite a pilot to your side. Bots fill the far half, or invite three.",
+                           icon: "person.2.wave.2.fill", identifier: "doubles-friend") { wingman = .friend }
+                }
+            }
+            // No identifier on the container: it would shadow the two
+            // buttons' own, and the test that drives this sheet keys on those.
+            .padding(28)
+        case .bot:
+            DifficultyPicker(title: "CHOOSE THE RIVAL PAIR", choose: chooseBot)
+        case .friend:
+            InviteSheet(online: online, teamUp: true, openPicker: teamUp)
+        }
+    }
+
+    private func choice(_ title: String, detail: String, icon: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Image(systemName: icon).font(.title)
+                Text(title).font(.headline)
+                Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 140)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered).tint(.cyan)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 private struct InviteSheet: View {
     let online: OnlineMatchCoordinator
     let openPicker: (_ teamUp: Bool) -> Void
     /// Team up: the pilots you pick fly on your side, bots fill the rest.
-    @State private var teamUp = false
+    @State private var teamUp: Bool
     @State private var picked: Set<String> = []
+
+    init(online: OnlineMatchCoordinator, teamUp: Bool = false, openPicker: @escaping (_ teamUp: Bool) -> Void) {
+        self.online = online
+        self.openPicker = openPicker
+        _teamUp = State(initialValue: teamUp)
+    }
 
     var body: some View {
         NavigationStack {
@@ -407,7 +469,7 @@ private struct HomeView: View {
                     // of the menu off an iPhone in landscape.
                     HStack(spacing: 12) {
                         MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
-                        MenuButton(title: "DOUBLES", subtitle: "YOU + WINGMAN", icon: "person.2.fill", compact: true) { sheet = .doubles }
+                        MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND ON YOUR WING", icon: "person.2.fill", compact: true) { sheet = .doubles }
                     }
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
                     MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }

@@ -239,6 +239,27 @@ public struct ArenaGeometry: Equatable, Sendable {
 
     public static let standard = ArenaGeometry()
 
+    /// How much wider and taller than the standard court this one is.
+    /// Spawns, posts and every other "so far across the court" number are
+    /// scaled by these rather than re-tuned per court.
+    public var widthScale: Double { halfWidth / Self.standard.halfWidth }
+    public var heightScale: Double { (ceilingY - floorY) / (Self.standard.ceilingY - Self.standard.floorY) }
+
+    /// The doubles court: a quarter wider and taller than the duel court,
+    /// with the same goal, hump and lips. Four hulls and two balls need the
+    /// room; the corners stay the same shape so a rebound reads the same.
+    public static let doublesScale = 1.25
+
+    /// The doubles court cut for a ball of `radius`.
+    public static func doubles(ballRadius: Double) -> ArenaGeometry {
+        ArenaGeometry(
+            halfWidth: Self.standard.halfWidth * doublesScale,
+            floorY: Self.standard.floorY * doublesScale,
+            ceilingY: Self.standard.ceilingY * doublesScale,
+            ballRadius: ballRadius
+        )
+    }
+
     /// The standard court cut for a ball of `radius`. The goal mouth is the
     /// only thing that moves: it hangs lower as the ball grows so the ball
     /// can still fly through it.

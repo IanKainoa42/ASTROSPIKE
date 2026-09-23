@@ -129,6 +129,12 @@ final class GameSession {
     private var smoothing = GuestSmoothing()
     /// How many ticks a late snapshot may be re-simulated before it just snaps.
     private static let maximumRollForward: UInt64 = 24
+    /// The thumb as of the last simulated tick, so a roll past the guest's
+    /// own clock flies what the pilot is doing rather than nothing.
+    private var latestLocalInput: PlayerInput?
+    /// Two a side. The doubles court is bigger and plays two small balls,
+    /// whoever fills the chairs -- bots, friends, or a mix.
+    let isDoubles: Bool
 
     init(
         mode: GameMode,
@@ -146,7 +152,6 @@ final class GameSession {
         let localSeat = mode == .online ? (online?.localSeat ?? .cyan) : .cyan
         self.localSeat = localSeat
         var initialEngine = SimulationEngine.testing()
-        initialEngine.updateConfiguration(configuration)
         let roster: Set<Seat>
         var botSeats: [Seat: AIDifficulty] = [:]
         switch mode {
@@ -172,10 +177,19 @@ final class GameSession {
                 for seat in roster.subtracting(filled) { botSeats[seat] = .pilot }
             }
         }
+        let isDoubles = roster == Seat.doubles
+        self.isDoubles = isDoubles
+        let configuration = isDoubles ? SimulationConfiguration.doubles(from: configuration) : configuration
+        let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
+            : mode.court(ballRadius: configuration.ballRadius)
+        initialEngine.updateConfiguration(configuration)
         // The court goes on before the roster: the opening ball is staged as
         // part of seating, and it is staged into this arena.
-        initialEngine.updateArena(mode.court(ballRadius: configuration.ballRadius))
+        initialEngine.updateArena(court)
         initialEngine.configureRoster(roster)
+        // A guest flies the physics between snapshots and never keeps the
+        // book: points, serves and phases all come from the host.
+        initialEngine.followsHost = mode == .online && online?.isAuthoritative != true
         // Whoever runs the rules picks the length. A guest's board plays to
         // the host's format, which arrived with the seating plan, never to
         // its own slider.
@@ -187,21 +201,13 @@ final class GameSession {
         engine = initialEngine
         state = initialEngine.state
         for (seat, difficulty) in botSeats {
-            pilots[seat] = AIController(
-                difficulty: difficulty,
-                configuration: configuration,
-                arena: mode.court(ballRadius: configuration.ballRadius)
-            )
+            pilots[seat] = AIController(difficulty: difficulty, configuration: configuration, arena: court)
         }
         if mode != .online, ProcessInfo.processInfo.arguments.contains("--demo") {
-            demoAI = AIController(
-                difficulty: .pilot,
-                configuration: configuration,
-                arena: mode.court(ballRadius: configuration.ballRadius)
-            )
+            demoAI = AIController(difficulty: .pilot, configuration: configuration, arena: court)
         }
         scene.scaleMode = .resizeFill
-        scene.arena = mode.court(ballRadius: configuration.ballRadius)
+        scene.arena = court
         scene.tractorRange = engine.configuration.tractorRange
         scene.snapshot = state
         // After the snapshot: the goal calls are drawn for the ends in it.
@@ -277,14 +283,25 @@ final class GameSession {
     /// The court as it currently stands, cut for the ball now in play. Read
     /// off the engine rather than a stored value so it can never disagree
     /// with the physics the ball is actually obeying.
-    private var court: ArenaGeometry { mode.court(ballRadius: engine.configuration.ballRadius) }
+    private var court: ArenaGeometry { court(for: engine.configuration) }
+
+    private func court(for configuration: SimulationConfiguration) -> ArenaGeometry {
+        isDoubles ? .doubles(ballRadius: configuration.ballRadius) : mode.court(ballRadius: configuration.ballRadius)
+    }
+
+    /// The pilot's sliders, as this table plays them: doubles fixes the
+    /// ball count and size whatever the slider says.
+    private func resolved(_ configuration: SimulationConfiguration) -> SimulationConfiguration {
+        isDoubles ? .doubles(from: configuration) : configuration
+    }
 
     func applyTuning(_ configuration: SimulationConfiguration) {
         guard mode.isOffline else { return }
+        let configuration = resolved(configuration)
         engine.updateConfiguration(configuration)
         // The mouth is cut to the ball, so moving the size slider re-cuts
         // the court under the ball in the same breath.
-        engine.updateArena(mode.court(ballRadius: configuration.ballRadius))
+        engine.updateArena(court(for: configuration))
         scene.arena = engine.arena
         scene.tractorRange = engine.configuration.tractorRange
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
@@ -334,6 +351,7 @@ final class GameSession {
 
     func restartRally(with configuration: SimulationConfiguration) {
         guard mode.isOffline, state.match.phase != .finished else { return }
+        let configuration = resolved(configuration)
         engine.updateConfiguration(configuration)
         scene.tractorRange = engine.configuration.tractorRange
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
@@ -370,7 +388,11 @@ final class GameSession {
                 countdownAccumulator -= 1
                 countdown -= 1
             }
-            if countdown == 0 {
+            // A guest never kicks off on its own count: the host's first
+            // snapshot carries the whistle. Two boards counting on their own
+            // clocks used to start a second apart, and the guest's ball was
+            // already falling when the host's snapshot yanked it back.
+            if countdown == 0, mode != .online || online?.isAuthoritative == true {
                 engine.beginPlay()
                 state = engine.state
                 announceStakes()
@@ -393,27 +415,36 @@ final class GameSession {
     private func simulateOneTick() {
         let tick = engine.state.tick
         var localInput = PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched, tractor: tractor)
-        fireLatched = false
+        // Online only every other tick goes out. A tap that landed on an odd
+        // tick and was cleared there never reached the host.
+        if mode != .online || tick.isMultiple(of: 2) { fireLatched = false }
         if var demoAI {
             localInput = demoAI.input(for: engine.state, seat: localSeat, tick: tick)
             self.demoAI = demoAI
         }
+        latestLocalInput = localInput
         var inputs: [Seat: PlayerInput] = [localSeat: localInput]
-        // A pilot who connected after kick-off takes over the bot's chair the
-        // moment the host seats them.
-        if mode == .online, let online, online.isAuthoritative {
+        if mode == .online, let online {
+            // The host keeps the book; a guest, or a host that just stepped
+            // up, follows or leads accordingly from this tick on.
+            engine.followsHost = !online.isAuthoritative
+            // A pilot who connected after kick-off takes over the bot's chair
+            // the moment the host seats them.
             for seat in pilots.keys where online.filledSeats.contains(seat) {
                 pilots[seat] = nil
             }
             // A teammate whose hold ran out left their chair empty: a bot
             // flies it so the one who stayed is not a pilot short. So does
             // a guest who took over hosting from a host that ran the bots.
+            // A guest runs the same bots too -- the pilot is deterministic,
+            // so its prediction of the bot's ship stays close to the host's
+            // instead of leaving every bot dead in the air between snapshots.
             for seat in engine.state.ships.keys where seat != localSeat
                 && pilots[seat] == nil && !online.filledSeats.contains(seat) {
                 pilots[seat] = AIController(
                     difficulty: .pilot,
                     configuration: engine.configuration,
-                    arena: mode.court(ballRadius: engine.configuration.ballRadius)
+                    arena: court
                 )
             }
         }
@@ -593,22 +624,36 @@ final class GameSession {
                 // would roll forward against a goal mouth the host has not got.
                 arena: self.engine.arena
             )
+            rolled.followsHost = true
             // The snapshot left the host a ping ago. Re-run the ticks the guest
             // has already flown since, with the inputs it actually gave, so the
-            // world never steps backwards on arrival.
-            let behind = predicted.tick > authoritative.tick ? predicted.tick - authoritative.tick : 0
+            // world never steps backwards on arrival -- and if the guest's
+            // clock had fallen level with or behind the host's, run it ahead
+            // by half a ping so the inputs it sends land for the tick the
+            // host is about to play rather than one it has already played.
+            let halfPingTicks = UInt64(max(0, online.pingMilliseconds ?? 0)) * 120 / 2000
+            let lead = min(Self.maximumRollForward, halfPingTicks + 3)
+            let target = max(predicted.tick, authoritative.tick + lead)
+            let ahead = target - authoritative.tick
             let remote = online.remoteInputs
-            if behind <= Self.maximumRollForward, [.serve, .playing].contains(self.state.match.phase) {
-                while rolled.state.tick < predicted.tick {
+            if ahead <= Self.maximumRollForward, [.serve, .playing].contains(authoritative.match.phase) {
+                var bots = self.pilots
+                while rolled.state.tick < target {
                     let tick = rolled.state.tick
                     var inputs: [Seat: PlayerInput] = [
-                        self.localSeat: self.localInputHistory[tick] ?? .idle(tick: tick),
+                        self.localSeat: self.localInputHistory[tick] ?? self.latestLocalInput ?? .idle(tick: tick),
                     ]
                     for seat in rolled.state.ships.keys where seat != self.localSeat {
-                        inputs[seat] = remote[seat] ?? .idle(tick: tick)
+                        if var bot = bots[seat] {
+                            inputs[seat] = bot.input(for: rolled.state, seat: seat, tick: tick)
+                            bots[seat] = bot
+                        } else {
+                            inputs[seat] = remote[seat] ?? .idle(tick: tick)
+                        }
                     }
                     rolled.step(inputs: inputs)
                 }
+                self.pilots = bots
             }
             var resolved = rolled.state
             if let mine = predicted.ships[self.localSeat], let hostShip = resolved.ships[self.localSeat] {
@@ -622,6 +667,10 @@ final class GameSession {
                 configuration: self.engine.configuration,
                 arena: self.engine.arena
             )
+            self.engine.followsHost = true
+            // The guest's clock was renumbered: what it did at its old tick
+            // numbers says nothing about the new ones.
+            if target != predicted.tick { self.localInputHistory = [:] }
             self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.localSeat)
             self.state = resolved
             self.announceStakes()
@@ -633,6 +682,7 @@ final class GameSession {
                 configuration: self.engine.configuration,
                 arena: self.engine.arena
             )
+            self.engine.followsHost = !online.isAuthoritative
             self.smoothing.reset()
             self.localInputHistory = [:]
             self.state = authoritative

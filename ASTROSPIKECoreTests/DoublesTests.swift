@@ -131,7 +131,7 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 22)
+        #expect(WireEnvelope.currentVersion == 23)
     }
 
     @Test("A team-up seats the invited friend beside the host")
@@ -174,6 +174,125 @@ struct DoublesTests {
         #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2"]) == nil)
         let four: [String: Seat] = ["G:1": .cyan, "G:2": .cyanWing, "G:3": .orange, "G:4": .orangeWing]
         #expect(OnlineSeating.seatingAfterHold(seating: four, dropped: ["G:3", "G:4"]) == nil)
+    }
+
+    // MARK: Two balls on the big court
+
+    private func bigCourtEngine() -> SimulationEngine {
+        var engine = SimulationEngine.testing()
+        let configuration = SimulationConfiguration.doubles(from: SimulationConfiguration())
+        engine.updateConfiguration(configuration)
+        engine.updateArena(.doubles(ballRadius: configuration.ballRadius))
+        engine.configureRoster(Seat.doubles)
+        engine.beginPlay()
+        return engine
+    }
+
+    @Test("Doubles is two small balls on a court a quarter bigger")
+    func doublesConfiguration() {
+        let base = SimulationConfiguration(ballRadius: BallState.nominalRadius * 2)
+        let doubles = SimulationConfiguration.doubles(from: base)
+        #expect(doubles.ballCount == 2)
+        #expect(doubles.ballRadius == BallState.nominalRadius)
+        #expect(SimulationConfiguration(ballCount: 9).ballCount == SimulationConfiguration.maximumBallCount)
+        let court = ArenaGeometry.doubles(ballRadius: doubles.ballRadius)
+        #expect(court.halfWidth == ArenaGeometry.standard.halfWidth * 1.25)
+        #expect(court.ceilingY == ArenaGeometry.standard.ceilingY * 1.25)
+        #expect(court.widthScale == 1.25)
+        #expect(abs(court.heightScale - 1.25) < 1e-9)
+        #expect(ArenaGeometry.standard.widthScale == 1)
+    }
+
+    @Test("Two balls are staged apart and drift to opposite halves")
+    func twoBallServe() {
+        var engine = bigCourtEngine()
+        #expect(engine.state.balls.count == 2)
+        let staged = engine.state.balls
+        #expect(staged[0].position.x * staged[1].position.x < 0)
+        #expect(simd_distance(staged[0].position, staged[1].position) > staged[0].radius * 2)
+        for _ in 0 ..< 120 { engine.step(inputs: [:]) }
+        let balls = engine.state.balls
+        #expect(balls[0].position.x * balls[1].position.x < 0)
+        #expect(balls[0].velocity.x * balls[1].velocity.x < 0)
+        // The compatibility accessor still reads the first ball.
+        #expect(engine.state.ball == balls[0])
+    }
+
+    @Test("Spawns stretch with the court")
+    func bigCourtSpawns() {
+        let engine = bigCourtEngine()
+        #expect(abs(engine.state.ships[.cyan]!.position.x - (-0.55 * 1.25)) < 1e-9)
+        #expect(abs(engine.state.ships[.orangeWing]!.position.x - (0.80 * 1.25)) < 1e-9)
+        #expect(abs(engine.state.ships[.cyan]!.position.y - (-0.45 * 1.25)) < 1e-9)
+    }
+
+    @Test("Two balls bounce off each other")
+    func ballsCollide() {
+        var engine = bigCourtEngine()
+        engine.state.balls[0] = BallState(position: SIMD2(-0.10, -0.10), velocity: SIMD2(2.0, 0), radius: BallState.nominalRadius)
+        engine.state.balls[1] = BallState(position: SIMD2(0.10, -0.10), velocity: SIMD2(-2.0, 0), radius: BallState.nominalRadius)
+        var closest = Double.infinity
+        var hit = false
+        for _ in 0 ..< 60 {
+            engine.step(inputs: [:])
+            closest = min(closest, simd_distance(engine.state.balls[0].position, engine.state.balls[1].position))
+            hit = hit || engine.lastEvents.contains { if case .collisionEffect = $0 { true } else { false } }
+        }
+        // They never pass through each other, and they come apart again.
+        #expect(closest >= BallState.nominalRadius * 2 - 0.002)
+        #expect(engine.state.balls[0].velocity.x < 0)
+        #expect(engine.state.balls[1].velocity.x > 0)
+        #expect(hit)
+    }
+
+    @Test("Partners split the two balls between them")
+    func partnersSplitBalls() {
+        var engine = bigCourtEngine()
+        engine.state.ships[.orange] = ShipState(position: SIMD2(0.40, -0.20), angle: .pi / 2)
+        engine.state.ships[.orangeWing] = ShipState(position: SIMD2(0.90, -0.20), angle: .pi / 2)
+        engine.state.balls[0] = BallState(position: SIMD2(0.45, 0.10), velocity: .zero, radius: BallState.nominalRadius)
+        engine.state.balls[1] = BallState(position: SIMD2(0.85, 0.10), velocity: .zero, radius: BallState.nominalRadius)
+        let lead = AIController.focusBall(in: engine.state, seat: .orange, ship: engine.state.ships[.orange]!)
+        let wing = AIController.focusBall(in: engine.state, seat: .orangeWing, ship: engine.state.ships[.orangeWing]!)
+        #expect(lead == 0)
+        #expect(wing == 1)
+        // Both near the same ball: the wing takes the other one.
+        engine.state.ships[.orangeWing] = ShipState(position: SIMD2(0.50, -0.20), angle: .pi / 2)
+        #expect(AIController.focusBall(in: engine.state, seat: .orangeWing, ship: engine.state.ships[.orangeWing]!) == 1)
+        #expect(AIController.focusBall(in: engine.state, seat: .orange, ship: engine.state.ships[.orange]!) == 0)
+    }
+
+    @Test("A guest's engine follows the host: no points of its own")
+    func followerKeepsNoBook() {
+        func dropBall(follows: Bool) -> SimulationEngine {
+            var engine = doublesEngine()
+            engine.followsHost = follows
+            // A ball dead on the cyan floor, over and over.
+            for _ in 0 ..< 600 {
+                if engine.state.match.phase == .playing {
+                    engine.state.ball = BallState(position: SIMD2(-0.50, -0.55), velocity: SIMD2(0, -3))
+                }
+                engine.step(inputs: [:])
+            }
+            return engine
+        }
+        let host = dropBall(follows: false)
+        #expect(host.state.match.score.orange > 0)
+        let guest = dropBall(follows: true)
+        #expect(guest.state.match.score == Score())
+        #expect(guest.state.match.phase == .playing)
+        #expect(guest.state.tick == 600)
+        // Effects still show: the guest may spark, it just may not score.
+        #expect(!guest.lastEvents.contains { if case .point = $0 { true } else { false } })
+    }
+
+    @Test("A doubles snapshot fits in one datagram with room to spare")
+    func snapshotSize() throws {
+        var engine = bigCourtEngine()
+        engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0.5, thrust: true, fire: true)])
+        for _ in 0 ..< 30 { engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, fire: true)]) }
+        let data = try WireCodec().encode(WireEnvelope(sequence: 1, payload: .snapshot(engine.state)))
+        #expect(data.count < 1400, "snapshot is \(data.count) bytes")
     }
 
     @Test("The host seats the pilots who are here when the count sticks")

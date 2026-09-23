@@ -294,7 +294,15 @@ public struct BoltState: Codable, Equatable, Sendable {
 public struct WorldState: Codable, Equatable, Sendable {
     public var tick: UInt64
     public var ships: [Seat: ShipState]
-    public var ball: BallState
+    /// Every ball in play, never empty. Singles courts fly one; doubles
+    /// flies two small ones. `ball` is the first, for the many places that
+    /// only ever needed one.
+    public var balls: [BallState]
+    /// The first ball. Reads and writes go straight through to `balls[0]`.
+    public var ball: BallState {
+        get { balls[0] }
+        set { balls[0] = newValue }
+    }
     public var match: MatchRuleState
     public var serveTicksRemaining: UInt64
     /// Which way the next serve drifts: -1 to the left half, +1 to the right.
@@ -322,6 +330,7 @@ public struct WorldState: Codable, Equatable, Sendable {
         tick: UInt64 = 0,
         ships: [Seat: ShipState],
         ball: BallState = BallState(position: SIMD2(0, 0.10)),
+        extraBalls: [BallState] = [],
         match: MatchRuleState = MatchRuleState(),
         serveTicksRemaining: UInt64 = 0,
         serveDriftSign: Double = -1,
@@ -333,7 +342,7 @@ public struct WorldState: Codable, Equatable, Sendable {
     ) {
         self.tick = tick
         self.ships = ships
-        self.ball = ball
+        self.balls = [ball] + extraBalls
         self.match = match
         self.serveTicksRemaining = serveTicksRemaining
         self.serveDriftSign = serveDriftSign
@@ -376,6 +385,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// deliberately hit off-centre. The arena's goal mouth is cut to match
     /// -- see `ArenaGeometry.portalCollar`.
     public var ballRadius: Double
+    /// How many balls are in play at once: one on every court but doubles,
+    /// which flies two. Every ball shares `ballRadius`.
+    public var ballCount: Int
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var serveDelay: Double
@@ -431,6 +443,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         torqueAcceleration: Double = 3,
         ballGravityMultiplier: Double = 0.95,
         ballRadius: Double = BallState.nominalRadius,
+        ballCount: Int = 1,
         ballDropHeight: Double = 0.06,
         ballDropSpeed: Double = 0.18,
         serveDelay: Double = 1.35,
@@ -462,6 +475,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
             BallState.nominalRadius * ArenaGeometry.maximumRadiusScale,
             max(BallState.nominalRadius, ballRadius)
         )
+        self.ballCount = min(Self.maximumBallCount, max(1, ballCount))
         self.ballDropHeight = ballDropHeight
         self.ballDropSpeed = ballDropSpeed
         self.serveDelay = max(0, serveDelay)
@@ -481,6 +495,20 @@ public struct SimulationConfiguration: Equatable, Sendable {
         self.tractorRange = max(0, tractorRange)
         self.tractorDrag = max(0, tractorDrag)
         self.sandbox = sandbox
+    }
+
+    /// Two is doubles. Nothing is tuned for more.
+    public static let maximumBallCount = 2
+
+    /// Doubles: a wider, taller court with two small balls in it. The ball is
+    /// pinned at nominal so the two of them stay small, and the crossing
+    /// spring scales down with the longer half so a run still reaches the
+    /// far wall and no further.
+    public static func doubles(from base: SimulationConfiguration) -> SimulationConfiguration {
+        var configuration = base
+        configuration.ballRadius = BallState.nominalRadius
+        configuration.ballCount = 2
+        return configuration
     }
 
     /// The warm-up bay: the pilot's own sliders with the halfway treacle
@@ -533,6 +561,12 @@ public struct SimulationEngine: Sendable {
     /// Per-seat ball hitboxes. A seat missing here flies `ShipHitbox.shared`,
     /// so every hull meets the ball the same way unless one is set.
     public var shipHitboxes: [Seat: ShipHitbox] = [:]
+    /// A guest's copy of an online board. It flies the physics between the
+    /// host's snapshots but never keeps the book: no points, no serves, no
+    /// phase changes of its own. Those arrive from the host, so a rally the
+    /// guest thought it saw end cannot pull the ball out from under one the
+    /// host is still playing.
+    public var followsHost = false
 
     public init(
         state: WorldState,
@@ -595,7 +629,9 @@ public struct SimulationEngine: Sendable {
         // next serve: the whole point of the knob is to see what the size
         // feels like while you are flying. A ball that ends up overlapping a
         // wall is pushed back out by the next step's contact resolve.
-        state.ball.radius = configuration.ballRadius
+        for index in state.balls.indices { state.balls[index].radius = configuration.ballRadius }
+        // The count follows the slider too: a court switched to doubles gets
+        // its second ball on the next serve rather than mid-rally.
     }
 
     /// How many sets take the match: 1 for a single game, 2 for best of
@@ -607,19 +643,34 @@ public struct SimulationEngine: Sendable {
         state.match = rules.state
     }
 
-    /// Where a seat starts a rally. Leads sit mid-court, wings sit behind
-    /// them nearer the wall, so neither is under the ball when it drops.
+    /// Where a seat starts a rally on the standard court. Leads sit
+    /// mid-court, wings sit behind them nearer the wall, so neither is under
+    /// the ball when it drops.
     public static func spawnPosition(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
+        spawnPosition(for: seat, mirrored: mirrored, arena: .standard)
+    }
+
+    /// The same spawn, stretched to fit `arena`: the doubles court is wider
+    /// and taller, and a ship should start the same share of the way across
+    /// it rather than the same distance from the middle.
+    public static func spawnPosition(for seat: Seat, mirrored: Bool, arena: ArenaGeometry) -> SIMD2<Double> {
         let direction = mirrored ? 1.0 : -1.0
         let side = seat.team == .cyan ? direction : -direction
-        return SIMD2((seat.isWing ? 0.80 : 0.55) * side, -0.45)
+        return SIMD2(
+            (seat.isWing ? 0.80 : 0.55) * side * arena.widthScale,
+            -0.45 * arena.heightScale
+        )
+    }
+
+    private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
+        Self.spawnPosition(for: seat, mirrored: mirrored, arena: arena)
     }
 
     /// Replaces every ship with a fresh one in each of the given seats and
     /// stages a rally. Seats not listed are simply empty.
     public mutating func configureRoster(_ seats: Set<Seat>, mirrored: Bool = false) {
         state.ships = Dictionary(uniqueKeysWithValues: seats.map { seat in
-            (seat, ShipState(position: Self.spawnPosition(for: seat, mirrored: mirrored), angle: .pi / 2))
+            (seat, ShipState(position: spawn(for: seat, mirrored: mirrored), angle: .pi / 2))
         })
         prepareNextRally(mirrored: mirrored)
     }
@@ -648,14 +699,10 @@ public struct SimulationEngine: Sendable {
         // Whoever is seated stays seated; only the positions reset.
         let seats = state.ships.isEmpty ? Seat.singles : Set(state.ships.keys)
         state.ships = Dictionary(uniqueKeysWithValues: seats.map { seat in
-            (seat, ShipState(position: Self.spawnPosition(for: seat, mirrored: mirrored), angle: .pi / 2))
+            (seat, ShipState(position: spawn(for: seat, mirrored: mirrored), angle: .pi / 2))
         })
         state.serveDriftSign = mirrored ? 1 : -1
-        state.ball = BallState(
-            position: SIMD2(0, configuration.ballDropHeight),
-            velocity: serveVelocity,
-            radius: configuration.ballRadius
-        )
+        state.balls = stagedBalls(moving: true)
         state.serveTicksRemaining = 0
         state.bolts.removeAll()
         rules.prepareNextRally()
@@ -743,24 +790,34 @@ public struct SimulationEngine: Sendable {
             return
         }
 
-        let previousBallPosition = state.ball.position
-        state.ball.velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
-        (state.ball.velocity, state.ball.spin) = BallState.curved(
-            state.ball.velocity,
-            spin: state.ball.spin,
-            over: dt
-        )
-        applyExhaustWash(dt: dt)
-        applyTractorBeam(dt: dt)
-        state.ball.position += state.ball.velocity * dt
+        let previousBallPositions = state.balls.map(\.position)
+        for ballIndex in state.balls.indices {
+            state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
+            (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
+                state.balls[ballIndex].velocity,
+                spin: state.balls[ballIndex].spin,
+                over: dt
+            )
+            applyExhaustWash(dt: dt, ballIndex: ballIndex)
+            applyTractorBeam(dt: dt, ballIndex: ballIndex)
+            state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
+        }
         advanceBolts(effects: &collisionEffects)
-        resolveBallShipCollisions(
-            previousBallPosition: previousBallPosition,
-            previousShipPositions: previousShipPositions,
-            contacts: &contacts,
-            effects: &collisionEffects
-        )
-        resolveBallCollision(previousPosition: previousBallPosition, contacts: &contacts)
+        resolveBallBallCollisions(effects: &collisionEffects)
+        for ballIndex in state.balls.indices {
+            resolveBallShipCollisions(
+                ballIndex: ballIndex,
+                previousBallPosition: previousBallPositions[ballIndex],
+                previousShipPositions: previousShipPositions,
+                contacts: &contacts,
+                effects: &collisionEffects
+            )
+            resolveBallCollision(
+                ballIndex: ballIndex,
+                previousPosition: previousBallPositions[ballIndex],
+                contacts: &contacts
+            )
+        }
 
         // Whoever put a hand on it most recently owns whatever happens next.
         // Only the hoop court decides anything on it, but every court keeps
@@ -777,6 +834,15 @@ public struct SimulationEngine: Sendable {
 
         if arena.hoop != nil {
             resolveHoopCourt(contacts: contacts, effects: collisionEffects)
+            state.tick += 1
+            return
+        }
+
+        if followsHost {
+            // The host keeps the book. The guest only flies the physics
+            // until the next snapshot lands, and the effects are the one
+            // thing it may show on its own.
+            lastEvents = collisionEffects
             state.tick += 1
             return
         }
@@ -811,7 +877,7 @@ public struct SimulationEngine: Sendable {
         state.sidesSwapped.toggle()
         for seat in state.ships.keys {
             state.ships[seat] = ShipState(
-                position: Self.spawnPosition(for: seat, mirrored: state.sidesSwapped),
+                position: spawn(for: seat, mirrored: state.sidesSwapped),
                 angle: .pi / 2
             )
         }
@@ -821,6 +887,25 @@ public struct SimulationEngine: Sendable {
     /// half rather than on the centre line.
     private var serveVelocity: SIMD2<Double> {
         SIMD2(state.serveDriftSign * 0.45, -configuration.ballDropSpeed)
+    }
+
+    /// Every ball a serve puts up, sitting under the cap of the goal. One
+    /// ball drops dead centre and drifts to the side that conceded. Two sit
+    /// a shoulder apart and drift opposite ways, so each side is handed one
+    /// -- the first still goes to the conceding side. `moving` gives them
+    /// their serve velocity straight away; a staged serve leaves them still
+    /// until the countdown lets go.
+    private func stagedBalls(moving: Bool) -> [BallState] {
+        let count = configuration.ballCount
+        return (0 ..< count).map { index in
+            let sign = index == 0 ? state.serveDriftSign : -state.serveDriftSign
+            let spread = count > 1 ? sign * (configuration.ballRadius + 0.012) : 0
+            return BallState(
+                position: SIMD2(spread, configuration.ballDropHeight),
+                velocity: moving ? SIMD2(sign * 0.45, -configuration.ballDropSpeed) : .zero,
+                radius: configuration.ballRadius
+            )
+        }
     }
 
     /// True when the engine keeps its own book instead of handing contacts
@@ -836,11 +921,7 @@ public struct SimulationEngine: Sendable {
         } else {
             state.serveDriftSign = -state.serveDriftSign
         }
-        state.ball = BallState(
-            position: SIMD2(0, configuration.ballDropHeight),
-            velocity: .zero,
-            radius: configuration.ballRadius
-        )
+        state.balls = stagedBalls(moving: false)
         state.bolts.removeAll()
         // A fresh ball has nobody's fingerprints on it -- and no hull is still
         // holding a debounce from the rally that just ended, which would eat
@@ -854,14 +935,19 @@ public struct SimulationEngine: Sendable {
     }
 
     private mutating func advanceServe() {
-        state.ball.velocity = .zero
+        for index in state.balls.indices { state.balls[index].velocity = .zero }
         if state.serveTicksRemaining > 0 {
             state.serveTicksRemaining -= 1
         }
         guard state.serveTicksRemaining == 0 else { return }
         state.setBreak = false
         respawnDestroyedShips()
-        state.ball.velocity = serveVelocity
+        // Let go of every ball that was staged, and only those: a ball
+        // count that changed during the serve takes effect next serve.
+        let released = stagedBalls(moving: true)
+        for index in state.balls.indices where index < released.count {
+            state.balls[index].velocity = released[index].velocity
+        }
         if usesEngineRules {
             state.match.phase = .playing
             state.match.floorContacts = SideCounts()
@@ -940,9 +1026,9 @@ public struct SimulationEngine: Sendable {
         for seat in Seat.allCases {
             guard let destroyedShip = state.ships[seat], destroyedShip.isDestroyed else { continue }
             let homeSide = destroyedShip.homeSide
-            let depth = seat.isWing ? 0.80 : 0.55
+            let depth = (seat.isWing ? 0.80 : 0.55) * arena.widthScale
             state.ships[seat] = ShipState(
-                position: SIMD2(homeSide == .cyan ? -depth : depth, -0.45),
+                position: SIMD2(homeSide == .cyan ? -depth : depth, -0.45 * arena.heightScale),
                 angle: .pi / 2,
                 homeSide: homeSide
             )
@@ -974,13 +1060,13 @@ public struct SimulationEngine: Sendable {
     /// cushion it a real option rather than a foul.
     private static let exhaustWashCone = 0.80
 
-    private mutating func applyExhaustWash(dt: Double) {
+    private mutating func applyExhaustWash(dt: Double, ballIndex: Int) {
         let range = configuration.exhaustWashRange
         guard range > 0, configuration.exhaustWashStrength > 0 else { return }
         for seat in Seat.allCases {
             guard let ship = state.ships[seat], !ship.isDestroyed, ship.thrustLevel > 0 else { continue }
             let tail = SIMD2(-cos(ship.angle), -sin(ship.angle))
-            let offset = state.ball.position - ship.position
+            let offset = state.balls[ballIndex].position - ship.position
             let distance = simd_length(offset)
             guard distance > 0.000_001, distance < range else { continue }
             let along = simd_dot(offset / distance, tail)
@@ -988,7 +1074,7 @@ public struct SimulationEngine: Sendable {
             let falloff = 1 - distance / range
             let centring = (along - Self.exhaustWashCone) / (1 - Self.exhaustWashCone)
             let push = ship.thrustLevel * configuration.exhaustWashStrength * falloff * centring
-            state.ball.velocity += tail * (push * dt)
+            state.balls[ballIndex].velocity += tail * (push * dt)
         }
     }
 
@@ -1008,13 +1094,13 @@ public struct SimulationEngine: Sendable {
     /// this ratio, which is what makes the grab conserve momentum.
     static let tractorMassRatio = ballMass / shipMass
 
-    private mutating func applyTractorBeam(dt: Double) {
+    private mutating func applyTractorBeam(dt: Double, ballIndex: Int) {
         let range = configuration.tractorRange
         guard range > 0, configuration.tractorStrength > 0 else { return }
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed, ship.tractorActive else { continue }
             let nose = SIMD2(cos(ship.angle), sin(ship.angle))
-            let offset = state.ball.position - ship.position
+            let offset = state.balls[ballIndex].position - ship.position
             let distance = simd_length(offset)
             guard distance > 0.000_001, distance < range else { continue }
             let toward = offset / distance
@@ -1028,7 +1114,7 @@ public struct SimulationEngine: Sendable {
             // in drags you toward it, and a heavy ball moves you more than a
             // light one would. The beam is no longer a free hand.
             let pull = toward * (configuration.tractorStrength * grip * dt)
-            state.ball.velocity -= pull
+            state.balls[ballIndex].velocity -= pull
             ship.velocity += pull * Self.tractorMassRatio
             // The grab damps the ball against the SHIP's frame, not the
             // world's, and hands the momentum it removes to the hull. A
@@ -1036,8 +1122,8 @@ public struct SimulationEngine: Sendable {
             // of being dragged toward a standstill. Against a ship that is
             // holding still this is exactly the old behaviour.
             let damp = min(1, configuration.tractorDrag * grip * dt)
-            let bleed = (state.ball.velocity - ship.velocity) * damp
-            state.ball.velocity -= bleed
+            let bleed = (state.balls[ballIndex].velocity - ship.velocity) * damp
+            state.balls[ballIndex].velocity -= bleed
             ship.velocity += bleed * Self.tractorMassRatio
             state.ships[seat] = ship
         }
@@ -1048,7 +1134,9 @@ public struct SimulationEngine: Sendable {
         let dt = configuration.stepDuration
         var survivors: [BoltState] = []
         survivors.reserveCapacity(state.bolts.count)
-        var ballStruck = false
+        // Each ball takes at most one bolt a step, so a burst cannot land
+        // three punches in a single tick.
+        var struckBalls = Set<Int>()
         for var bolt in state.bolts {
             let previous = bolt.position
             bolt.position += bolt.velocity * dt
@@ -1057,15 +1145,27 @@ public struct SimulationEngine: Sendable {
             // A bolt already overlapping the ball at the start of the step is
             // a hit at once: the ball moves too, so a bolt can finish one step
             // a hair outside it and start the next inside, where the sweep
-            // alone would let it pass straight through.
-            let reach = state.ball.radius + BoltState.radius
-            if !ballStruck, let contact = simd_length(previous - state.ball.position) <= reach ? 0 : sweptCircleTime(
-                from: previous - state.ball.position,
-                to: bolt.position - state.ball.position,
-                center: .zero,
-                radius: reach
-            ) {
-                ballStruck = true
+            // alone would let it pass straight through. With two balls up the
+            // bolt takes whichever it reaches first.
+            var earliest: (ballIndex: Int, contact: Double)?
+            for ballIndex in state.balls.indices where !struckBalls.contains(ballIndex) {
+                let reach = state.balls[ballIndex].radius + BoltState.radius
+                let contact: Double? = simd_length(previous - state.balls[ballIndex].position) <= reach
+                    ? 0
+                    : sweptCircleTime(
+                        from: previous - state.balls[ballIndex].position,
+                        to: bolt.position - state.balls[ballIndex].position,
+                        center: .zero,
+                        radius: reach
+                    )
+                if let contact, earliest == nil || contact < earliest!.contact {
+                    earliest = (ballIndex, contact)
+                }
+            }
+            if let earliest {
+                let ballIndex = earliest.ballIndex
+                let contact = earliest.contact
+                struckBalls.insert(ballIndex)
                 let speed = simd_length(bolt.velocity)
                 let travel = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
                 // Off the centre the hit glances: the ball is knocked partway
@@ -1073,25 +1173,25 @@ public struct SimulationEngine: Sendable {
                 // bolt touched it through its middle. Clip it underneath and it
                 // lifts; clip the top and it is driven down.
                 let touch = previous + (bolt.position - previous) * contact
-                let throughCentre = simd_normalize(state.ball.position - touch)
+                let throughCentre = simd_normalize(state.balls[ballIndex].position - touch)
                 let direction = simd_normalize(
                     travel * (1 - BoltState.glance) + throughCentre * BoltState.glance
                 )
-                state.ball.velocity += direction * configuration.boltPunch
+                state.balls[ballIndex].velocity += direction * configuration.boltPunch
                 // The same clip that turns the ball sets it spinning: the bolt
                 // drags the side it touched along its own line. Underneath is
                 // backspin, which holds the shot up; over the top is topspin,
                 // which dips it. Dead centre there is nothing to drag, and a
                 // new hit replaces whatever spin was already on it.
-                let lever = (touch - state.ball.position) / (state.ball.radius + BoltState.radius)
-                state.ball.spin = BoltState.spinKick * (lever.x * travel.y - lever.y * travel.x)
+                let lever = (touch - state.balls[ballIndex].position) / (state.balls[ballIndex].radius + BoltState.radius)
+                state.balls[ballIndex].spin = BoltState.spinKick * (lever.x * travel.y - lever.y * travel.x)
                 // A bolt plays the ball but is not a touch: it neither spends
                 // one nor refreshes the bounce allowance, or a cannon on your
                 // own half could keep a rally alive forever. It still marks who
                 // played the ball last.
                 state.lastBallToucher = bolt.owner
                 effects.append(.collisionEffect(
-                    position: state.ball.position,
+                    position: state.balls[ballIndex].position,
                     intensity: configuration.boltPunch
                 ))
                 continue
@@ -1117,6 +1217,42 @@ public struct SimulationEngine: Sendable {
             survivors.append(bolt)
         }
         state.bolts = survivors
+    }
+
+    /// Two balls up meet each other like any other surface: an equal-mass
+    /// knock with the ball's own bounce, and each grips the other so a
+    /// glancing clash leaves both turning.
+    private mutating func resolveBallBallCollisions(effects: inout [SimulationEvent]) {
+        guard state.balls.count > 1 else { return }
+        for first in state.balls.indices {
+            for second in state.balls.indices where second > first {
+                let offset = state.balls[second].position - state.balls[first].position
+                let distance = simd_length(offset)
+                let reach = state.balls[first].radius + state.balls[second].radius
+                guard distance < reach else { continue }
+                let normal = distance > 0.000_001 ? offset / distance : SIMD2(1, 0)
+                // Push them apart evenly so neither is left inside the other.
+                let overlap = reach - distance
+                state.balls[first].position -= normal * (overlap / 2)
+                state.balls[second].position += normal * (overlap / 2)
+                let relative = state.balls[second].velocity - state.balls[first].velocity
+                let closing = simd_dot(relative, normal)
+                guard closing < 0 else { continue }
+                let impulse = -(1 + Self.ballRestitution) * closing / 2
+                let incomingFirst = state.balls[first].velocity
+                let incomingSecond = state.balls[second].velocity
+                state.balls[first].velocity -= normal * impulse
+                state.balls[second].velocity += normal * impulse
+                grip(-normal, from: incomingFirst, ballIndex: first)
+                grip(normal, from: incomingSecond, ballIndex: second)
+                if abs(closing) > Self.effectImpactSpeed {
+                    effects.append(.collisionEffect(
+                        position: (state.balls[first].position + state.balls[second].position) / 2,
+                        intensity: abs(closing)
+                    ))
+                }
+            }
+        }
     }
 
     /// Every seated hull can knock every other one, teammates included.
@@ -1270,10 +1406,11 @@ public struct SimulationEngine: Sendable {
     }
 
     private mutating func resolveBallCollision(
+        ballIndex: Int,
         previousPosition: SIMD2<Double>,
         contacts: inout [RuleContact]
     ) {
-        let r = state.ball.radius
+        let r = state.balls[ballIndex].radius
         var struckNet = false
 
         // The floor-mounted net: one solid slab standing up out of the middle
@@ -1282,15 +1419,15 @@ public struct SimulationEngine: Sendable {
         // only route to the other half is over the top.
         if let wall = arena.floorNetContact(
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r
         ) {
-            state.ball.position = wall.position
-            let inwardSpeed = simd_dot(state.ball.velocity, wall.normal)
+            state.balls[ballIndex].position = wall.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, wall.normal)
             if inwardSpeed < 0 {
-                let incoming = state.ball.velocity
-                state.ball.velocity -= wall.normal * ((1 + Self.ballRestitution) * inwardSpeed)
-                grip(wall.normal, from: incoming)
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= wall.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(wall.normal, from: incoming, ballIndex: ballIndex)
             }
             struckNet = true
         }
@@ -1299,20 +1436,20 @@ public struct SimulationEngine: Sendable {
         // dropped cleanly through the window never touched a post -- and a
         // ball that clipped one on the way in still counts, same as the real
         // game.
-        if arena.hoopScored(from: previousPosition, to: state.ball.position) {
+        if arena.hoopScored(from: previousPosition, to: state.balls[ballIndex].position) {
             contacts.append(.ballEnteredHoop)
         }
         if let rim = arena.hoopRimContact(
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r
         ) {
-            state.ball.position = rim.position
-            let inwardSpeed = simd_dot(state.ball.velocity, rim.normal)
+            state.balls[ballIndex].position = rim.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, rim.normal)
             if inwardSpeed < 0 {
-                let incoming = state.ball.velocity
-                state.ball.velocity -= rim.normal * ((1 + Self.ballRestitution) * inwardSpeed)
-                grip(rim.normal, from: incoming)
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= rim.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(rim.normal, from: incoming, ballIndex: ballIndex)
             }
         }
 
@@ -1325,15 +1462,15 @@ public struct SimulationEngine: Sendable {
         var blockedByLip = false
         if let lip = arena.lipContact(
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r
         ), lip.normal.y < 0 {
-            let inwardSpeed = simd_dot(state.ball.velocity, lip.normal)
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, lip.normal)
             if inwardSpeed < 0 {
-                state.ball.position = lip.position
-                let incoming = state.ball.velocity
-                state.ball.velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
-                grip(lip.normal, from: incoming)
+                state.balls[ballIndex].position = lip.position
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
+                grip(lip.normal, from: incoming, ballIndex: ballIndex)
                 blockedByLip = true
             }
         }
@@ -1343,27 +1480,29 @@ public struct SimulationEngine: Sendable {
         // faces above it are the portal, and a ball that reaches one is gone --
         // whoever drove it in takes the point.
         if arena.netStyle == .roofPortal, let capHit = sweptNetCapHit(
+            ballIndex: ballIndex,
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r,
             postCenterX: 0
         ) {
-            state.ball.position = capHit.position
-            let inwardSpeed = simd_dot(state.ball.velocity, capHit.normal)
+            state.balls[ballIndex].position = capHit.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, capHit.normal)
             if inwardSpeed < 0 {
-                let incoming = state.ball.velocity
-                state.ball.velocity -= capHit.normal * (2 * inwardSpeed)
-                grip(capHit.normal, from: incoming)
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= capHit.normal * (2 * inwardSpeed)
+                grip(capHit.normal, from: incoming, ballIndex: ballIndex)
             }
             struckNet = true
         } else if arena.netStyle == .roofPortal, let netHit = sweptNetHit(
+            ballIndex: ballIndex,
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r,
             postCenterX: 0
         ) {
             if netHit.crossedFace, !blockedByLip, netHit.position.y <= arena.portalMouthTopY {
-                state.ball.position = netHit.position
+                state.balls[ballIndex].position = netHit.position
                 // The face on your half is the one you defend.
                 contacts.append(.ballEnteredGoal(
                     defending: state.team(onHalfAt: netHit.fromLeft ? -1 : 1)
@@ -1374,13 +1513,13 @@ public struct SimulationEngine: Sendable {
                 // Above the mouth the slab is a solid collar hanging from the
                 // hump. A ball that has ridden the roof down the slope arrives
                 // here, and it bounces off rather than sneaking in over the top.
-                state.ball.position = netHit.position
+                state.balls[ballIndex].position = netHit.position
                 let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
-                let inwardSpeed = simd_dot(state.ball.velocity, normal)
+                let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, normal)
                 if inwardSpeed < 0 {
-                    let incoming = state.ball.velocity
-                    state.ball.velocity -= normal * ((1 + Self.ballRestitution) * inwardSpeed)
-                    grip(normal, from: incoming)
+                    let incoming = state.balls[ballIndex].velocity
+                    state.balls[ballIndex].velocity -= normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                    grip(normal, from: incoming, ballIndex: ballIndex)
                 }
                 struckNet = true
             }
@@ -1389,8 +1528,8 @@ public struct SimulationEngine: Sendable {
             // out and the rally goes on.
         }
 
-        if !struckNet, previousPosition.x.sign != state.ball.position.x.sign {
-            contacts.append(.ballCrossedCenter(into: state.team(onHalfAt: state.ball.position.x)))
+        if !struckNet, previousPosition.x.sign != state.balls[ballIndex].position.x.sign {
+            contacts.append(.ballCrossedCenter(into: state.team(onHalfAt: state.balls[ballIndex].position.x)))
         }
 
         // The lips are the one soft surface in the arena: a ball that lands
@@ -1398,15 +1537,15 @@ public struct SimulationEngine: Sendable {
         // back off. They never count as a bounce -- they are part of the goal.
         if !blockedByLip, let lip = arena.lipContact(
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r
         ) {
-            state.ball.position = lip.position
-            let inwardSpeed = simd_dot(state.ball.velocity, lip.normal)
+            state.balls[ballIndex].position = lip.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, lip.normal)
             if inwardSpeed < 0 {
-                let incoming = state.ball.velocity
-                state.ball.velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
-                grip(lip.normal, from: incoming)
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
+                grip(lip.normal, from: incoming, ballIndex: ballIndex)
             }
         }
 
@@ -1417,42 +1556,42 @@ public struct SimulationEngine: Sendable {
         var floorRegistered = false
         if let hump = arena.humpContact(
             from: previousPosition,
-            to: state.ball.position,
+            to: state.balls[ballIndex].position,
             radius: r
         ) {
-            state.ball.position = hump.position
-            let inwardSpeed = simd_dot(state.ball.velocity, hump.normal)
+            state.balls[ballIndex].position = hump.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, hump.normal)
             if inwardSpeed < 0 {
-                let incoming = state.ball.velocity
-                state.ball.velocity -= hump.normal * ((1 + Self.ballRestitution) * inwardSpeed)
-                grip(hump.normal, from: incoming)
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= hump.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(hump.normal, from: incoming, ballIndex: ballIndex)
             }
             // Never a floor contact: the hump is a structure hanging from the
             // roof, not the ground. The corners register because they *are*
             // the floor curving up at the ends of the court.
         }
 
-        if let corner = arena.cornerContact(position: state.ball.position, radius: r) {
-            state.ball.position = corner.position
-            let inwardSpeed = simd_dot(state.ball.velocity, corner.normal)
+        if let corner = arena.cornerContact(position: state.balls[ballIndex].position, radius: r) {
+            state.balls[ballIndex].position = corner.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, corner.normal)
             if inwardSpeed < 0 {
-                let incoming = state.ball.velocity
-                state.ball.velocity -= corner.normal * ((1 + Self.ballRestitution) * inwardSpeed)
-                grip(corner.normal, from: incoming)
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= corner.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(corner.normal, from: incoming, ballIndex: ballIndex)
             }
             if corner.normal.y > 0.5 {
                 floorRegistered = true
-                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.ball.position.x)))
+                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
             }
         }
 
-        if state.ball.position.y - r <= arena.floorY {
-            let incoming = state.ball.velocity
-            state.ball.position.y = arena.floorY + r
-            state.ball.velocity.y = abs(state.ball.velocity.y) * Self.floorRestitution
-            grip(SIMD2(0, 1), from: incoming)
+        if state.balls[ballIndex].position.y - r <= arena.floorY {
+            let incoming = state.balls[ballIndex].velocity
+            state.balls[ballIndex].position.y = arena.floorY + r
+            state.balls[ballIndex].velocity.y = abs(state.balls[ballIndex].velocity.y) * Self.floorRestitution
+            grip(SIMD2(0, 1), from: incoming, ballIndex: ballIndex)
             if !floorRegistered {
-                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.ball.position.x)))
+                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
                 floorRegistered = true
             }
         }
@@ -1460,41 +1599,46 @@ public struct SimulationEngine: Sendable {
         // that runs out of bounce just lies there and the match never
         // finishes. It comes off the deck live instead.
         if floorRegistered, arena.hoop != nil {
-            state.ball.velocity.y = max(state.ball.velocity.y, Self.hoopDribbleSpeed)
+            state.balls[ballIndex].velocity.y = max(state.balls[ballIndex].velocity.y, Self.hoopDribbleSpeed)
         }
-        if state.ball.position.y + r >= arena.ceilingY {
-            let incoming = state.ball.velocity
-            state.ball.position.y = arena.ceilingY - r
-            state.ball.velocity.y = -abs(state.ball.velocity.y) * Self.ballRestitution
-            grip(SIMD2(0, -1), from: incoming)
+        if state.balls[ballIndex].position.y + r >= arena.ceilingY {
+            let incoming = state.balls[ballIndex].velocity
+            state.balls[ballIndex].position.y = arena.ceilingY - r
+            state.balls[ballIndex].velocity.y = -abs(state.balls[ballIndex].velocity.y) * Self.ballRestitution
+            grip(SIMD2(0, -1), from: incoming, ballIndex: ballIndex)
         }
-        if state.ball.position.x - r <= -arena.halfWidth {
-            let incoming = state.ball.velocity
-            state.ball.position.x = -arena.halfWidth + r
-            state.ball.velocity.x = abs(state.ball.velocity.x) * Self.ballRestitution
-            grip(SIMD2(1, 0), from: incoming)
+        if state.balls[ballIndex].position.x - r <= -arena.halfWidth {
+            let incoming = state.balls[ballIndex].velocity
+            state.balls[ballIndex].position.x = -arena.halfWidth + r
+            state.balls[ballIndex].velocity.x = abs(state.balls[ballIndex].velocity.x) * Self.ballRestitution
+            grip(SIMD2(1, 0), from: incoming, ballIndex: ballIndex)
         }
-        if state.ball.position.x + r >= arena.halfWidth {
-            let incoming = state.ball.velocity
-            state.ball.position.x = arena.halfWidth - r
-            state.ball.velocity.x = -abs(state.ball.velocity.x) * Self.ballRestitution
-            grip(SIMD2(-1, 0), from: incoming)
+        if state.balls[ballIndex].position.x + r >= arena.halfWidth {
+            let incoming = state.balls[ballIndex].velocity
+            state.balls[ballIndex].position.x = arena.halfWidth - r
+            state.balls[ballIndex].velocity.x = -abs(state.balls[ballIndex].velocity.x) * Self.ballRestitution
+            grip(SIMD2(-1, 0), from: incoming, ballIndex: ballIndex)
         }
     }
 
     /// The surface with outward `normal` has just pushed the ball off
     /// `incoming`; let it grip, trading the ball's slide for spin.
-    private mutating func grip(_ normal: SIMD2<Double>, from incoming: SIMD2<Double>) {
-        (state.ball.velocity, state.ball.spin) = BallState.gripped(
-            state.ball.velocity,
+    private mutating func grip(
+        _ normal: SIMD2<Double>,
+        from incoming: SIMD2<Double>,
+        ballIndex: Int
+    ) {
+        (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.gripped(
+            state.balls[ballIndex].velocity,
             from: incoming,
-            spin: state.ball.spin,
-            radius: state.ball.radius,
+            spin: state.balls[ballIndex].spin,
+            radius: state.balls[ballIndex].radius,
             normal: normal
         )
     }
 
     private func sweptNetCapHit(
+        ballIndex: Int,
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
         radius: Double,
@@ -1522,11 +1666,12 @@ public struct SimulationEngine: Sendable {
             let rallyIndex = state.match.score.cyan + state.match.score.orange
             normal = simd_normalize(SIMD2(rallyIndex.isMultiple(of: 2) ? -0.18 : 0.18, -1))
         }
-        guard simd_dot(state.ball.velocity, normal) < 0 else { return nil }
+        guard simd_dot(state.balls[ballIndex].velocity, normal) < 0 else { return nil }
         return (center + normal * combinedRadius, normal)
     }
 
     private func sweptNetHit(
+        ballIndex: Int,
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
         radius: Double,
@@ -1578,12 +1723,13 @@ public struct SimulationEngine: Sendable {
     }
 
     private mutating func resolveBallShipCollisions(
+        ballIndex: Int,
         previousBallPosition: SIMD2<Double>,
         previousShipPositions: [Seat: SIMD2<Double>],
         contacts: inout [RuleContact],
         effects: inout [SimulationEvent]
     ) {
-        let ballEnd = state.ball.position
+        let ballEnd = state.balls[ballIndex].position
         var earliest: (seat: Seat, t: Double)?
         for seat in Seat.allCases {
             guard let ship = state.ships[seat], !ship.isDestroyed,
@@ -1597,7 +1743,7 @@ public struct SimulationEngine: Sendable {
             guard let t = hitbox.sweepTime(
                 from: local(previousBallPosition - previousShipPosition),
                 to: local(ballEnd - ship.position),
-                radius: state.ball.radius + ShipHitbox.skin
+                radius: state.balls[ballIndex].radius + ShipHitbox.skin
             ) else { continue }
             if earliest == nil || t < earliest!.t {
                 earliest = (seat, t)
@@ -1618,39 +1764,39 @@ public struct SimulationEngine: Sendable {
         var normal = offset - surface
         let normalLength = simd_length(normal)
         normal = normalLength > 0.000_001 ? normal / normalLength : SIMD2(-1, 0)
-        state.ball.position = ship.position + surface + normal * (state.ball.radius + ShipHitbox.skin)
+        state.balls[ballIndex].position = ship.position + surface + normal * (state.balls[ballIndex].radius + ShipHitbox.skin)
 
-        let relativeVelocity = state.ball.velocity - ship.velocity
+        let relativeVelocity = state.balls[ballIndex].velocity - ship.velocity
         let inwardSpeed = simd_dot(relativeVelocity, normal)
         guard inwardSpeed < 0 else { return }
         let inverseBallMass = 1.0 / Self.ballMass
         let inverseShipMass = 1.0 / Self.shipMass
         let impulse = -(1 + Self.shipBallRestitution) * inwardSpeed
             / (inverseBallMass + inverseShipMass)
-        let incoming = state.ball.velocity
-        state.ball.velocity += normal * impulse * inverseBallMass
+        let incoming = state.balls[ballIndex].velocity
+        state.balls[ballIndex].velocity += normal * impulse * inverseBallMass
         ship.velocity -= normal * impulse * inverseShipMass
         // A hull grips like any other surface, except the surface is moving:
         // the ball slides against the hull where they touch, so a glance, or a
         // nose swung through the ball, sends it off turning. The hull takes
         // the other end of that kick.
-        let lever = state.ball.position - normal * state.ball.radius - ship.position
+        let lever = state.balls[ballIndex].position - normal * state.balls[ballIndex].radius - ship.position
         let hullSurface = ship.velocity + ship.angularVelocity * SIMD2(-lever.y, lever.x)
-        let sliding = state.ball.velocity
-        (state.ball.velocity, state.ball.spin) = BallState.gripped(
-            state.ball.velocity,
+        let sliding = state.balls[ballIndex].velocity
+        (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.gripped(
+            state.balls[ballIndex].velocity,
             from: incoming,
-            spin: state.ball.spin,
-            radius: state.ball.radius,
+            spin: state.balls[ballIndex].spin,
+            radius: state.balls[ballIndex].radius,
             normal: normal,
             surfaceVelocity: hullSurface
         )
-        ship.velocity -= (state.ball.velocity - sliding) * (Self.ballMass / Self.shipMass)
+        ship.velocity -= (state.balls[ballIndex].velocity - sliding) * (Self.ballMass / Self.shipMass)
         // Every contact pops the ball clear of the hull. Without this a ship can
         // park under a slow ball and ride it, which stalls the rally outright.
-        let separationSpeed = simd_dot(state.ball.velocity - ship.velocity, normal)
+        let separationSpeed = simd_dot(state.balls[ballIndex].velocity - ship.velocity, normal)
         if separationSpeed < configuration.minimumBallSeparationSpeed {
-            state.ball.velocity += normal
+            state.balls[ballIndex].velocity += normal
                 * (configuration.minimumBallSeparationSpeed - separationSpeed)
         }
         // The physics above always runs -- a rattling ball still gets shoved
@@ -1669,7 +1815,7 @@ public struct SimulationEngine: Sendable {
         state.ships[hit.seat] = ship
         contacts.append(.ballTouchedShip(team: hit.seat.team, counted: counted))
         effects.append(.collisionEffect(
-            position: state.ball.position,
+            position: state.balls[ballIndex].position,
             intensity: abs(inwardSpeed)
         ))
     }

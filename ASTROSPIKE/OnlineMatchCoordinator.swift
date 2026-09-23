@@ -1066,11 +1066,33 @@ final class OnlineMatchCoordinator: NSObject,
             sequence &+= 1
             let data = try codec.encode(WireEnvelope(sequence: sequence, payload: payload))
             try match.sendData(toAllPlayers: data, with: mode)
+            if mode == .unreliable { unreliableSendFailures = 0 }
         } catch {
+            // An unreliable packet that would not go is what unreliable
+            // means: the next input or snapshot covers it. One throw used to
+            // end the whole match, which is how a single blip on a cellular
+            // link read as "network send failed". Only a run of them -- or a
+            // reliable send, which carries real state -- is a dead link.
+            if mode == .unreliable {
+                unreliableSendFailures += 1
+                guard unreliableSendFailures >= Self.unreliableSendFailureLimit else { return }
+            }
+            // A held seat is already being handled by the reconnect clock;
+            // a send that fails during the hold is expected, not fatal.
+            if case .reconnecting = status {
+                note("SEND DROPPED DURING HOLD: \(describe(error))")
+                return
+            }
             note("SEND FAILED: \(describe(error))")
             status = .failed(reason: .networkSendFailed)
         }
     }
+
+    /// Consecutive unreliable sends that threw. Inputs go out sixty times a
+    /// second, so this many in a row is half a second of a link that will
+    /// take nothing, not a blip.
+    private var unreliableSendFailures = 0
+    private static let unreliableSendFailureLimit = 30
 
     /// The heartbeat and its echoes: best effort, and addressed.
     ///
@@ -1157,9 +1179,37 @@ final class OnlineMatchCoordinator: NSObject,
                 // A guest that took over hosting reseated the table: remember
                 // who runs the rules now, so the next drop is judged right.
                 // A reseat can also bench a pilot whose hold ran out.
+                //
+                // Only the host, or whoever steps up once the host has
+                // dropped, may reseat a live table. A stale plan from a
+                // pilot who is not running the rules would seat the guest
+                // in a game nobody is hosting.
+                let hostHasDropped = hostID.map { droppedPilots.contains($0) } ?? true
+                guard playerID == hostID || hostHasDropped else {
+                    note("IGNORED SEATING FROM \(playerID): NOT THE HOST")
+                    return
+                }
+                if hostID != playerID {
+                    // A new host's sequence numbers and ticks start from its
+                    // own counters, and gates tuned to the old host would
+                    // throw everything it sends away.
+                    snapshotGate.reset()
+                    eventGate.reset()
+                }
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
+            } else if playerID < GKLocalPlayer.local.gamePlayerID {
+                // Two boards both think they host -- both stepped up during
+                // the same hold. The lower ID runs the rules, the same rule
+                // that seated the table, so this end stands down.
+                note("YIELDING HOST TO \(playerID)")
+                isAuthoritative = false
+                hostID = playerID
+                seating = plan
+                hostTuning = tuning
+                snapshotGate.reset()
+                eventGate.reset()
             }
         case let .snapshot(state):
             if lifecycle.acceptsGameplayData, snapshotGate.accept(tick: state.tick) {
@@ -1460,6 +1510,8 @@ final class OnlineMatchCoordinator: NSObject,
                 // the rules while their chair is held, and it is us.
                 isAuthoritative = true
                 hostID = localID
+                snapshotGate.reset()
+                eventGate.reset()
                 note("HOST \(displayName) DROPPED · LOCAL NOW HOSTS")
             }
             beginReconnectWindow()

@@ -65,7 +65,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     either.
     // 22: seating carries teamUp -- two friends can fly on the same side
     //     against bots, and a build 88 guest would seat itself in a duel.
-    public static let currentVersion: UInt16 = 22
+    // 23: WorldState carries `balls`, an array, in place of one ball --
+    //     doubles is played with two -- and a guest's engine follows the
+    //     host's rulebook instead of keeping its own. A build 92 peer cannot
+    //     decode a snapshot at all.
+    public static let currentVersion: UInt16 = 23
 
     public var version: UInt16
     public var sequence: UInt64
