@@ -423,6 +423,9 @@ public enum OnlineTimeouts {
     /// a pilot who picks their phone up minutes later still lands on the court
     /// without being asked a second time. Matches AstroCross.
     public static let inviteConnectSeconds = 300
+    /// An invitee whose host dropped before seating them waits this long for
+    /// the host's automatic re-invite, not the full invite window.
+    public static let relinkSeconds = 60
 
     public static func connectSeconds(role: OnlineMatchRole) -> Int {
         switch role {

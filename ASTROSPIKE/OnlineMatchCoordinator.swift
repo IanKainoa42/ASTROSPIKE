@@ -853,10 +853,21 @@ final class OnlineMatchCoordinator: NSObject,
         tryStartAsHost()
     }
 
-    private func beginConnectWait() {
+    /// The host dropped before seating us, so this match is dead: a GKMatch
+    /// never reconnects on its own. The host's seat hold re-invites a few
+    /// seconds later. Say so, and close the door in a minute rather than
+    /// counting down five on a table nobody is at.
+    private func awaitReinvite(from hostName: String) {
+        note("\(hostName) DROPPED BEFORE SEATING · WAITING FOR A NEW INVITE")
+        disconnectTransport()
+        matchmakingHeadlineText = PlayerNetworkCopy.Matchmaking.awaitingReinvite(hostName)
+        beginConnectWait(window: OnlineTimeouts.relinkSeconds)
+    }
+
+    private func beginConnectWait(window: Int? = nil) {
         handshakeTask?.cancel()
         let matchIdentifier = match.map(ObjectIdentifier.init)
-        let window = connectTimeoutSeconds
+        let window = window ?? connectTimeoutSeconds
         note("WAITING UP TO \(window)s FOR THE TABLE TO FILL")
         doorSecondsRemaining = window
         handshakeTask = Task { @MainActor [weak self] in
@@ -1534,6 +1545,10 @@ final class OnlineMatchCoordinator: NSObject,
             isMatchReady = allPeersReady
             onConnectionPaused?(false)
         case .disconnected:
+            if lifecycle.phase == .configuring, role == .invitee, match?.players.isEmpty ?? true {
+                awaitReinvite(from: displayName)
+                return
+            }
             readyPeers.remove(playerID)
             droppedPilots.insert(playerID)
             // Whoever left loses it for their side, whichever side that is.
@@ -1620,9 +1635,15 @@ final class OnlineMatchCoordinator: NSObject,
         }
         // Our own search or invite, if one is out, is over: the completion
         // it fires with `.cancelled` belongs to the old generation.
+        //
+        // Only cancel when one really is out. GameKit processes `cancel()`
+        // asynchronously, and with nothing of ours pending it can land on
+        // the join below instead: the host sees us connect and drop in the
+        // same second, and we sit in the bay on a dead match.
+        let ownSearchIsOut = status == .matching && role != .invitee
         matchmakingGeneration += 1
         let generation = matchmakingGeneration
-        GKMatchmaker.shared().cancel()
+        if ownSearchIsOut { GKMatchmaker.shared().cancel() }
         role = .invitee
         declinedInvites = 0
         // The headline, not a footnote: an invitee sat in the bay under

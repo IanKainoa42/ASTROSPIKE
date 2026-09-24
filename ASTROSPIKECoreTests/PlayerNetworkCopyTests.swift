@@ -36,6 +36,7 @@ struct PlayerNetworkCopyTests {
     func matchmakingHeadlineNamesThePilot() {
         #expect(PlayerNetworkCopy.Matchmaking.joining("Ian") == "JOINING IAN…")
         #expect(PlayerNetworkCopy.Matchmaking.rejoining("Maya") == "REJOINING MAYA…")
+        #expect(PlayerNetworkCopy.Matchmaking.awaitingReinvite("Maya") == "LINK DROPPED · ACCEPT MAYA'S NEW INVITE")
         #expect(PlayerNetworkCopy.Matchmaking.waiting(for: ["Maya"]) == "WAITING FOR MAYA…")
         #expect(PlayerNetworkCopy.Matchmaking.waiting(for: ["Maya", "Jo", "Sam"]) == "WAITING FOR MAYA +2…")
         #expect(PlayerNetworkCopy.Matchmaking.waiting(for: []) == "WAITING FOR PILOTS…")

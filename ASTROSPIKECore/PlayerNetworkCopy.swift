@@ -78,6 +78,12 @@ public enum PlayerNetworkCopy {
             "REJOINING \(name.uppercased())…"
         }
 
+        /// The host's link fell over before it seated us. Only the host can
+        /// ask again, and they do so automatically, so say what to watch for.
+        public static func awaitingReinvite(_ name: String) -> String {
+            "LINK DROPPED · ACCEPT \(name.uppercased())'S NEW INVITE"
+        }
+
         public static func waiting(for names: [String]) -> String {
             guard let first = names.first else { return "WAITING FOR PILOTS…" }
             let others = names.count - 1
