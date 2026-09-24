@@ -420,6 +420,12 @@ final class OnlineMatchCoordinator: NSObject,
     private var matchmakingHeadlineText: String?
     /// Invitations out during the current seat hold, so they can be withdrawn.
     private var seatHoldCallback = SeatHoldCallback()
+    /// Counts down after any call-back actually goes out -- automatic or the
+    /// RE-INVITE PILOT button -- so a pilot mashing the button can't stack a
+    /// fresh Game Center push on one still in flight to the same friend.
+    private(set) var reinviteCooldownSecondsRemaining: Int?
+    private var reinviteCooldownTask: Task<Void, Never>?
+    private static let callBackCooldownSeconds = 20
     /// A packet this recent means the pilot is still at the table.
     private static let recentlyHeardSeconds: TimeInterval = 2
 
@@ -1362,8 +1368,14 @@ final class OnlineMatchCoordinator: NSObject,
         onReconnect?()
     }
 
-    /// The arena's RE-INVITE PILOT button: asks again every time it is pressed.
+    /// The arena's RE-INVITE PILOT button. Refuses while a call-back sent in
+    /// the last `callBackCooldownSeconds` is still in flight, so tapping it
+    /// twice can't put two pushes on the dropped pilot's phone.
     func reinviteDroppedPilots() {
+        if let remaining = reinviteCooldownSecondsRemaining {
+            note("RE-INVITE ON COOLDOWN · \(remaining)s LEFT")
+            return
+        }
         callBackDroppedPilots(automatic: false)
     }
 
@@ -1391,6 +1403,7 @@ final class OnlineMatchCoordinator: NSObject,
         request.recipients = missing
         request.inviteMessage = "Your seat is still open. Come back!"
         note("RE-INVITING \(missing.map(\.displayName).joined(separator: ", "))")
+        beginReinviteCooldown()
         GKMatchmaker.shared().addPlayers(to: match, matchRequest: request) { [weak self] error in
             let detail = error.map { self?.describe($0) ?? "\($0)" }
             Task { @MainActor [weak self] in
@@ -1407,10 +1420,31 @@ final class OnlineMatchCoordinator: NSObject,
     /// The hold is over, whichever way. A call-back still out is withdrawn, or
     /// the pilot keeps getting invites to a match they are already back in.
     private func withdrawCallbacks() {
+        clearReinviteCooldown()
         let outstanding = seatHoldCallback.close().compactMap { knownPlayers[$0] }
         guard !outstanding.isEmpty else { return }
         for player in outstanding { GKMatchmaker.shared().cancelPendingInvite(to: player) }
         note("CALL-BACK WITHDRAWN: \(outstanding.map(\.displayName).joined(separator: ", "))")
+    }
+
+    /// Starts the window the RE-INVITE PILOT button won't send inside,
+    /// counting down on screen so a tap that does nothing still says why.
+    private func beginReinviteCooldown() {
+        reinviteCooldownTask?.cancel()
+        reinviteCooldownSecondsRemaining = Self.callBackCooldownSeconds
+        reinviteCooldownTask = Task { @MainActor [weak self] in
+            for remaining in stride(from: Self.callBackCooldownSeconds - 1, through: 0, by: -1) {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                self.reinviteCooldownSecondsRemaining = remaining > 0 ? remaining : nil
+            }
+        }
+    }
+
+    private func clearReinviteCooldown() {
+        reinviteCooldownTask?.cancel()
+        reinviteCooldownTask = nil
+        reinviteCooldownSecondsRemaining = nil
     }
 
     /// False when there is nothing on screen to present from, so the caller

@@ -611,15 +611,21 @@ private struct GameView: View {
                     .padding(.top, 4)
                 }
                 if mode == .online, case .reconnecting = online.status {
+                    let cooldown = online.reinviteCooldownSecondsRemaining
                     Button {
                         online.reinviteDroppedPilots()
                     } label: {
-                        Label("RE-INVITE PILOT", systemImage: "arrow.uturn.backward.circle.fill")
-                            .font(.caption.weight(.bold))
-                            .padding(.horizontal, 6)
+                        Label(
+                            cooldown.map { "INVITE SENT · \($0)s" } ?? "RE-INVITE PILOT",
+                            systemImage: cooldown == nil
+                                ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill"
+                        )
+                        .font(.caption.weight(.bold))
+                        .padding(.horizontal, 6)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.yellow)
+                    .tint(cooldown == nil ? .yellow : .white.opacity(0.4))
+                    .disabled(cooldown != nil)
                     .padding(.top, 6)
                     .accessibilityIdentifier("reinvite-button")
                 }
