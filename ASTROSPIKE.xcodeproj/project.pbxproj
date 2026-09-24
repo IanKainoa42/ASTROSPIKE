@@ -88,6 +88,7 @@
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
 		F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */; };
 		F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B202192D985A9E29E73E1 /* LobbyView.swift */; };
+		F9182CDFF749B4D8C21C8CCA /* BallContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1718C582551AF16144D011A9 /* BallContactTests.swift */; };
 		FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056582DB470999C16355D1FE /* HullStore.swift */; };
 		FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5637738B4E3686D57BD33184 /* WarmupRings.swift */; };
 		FF566FF80493C069F905DC2F /* OnlineFailureReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8675D87BC800DE3BD658AD5 /* OnlineFailureReason.swift */; };
@@ -152,6 +153,7 @@
 		0B581A251E3DC103CDFB31F3 /* TrackScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackScene.swift; sourceTree = "<group>"; };
 		1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineFailureReasonTests.swift; sourceTree = "<group>"; };
 		1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCenterDiagnosticsPanel.swift; sourceTree = "<group>"; };
+		1718C582551AF16144D011A9 /* BallContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BallContactTests.swift; sourceTree = "<group>"; };
 		1AC83DD77126E7FA513D2942 /* Lobby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lobby.swift; sourceTree = "<group>"; };
 		1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopyTests.swift; sourceTree = "<group>"; };
 		1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
@@ -364,6 +366,7 @@
 			children = (
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
+				1718C582551AF16144D011A9 /* BallContactTests.swift */,
 				3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */,
 				8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */,
 				BACCBC1253D91A47299D2645 /* DoublesTests.swift */,
@@ -605,6 +608,7 @@
 			files = (
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
+				F9182CDFF749B4D8C21C8CCA /* BallContactTests.swift in Sources */,
 				BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */,
 				5E6A28DD8A98ABAAEB45CCA4 /* CourtVariantTests.swift in Sources */,
 				767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */,

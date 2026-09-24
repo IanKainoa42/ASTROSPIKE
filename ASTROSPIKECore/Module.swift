@@ -778,6 +778,10 @@ public struct SimulationEngine: Sendable {
         )
 
         if state.match.phase == .serve {
+            // The staged ball hangs still, but it is not a ghost: a hull that
+            // flies into it stops against it rather than ending the countdown
+            // parked inside the ball, where the first live step could not see it.
+            for ballIndex in state.balls.indices { pushShipsOffBall(ballIndex) }
             advanceServe()
             lastEvents = collisionEffects
             state.tick += 1
@@ -811,6 +815,10 @@ public struct SimulationEngine: Sendable {
                 previousPosition: previousBallPositions[ballIndex],
                 contacts: &contacts
             )
+            // A ball the hull just shoved into a wall comes back off the wall
+            // into the hull. The wall wins: the ship gives way, or next step
+            // starts overlapped and the hull passes straight through the ball.
+            pushShipsOffBall(ballIndex)
         }
 
         // Whoever put a hand on it most recently owns whatever happens next.
@@ -879,8 +887,28 @@ public struct SimulationEngine: Sendable {
 
     /// Enough sideways drift that the ball lands well inside the receiving
     /// half rather than on the centre line.
-    private var serveVelocity: SIMD2<Double> {
-        SIMD2(state.serveDriftSign * 0.45, -configuration.ballDropSpeed)
+    static let serveDriftSpeed = 0.45
+    /// How far a serve strays from the stock one, as fractions of it. The
+    /// side it drifts to never changes; how hard, how fast it drops and how
+    /// long the countdown hangs do, so a pilot parked on the landing spot
+    /// has to read each serve instead of pre-flying it.
+    static let serveDriftRange = 0.55 ... 1.45
+    static let serveDropRange = 0.80 ... 1.25
+    static let serveDelayRange = 0.75 ... 1.45
+
+    /// A repeatable draw in `range`, keyed off the tick and the score. Both
+    /// ends of an online game already share those, so host and guest pick
+    /// the same serve without a word on the wire, and a test replays exactly.
+    private func serveDraw(_ salt: UInt64, in range: ClosedRange<Double>) -> Double {
+        var z = state.tick &* 0x9E37_79B9_7F4A_7C15
+            &+ UInt64(truncatingIfNeeded: state.match.score.cyan) &* 0xBF58_476D_1CE4_E5B9
+            &+ UInt64(truncatingIfNeeded: state.match.score.orange) &* 0x94D0_49BB_1331_11EB
+            &+ salt &* 0xD6E8_FEB8_6659_FD93
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        let unit = Double(z >> 11) / Double(1 << 53)
+        return range.lowerBound + (range.upperBound - range.lowerBound) * unit
     }
 
     /// Every ball a serve puts up, sitting under the cap of the goal. One
@@ -894,9 +922,14 @@ public struct SimulationEngine: Sendable {
         return (0 ..< count).map { index in
             let sign = index == 0 ? state.serveDriftSign : -state.serveDriftSign
             let spread = count > 1 ? sign * (configuration.ballRadius + 0.012) : 0
+            let salt = UInt64(index) * 2
+            let velocity = SIMD2(
+                sign * Self.serveDriftSpeed * serveDraw(salt + 1, in: Self.serveDriftRange),
+                -configuration.ballDropSpeed * serveDraw(salt + 2, in: Self.serveDropRange)
+            )
             return BallState(
                 position: SIMD2(spread, configuration.ballDropHeight),
-                velocity: moving ? SIMD2(sign * 0.45, -configuration.ballDropSpeed) : .zero,
+                velocity: moving ? velocity : .zero,
                 radius: configuration.ballRadius
             )
         }
@@ -922,10 +955,8 @@ public struct SimulationEngine: Sendable {
         // the first touch of this one.
         state.lastBallToucher = nil
         for seat in state.ships.keys { state.ships[seat]?.ballTouchCooldownTicks = 0 }
-        state.serveTicksRemaining = max(
-            1,
-            UInt64((configuration.serveDelay / configuration.stepDuration).rounded())
-        )
+        let delay = configuration.serveDelay * serveDraw(0, in: Self.serveDelayRange)
+        state.serveTicksRemaining = max(1, UInt64((delay / configuration.stepDuration).rounded()))
     }
 
     private mutating func advanceServe() {
@@ -1743,6 +1774,16 @@ public struct SimulationEngine: Sendable {
                 earliest = (seat, t)
             }
         }
+        // The sweep cannot see a ball that starts the step already touching
+        // the hull -- a nose swung onto it, a shove from another ship. Take
+        // the deepest overlap as a contact at the end of the step instead of
+        // letting the hull slide through.
+        if earliest == nil {
+            earliest = Seat.allCases
+                .compactMap { seat in hullPenetration(of: state.balls[ballIndex], into: seat).map { (seat, $0.depth) } }
+                .max { $0.1 < $1.1 }
+                .map { (seat: $0.0, t: 1.0) }
+        }
 
         guard let hit = earliest, var ship = state.ships[hit.seat],
               let previousShipPosition = previousShipPositions[hit.seat] else { return }
@@ -1758,6 +1799,8 @@ public struct SimulationEngine: Sendable {
         var normal = offset - surface
         let normalLength = simd_length(normal)
         normal = normalLength > 0.000_001 ? normal / normalLength : SIMD2(-1, 0)
+        // A centre already inside the outline points the wrong way out.
+        if hitbox.contains(localBall) { normal = -normal }
         state.balls[ballIndex].position = ship.position + surface + normal * (state.balls[ballIndex].radius + ShipHitbox.skin)
 
         let relativeVelocity = state.balls[ballIndex].velocity - ship.velocity
@@ -1812,6 +1855,40 @@ public struct SimulationEngine: Sendable {
             position: state.balls[ballIndex].position,
             intensity: abs(inwardSpeed)
         ))
+    }
+
+    /// How far `ball` sits inside `seat`'s hull, skin included, and the way
+    /// out for the ball. Nil when the two are clear.
+    private func hullPenetration(of ball: BallState, into seat: Seat) -> (normal: SIMD2<Double>, depth: Double)? {
+        guard let ship = state.ships[seat], !ship.isDestroyed else { return nil }
+        let hitbox = shipHitboxes[seat] ?? .shared
+        let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+        let left = SIMD2(-axis.y, axis.x)
+        let offset = ball.position - ship.position
+        let local = SIMD2(simd_dot(offset, axis), simd_dot(offset, left))
+        let inside = hitbox.contains(local)
+        var away = local - hitbox.closestPoint(to: local)
+        let gap = simd_length(away)
+        let clearance = inside ? -gap : gap
+        let reach = ball.radius + ShipHitbox.skin
+        guard clearance < reach - 0.000_001 else { return nil }
+        away = gap > 0.000_001 ? away / gap * (inside ? -1 : 1) : SIMD2(1, 0)
+        return (axis * away.x + left * away.y, reach - clearance)
+    }
+
+    /// Moves every hull overlapping the ball back out of it and takes away
+    /// the speed it was carrying into it, with a soft knock back. For a ball
+    /// that is not free to move: staged for a serve, or pinned to a wall.
+    private mutating func pushShipsOffBall(_ ballIndex: Int) {
+        let ball = state.balls[ballIndex]
+        for seat in Seat.allCases {
+            guard let overlap = hullPenetration(of: ball, into: seat),
+                  var ship = state.ships[seat] else { continue }
+            ship.position -= overlap.normal * overlap.depth
+            let closing = simd_dot(ship.velocity - ball.velocity, overlap.normal)
+            if closing > 0 { ship.velocity -= overlap.normal * closing * 1.3 }
+            state.ships[seat] = ship
+        }
     }
 
     private func sweptCircleTime(

@@ -157,7 +157,14 @@ struct RallyLifecycleTests {
         #expect(engine.state.ball.position == .init(0, 0.02))
         // Centre is directly under the goal, so a serve is released with a
         // sideways drift toward the receiving half.
-        #expect(engine.state.ball.velocity == .init(-0.45, -0.08))
+        // The serve is jittered, but only in size: always toward the
+        // receiving half, always down, within the tuned ranges.
+        let drift = SimulationEngine.serveDriftSpeed
+        let v = engine.state.ball.velocity
+        #expect(v.x <= -drift * SimulationEngine.serveDriftRange.lowerBound)
+        #expect(v.x >= -drift * SimulationEngine.serveDriftRange.upperBound)
+        #expect(v.y <= -0.08 * SimulationEngine.serveDropRange.lowerBound)
+        #expect(v.y >= -0.08 * SimulationEngine.serveDropRange.upperBound)
     }
 
     /// Just outside the cyan face at mouth height, so a 2/s drive goes through
@@ -326,15 +333,19 @@ struct RallyLifecycleTests {
         } == false)
     }
 
-    @Test("The serve releases after the prototype delay without a countdown")
+    @Test("The serve releases after its jittered delay without a countdown")
     func serveDropsAfterPrototypeDelay() {
         var engine = SimulationEngine.testing()
         engine.state.ball.position = Self.besideTheCyanFace
         engine.state.ball.velocity = .init(2, 0)
         engine.step(inputs: [:])
         let heldPosition = engine.state.ball.position
+        let ticks = Int(engine.state.serveTicksRemaining)
+        let stock = engine.configuration.serveDelay / engine.configuration.stepDuration
+        #expect(Double(ticks) >= (stock * SimulationEngine.serveDelayRange.lowerBound).rounded(.down))
+        #expect(Double(ticks) <= (stock * SimulationEngine.serveDelayRange.upperBound).rounded(.up))
 
-        for _ in 0 ..< 161 {
+        for _ in 0 ..< ticks - 1 {
             engine.step(inputs: [:])
         }
 
@@ -346,7 +357,8 @@ struct RallyLifecycleTests {
         #expect(engine.state.match.phase == .playing)
         #expect(engine.state.ball.position == heldPosition)
         // Orange took the point, so the serve drifts toward cyan, who conceded.
-        #expect(engine.state.ball.velocity == .init(-0.45, -0.18))
+        #expect(engine.state.ball.velocity.x < 0)
+        #expect(engine.state.ball.velocity.y < 0)
     }
 
     @Test("Play no longer destroys a ship at all")
