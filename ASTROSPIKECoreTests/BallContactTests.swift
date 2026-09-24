@@ -11,6 +11,19 @@ struct BallContactTests {
         0.30
     )
 
+    /// The hull is sitting inside the ball, skin included, by more than a hair.
+    private static func hullOverlapsBall(_ engine: SimulationEngine, seat: Seat) -> Bool {
+        let ship = engine.state.ships[seat]!
+        let ball = engine.state.ball
+        let offset = ball.position - ship.position
+        let local = SIMD2(
+            simd_dot(offset, SIMD2(cos(ship.angle), sin(ship.angle))),
+            simd_dot(offset, SIMD2(-sin(ship.angle), cos(ship.angle)))
+        )
+        let hull = ShipHitbox.shared
+        return hull.contains(local) || hull.distance(from: local) < ball.radius + ShipHitbox.skin - 0.002
+    }
+
     /// A point just scored, the next ball hanging for the serve.
     private static func servingEngine() -> SimulationEngine {
         var engine = SimulationEngine.testing()
@@ -115,5 +128,44 @@ struct BallContactTests {
             return (delay, engine.state.ball.velocity)
         }
         #expect(serve() == serve())
+    }
+
+    /// Online: the guest rebuilds its engine from each host snapshot and
+    /// flies the physics itself between them. Started from the same
+    /// snapshot mid-serve with the same inputs, it has to stop against the
+    /// same staged ball and serve the same ball on the same tick.
+    @Test("An online guest stops on the staged ball and serves the same ball as the host")
+    func guestMatchesHostThroughTheServe() {
+        var host = Self.servingEngine()
+        let ball = host.state.ball
+        host.state.ships[.cyan] = ShipState(
+            position: SIMD2(ball.position.x - 0.15, ball.position.y),
+            velocity: SIMD2(1.5, 0),
+            angle: 0
+        )
+        // A few ticks in, the way a snapshot catches the serve in flight.
+        for _ in 0 ..< 5 { host.step(inputs: [:]) }
+        var guest = SimulationEngine(state: host.state, configuration: host.configuration, arena: host.arena)
+        guest.followsHost = true
+
+        let push = PlayerInput(tick: 0, torque: 0, thrust: true)
+        var hostRelease: (UInt64, SIMD2<Double>)?
+        var guestRelease: (UInt64, SIMD2<Double>)?
+        for _ in 0 ..< 200 where hostRelease == nil || guestRelease == nil {
+            host.step(inputs: [.cyan: push])
+            guest.step(inputs: [.cyan: push])
+            for engine in [host, guest] where engine.state.match.phase == .serve {
+                #expect(!Self.hullOverlapsBall(engine, seat: .cyan))
+            }
+            if hostRelease == nil, host.state.match.phase == .playing {
+                hostRelease = (host.state.tick, host.state.ball.velocity)
+            }
+            if guestRelease == nil, guest.state.match.phase == .playing {
+                guestRelease = (guest.state.tick, guest.state.ball.velocity)
+            }
+        }
+        #expect(hostRelease != nil)
+        #expect(hostRelease?.0 == guestRelease?.0)
+        #expect(hostRelease?.1 == guestRelease?.1)
     }
 }
