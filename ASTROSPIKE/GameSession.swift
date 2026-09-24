@@ -247,6 +247,7 @@ final class GameSession {
         // then never sees a snapshot and plays its own single game.
         if mode == .online { installOnlineCallbacks() }
         SoundBank.shared.warm()
+        Soundscape.shared.begin()
         let driver = FrameDriver { [weak self] timestamp in
             self?.frame(timestamp: timestamp)
         }
@@ -261,6 +262,7 @@ final class GameSession {
         // The thruster bed loops. Leaving the arena with the throttle down
         // must not leave it droning under the menu.
         SoundBank.shared.stopEverything()
+        Soundscape.shared.end()
         thrustingTeams = []
         thrustCenter = [:]
         offsideLastFrame = []
@@ -321,6 +323,7 @@ final class GameSession {
         engine.restartMatch()
         state = engine.state
         scene.snapshot = state
+        Soundscape.shared.begin()
         countdown = mode == .warmup ? 1 : 3
         countdownAccumulator = 0
         accumulator = 0
@@ -379,6 +382,7 @@ final class GameSession {
         // Ahead of the pause guard on purpose. A pause with the throttle down
         // has to let the bed coast to silence rather than freeze mid-swell.
         driveThrusterBed(dt: elapsed)
+        Soundscape.shared.update(match: state.match, paused: isPaused)
         guard !isPaused else { return }
 
         switch state.match.phase {

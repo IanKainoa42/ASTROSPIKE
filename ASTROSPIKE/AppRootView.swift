@@ -521,6 +521,7 @@ private struct GameView: View {
     @AppStorage("largeControls") private var largeControls = false
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("haptics") private var haptics = true
+    @AppStorage(Soundscape.enabledKey) private var music = true
     @Environment(\.scenePhase) private var scenePhase
 
     init(
@@ -729,7 +730,11 @@ private struct GameView: View {
                 ? "Leaving withdraws the invite or search."
                 : "Leaving disconnects you from the current Game Center match.")
         }
-        .onAppear { FeedbackCenter.shared.hapticsEnabled = haptics; session.start() }
+        .onAppear {
+            FeedbackCenter.shared.hapticsEnabled = haptics
+            Soundscape.shared.enabled = music
+            session.start()
+        }
         .onDisappear {
             session.stop()
             if mode == .online { online.leaveMatch() }
@@ -1323,6 +1328,7 @@ private struct SettingsView: View {
     @AppStorage("leftHanded") private var leftHanded = false
     @AppStorage("clusterControls") private var clusterControls = false
     @AppStorage("haptics") private var haptics = true
+    @AppStorage(Soundscape.enabledKey) private var music = true
     @AppStorage("arrangePads") private var arrangePads = false
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
@@ -1351,6 +1357,8 @@ private struct SettingsView: View {
                 Toggle("Arrange pads (drag them in a match)", isOn: $arrangePads)
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
+                Toggle("Music", isOn: $music)
+                    .onChange(of: music) { _, on in Soundscape.shared.enabled = on }
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
                 Section("Match Rules") {
                     Stepper(
