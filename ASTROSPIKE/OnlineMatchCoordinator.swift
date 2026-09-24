@@ -1409,6 +1409,9 @@ final class OnlineMatchCoordinator: NSObject,
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let detail {
+                    // Nothing reached their phone, so there is nothing to
+                    // protect: free the button for another try at once.
+                    self.clearReinviteCooldown()
                     self.note("RE-INVITE FAILED: \(detail)")
                 } else {
                     self.note("RE-INVITE SENT")
