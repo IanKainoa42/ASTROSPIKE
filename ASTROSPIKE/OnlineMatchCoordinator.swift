@@ -156,6 +156,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// The invitations out were sent as an open table: the first pilot to
     /// connect starts a duel, and nobody waits on the rest.
     private var openTableRequested = false
+    /// Who sent the invitation this board accepted. Before a table is on
+    /// record, only they may announce one.
+    private var inviterID: String?
     private var intermissionTask: Task<Void, Never>?
     /// Re-sends the table to a pilot who sat down but has not said `.ready`,
     /// since GameKit drops anything sent before their delegate is installed.
@@ -1453,8 +1456,13 @@ final class OnlineMatchCoordinator: NSObject,
             pilotHulls[playerID] = hull
             note("\(pilotName(playerID).uppercased()) FLIES \(hull.spec.name.uppercased())")
         case let .table(table):
-            // Only the pilot who opened the table speaks for it.
+            // Only the pilot who opened the table speaks for it -- and who
+            // that is was settled before any peer could say otherwise: the
+            // host already on record, or before that, the pilot whose
+            // invitation we accepted. A peer naming itself host is not enough,
+            // or any guest could take the table over or close it on everyone.
             guard lifecycle.acceptsNetworkMessages, table.hostID == playerID,
+                  playerID == openTable?.hostID ?? inviterID,
                   table.hostID != GKLocalPlayer.local.gamePlayerID else { return }
             if table.isClosed {
                 closeTable(hostName: pilotName(playerID))
@@ -2032,14 +2040,15 @@ final class OnlineMatchCoordinator: NSObject,
 
     nonisolated func player(_ player: GKPlayer, didAccept invite: GKInvite) {
         let displayName = invite.sender.displayName
+        let senderID = invite.sender.gamePlayerID
         nonisolated(unsafe) let safeInvite = invite
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.handleInviteAccepted(senderDisplayName: displayName, invite: safeInvite)
+            self.handleInviteAccepted(senderDisplayName: displayName, senderID: senderID, invite: safeInvite)
         }
     }
 
-    private func handleInviteAccepted(senderDisplayName: String, invite: GKInvite) {
+    private func handleInviteAccepted(senderDisplayName: String, senderID: String, invite: GKInvite) {
         let rejoining = lifecycle.phase == .reconnecting
         guard !lifecycle.acceptsGameplayData || rejoining else {
             note("INVITE FROM \(senderDisplayName) IGNORED: MATCH IN PROGRESS")
@@ -2069,6 +2078,7 @@ final class OnlineMatchCoordinator: NSObject,
         role = .invitee
         declinedInvites = 0
         openTableRequested = false
+        inviterID = senderID
         // The headline, not a footnote: an invitee sat in the bay under
         // FINDING PILOT with no word that they were on their way in.
         inviteNotice = nil
@@ -2176,6 +2186,7 @@ final class OnlineMatchCoordinator: NSObject,
         pilotHulls = [:]
         openTable = nil
         openTableRequested = false
+        inviterID = nil
         isSpectating = false
         cancelIntermission()
         tableHandshakeTask?.cancel()
