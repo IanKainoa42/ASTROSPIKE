@@ -15,6 +15,11 @@ public enum WirePayload: Codable, Equatable, Sendable {
     case seating(plan: [String: Seat], tuning: FlightTuningSnapshot, teamUp: Bool)
     case ping(nanoseconds: UInt64)
     case resync(WorldState)
+    /// The open table as its host keeps it: who flies the duel, who is on
+    /// the bench in what order, and the night's wins. Sent whole on every
+    /// change, and before every seating plan, so a pilot left out of the
+    /// plan knows they are on the bench rather than lost.
+    case table(OpenTable)
 }
 
 public struct WireEnvelope: Codable, Equatable, Sendable {
@@ -74,7 +79,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     allowedTouchesPerSide and PointReason lost touchLimit, so a build
     //     93 peer cannot decode the seating plan, and one that could would
     //     call a fault this build plays through.
-    public static let currentVersion: UInt16 = 24
+    // 25: open tables. WirePayload gained table(OpenTable), and a seating
+    //     plan that leaves a pilot out now benches them to watch instead of
+    //     being ignored -- a build 100 invitee would sit in the bay forever
+    //     waiting for a seat the host is never going to give it.
+    public static let currentVersion: UInt16 = 25
 
     public var version: UInt16
     public var sequence: UInt64

@@ -58,6 +58,7 @@
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
 		A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D871F54459735F6332B8CFC /* StandingInviteTests.swift */; };
+		21070817E58B330270E15FA4 /* OpenTableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D786A69AEA84A035E5137A21 /* OpenTableTests.swift */; };
 		A61FACE961EBBD01FCDED5CD /* LinkLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E28FE156CD107D158B232 /* LinkLogView.swift */; };
 		A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */; };
 		A8A27D1780F192AA000EECBC /* TrackSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */; };
@@ -84,6 +85,7 @@
 		DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088700D916D7C71D0559E240 /* TrackEngine.swift */; };
 		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
 		E11DB57ED3D16C9DC60D3C8D /* StandingInvite.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2AF5602E676640836669183 /* StandingInvite.swift */; };
+		6496ECCB39212F1A139153C7 /* OpenTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAD28B757B080E4F172BA1C /* OpenTable.swift */; };
 		EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9B354B5E4A268F1331755 /* AIController.swift */; };
 		EE3125B9948FCDA4673C3870 /* HangarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */; };
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
@@ -189,6 +191,7 @@
 		4A6148BCB6D5C4436A1BBB1D /* ASTROSPIKEUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKEUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B8F43E674683CFA8668873B /* HullShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullShapes.swift; sourceTree = "<group>"; };
 		4D871F54459735F6332B8CFC /* StandingInviteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandingInviteTests.swift; sourceTree = "<group>"; };
+		D786A69AEA84A035E5137A21 /* OpenTableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTableTests.swift; sourceTree = "<group>"; };
 		508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = ASTROSPIKECore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ASTROSPIKE.entitlements; sourceTree = "<group>"; };
 		5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightTuningTests.swift; sourceTree = "<group>"; };
@@ -219,6 +222,7 @@
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
 		AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B2AF5602E676640836669183 /* StandingInvite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandingInvite.swift; sourceTree = "<group>"; };
+		3FAD28B757B080E4F172BA1C /* OpenTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTable.swift; sourceTree = "<group>"; };
 		B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioCenter.swift; sourceTree = "<group>"; };
 		BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideCyan.mp3; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
@@ -290,6 +294,7 @@
 				079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */,
 				1D0AED08F5A123283EB23CBF /* ShipConceptCatalog.swift */,
 				B2AF5602E676640836669183 /* StandingInvite.swift */,
+				3FAD28B757B080E4F172BA1C /* OpenTable.swift */,
 				088700D916D7C71D0559E240 /* TrackEngine.swift */,
 				812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */,
 				0229900C8172E2E47EE8513F /* TrackTuning.swift */,
@@ -391,6 +396,7 @@
 				CF08260D34E017255668BDB7 /* ShipHitboxTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
 				4D871F54459735F6332B8CFC /* StandingInviteTests.swift */,
+				D786A69AEA84A035E5137A21 /* OpenTableTests.swift */,
 				8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */,
 				FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */,
 				4405102C04B2CE798F18AD89 /* WarmupTests.swift */,
@@ -569,6 +575,7 @@
 				8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */,
 				86D5CF5361D7F2585D97096D /* ShipConceptCatalog.swift in Sources */,
 				E11DB57ED3D16C9DC60D3C8D /* StandingInvite.swift in Sources */,
+				6496ECCB39212F1A139153C7 /* OpenTable.swift in Sources */,
 				DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */,
 				80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */,
 				B4C588645F32130C5896505D /* TrackTuning.swift in Sources */,
@@ -634,6 +641,7 @@
 				187691FC059EF69BB380EE10 /* ShipHitboxTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
 				A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */,
+				21070817E58B330270E15FA4 /* OpenTableTests.swift in Sources */,
 				5CFE9802DDCDDB3532906286 /* TrackTests.swift in Sources */,
 				31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */,
 				3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */,

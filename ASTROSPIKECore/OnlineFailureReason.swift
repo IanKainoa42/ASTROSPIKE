@@ -79,6 +79,9 @@ public enum OnlineFailureReason: Equatable, Sendable {
     case matchNotConnected
     /// A connection timeout occurred mid-match.
     case connectionTimeout
+    /// The pilot hosting an open table left or closed it. Only the host can
+    /// seat a duel, so nobody else can keep it running.
+    case tableClosed(hostName: String)
     
     // MARK: - Invite Acceptance Failures
     
@@ -189,6 +192,8 @@ extension OnlineFailureReason {
             return "Lost the match connection"
         case .connectionTimeout:
             return "Connection timed out"
+        case .tableClosed(let name):
+            return "\(name) closed the table"
             
         // Invite acceptance
         case .inviteJoinFailed(let underlying):

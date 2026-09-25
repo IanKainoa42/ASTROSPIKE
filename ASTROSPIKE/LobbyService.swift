@@ -356,6 +356,9 @@ final class LobbyService {
             if let fixture = duel.fixture {
                 await report(fixture: fixture, winnerID: duel.playerID(of: winner), score: score)
             }
+            // At an open table the next duel can be on the board before this
+            // push lands. Only clear the slot if it still holds this one.
+            guard hostedDuel?.id == duel.id else { return }
             hostedDuel = nil
             hostedDuelRecord = nil
         }

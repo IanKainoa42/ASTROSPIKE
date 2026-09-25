@@ -107,7 +107,8 @@ struct AppRootView: View {
                     previewWinner: resultsPreviewWinner,
                     continueWith: { mode in
                         withAnimation(.easeOut(duration: 0.25)) { self.gameMode = mode }
-                    }
+                    },
+                    inviteToTable: { sheet = .tableInvite }
                 ) {
                     self.gameMode = nil
                 }
@@ -166,7 +167,9 @@ struct AppRootView: View {
                 // The invitee is usually sitting in the lobby or the invite
                 // sheet when the match comes up. Drop it, or the arena runs
                 // hidden underneath and their ship sits idle on the host's board.
-                sheet = nil
+                // A host asking more pilots to its table keeps its sheet: the
+                // next duel being seated is not a reason to lose the picks.
+                if sheet != .tableInvite { sheet = nil }
                 withAnimation { gameMode = .online }
                 if online.isAuthoritative { announceHostedDuel() }
             }
@@ -231,6 +234,9 @@ struct AppRootView: View {
                     withAnimation(.easeOut(duration: 0.25)) { showTrack = true }
                 }
                 .presentationDetents([.large])
+            case .tableInvite:
+                InviteSheet(online: online, format: .addToTable) { _ in }
+                    .presentationDetents([.medium, .large])
             case .invite:
                 InviteSheet(online: online) { teamUp in
                     sheet = nil
@@ -273,7 +279,7 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, doubles, tutorial, settings, hangar, invite, lobby, modes
+    case difficulty, doubles, tutorial, settings, hangar, invite, tableInvite, lobby, modes
     var id: String { rawValue }
 }
 
@@ -327,50 +333,106 @@ private struct DoublesSheet: View {
     }
 }
 
+/// How the invited pilots play.
+private enum InviteFormat: Hashable {
+    /// One pilot, across the net.
+    case duel
+    /// Up to three on your side against bots, or two a side.
+    case teamUp
+    /// Ask up to five at once. The first to join flies you; everyone after
+    /// watches from the bench and plays the winner.
+    case openTable
+    /// The host of a running open table asking more pilots to the bench.
+    case addToTable
+
+    /// How many pilots can be picked in one go. A duel invites on the tap.
+    var pickLimit: Int {
+        switch self {
+        case .duel: 1
+        case .teamUp: 3
+        case .openTable, .addToTable: OpenTable.maxInvitees
+        }
+    }
+}
+
 private struct InviteSheet: View {
     let online: OnlineMatchCoordinator
     let openPicker: (_ teamUp: Bool) -> Void
-    /// Team up: the pilots you pick fly on your side, bots fill the rest.
-    @State private var teamUp: Bool
+    @State private var format: InviteFormat
     @State private var picked: Set<String> = []
+    @Environment(\.dismiss) private var dismiss
 
-    init(online: OnlineMatchCoordinator, teamUp: Bool = false, openPicker: @escaping (_ teamUp: Bool) -> Void) {
+    init(online: OnlineMatchCoordinator, format: InviteFormat = .duel, openPicker: @escaping (_ teamUp: Bool) -> Void) {
         self.online = online
         self.openPicker = openPicker
-        _teamUp = State(initialValue: teamUp)
+        _format = State(initialValue: format)
+    }
+
+    init(online: OnlineMatchCoordinator, teamUp: Bool, openPicker: @escaping (_ teamUp: Bool) -> Void) {
+        self.init(online: online, format: teamUp ? .teamUp : .duel, openPicker: openPicker)
+    }
+
+    private var isPicking: Bool { format != .duel }
+
+    /// Room left at a running table; the whole limit otherwise.
+    private var pickLimit: Int {
+        guard format == .addToTable, let table = online.openTable else { return format.pickLimit }
+        return max(0, OpenTable.maxPilots - table.pilots.count)
+    }
+
+    private var guidance: String {
+        switch format {
+        case .duel: "Pick a pilot. You fly in the warm-up bay while they answer."
+        case .teamUp: "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
+        case .openTable: "Pick up to five. The first to join starts a duel with you; everyone after watches from the bench and plays the winner. Winner stays on."
+        case .addToTable: "They join the back of the bench and play the winner when their turn comes."
+        }
+    }
+
+    private var title: String {
+        switch format {
+        case .duel: "INVITE A PILOT"
+        case .teamUp: "TEAM UP"
+        case .openTable: "OPEN TABLE"
+        case .addToTable: "INVITE TO THE TABLE"
+        }
     }
 
     var body: some View {
         NavigationStack {
+            let candidates = online.inviteCandidates(forTable: format == .addToTable)
             List {
                 Section {
-                    Picker("Match", selection: $teamUp) {
-                        Text("DUEL").tag(false)
-                        Text("TEAM UP").tag(true)
+                    if format != .addToTable {
+                        Picker("Match", selection: $format) {
+                            Text("DUEL").tag(InviteFormat.duel)
+                            Text("TEAM UP").tag(InviteFormat.teamUp)
+                            Text("OPEN TABLE").tag(InviteFormat.openTable)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("invite-format")
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("invite-format")
-                    Text(teamUp
-                         ? "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
-                         : "Pick a pilot. You fly in the warm-up bay while they answer.")
+                    Text(guidance)
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("RECENT PILOTS AND FRIENDS") {
-                    if online.invitees.isEmpty {
+                    if candidates.isEmpty {
                         if online.isLoadingInvitees {
                             ProgressView().frame(maxWidth: .infinity)
                         } else {
-                            Text("Nobody yet. Use the Game Center picker below.")
+                            Text(format == .addToTable
+                                 ? "Everyone you know is already here."
+                                 : "Nobody yet. Use the Game Center picker below.")
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    ForEach(online.invitees, id: \.gamePlayerID) { player in
+                    ForEach(candidates, id: \.gamePlayerID) { player in
                         let isPicked = picked.contains(player.gamePlayerID)
                         Button {
-                            guard teamUp else { online.invite([player]); return }
+                            guard isPicking else { online.invite([player]); return }
                             if isPicked {
                                 picked.remove(player.gamePlayerID)
-                            } else if picked.count < 3 {
+                            } else if picked.count < pickLimit {
                                 picked.insert(player.gamePlayerID)
                             }
                         } label: {
@@ -378,46 +440,74 @@ private struct InviteSheet: View {
                                 Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(.cyan)
                                 Text(player.displayName).font(.headline)
                                 Spacer()
-                                Image(systemName: teamUp ? (isPicked ? "checkmark.circle.fill" : "circle") : "paperplane.fill")
+                                Image(systemName: isPicking ? (isPicked ? "checkmark.circle.fill" : "circle") : "paperplane.fill")
                                     .foregroundStyle(isPicked ? .cyan : .secondary)
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(teamUp ? "Team up with \(player.displayName)" : "Invite \(player.displayName)")
+                        .accessibilityLabel(isPicking ? "Pick \(player.displayName)" : "Invite \(player.displayName)")
                         .accessibilityAddTraits(isPicked ? .isSelected : [])
                     }
                 }
-                if teamUp {
+                if isPicking {
                     Section {
-                        Button {
-                            online.invite(online.invitees.filter { picked.contains($0.gamePlayerID) }, teamUp: true)
-                        } label: {
-                            Label(picked.isEmpty ? "PICK A TEAMMATE" : "SEND TEAM-UP (\(picked.count))",
-                                  systemImage: "paperplane.fill")
+                        Button(action: send) {
+                            Label(sendLabel, systemImage: "paperplane.fill")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
                         .disabled(picked.isEmpty)
-                        .accessibilityIdentifier("invite-team-up-send")
+                        .accessibilityIdentifier(format == .teamUp ? "invite-team-up-send" : "invite-open-table-send")
+                    } footer: {
+                        if format == .openTable {
+                            Text("Everyone gets the invite at once, so nobody waits on the slowest phone.")
+                        }
                     }
                 }
-                Section {
-                    Button { openPicker(teamUp) } label: {
-                        Label("Game Center picker", systemImage: "person.2.wave.2.fill")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+                // Apple's picker seats whoever it returns in one go, so it
+                // has no bench to put a late arrival on.
+                if format == .duel || format == .teamUp {
+                    Section {
+                        Button { openPicker(format == .teamUp) } label: {
+                            Label("Game Center picker", systemImage: "person.2.wave.2.fill")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityIdentifier("invite-picker-fallback")
+                    } footer: {
+                        Text("Apple's picker reaches anyone, but it is a modal sheet: no bay while you wait.")
                     }
-                    .accessibilityIdentifier("invite-picker-fallback")
-                } footer: {
-                    Text("Apple's picker reaches anyone, but it is a modal sheet: no bay while you wait.")
                 }
             }
-            .navigationTitle(teamUp ? "TEAM UP" : "INVITE A PILOT")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onChange(of: format) { _, _ in picked = [] }
         .task { online.loadInvitees() }
         .accessibilityIdentifier("invite-screen")
+    }
+
+    private var sendLabel: String {
+        guard !picked.isEmpty else { return format == .teamUp ? "PICK A TEAMMATE" : "PICK PILOTS" }
+        switch format {
+        case .teamUp: return "SEND TEAM-UP (\(picked.count))"
+        case .addToTable: return "INVITE TO THE TABLE (\(picked.count))"
+        case .duel, .openTable: return "OPEN THE TABLE (\(picked.count))"
+        }
+    }
+
+    private func send() {
+        let players = online.inviteCandidates(forTable: format == .addToTable)
+            .filter { picked.contains($0.gamePlayerID) }
+        switch format {
+        case .duel: break
+        case .teamUp: online.invite(players, teamUp: true)
+        case .openTable: online.openTable(inviting: players)
+        case .addToTable:
+            online.inviteToTable(players)
+            dismiss()
+        }
     }
 }
 
@@ -509,9 +599,14 @@ private struct GameView: View {
     let diagnosticsOverride: OnlineDiagnosticsSnapshot?
     let previewWinner: Team?
     let continueWith: (GameMode) -> Void
+    /// The host of an open table asking more pilots to the bench.
+    let inviteToTable: () -> Void
     let exit: () -> Void
-
     @State private var session: GameSession
+    /// The table this arena was built for, fixed with the session. At an
+    /// open table the next duel is a new arena on the same match, and the
+    /// old one going away must not take the match with it.
+    @State private var builtGeneration: Int
     @State private var showPause = false
     @State private var showLeaveConfirmation = false
     /// Why the link ended, when it ended for a reason the seat hold does not
@@ -533,6 +628,7 @@ private struct GameView: View {
         diagnosticsOverride: OnlineDiagnosticsSnapshot? = nil,
         previewWinner: Team? = nil,
         continueWith: @escaping (GameMode) -> Void,
+        inviteToTable: @escaping () -> Void = {},
         exit: @escaping () -> Void
     ) {
         self.mode = mode
@@ -543,7 +639,9 @@ private struct GameView: View {
         self.diagnosticsOverride = diagnosticsOverride
         self.previewWinner = previewWinner
         self.continueWith = continueWith
+        self.inviteToTable = inviteToTable
         self.exit = exit
+        _builtGeneration = State(initialValue: online.seatingGeneration)
         let configuration = switch mode {
         case .solo, .doubles: tuning.configuration
         case .volleyball: SimulationConfiguration.volleyball(from: tuning.configuration)
@@ -593,7 +691,10 @@ private struct GameView: View {
                         // no Game Center behind it; handing the HUD the live
                         // coordinator would print GAME CENTER OFFLINE under it.
                         online: mode == .online && diagnosticsOverride == nil ? online : nil,
-                        actionLabel: mode == .online ? "Leave online match" : "Pause match",
+                        teamNames: courtNames,
+                        spectating: isSpectating,
+                        actionLabel: table != nil ? "Leave the table"
+                            : mode == .online ? "Leave online match" : "Pause match",
                         actionIcon: mode == .online ? "xmark" : "pause.fill"
                     ) {
                         if mode == .online {
@@ -610,7 +711,8 @@ private struct GameView: View {
                     )
                     .padding(.top, 4)
                 }
-                if mode == .online, case .reconnecting = online.status {
+                // The table's host chases a dropped pilot even while watching.
+                if mode == .online, !isSpectating || online.isTableHost, case .reconnecting = online.status {
                     let cooldown = online.reinviteCooldownSecondsRemaining
                     Button {
                         online.reinviteDroppedPilots()
@@ -635,26 +737,35 @@ private struct GameView: View {
                     let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
                     HStack {
                         TeamSideBadge(
-                            title: left == localTeam ? you : (mode == .online ? "OPPONENT" : "CPU"),
+                            title: sideTitle(left, you: you),
                             team: left,
-                            isLocal: left == localTeam
+                            isLocal: !isSpectating && left == localTeam
                         )
                         Spacer()
                         TeamSideBadge(
-                            title: right == localTeam ? you : (mode == .online ? "OPPONENT" : "CPU"),
+                            title: sideTitle(right, you: you),
                             team: right,
-                            isLocal: right == localTeam
+                            isLocal: !isSpectating && right == localTeam
                         )
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 4)
                 }
-                TouchControls(torque: $session.torque, thrust: $session.thrust, fire: $session.fire,
-                              tractor: $session.tractor,
-                              largeControls: largeControls, leftHanded: leftHanded,
-                              arenaFrame: Self.arenaFrame(in: geometry),
-                              windowFrame: TouchControls.windowFrame(in: geometry),
-                              playerTint: localTeam == .cyan ? .cyan : .orange)
+                if let table, session.state.match.phase != .finished {
+                    OpenTableBanner(text: bannerText(for: table), isWatching: isSpectating)
+                        .padding(.top, 6)
+                }
+                if isSpectating {
+                    // The bench has no ship to fly: the court is the show.
+                    Spacer()
+                } else {
+                    TouchControls(torque: $session.torque, thrust: $session.thrust, fire: $session.fire,
+                                  tractor: $session.tractor,
+                                  largeControls: largeControls, leftHanded: leftHanded,
+                                  arenaFrame: Self.arenaFrame(in: geometry),
+                                  windowFrame: TouchControls.windowFrame(in: geometry),
+                                  playerTint: localTeam == .cyan ? .cyan : .orange)
+                }
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
             // the ship without displacing the thumb controls.
@@ -680,12 +791,12 @@ private struct GameView: View {
                             .overlay(Capsule().stroke(.white.opacity(0.35)))
                     }
                     let servingSide = session.state.team(onHalfAt: session.state.serveDriftSign)
-                    let isLocalServe = servingSide == localTeam
+                    let isLocalServe = !isSpectating && servingSide == localTeam
                     let serveColor = servingSide == .cyan ? Color.cyan : Color.orange
                     HStack(spacing: 6) {
                         Image(systemName: "tennisball.fill")
                             .font(.system(size: 11, weight: .bold))
-                        Text(isLocalServe ? "YOUR SERVE" : (mode == .online ? "OPPONENT SERVE" : "CPU SERVE"))
+                        Text(serveText(servingSide, isLocal: isLocalServe))
                             .font(.system(size: 13, weight: .black, design: .monospaced))
                             .tracking(1.4)
                     }
@@ -704,8 +815,13 @@ private struct GameView: View {
                     state: session.state,
                     localTeam: localTeam,
                     plan: resultsPlan,
+                    names: courtNames,
+                    spectating: isSpectating,
+                    table: tableCard,
+                    notice: linkFailure,
                     playAgain: playAgain,
                     challenge: challengeNext,
+                    inviteMore: inviteToTable,
                     exit: leaveGame
                 )
             }
@@ -725,16 +841,14 @@ private struct GameView: View {
         }
         .accessibilityIdentifier("game-screen")
         .confirmationDialog(
-            mode == .warmup ? "Leave the Bay?" : "Leave Match?",
+            leaveTitle,
             isPresented: $showLeaveConfirmation,
             titleVisibility: .visible
         ) {
-            Button(mode == .warmup ? "Cancel Invite" : "Leave Match", role: .destructive, action: leaveGame)
-            Button(mode == .warmup ? "Keep Warming Up" : "Keep Playing", role: .cancel) {}
+            Button(leaveButton, role: .destructive, action: leaveGame)
+            Button(mode == .warmup ? "Keep Warming Up" : isSpectating ? "Keep Watching" : "Keep Playing", role: .cancel) {}
         } message: {
-            Text(mode == .warmup
-                ? "Leaving withdraws the invite or search."
-                : "Leaving disconnects you from the current Game Center match.")
+            Text(leaveMessage)
         }
         .onAppear {
             FeedbackCenter.shared.hapticsEnabled = haptics
@@ -743,7 +857,9 @@ private struct GameView: View {
         }
         .onDisappear {
             session.stop()
-            if mode == .online { online.leaveMatch() }
+            // At an open table the next duel rebuilds the arena on the same
+            // match; only the arena of the table still being played leaves.
+            if mode == .online, online.seatingGeneration == builtGeneration { online.leaveMatch() }
         }
         .onChange(of: online.status) { _, status in
             if mode == .warmup, case .ready = status { exit() }
@@ -793,6 +909,89 @@ private struct GameView: View {
 
     private var localTeam: Team { online.localTeam ?? .cyan }
 
+    /// The open table this arena is a duel at, if any.
+    private var table: OpenTable? { mode == .online ? online.openTable : nil }
+
+    /// Watching from the bench. Fixed when the arena is built: the next
+    /// duel gets an arena of its own.
+    private var isSpectating: Bool { session.isSpectator }
+
+    /// Who flies each colour, by Game Center name, at an open table -- where
+    /// the pilots change every duel and OPPONENT says nothing.
+    private var courtNames: [Team: String]? {
+        guard table != nil else { return nil }
+        var names: [Team: String] = [:]
+        for (id, seat) in online.seating where !seat.isWing {
+            names[seat.team] = online.pilotName(id).uppercased()
+        }
+        return names
+    }
+
+    /// The bench's place in line; for the pilots flying, who is waiting.
+    private func bannerText(for table: OpenTable) -> String {
+        if let line = online.benchLine { return "WATCHING · \(line)" }
+        if isSpectating { return online.isTableHost ? "WATCHING · YOU'RE HOSTING" : "WATCHING" }
+        if table.queue.isEmpty { return "OPEN TABLE · WINNER STAYS ON" }
+        return "OPEN TABLE · \(table.queue.count) WAITING"
+    }
+
+    private func serveText(_ servingSide: Team, isLocal: Bool) -> String {
+        if isLocal { return "YOUR SERVE" }
+        if let name = courtNames?[servingSide] { return "\(name) SERVES" }
+        return mode == .online ? "OPPONENT SERVE" : "CPU SERVE"
+    }
+
+    private func sideTitle(_ team: Team, you: String) -> String {
+        if !isSpectating, team == localTeam { return you }
+        if let name = courtNames?[team] { return name }
+        return mode == .online ? "OPPONENT" : "CPU"
+    }
+
+    /// The results card's view of the table: who flies next and who has won.
+    private var tableCard: TableCard? {
+        guard let table else { return nil }
+        let localID = online.localPlayerID
+        func name(_ id: String) -> String { id == localID ? "YOU" : online.pilotName(id).uppercased() }
+        let next = table.nextDuel
+        let nextLine: String = if next.count == 2 {
+            "NEXT · \(next.map(name).joined(separator: " V "))"
+                + (online.intermissionSecondsRemaining.map { " · \($0)s" } ?? "")
+        } else {
+            online.isTableHost ? "WAITING FOR A CHALLENGER" : "WAITING ON THE HOST"
+        }
+        return TableCard(
+            nextLine: nextLine,
+            standings: table.standings.prefix(4).map { (name: name($0.playerID), wins: $0.wins) },
+            isHost: online.isTableHost,
+            // How the host's INVITE MORE went: the bay that usually shows
+            // this is long gone.
+            inviteNotice: online.isTableHost ? online.inviteNotice : nil
+        )
+    }
+
+    private var leaveTitle: String {
+        if mode == .warmup { return "Leave the Bay?" }
+        if table != nil { return online.isTableHost ? "Close the Table?" : "Leave the Table?" }
+        return "Leave Match?"
+    }
+
+    private var leaveButton: String {
+        if mode == .warmup { return "Cancel Invite" }
+        if table != nil { return online.isTableHost ? "Close Table" : "Leave Table" }
+        return "Leave Match"
+    }
+
+    private var leaveMessage: String {
+        if mode == .warmup { return "Leaving withdraws the invite or search." }
+        if table != nil {
+            if online.isTableHost { return "Closing the table ends it for everyone sitting at it." }
+            return isSpectating || session.state.match.phase == .finished
+                ? "You'll give up your place in line."
+                : "Leaving forfeits this duel and your place in line."
+        }
+        return "Leaving disconnects you from the current Game Center match."
+    }
+
     private var allowedBounces: Int {
         switch mode {
         case .solo, .doubles: tuning.allowedBouncesPerHit
@@ -826,7 +1025,8 @@ private struct GameView: View {
             }
         case .confirm:
             // Primary action on the results card: stay in the loop when we can.
-            if session.state.match.phase == .finished {
+            // At an open table the loop is the table, and it carries on alone.
+            if session.state.match.phase == .finished, table == nil {
                 if resultsPlan.canPlayAgain {
                     playAgain()
                 } else {
@@ -1011,6 +1211,10 @@ private struct MatchHUD: View {
     let localTeam: Team
     let allowedBounces: Int
     let online: OnlineMatchCoordinator?
+    /// Each colour's pilot by name, at an open table.
+    var teamNames: [Team: String]? = nil
+    /// Watching from the bench: neither side is YOU.
+    var spectating = false
     let actionLabel: String
     let actionIcon: String
     let action: () -> Void
@@ -1120,12 +1324,22 @@ private struct MatchHUD: View {
         let value = state.match.score[team]
         let bounces = state.match.floorContacts[team]
         let stake = state.match.stake(for: team)
-        let isLocal = team == localTeam
+        let isLocal = !spectating && team == localTeam
+        let tag: String = isLocal ? "YOU" : (teamNames?[team] ?? (online == nil ? "CPU" : "OPP"))
+        let side: String = if isLocal {
+            "Your side, "
+        } else if let name = teamNames?[team] {
+            "\(name)'s side, "
+        } else {
+            "Rival side, "
+        }
         return HStack(spacing: 12) {
             VStack(spacing: 3) {
                 Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
-                Text(isLocal ? "YOU" : (online == nil ? "CPU" : "OPP"))
+                Text(tag)
                     .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .frame(maxWidth: 76)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(tint, in: Capsule())
@@ -1154,7 +1368,7 @@ private struct MatchHUD: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            (isLocal ? "Your side, " : "Rival side, ")
+            side
                 + "\(team.rawValue) score \(value), \(bounces) of \(allowedBounces) bounces used"
                 + (stake == .none ? "" : stake == .matchPoint ? ", match point" : ", set point")
         )
@@ -1493,28 +1707,120 @@ private struct LinkLostOverlay: View {
     }
 }
 
+/// The results card's view of an open table.
+private struct TableCard {
+    /// Who flies next and how soon, or what the table is waiting on.
+    let nextLine: String
+    /// Wins at this table, most first.
+    let standings: [(name: String, wins: Int)]
+    let isHost: Bool
+    let inviteNotice: String?
+}
+
 private struct ResultsOverlay: View {
     let state: WorldState
     let localTeam: Team
     let plan: ResultsPlan
+    /// Each colour's pilot by name, at an open table.
+    var names: [Team: String]? = nil
+    /// Watched from the bench: the card names the winner instead of YOU.
+    var spectating = false
+    /// Present at an open table: the next duel is coming, so the card says
+    /// who is up instead of offering the menu.
+    var table: TableCard? = nil
+    /// Why the link ended, if it did.
+    var notice: String? = nil
     let playAgain: () -> Void
     let challenge: () -> Void
+    var inviteMore: () -> Void = {}
     let exit: () -> Void
+
+    /// YOU on your side and RIVAL on theirs, or both pilots' names.
+    private var sidesLabel: String {
+        guard let names else { return "YOU — RIVAL" }
+        let mine = spectating ? names[localTeam] ?? "CYAN" : "YOU"
+        return "\(mine) — \(names[localTeam.opponent] ?? "RIVAL")"
+    }
+
+    private var headline: String {
+        guard spectating else { return didLocalPlayerWin ? "YOU WIN" : "YOU LOSE" }
+        let winner = state.match.winner
+            ?? (state.match.score.cyan >= state.match.score.orange ? Team.cyan : .orange)
+        return "\(names?[winner] ?? winner.rawValue.uppercased()) WINS"
+    }
 
     var body: some View {
         VStack(spacing: 14) {
-            Text(didLocalPlayerWin ? "YOU WIN" : "YOU LOSE")
+            Text(headline)
                 .font(.caption.monospaced().bold()).tracking(3)
             // Yours first, in your colour, whichever colour you flew.
             if state.match.setsToWin > 1 {
                 scoreLine(state.match.sets)
-                Text("YOU — RIVAL · SETS · LAST SET \(state.match.score[localTeam])–\(state.match.score[localTeam.opponent])")
+                Text("\(sidesLabel) · SETS · LAST SET \(state.match.score[localTeam])–\(state.match.score[localTeam.opponent])")
                     .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
             } else {
                 scoreLine(state.match.score)
-                Text("YOU — RIVAL")
+                Text(sidesLabel)
                     .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
             }
+            if let notice {
+                Text(notice.uppercased())
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 280)
+            }
+            if let table {
+                tableSection(table)
+            } else {
+                standardButtons
+            }
+        }
+        .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("results-screen")
+    }
+
+    /// Who is up next and the night's wins, with the table's own way out.
+    private func tableSection(_ table: TableCard) -> some View {
+        VStack(spacing: 10) {
+            Text(table.nextLine)
+                .font(.subheadline.monospaced().weight(.black)).tracking(1)
+                .foregroundStyle(.yellow)
+                .lineLimit(1).minimumScaleFactor(0.6)
+                .accessibilityIdentifier("table-next-duel")
+            if !table.standings.isEmpty {
+                Text(table.standings.map { "\($0.name) \($0.wins)" }.joined(separator: " · "))
+                    .font(.caption2.monospaced().weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .accessibilityLabel("Wins tonight: " + table.standings.map { "\($0.name) \($0.wins)" }.joined(separator: ", "))
+            }
+            if let inviteNotice = table.inviteNotice {
+                Text(inviteNotice)
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.orange)
+                    .lineLimit(2).minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("table-invite-notice")
+            }
+            HStack(spacing: 10) {
+                if table.isHost {
+                    Button("INVITE MORE", action: inviteMore)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.cyan)
+                        .accessibilityIdentifier("table-invite-more")
+                }
+                Button(table.isHost ? "CLOSE TABLE" : "LEAVE TABLE", action: exit)
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+                    .accessibilityIdentifier("table-leave")
+            }
+        }
+    }
+
+    @ViewBuilder private var standardButtons: some View {
+        VStack(spacing: 14) {
             if plan.canPlayAgain {
                 Button("PLAY AGAIN", action: playAgain)
                     .buttonStyle(.borderedProminent)
@@ -1532,13 +1838,15 @@ private struct ResultsOverlay: View {
                 .tint(.white)
                 .accessibilityIdentifier("results-back-to-menu")
         }
-        .padding(30).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("results-screen")
     }
 
     private func scoreLine(_ tally: Score) -> some View {
         let rival = localTeam.opponent
+        let label: String = if spectating {
+            "\(names?[localTeam] ?? "Cyan") \(tally[localTeam]), \(names?[rival] ?? "Orange") \(tally[rival])"
+        } else {
+            "You \(tally[localTeam]), rival \(tally[rival])"
+        }
         return HStack(spacing: 18) {
             Text(tally[localTeam].formatted()).foregroundStyle(localTeam == .cyan ? Color.cyan : .orange)
             Text("—").foregroundStyle(.secondary)
@@ -1546,12 +1854,34 @@ private struct ResultsOverlay: View {
         }
         .font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("You \(tally[localTeam]), rival \(tally[rival])")
+        .accessibilityLabel(label)
     }
 
     private var didLocalPlayerWin: Bool {
         if let winner = state.match.winner { return winner == localTeam }
         return state.match.score[localTeam] > state.match.score[localTeam.opponent]
+    }
+}
+
+/// One line under the side badges at an open table: the bench's place in
+/// line, or for the pilots flying, how many are waiting to play the winner.
+private struct OpenTableBanner: View {
+    let text: String
+    let isWatching: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isWatching ? "eye.fill" : "person.3.fill")
+                .font(.system(size: 10, weight: .bold))
+            Text(text)
+                .font(.system(size: 12, weight: .black, design: .monospaced)).tracking(1.2)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(isWatching ? .black : .yellow)
+        .padding(.horizontal, 12).padding(.vertical, 5)
+        .background(isWatching ? Color.yellow : Color.black.opacity(0.55), in: Capsule())
+        .overlay(Capsule().stroke(.yellow.opacity(isWatching ? 0 : 0.7), lineWidth: 1))
+        .accessibilityIdentifier("open-table-banner")
     }
 }
 

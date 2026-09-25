@@ -84,6 +84,12 @@ public enum PlayerNetworkCopy {
             "LINK DROPPED · ACCEPT \(name.uppercased())'S NEW INVITE"
         }
 
+        /// The host's bay while an open table's invitations are out. The
+        /// first of them to connect starts the duel, so it names them all.
+        public static func openTable(waitingFor names: [String]) -> String {
+            "OPEN TABLE · " + waiting(for: names)
+        }
+
         public static func waiting(for names: [String]) -> String {
             guard let first = names.first else { return "WAITING FOR PILOTS…" }
             let others = names.count - 1
