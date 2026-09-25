@@ -56,6 +56,10 @@ public enum OnlineMatchLifecyclePhase: Equatable, Sendable {
     case configuring
     case active
     case reconnecting
+    /// Between two duels at an open table: the link stays up and the results
+    /// card is showing, but nothing is being flown until the host seats the
+    /// next duel.
+    case intermission
     case terminal
 }
 
@@ -67,7 +71,7 @@ public struct OnlineMatchLifecycle: Equatable, Sendable {
     }
 
     public var acceptsNetworkMessages: Bool {
-        phase == .configuring || phase == .active || phase == .reconnecting
+        phase == .configuring || phase == .active || phase == .reconnecting || phase == .intermission
     }
 
     public init() {}
@@ -89,10 +93,16 @@ public struct OnlineMatchLifecycle: Equatable, Sendable {
 
     @discardableResult
     public mutating func acceptConnection() -> Bool {
-        if phase == .configuring { return true }
+        // Between duels a new face is for the bench; nothing is paused.
+        if phase == .configuring || phase == .intermission { return true }
         guard phase == .active || phase == .reconnecting else { return false }
         phase = .active
         return true
+    }
+
+    /// A duel at an open table ended and the table plays on.
+    public mutating func beginIntermission() {
+        phase = .intermission
     }
 
     public mutating func finish() {

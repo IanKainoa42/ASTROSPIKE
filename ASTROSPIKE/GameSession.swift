@@ -116,6 +116,11 @@ final class GameSession {
     private var thrustingTeams: Set<Team> = []
     private var thrustCenter: [Team: Double] = [:]
     let localSeat: Seat
+    /// Watching from an open table's bench: every ship on the court is
+    /// someone else's, and `localSeat` is only a placeholder.
+    let isSpectator: Bool
+    /// The seat this board's thumb flies, or nil on the bench.
+    private var flownSeat: Seat? { isSpectator ? nil : localSeat }
     private weak var online: OnlineMatchCoordinator?
     /// The host mirrors the score to the lobby; guests leave it alone.
     private weak var lobby: LobbyService?
@@ -151,6 +156,8 @@ final class GameSession {
         self.lobby = lobby
         let localSeat = mode == .online ? (online?.localSeat ?? .cyan) : .cyan
         self.localSeat = localSeat
+        let isSpectator = mode == .online && online?.isSpectating == true
+        self.isSpectator = isSpectator
         var initialEngine = SimulationEngine.testing()
         let roster: Set<Seat>
         var botSeats: [Seat: AIDifficulty] = [:]
@@ -211,8 +218,8 @@ final class GameSession {
         scene.tractorRange = engine.configuration.tractorRange
         scene.snapshot = state
         // After the snapshot: the goal calls are drawn for the ends in it.
-        scene.localTeam = mode == .warmup ? nil : localSeat.team
-        scene.localSeat = mode == .warmup ? nil : localSeat
+        scene.localTeam = mode == .warmup || isSpectator ? nil : localSeat.team
+        scene.localSeat = mode == .warmup || isSpectator ? nil : localSeat
         if mode == .warmup { scene.rings = rings.rings }
         if let winner = finishedAs {
             engine.finishByForfeit(winner: winner)
@@ -220,7 +227,7 @@ final class GameSession {
             scene.snapshot = state
         }
         for seat in Seat.allCases {
-            let hull: Hull = if seat == localSeat {
+            let hull: Hull = if seat == localSeat, !isSpectator {
                 localHull
             } else if let remote = online?.remoteHulls[seat], mode == .online {
                 remote
@@ -427,7 +434,8 @@ final class GameSession {
             self.demoAI = demoAI
         }
         latestLocalInput = localInput
-        var inputs: [Seat: PlayerInput] = [localSeat: localInput]
+        var inputs: [Seat: PlayerInput] = [:]
+        if let flownSeat { inputs[flownSeat] = localInput }
         if mode == .online, let online {
             // The host keeps the book; a guest, or a host that just stepped
             // up, follows or leads accordingly from this tick on.
@@ -443,7 +451,7 @@ final class GameSession {
             // A guest runs the same bots too -- the pilot is deterministic,
             // so its prediction of the bot's ship stays close to the host's
             // instead of leaving every bot dead in the air between snapshots.
-            for seat in engine.state.ships.keys where seat != localSeat
+            for seat in engine.state.ships.keys where seat != flownSeat
                 && pilots[seat] == nil && !online.filledSeats.contains(seat) {
                 pilots[seat] = AIController(
                     difficulty: .pilot,
@@ -463,15 +471,15 @@ final class GameSession {
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
-            if tick.isMultiple(of: 2) {
+            if tick.isMultiple(of: 2), !isSpectator {
                 online.sendInput(localInput)
             }
-            if !online.isAuthoritative {
+            if !online.isAuthoritative, !isSpectator {
                 localInputHistory[tick] = localInput
                 if tick > 64 { localInputHistory[tick - 64] = nil }
             }
             let remote = online.remoteInputs
-            for seat in engine.state.ships.keys where seat != localSeat && inputs[seat] == nil {
+            for seat in engine.state.ships.keys where seat != flownSeat && inputs[seat] == nil {
                 inputs[seat] = remote[seat] ?? .idle(tick: tick)
             }
             engine.step(inputs: inputs)
@@ -516,7 +524,7 @@ final class GameSession {
         }
         for event in events where presentsLocalEvents {
             if case .collisionEffect = event { FeedbackCenter.shared.impact() }
-            if case let .matchEnded(winner) = event {
+            if case let .matchEnded(winner) = event, !isSpectator {
                 switch MatchEndCue.forLocalSide(localSeat.team, winner: winner) {
                 case .win: FeedbackCenter.shared.win()
                 case .lose: FeedbackCenter.shared.lose()
@@ -532,7 +540,7 @@ final class GameSession {
                 }
                 if case let .matchEnded(winner) = event {
                     lobby?.hostDuelFinished(winner: winner, score: engine.state.match.score)
-                    online?.finishCompletedMatch()
+                    online?.finishCompletedMatch(winner: winner)
                 }
             }
         }
@@ -644,10 +652,11 @@ final class GameSession {
                 var bots = self.pilots
                 while rolled.state.tick < target {
                     let tick = rolled.state.tick
-                    var inputs: [Seat: PlayerInput] = [
-                        self.localSeat: self.localInputHistory[tick] ?? self.latestLocalInput ?? .idle(tick: tick),
-                    ]
-                    for seat in rolled.state.ships.keys where seat != self.localSeat {
+                    var inputs: [Seat: PlayerInput] = [:]
+                    if let flown = self.flownSeat {
+                        inputs[flown] = self.localInputHistory[tick] ?? self.latestLocalInput ?? .idle(tick: tick)
+                    }
+                    for seat in rolled.state.ships.keys where seat != self.flownSeat {
                         if var bot = bots[seat] {
                             inputs[seat] = bot.input(for: rolled.state, seat: seat, tick: tick)
                             bots[seat] = bot
@@ -660,8 +669,8 @@ final class GameSession {
                 self.pilots = bots
             }
             var resolved = rolled.state
-            if let mine = predicted.ships[self.localSeat], let hostShip = resolved.ships[self.localSeat] {
-                resolved.ships[self.localSeat] = StateReconciler().reconcile(
+            if let flown = self.flownSeat, let mine = predicted.ships[flown], let hostShip = resolved.ships[flown] {
+                resolved.ships[flown] = StateReconciler().reconcile(
                     predicted: mine,
                     authoritative: hostShip
                 )
@@ -675,7 +684,7 @@ final class GameSession {
             // The guest's clock was renumbered: what it did at its old tick
             // numbers says nothing about the new ones.
             if target != predicted.tick { self.localInputHistory = [:] }
-            self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.localSeat)
+            self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.flownSeat)
             self.state = resolved
             self.announceStakes()
         }
@@ -716,7 +725,8 @@ final class GameSession {
             case .destruction:
                 FeedbackCenter.shared.impact()
             case .matchEnded:
-                FeedbackCenter.shared.win()
+                // The bench cheers nobody in particular.
+                if !self.isSpectator { FeedbackCenter.shared.win() }
                 online.finishCompletedMatch()
             }
         }

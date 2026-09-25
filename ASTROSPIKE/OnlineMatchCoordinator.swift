@@ -44,6 +44,7 @@ final class OnlineMatchCoordinator: NSObject,
         case quickMatch
         case friendInvite(teamUp: Bool)
         case invite([GKPlayer], teamUp: Bool)
+        case openTable([GKPlayer])
     }
 
     /// Everyone the local pilot can invite without leaving the app: recent
@@ -125,7 +126,40 @@ final class OnlineMatchCoordinator: NSObject,
     private var mismatchReason: OnlineFailureReason?
     /// The hulls the peers fly, once their profiles arrive. A seat missing
     /// here keeps its default, so the scene never shows a wrong hull.
-    private(set) var remoteHulls: [Seat: Hull] = [:]
+    ///
+    /// Kept by pilot and read through the seating plan, because at an open
+    /// table the same pilot flies cyan in one duel and orange in the next --
+    /// and a profile that beats the new plan to this board must not be lost
+    /// when the plan lands.
+    var remoteHulls: [Seat: Hull] {
+        let localID = GKLocalPlayer.local.gamePlayerID
+        var hulls: [Seat: Hull] = [:]
+        for (id, seat) in seating where id != localID {
+            if let hull = pilotHulls[id] { hulls[seat] = hull }
+        }
+        return hulls
+    }
+    private var pilotHulls: [String: Hull] = [:]
+    /// The open table this board sits at, if any: who flies the duel, who is
+    /// on the bench, and the night's wins. The host keeps it; everyone else
+    /// takes it whole from the host's `.table` message.
+    private(set) var openTable: OpenTable?
+    /// This board has no chair in the duel being flown: it is on an open
+    /// table's bench, watching. The host can be here too, still running the
+    /// rules for the two pilots it seated.
+    private(set) var isSpectating = false
+    /// Seconds left on the results card before the next duel is seated. Nil
+    /// outside an intermission, and once it runs out with nobody to seat.
+    private(set) var intermissionSecondsRemaining: Int?
+    /// This board opened the table it sits at, so it seats every duel.
+    var isTableHost: Bool { openTable?.hostID == GKLocalPlayer.local.gamePlayerID }
+    /// The invitations out were sent as an open table: the first pilot to
+    /// connect starts a duel, and nobody waits on the rest.
+    private var openTableRequested = false
+    private var intermissionTask: Task<Void, Never>?
+    /// Re-sends the table to a pilot who sat down but has not said `.ready`,
+    /// since GameKit drops anything sent before their delegate is installed.
+    private var tableHandshakeTask: Task<Void, Never>?
     /// Set by the app from the pilot profile; sent with the ready handshake.
     var localHull: Hull = .lancet
     private(set) var pingMilliseconds: Int?
@@ -557,6 +591,7 @@ final class OnlineMatchCoordinator: NSObject,
             case .quickMatch: startQuickMatch()
             case let .friendInvite(teamUp): presentMatchmaker(inviteOnly: true, teamUp: teamUp)
             case let .invite(players, teamUp): invite(players, teamUp: teamUp)
+            case let .openTable(players): openTable(inviting: players)
             }
         }
     }
@@ -583,6 +618,76 @@ final class OnlineMatchCoordinator: NSObject,
     func invite(_ players: [GKPlayer], teamUp: Bool = false) {
         startMatchmaking(recipients: players, teamUp: teamUp)
     }
+
+    /// Asks several pilots at once and keeps the table going. The first to
+    /// connect duels the host at once; everyone after lands on the bench,
+    /// watches, and plays the winner. See `OpenTable`.
+    func openTable(inviting players: [GKPlayer]) {
+        startMatchmaking(
+            recipients: Array(players.prefix(OpenTable.maxInvitees)),
+            teamUp: false,
+            asOpenTable: true
+        )
+    }
+
+    /// The host asks more pilots to the table already running. They join
+    /// the same match and sit at the back of the bench.
+    func inviteToTable(_ players: [GKPlayer]) {
+        guard isTableHost, let match, let table = openTable else { return }
+        let room = OpenTable.maxPilots - table.pilots.count
+        let fresh = Array(players.filter { !table.contains($0.gamePlayerID) }.prefix(max(0, room)))
+        guard !fresh.isEmpty else {
+            note("TABLE: NOBODY NEW TO INVITE")
+            return
+        }
+        let request = GKMatchRequest()
+        request.minPlayers = 2
+        request.maxPlayers = min(
+            OpenTable.maxPilots,
+            match.players.count + 1 + fresh.count,
+            GKMatchRequest.maxPlayersAllowedForMatch(of: .peerToPeer)
+        )
+        request.recipients = fresh
+        request.inviteMessage = Self.openTableInviteMessage
+        request.recipientResponseHandler = { [weak self] player, response in
+            Task { @MainActor in
+                guard let self else { return }
+                self.note("TABLE INVITE → \(player.displayName): \(Self.describe(response))")
+                self.inviteNotice = OnlineNoticeReason.inviteResponse(
+                    pilotName: player.displayName,
+                    kind: Self.inviteKind(response)
+                ).message
+            }
+        }
+        note("TABLE: INVITING \(fresh.map(\.displayName).joined(separator: ", "))")
+        GKMatchmaker.shared().addPlayers(to: match, matchRequest: request) { [weak self] error in
+            let detail = error.map { self?.describe($0) ?? "\($0)" }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.note(detail.map { "TABLE INVITE FAILED: \($0)" } ?? "TABLE INVITE SENT")
+                if detail != nil { self.inviteNotice = "COULDN'T SEND THE INVITE · TRY AGAIN" }
+            }
+        }
+    }
+
+    /// Who the invite sheet offers: everyone, or at a running table,
+    /// everyone not already sitting at it.
+    func inviteCandidates(forTable: Bool) -> [GKPlayer] {
+        guard forTable, let openTable else { return invitees }
+        return invitees.filter { !openTable.contains($0.gamePlayerID) }
+    }
+
+    private static let openTableInviteMessage = "Open table in ASTROSPIKE · winner stays on"
+
+    /// A pilot's Game Center name, for the table's bench and standings.
+    func pilotName(_ playerID: String) -> String {
+        seatedPilotNames[playerID] ?? knownPlayers[playerID]?.displayName ?? "PILOT"
+    }
+
+    var localPlayerID: String { GKLocalPlayer.local.gamePlayerID }
+
+    /// NEXT UP, or this pilot's place in line, while on an open table's bench.
+    var benchLine: String? { openTable?.benchLine(for: localPlayerID) }
 
     /// Drops a search or an outstanding invite. Safe when nothing is pending.
     func cancelMatchmaking() {
@@ -621,22 +726,31 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    private func startMatchmaking(recipients: [GKPlayer]?, teamUp: Bool) {
+    private func startMatchmaking(recipients: [GKPlayer]?, teamUp: Bool, asOpenTable: Bool = false) {
         guard GKLocalPlayer.local.isAuthenticated else {
-            pendingMatchmakingIntent = recipients.map { .invite($0, teamUp: teamUp) } ?? .quickMatch
+            if let recipients {
+                pendingMatchmakingIntent = asOpenTable ? .openTable(recipients) : .invite(recipients, teamUp: teamUp)
+            } else {
+                pendingMatchmakingIntent = .quickMatch
+            }
             authenticate()
             return
         }
         let request = GKMatchRequest()
-        // One seat per invited pilot, up to four on the court.
-        let partySize = min(4, 1 + (recipients?.count ?? 1))
+        // One seat per invited pilot: up to four on the court, or at an open
+        // table everyone asked, since the bench holds the rest.
+        let partySize = asOpenTable
+            ? min(OpenTable.maxPilots, 1 + (recipients?.count ?? 1), GKMatchRequest.maxPlayersAllowedForMatch(of: .peerToPeer))
+            : min(4, 1 + (recipients?.count ?? 1))
         request.minPlayers = 2
         request.maxPlayers = partySize
         request.defaultNumberOfPlayers = partySize
-        request.inviteMessage = teamUp ? "Team up with me in ASTROSPIKE"
+        request.inviteMessage = asOpenTable ? Self.openTableInviteMessage
+            : teamUp ? "Team up with me in ASTROSPIKE"
             : partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
         request.recipients = recipients
         self.teamUp = teamUp
+        openTableRequested = asOpenTable && recipients != nil
         let recipientCount = recipients?.count ?? 0
         role = recipients != nil ? .inviter : .automatch
         declinedInvites = 0
@@ -691,11 +805,14 @@ final class OnlineMatchCoordinator: NSObject,
             }
         }
         inviteNotice = nil
-        matchmakingHeadlineText = recipients.map {
-            PlayerNetworkCopy.Matchmaking.waiting(for: $0.map(\.displayName))
+        matchmakingHeadlineText = recipients.map { players in
+            let names = players.map(\.displayName)
+            return asOpenTable
+                ? PlayerNetworkCopy.Matchmaking.openTable(waitingFor: names)
+                : PlayerNetworkCopy.Matchmaking.waiting(for: names)
         }
         if let recipients {
-            note("INVITING \(recipients.map(\.displayName).joined(separator: ", "))")
+            note("\(asOpenTable ? "OPEN TABLE · " : "")INVITING \(recipients.map(\.displayName).joined(separator: ", "))")
         } else {
             note("QUICK MATCH: SEARCHING")
         }
@@ -783,6 +900,7 @@ final class OnlineMatchCoordinator: NSObject,
         controller.canStartWithMinimumPlayers = false
         controller.matchmakingMode = inviteOnly ? .inviteOnly : .automatchOnly
         role = inviteOnly ? .inviter : .automatch
+        openTableRequested = false
         declinedInvites = 0
         matchmakingGeneration += 1
         matchmakingHeadlineText = nil
@@ -841,13 +959,18 @@ final class OnlineMatchCoordinator: NSObject,
         seating = [:]
         mismatchedPeers = []
         mismatchReason = nil
-        remoteHulls = [:]
+        pilotHulls = [:]
         inputBuffers = [:]
         heardSeats = []
         liveness.reset()
         isMatchReady = false
         isAuthoritative = false
         localSeat = nil
+        isSpectating = false
+        cancelIntermission()
+        // A new match is a new table -- unless this is our own link coming
+        // back to the one we were already sitting at.
+        if !resumingAfterDrop { openTable = nil }
         lifecycle.beginConfiguration()
         match.delegate = self
         status = .matching
@@ -906,6 +1029,17 @@ final class OnlineMatchCoordinator: NSObject,
     /// Guests do nothing here: their seat arrives in a `.seating` message.
     private func tryStartAsHost(graceElapsed: Bool = false) {
         guard let match, lifecycle.phase == .configuring else { return }
+        if openTableRequested, role == .inviter {
+            // An open table starts the moment anyone sits down: nobody waits
+            // on the slowest phone, and whoever is still coming lands on the
+            // bench. So neither the expected count nor the grace applies.
+            if match.players.isEmpty {
+                if !graceElapsed { note("OPEN TABLE: WAITING FOR THE FIRST PILOT") }
+                return
+            }
+            openFirstDuel(with: match.players.map(\.gamePlayerID))
+            return
+        }
         // A decline can zero the expected count before the pilot who accepted
         // has actually connected. Seating the table then puts a bot in their
         // chair and leaves them knocking on a match that already started.
@@ -935,22 +1069,40 @@ final class OnlineMatchCoordinator: NSObject,
         startConfiguredMatch()
     }
 
+    /// Seats this board in the plan it holds and starts the match. At an open
+    /// table the plan may leave it out, and then it watches from the bench:
+    /// same match, same snapshots, no ship of its own.
     private func startConfiguredMatch() {
-        guard lifecycle.phase == .configuring,
-              let seat = seating[GKLocalPlayer.local.gamePlayerID] else { return }
+        let seat = seating[GKLocalPlayer.local.gamePlayerID]
+        guard lifecycle.phase == .configuring || lifecycle.phase == .intermission || isSpectating,
+              seat != nil || openTable != nil else { return }
+        cancelIntermission()
         handshakeTask?.cancel()
         doorSecondsRemaining = nil
         localSeat = seat
+        isSpectating = seat == nil
         if !resumingAfterDrop { seatingGeneration += 1 }
-        note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
+        if let seat {
+            note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
+        } else {
+            let court = seating.sorted { $0.value < $1.value }.map { pilotName($0.key).uppercased() }
+            note("ON THE BENCH · WATCHING \(court.joined(separator: " V "))\(isAuthoritative ? " · LOCAL HOSTS" : "")")
+        }
+        if openTable != nil { matchmakingHeadlineText = nil }
         session = OnlineSessionStateMachine(
-            localTeam: seat.team,
+            // Only the hold clock is read off a bench board's session.
+            localTeam: (seat ?? .cyan).team,
             ticksPerSecond: 120,
             reconnectWindowSeconds: UInt64(Self.seatHoldSeconds)
         )
         lifecycle.beginMatch()
         snapshotGate.reset()
         eventGate.reset()
+        // The last duel's inputs belong to whoever sat in those chairs.
+        inputBuffers = [:]
+        heardSeats = []
+        droppedPilots = []
+        pendingForfeitWinner = nil
         isMatchReady = allPeersReady
         status = isMatchReady ? .connected : .matching
         resumeIfBackAtTable()
@@ -969,8 +1121,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// ends something to miss.
     private func beginHeartbeat() {
         heartbeatTask?.cancel()
-        let localID = GKLocalPlayer.local.gamePlayerID
-        liveness.begin(peers: seating.keys.filter { $0 != localID }, at: Self.now)
+        liveness.begin(peers: watchedPeers, at: Self.now)
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
@@ -981,6 +1132,17 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// Everyone whose silence ends the duel: the seated pilots, and at an
+    /// open table a host watching from the bench, since it is the one
+    /// running the rules and sending every snapshot.
+    private var watchedPeers: [String] {
+        let localID = GKLocalPlayer.local.gamePlayerID
+        var peers = Set(seating.keys)
+        if let tableHost = openTable?.hostID { peers.insert(tableHost) }
+        peers.remove(localID)
+        return peers.sorted()
+    }
+
     /// Act on the silence detector's once-a-second verdict. The judgement is
     /// `PeerLivenessMonitor`'s; what is left here is the part that needs a
     /// match object -- the seat, the name on the HUD, the hold.
@@ -989,10 +1151,8 @@ final class OnlineMatchCoordinator: NSObject,
         // never answers belongs to the handshake timeout, which gives up in
         // twenty seconds rather than holding their chair for two minutes.
         guard isMatchReady, lifecycle.acceptsGameplayData, !seating.isEmpty else { return }
-        let localID = GKLocalPlayer.local.gamePlayerID
-        let peers = seating.keys.filter { $0 != localID }
 
-        switch liveness.check(peers: peers, at: Self.now) {
+        switch liveness.check(peers: watchedPeers, at: Self.now) {
         case .unchanged:
             return
         case .wentSilent(let gone):
@@ -1001,6 +1161,12 @@ final class OnlineMatchCoordinator: NSObject,
             guard let dropped = gone.first else { return }
             let name = seatedPilotNames[dropped] ?? "PILOT"
             note("SILENT LINK: NOTHING FROM \(name) IN \(Int(Self.peerSilenceSeconds))s")
+            if let tableHost = openTable?.hostID, gone.contains(tableHost), seating[tableHost] == nil {
+                // The host was watching, not flying: there is no chair to
+                // hold, and nobody else can run the rules or the table.
+                closeTable(hostName: pilotName(tableHost))
+                return
+            }
             for id in gone { readyPeers.remove(id) }
             droppedPilots.formUnion(gone)
             pendingForfeitWinner = seating[dropped]?.team.opponent
@@ -1058,7 +1224,8 @@ final class OnlineMatchCoordinator: NSObject,
     /// GameKit's expected count: a guest's match never learns that a third
     /// invitee declined, so its count would hold the guest in the bay forever.
     private var allPeersReady: Bool {
-        guard match != nil, lifecycle.phase != .configuring else { return false }
+        // Not between duels either: the plan held then is the last duel's.
+        guard match != nil, lifecycle.acceptsGameplayData else { return false }
         return OnlineSeating.allPeersReady(
             seating: seating,
             localID: GKLocalPlayer.local.gamePlayerID,
@@ -1075,7 +1242,12 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     private func sendHandshake() {
-        if isAuthoritative, !seating.isEmpty {
+        // The table goes ahead of the plan, so a pilot the plan leaves out
+        // already knows they are on the bench rather than lost.
+        broadcastTable()
+        // Between duels the plan held is the last duel's; the next one goes
+        // out when it is seated.
+        if isAuthoritative, !seating.isEmpty, lifecycle.phase != .intermission {
             send(.seating(plan: seating, tuning: hostTuning, teamUp: teamUp), mode: .reliable)
         }
         send(.ready, mode: .reliable)
@@ -1189,14 +1361,28 @@ final class OnlineMatchCoordinator: NSObject,
             }
             if buffer.accept(value, at: Self.now) { inputBuffers[seat] = buffer }
         case let .seating(plan, tuning, teamUp):
-            guard lifecycle.acceptsNetworkMessages, plan[GKLocalPlayer.local.gamePlayerID] != nil else { return }
-            if lifecycle.phase == .configuring {
+            guard lifecycle.acceptsNetworkMessages else { return }
+            let seated = plan[GKLocalPlayer.local.gamePlayerID] != nil
+            // At an open table the host seats every duel, and a pilot the
+            // plan leaves out is on the bench. Anyone else's plan that
+            // leaves us out is not for us.
+            let fromTableHost = openTable?.hostID == playerID
+            guard seated || fromTableHost else { return }
+            // A fresh plan: the table being set, the next duel after an
+            // intermission, or a new duel for a board that is watching.
+            let freshPlan = lifecycle.phase == .configuring
+                || lifecycle.phase == .intermission
+                || (isSpectating && fromTableHost && plan != seating)
+            if freshPlan, openTable == nil || fromTableHost {
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
                 self.teamUp = teamUp
                 isAuthoritative = false
                 startConfiguredMatch()
+            } else if !seated {
+                // The bench hearing the plan it is already watching again.
+                return
             } else if !isAuthoritative {
                 // A guest that took over hosting reseated the table: remember
                 // who runs the rules now, so the next drop is judged right.
@@ -1259,10 +1445,25 @@ final class OnlineMatchCoordinator: NSObject,
                 if status != .connected { status = .connected }
                 resumeIfBackAtTable()
             }
-        case let .profile(seat, hull):
-            guard lifecycle.acceptsNetworkMessages, seat != localSeat else { return }
-            remoteHulls[seat] = hull
-            note("\(seat.label) FLIES \(hull.spec.name.uppercased())")
+        case let .profile(_, hull):
+            // Kept by pilot, not by the seat it names: at an open table the
+            // seat changes every duel, and a bench pilot has none at all.
+            guard lifecycle.acceptsNetworkMessages, playerID != GKLocalPlayer.local.gamePlayerID,
+                  pilotHulls[playerID] != hull else { return }
+            pilotHulls[playerID] = hull
+            note("\(pilotName(playerID).uppercased()) FLIES \(hull.spec.name.uppercased())")
+        case let .table(table):
+            // Only the pilot who opened the table speaks for it.
+            guard lifecycle.acceptsNetworkMessages, table.hostID == playerID,
+                  table.hostID != GKLocalPlayer.local.gamePlayerID else { return }
+            if table.isClosed {
+                closeTable(hostName: pilotName(playerID))
+                return
+            }
+            if openTable == nil {
+                note("OPEN TABLE: HOSTED BY \(pilotName(playerID).uppercased()) · \(table.queue.count) ON THE BENCH")
+            }
+            openTable = table
         case let .ping(sentAt):
             guard lifecycle.acceptsNetworkMessages else { return }
             guard !ownPings.contains(sentAt) else {
@@ -1284,18 +1485,22 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
-    /// A pilot dropped. Their chair is held for two minutes: the board
-    /// pauses, Game Center is asked to call them back, and only when the hold
-    /// runs out does the match go to the side that stayed.
+    /// A pilot dropped. Their chair is held for two minutes -- thirty seconds
+    /// at an open table with somebody on the bench -- the board pauses, Game
+    /// Center is asked to call them back, and only when the hold runs out
+    /// does the match go to the side that stayed.
     private func beginReconnectWindow() {
         guard lifecycle.beginReconnect(), var session else { return }
         _ = session.remoteDisconnected(at: 0)
         self.session = session
-        status = .reconnecting(seconds: Self.seatHoldSeconds)
+        // Every board holds the table's copy of the bench, so every board
+        // runs the same clock.
+        let holdSeconds = openTable?.seatHoldSeconds(standard: Self.seatHoldSeconds) ?? Self.seatHoldSeconds
+        status = .reconnecting(seconds: holdSeconds)
         onConnectionPaused?(true)
         reconnectTask?.cancel()
         reconnectTask = Task { @MainActor [weak self] in
-            for remaining in stride(from: Self.seatHoldSeconds - 1, through: 0, by: -1) {
+            for remaining in stride(from: holdSeconds - 1, through: 0, by: -1) {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
                 if remaining == 0 {
@@ -1303,6 +1508,7 @@ final class OnlineMatchCoordinator: NSObject,
                         self.benchDroppedPilots(keeping: benched)
                         return
                     }
+                    if self.continueTableAfterForfeit() { return }
                     self.note("SEAT HOLD EXPIRED · FORFEIT")
                     self.status = .failed(reason: .opponentForfeited)
                     self.isMatchReady = false
@@ -1315,7 +1521,7 @@ final class OnlineMatchCoordinator: NSObject,
                     return
                 }
                 self.status = .reconnecting(seconds: remaining)
-                if remaining == Self.seatHoldSeconds - Self.reinviteDelaySeconds {
+                if remaining == holdSeconds - Self.reinviteDelaySeconds {
                     self.callBackDroppedPilots(automatic: true)
                 }
             }
@@ -1362,8 +1568,7 @@ final class OnlineMatchCoordinator: NSObject,
         // Everyone seated has just proven they are here. Judging the returning
         // pilot by a packet from before the drop would call them silent at
         // once, open a second hold, and send a second call-back.
-        let localID = GKLocalPlayer.local.gamePlayerID
-        liveness.begin(peers: seating.keys.filter { $0 != localID }, at: Self.now)
+        liveness.begin(peers: watchedPeers, at: Self.now)
         if var session {
             _ = session.remoteReconnected(at: 0)
             self.session = session
@@ -1400,6 +1605,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// invite sent is remembered so it can be withdrawn when the hold ends.
     private func callBackDroppedPilots(automatic: Bool) {
         guard let match, case .reconnecting = status else { return }
+        // The bench watches a hold; it does not chase anyone. The table's
+        // host does, whether it is flying or watching.
+        guard !isSpectating || isTableHost else { return }
         let gone = SeatHoldCallback.missing(
             seated: seating.keys,
             localID: GKLocalPlayer.local.gamePlayerID,
@@ -1525,6 +1733,15 @@ final class OnlineMatchCoordinator: NSObject,
         note("PEER \(displayName): \(word) · \(match?.players.count ?? 0) IN · EXPECTING \(match?.expectedPlayerCount ?? 0)")
         switch state {
         case .connected:
+            // At an open table anyone not flying the duel in progress -- and
+            // anyone at all between duels -- is for the bench. Nothing is
+            // paused and no hold is closed, so this comes before the
+            // lifecycle is told a pilot is back.
+            if openTable != nil, lifecycle.phase != .configuring,
+               seating[playerID] == nil || lifecycle.phase == .intermission {
+                if isTableHost { joinTable(playerID, displayName: displayName) }
+                return
+            }
             guard lifecycle.acceptConnection() else { return }
             if lifecycle.phase == .configuring {
                 tryStartAsHost()
@@ -1554,13 +1771,16 @@ final class OnlineMatchCoordinator: NSObject,
                 awaitReinvite(from: displayName)
                 return
             }
+            if leaveTable(playerID, displayName: displayName) { return }
             readyPeers.remove(playerID)
             droppedPilots.insert(playerID)
             // Whoever left loses it for their side, whichever side that is.
             pendingForfeitWinner = seating[playerID]?.team.opponent
             let localID = GKLocalPlayer.local.gamePlayerID
             let remaining = seating.keys.filter { $0 != localID }
-            if OnlineSeating.localTakesOverHosting(
+            // Only a board flying the duel can take it over: the bench has
+            // no ship, and no seat in the plan to run the rules from.
+            if seating[localID] != nil, OnlineSeating.localTakesOverHosting(
                 localID: localID, hostID: hostID, droppedID: playerID, remainingPeerIDs: remaining
             ) {
                 // The host walked out of a live match. Somebody has to run
@@ -1576,6 +1796,203 @@ final class OnlineMatchCoordinator: NSObject,
             break
         @unknown default:
             break
+        }
+    }
+
+    // MARK: - Open table
+
+    /// The first pilot is here. The host opens the table and seats the first
+    /// duel against them; anyone else already connected sits on the bench.
+    private func openFirstDuel(with peerIDs: [String]) {
+        let localID = GKLocalPlayer.local.gamePlayerID
+        var table = OpenTable(hostID: localID)
+        for id in peerIDs { table.arrive(id) }
+        guard table.seatNextDuel() else { return }
+        openTable = table
+        seating = table.plan
+        hostID = localID
+        hostTuning = preferredTuning
+        isAuthoritative = true
+        teamUp = false
+        let court = table.court.map { pilotName($0).uppercased() }.joined(separator: " V ")
+        note("OPEN TABLE: \(court) · \(table.queue.count) ON THE BENCH")
+        startConfiguredMatch()
+        beginTableHandshake()
+    }
+
+    /// The host's side of a pilot sitting down: to the back of the bench,
+    /// and the table -- with the duel in progress, if there is one -- sent
+    /// their way so their board can start watching.
+    private func joinTable(_ playerID: String, displayName: String) {
+        guard var table = openTable else { return }
+        guard table.arrive(playerID) else {
+            if !table.contains(playerID) { note("TABLE FULL · \(displayName.uppercased()) CAN'T SIT DOWN") }
+            return
+        }
+        openTable = table
+        note("\(displayName.uppercased()) SITS DOWN · #\(table.place(of: playerID) ?? table.queue.count) ON THE BENCH")
+        sendHandshake()
+        beginTableHandshake()
+        // The table was waiting on a challenger, and here is one.
+        if lifecycle.phase == .intermission, intermissionTask == nil { seatNextDuel() }
+    }
+
+    /// A pilot left an open table. True when that is the whole of it: they
+    /// were on the bench, or it was between duels, so there is no chair to
+    /// hold. A pilot flying the duel gets the usual hold and only leaves the
+    /// line when it runs out. The host leaving while not flying ends the
+    /// table, since nobody else can seat a duel.
+    private func leaveTable(_ playerID: String, displayName: String) -> Bool {
+        guard let table = openTable else { return false }
+        let flying = seating[playerID] != nil && lifecycle.acceptsGameplayData
+        if playerID == table.hostID, !flying {
+            closeTable(hostName: displayName)
+            return true
+        }
+        guard !flying else { return false }
+        readyPeers.remove(playerID)
+        note("\(displayName.uppercased()) LEFT THE TABLE")
+        if isTableHost {
+            openTable?.depart(playerID)
+            broadcastTable()
+        }
+        return true
+    }
+
+    /// The table's host is gone, so the table is over for this board.
+    private func closeTable(hostName: String) {
+        note("TABLE CLOSED · \(hostName.uppercased()) IS GONE")
+        status = .failed(reason: .tableClosed(hostName: hostName))
+        leaveMatch(preservingStatus: true)
+    }
+
+    /// A duel at an open table is over and the table plays on. The link
+    /// stays up and the results card shows while the host works out who
+    /// flies next; when the intermission runs out the host seats that duel,
+    /// and every other board waits for its plan -- or, if it never comes,
+    /// calls the table closed.
+    private func beginIntermission(winner: Team?) {
+        let winnerID = winner.flatMap { team in seating.first { $0.value == Seat.lead(team) }?.key }
+        lifecycle.beginIntermission()
+        isMatchReady = false
+        withdrawCallbacks()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        handshakeTask?.cancel()
+        handshakeTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        finishTask?.cancel()
+        finishTask = nil
+        doorSecondsRemaining = nil
+        droppedPilots = []
+        pendingForfeitWinner = nil
+        // A hold that ended in a forfeit leaves its countdown on the HUD.
+        if status != .connected { status = .connected }
+        let hosting = isTableHost
+        if hosting, var table = openTable {
+            table.finishDuel(winnerID: winnerID)
+            openTable = table
+            broadcastTable()
+            note("DUEL \(table.duelsPlayed) OVER · \(winnerID.map { pilotName($0).uppercased() } ?? "NOBODY") STAYS ON")
+        } else {
+            note("DUEL OVER · WAITING FOR THE HOST TO SEAT THE NEXT")
+        }
+        intermissionTask?.cancel()
+        intermissionSecondsRemaining = OpenTable.intermissionSeconds
+        intermissionTask = Task { @MainActor [weak self] in
+            for left in stride(from: OpenTable.intermissionSeconds - 1, through: 0, by: -1) {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, self.lifecycle.phase == .intermission else { return }
+                self.intermissionSecondsRemaining = left > 0 ? left : nil
+            }
+            guard let self, !Task.isCancelled, self.lifecycle.phase == .intermission else { return }
+            if hosting {
+                self.seatNextDuel()
+                return
+            }
+            for _ in 0 ..< OpenTable.seatingGraceSeconds {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, self.lifecycle.phase == .intermission else { return }
+            }
+            self.closeTable(hostName: self.openTable.map { self.pilotName($0.hostID) } ?? "The host")
+        }
+    }
+
+    /// The host seats the next duel from the table and sends it to every
+    /// board. With nobody left to fly against, the table waits for the next
+    /// pilot to sit down, and `joinTable` seats them.
+    private func seatNextDuel() {
+        guard isTableHost, var table = openTable, let match, lifecycle.phase == .intermission else { return }
+        cancelIntermission()
+        let localID = GKLocalPlayer.local.gamePlayerID
+        // Anyone GameKit has already let go of is not seated.
+        table.keepOnly(Set(match.players.map(\.gamePlayerID) + [localID]))
+        let ready = table.seatNextDuel()
+        openTable = table
+        guard ready else {
+            note("TABLE: WAITING FOR A CHALLENGER")
+            broadcastTable()
+            return
+        }
+        seating = table.plan
+        hostID = localID
+        hostTuning = preferredTuning
+        isAuthoritative = true
+        teamUp = false
+        let court = table.court.map { pilotName($0).uppercased() }.joined(separator: " V ")
+        note("DUEL \(table.duelsPlayed + 1): \(court) · \(table.queue.count) ON THE BENCH")
+        startConfiguredMatch()
+    }
+
+    /// A pilot flying a duel at an open table did not come back. The table
+    /// outlives them: the pilot who stayed takes the duel, the one who left
+    /// leaves the line, and the next duel is seated as usual. False when this
+    /// board is not at a table, so the caller forfeits the ordinary way.
+    private func continueTableAfterForfeit() -> Bool {
+        guard let table = openTable else { return false }
+        if droppedPilots.contains(table.hostID) {
+            closeTable(hostName: pilotName(table.hostID))
+            return true
+        }
+        note("SEAT HOLD EXPIRED · FORFEIT · THE TABLE PLAYS ON")
+        let winner = pendingForfeitWinner ?? localTeam
+        if let winner { onForfeit?(winner) }
+        if isTableHost {
+            for id in droppedPilots { openTable?.depart(id) }
+        }
+        beginIntermission(winner: winner)
+        return true
+    }
+
+    private func cancelIntermission() {
+        intermissionTask?.cancel()
+        intermissionTask = nil
+        intermissionSecondsRemaining = nil
+    }
+
+    /// The host's table, to everyone at it. Nothing to send to an empty room,
+    /// and a reliable send that throws there would end the table.
+    private func broadcastTable() {
+        guard isTableHost, let openTable, let match, !match.players.isEmpty else { return }
+        send(.table(openTable), mode: .reliable)
+    }
+
+    /// GameKit drops what is sent before a new arrival's delegate is up, so
+    /// the host keeps sending the table -- and the duel to watch -- until
+    /// everyone sitting at it has said `.ready`, or the handshake window ends.
+    private func beginTableHandshake() {
+        tableHandshakeTask?.cancel()
+        tableHandshakeTask = Task { @MainActor [weak self] in
+            for _ in 0 ..< Self.handshakeTimeoutSeconds {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, self.isTableHost, let table = self.openTable,
+                      let match = self.match else { return }
+                let present = Set(match.players.map(\.gamePlayerID))
+                let unheard = table.pilots.filter { present.contains($0) && !self.readyPeers.contains($0) }
+                guard !unheard.isEmpty else { return }
+                self.sendHandshake()
+            }
         }
     }
 
@@ -1651,6 +2068,7 @@ final class OnlineMatchCoordinator: NSObject,
         if ownSearchIsOut { GKMatchmaker.shared().cancel() }
         role = .invitee
         declinedInvites = 0
+        openTableRequested = false
         // The headline, not a footnote: an invitee sat in the bay under
         // FINDING PILOT with no word that they were on their way in.
         inviteNotice = nil
@@ -1693,8 +2111,33 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     func leaveMatch() {
+        // A host walking away from its table says so first, or a guest it
+        // was flying against holds its chair for the length of a seat hold
+        // before anybody learns the table is gone.
+        if isTableHost, var table = openTable, let match, !match.players.isEmpty {
+            table.close()
+            openTable = table
+            send(.table(table), mode: .reliable)
+            note("TABLE CLOSED BY HOST")
+            // Detached from this coordinator at once, disconnected a moment
+            // later so the reliable send is on the wire before the link goes.
+            match.delegate = nil
+            closingMatch = match
+            self.match = nil
+            closingTask?.cancel()
+            closingTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self else { return }
+                self.closingMatch?.disconnect()
+                self.closingMatch = nil
+            }
+        }
         leaveMatch(preservingStatus: false)
     }
+
+    /// The table this host just closed, kept only until its last message is out.
+    private var closingMatch: GKMatch?
+    private var closingTask: Task<Void, Never>?
 
     private func leaveMatch(preservingStatus: Bool) {
         withdrawCallbacks()
@@ -1717,7 +2160,6 @@ final class OnlineMatchCoordinator: NSObject,
         liveness.reset()
         mismatchedPeers = []
         mismatchReason = nil
-        remoteHulls = [:]
         isMatchReady = false
         isAuthoritative = false
         localSeat = nil
@@ -1731,6 +2173,13 @@ final class OnlineMatchCoordinator: NSObject,
         pingMilliseconds = nil
         pendingPing = nil
         ownPings = []
+        pilotHulls = [:]
+        openTable = nil
+        openTableRequested = false
+        isSpectating = false
+        cancelIntermission()
+        tableHandshakeTask?.cancel()
+        tableHandshakeTask = nil
         lastAuthoritativeState = nil
         pendingResync = nil
         hostID = nil
@@ -1757,8 +2206,16 @@ final class OnlineMatchCoordinator: NSObject,
         match = nil
     }
 
-    func finishCompletedMatch() {
+    /// The duel was decided. `winner` matters only to an open table's host,
+    /// which keeps the winner on the court for the next one.
+    func finishCompletedMatch(winner: Team? = nil) {
         guard lifecycle.acceptsGameplayData else { return }
+        // At an open table the match object outlives the duel: the next
+        // one is seated on it.
+        if openTable != nil {
+            beginIntermission(winner: winner)
+            return
+        }
         lifecycle.finish()
         withdrawCallbacks()
         isMatchReady = false

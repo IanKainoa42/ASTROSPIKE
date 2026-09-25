@@ -66,6 +66,7 @@ This document catalogs every failure reason in the online matchmaking, invite, h
 | `networkSendFailed` | "Network send failed. Reconnecting…" | Reliable send threw |
 | `matchFailed(underlyingMessage)` | (underlying or "The match ended unexpectedly") | GKMatch delegate error |
 | `opponentForfeited` | "Opponent left the match" | Seat hold expired (120s) |
+| `tableClosed(hostName)` | "{name} closed the table" | The host of an open table left, went silent while watching, or never seated the next duel. Only the host can seat a duel, so the table ends for everyone. |
 | `matchNotConnected` | "Lost the match connection" | GK `.matchNotConnected` |
 | `connectionTimeout` | "Connection timed out" | GK `.connectionTimeout` |
 

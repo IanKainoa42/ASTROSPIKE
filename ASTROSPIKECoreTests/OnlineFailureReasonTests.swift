@@ -102,6 +102,7 @@ struct OnlineFailureReasonTests {
     func midMatchMessages() {
         #expect(OnlineFailureReason.networkSendFailed.message == "Network send failed. Reconnecting…")
         #expect(OnlineFailureReason.opponentForfeited.message == "Opponent left the match")
+        #expect(OnlineFailureReason.tableClosed(hostName: "Ian").message == "Ian closed the table")
         #expect(OnlineFailureReason.matchNotConnected.message == "Lost the match connection")
         #expect(OnlineFailureReason.connectionTimeout.message == "Connection timed out")
     }
@@ -162,6 +163,7 @@ struct OnlineFailureReasonTests {
             .opponentForfeited,
             .matchNotConnected,
             .connectionTimeout,
+            .tableClosed(hostName: "Test"),
             .inviteJoinFailed(underlyingMessage: nil),
             .couldNotOpenInvitation
         ]

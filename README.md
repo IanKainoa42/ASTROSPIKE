@@ -80,6 +80,7 @@ xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
 - Lifecycle and scoring events are sent reliably.
 - Guests predict their local ship and reconcile by blend-or-snap against host snapshots.
 - A disconnect opens a 120-second seat-hold window. Reconnection triggers a reliable full resync; expiry finishes the match by forfeit.
+- An open table invites up to five pilots at once on one `GKMatch`. The first to connect duels the host immediately; later arrivals sit on a bench and spectate the host's snapshots. After each duel the winner stays on, the loser goes to the back of the bench, and the host seats the next duel on the same match after a ten-second intermission, until the host closes the table. The rotation lives in `OpenTable` (Core) and is broadcast whole, so every board shows the same line. With somebody on the bench the seat hold drops to 30 seconds.
 
 The implementation follows Apple's [real-time data exchange](https://developer.apple.com/documentation/gamekit/exchanging-data-between-players-in-real-time-games) and [matchmaking](https://developer.apple.com/documentation/gamekit/gkmatchmakerviewcontroller) guidance.
 

@@ -45,6 +45,23 @@ quietly — which is the point, but check the notice appears.
 - [ ] Ask the same pilot twice in a row and confirm B sees **one** row, not two, with the clock reset.
 - [ ] Confirm an unanswered ask is gone from both screens 24 hours later.
 
+## Open table (three or more devices)
+
+Needs a third device (a fourth makes the rotation easier to see). Call them
+host A and pilots B, C, D.
+
+- [ ] On A, open INVITE, pick `OPEN TABLE`, tick B, C and D, and tap `OPEN THE TABLE (3)`. Confirm A lands in the warm-up bay under `OPEN TABLE · WAITING FOR B +2…`.
+- [ ] Accept on B only. Confirm the duel A v B starts at once, without waiting for C or D to answer.
+- [ ] Accept on C mid-duel. Confirm C goes straight into the arena with no touch controls, the yellow `WATCHING · YOU'RE NEXT UP` banner, and both pilots' names on the scoreboard, and that the duel on A and B does not pause or stutter.
+- [ ] Confirm A and B each show `OPEN TABLE · 1 WAITING` under the side badges.
+- [ ] Finish the duel. On all three, confirm the results card shows `NEXT · … · 10s` counting down, and the wins tally, with no `BACK TO MENU`.
+- [ ] Confirm the winner keeps their colour and C takes the loser's chair when the count runs out, and that the loser now watches with `YOU'RE NEXT UP`.
+- [ ] If A lost, confirm A watches (no controls) while the duel B v C still plays and scores normally on every board.
+- [ ] On A's results card, tap `INVITE MORE`, pick D, and confirm D lands at the back of the bench (`#2 IN LINE` if two are waiting).
+- [ ] Leave the table from a bench device. Confirm nothing pauses and everyone behind them moves up a place.
+- [ ] Lock the phone of a pilot who is flying, with somebody on the bench. Confirm the seat hold counts from 30 seconds, not 120, then awards the duel and seats the next pilot.
+- [ ] Close the table on A. Confirm every other device shows `A CLOSED THE TABLE`.
+
 ## Waiting, timeouts, and the link log
 
 - [ ] Invite a pilot and leave their phone locked. Confirm the warm-up bay keeps `JOINING …` for at least two minutes before giving up — a 30-second `CONNECTION TIMEOUT` here is the old behaviour and a failure.
