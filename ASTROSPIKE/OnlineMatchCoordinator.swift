@@ -162,6 +162,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// The chair this board flew when its own link dropped, so a rejoin to
     /// the same chair keeps its arena and any other gets a fresh one.
     private var seatBeforeDrop: Seat?
+    /// Who was running the rules when this board's own link dropped: one of
+    /// the pilots allowed to seat it again.
+    private var hostBeforeDrop: String?
     private var intermissionTask: Task<Void, Never>?
     /// Re-sends the table to a pilot who sat down but has not said `.ready`,
     /// since GameKit drops anything sent before their delegate is installed.
@@ -1154,6 +1157,38 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// Whether a peer may hand this board a fresh seating plan. Every match
+    /// already settles who that is before anyone speaks, so a peer merely
+    /// sending a plan -- or naming itself host inside one -- is not enough:
+    /// - an open table is seated by its host;
+    /// - an invitee by whoever invited it, since the inviter hosts;
+    /// - a board rejoining after its own drop by whoever called it back, the
+    ///   host it had, or the pilot who stepped up (the lowest ID left);
+    /// - an automatch by the lowest player ID at the table.
+    private func maySeat(_ playerID: String) -> Bool {
+        if let tableHost = openTable?.hostID, playerID == tableHost { return true }
+        let localID = GKLocalPlayer.local.gamePlayerID
+        let lowestID = ((match?.players.map(\.gamePlayerID) ?? []) + [localID]).min()
+        if resumingAfterDrop {
+            return playerID == inviterID || playerID == hostBeforeDrop || playerID == lowestID
+        }
+        switch role {
+        case .invitee: return playerID == inviterID
+        case .automatch: return playerID == lowestID
+        case .inviter: return false
+        }
+    }
+
+    /// Whether a peer's snapshots, events and resyncs are the rules. Only the
+    /// host's are -- or, once the host has dropped, a seated pilot's, since
+    /// one of them steps up to run the rules while the chair is held. The
+    /// bench is never it.
+    private func runsTheRules(_ playerID: String) -> Bool {
+        guard let hostID else { return false }
+        if playerID == hostID { return true }
+        return droppedPilots.contains(hostID) && seating[playerID] != nil
+    }
+
     /// Everyone whose silence ends the duel: the seated pilots, and at an
     /// open table a host watching from the bench, since it is the one
     /// running the rules and sending every snapshot.
@@ -1376,7 +1411,10 @@ final class OnlineMatchCoordinator: NSObject,
         }
         switch envelope.payload {
         case let .input(seat, value):
-            guard lifecycle.acceptsGameplayData, seat != localSeat else { return }
+            // A pilot flies the chair the plan gave them and no other. At an
+            // open table the bench shares the match with the court, and
+            // nothing it sends may steer a ship.
+            guard lifecycle.acceptsGameplayData, seat != localSeat, seating[playerID] == seat else { return }
             var buffer = inputBuffers[seat] ?? RemoteInputBuffer()
             if heardSeats.insert(seat).inserted {
                 note("FIRST INPUT FROM \(seat.label) AT TICK \(value.tick)")
@@ -1403,6 +1441,10 @@ final class OnlineMatchCoordinator: NSObject,
             // whoever is running the rules now -- at a table that can be the
             // guest who stepped up while the table's own host was away.
             if freshPlan, openTable == nil || fromTableHost || resumingAfterDrop {
+                guard maySeat(playerID) else {
+                    note("IGNORED SEATING FROM \(playerID): NOT WHO SEATS THIS TABLE")
+                    return
+                }
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
@@ -1449,11 +1491,11 @@ final class OnlineMatchCoordinator: NSObject,
                 eventGate.reset()
             }
         case let .snapshot(state):
-            if lifecycle.acceptsGameplayData, snapshotGate.accept(tick: state.tick) {
+            if lifecycle.acceptsGameplayData, runsTheRules(playerID), snapshotGate.accept(tick: state.tick) {
                 onSnapshot?(state)
             }
         case let .event(event):
-            if lifecycle.acceptsGameplayData, eventGate.accept(sequence: envelope.sequence) {
+            if lifecycle.acceptsGameplayData, runsTheRules(playerID), eventGate.accept(sequence: envelope.sequence) {
                 onEvent?(event)
             }
         case .ready:
@@ -1512,7 +1554,7 @@ final class OnlineMatchCoordinator: NSObject,
             }
             sendQuietly(.ping(nanoseconds: sentAt), to: playerID, mode: .unreliable)
         case let .resync(state):
-            if lifecycle.acceptsGameplayData {
+            if lifecycle.acceptsGameplayData, runsTheRules(playerID) {
                 snapshotGate.reset(to: state.tick)
                 if let onResync { onResync(state) } else { pendingResync = state }
             }
@@ -1573,11 +1615,12 @@ final class OnlineMatchCoordinator: NSObject,
         let localID = GKLocalPlayer.local.gamePlayerID
         let peers = staying.keys.filter { $0 != localID }
         readyPeers.formIntersection(peers)
-        if let hostID, staying[hostID] == nil,
-           peers.allSatisfy({ localID < $0 }) {
+        if let hostID, staying[hostID] == nil, let newHost = staying.keys.min() {
             // The host was the one benched: the lowest ID left runs the rules.
-            isAuthoritative = true
-            self.hostID = localID
+            // Every board records who that is, not just the one stepping up,
+            // since only the host's snapshots are believed.
+            if newHost == localID { isAuthoritative = true }
+            self.hostID = newHost
         }
         if isAuthoritative, !peers.isEmpty {
             send(.seating(plan: seating, tuning: hostTuning, teamUp: teamUp), mode: .reliable)
@@ -2090,6 +2133,7 @@ final class OnlineMatchCoordinator: NSObject,
             reconnectTask = nil
             resumingAfterDrop = true
             seatBeforeDrop = localSeat
+            hostBeforeDrop = hostID
             note("REJOINING \(senderDisplayName) · SEAT WAS HELD")
         } else {
             note("INVITE ACCEPTED FROM \(senderDisplayName)")
@@ -2223,6 +2267,8 @@ final class OnlineMatchCoordinator: NSObject,
         openTable = nil
         openTableRequested = false
         inviterID = nil
+        hostBeforeDrop = nil
+        seatBeforeDrop = nil
         isSpectating = false
         cancelIntermission()
         tableHandshakeTask?.cancel()
