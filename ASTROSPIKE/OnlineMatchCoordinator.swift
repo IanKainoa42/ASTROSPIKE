@@ -1190,6 +1190,12 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
 
+    /// A pilot flying this duel, or the open table's host, who runs it even
+    /// from the bench. Anyone else at the table is only watching.
+    private func inThisDuel(_ playerID: String) -> Bool {
+        seating[playerID] != nil || openTable?.hostID == playerID
+    }
+
     /// Whether a peer's snapshots, events and resyncs are the rules. Only the
     /// host's are -- or, once the host has dropped, a seated pilot's, since
     /// one of them steps up to run the rules while the chair is held. The
@@ -1475,7 +1481,9 @@ final class OnlineMatchCoordinator: NSObject,
                 // pilot who is not running the rules would seat the guest
                 // in a game nobody is hosting.
                 let hostHasDropped = hostID.map { droppedPilots.contains($0) } ?? true
-                guard playerID == hostID || hostHasDropped else {
+                // And whoever steps up flew this duel: a peer watching from
+                // an open table's bench never runs it.
+                guard playerID == hostID || (hostHasDropped && inThisDuel(playerID)) else {
                     note("IGNORED SEATING FROM \(playerID): NOT THE HOST")
                     return
                 }
@@ -1489,10 +1497,12 @@ final class OnlineMatchCoordinator: NSObject,
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
-            } else if playerID < GKLocalPlayer.local.gamePlayerID {
+            } else if playerID < GKLocalPlayer.local.gamePlayerID, inThisDuel(playerID) {
                 // Two boards both think they host -- both stepped up during
                 // the same hold. The lower ID runs the rules, the same rule
-                // that seated the table, so this end stands down.
+                // that seated the table, so this end stands down. Only to a
+                // pilot in this duel: a lower ID on the bench is not a rival
+                // host, just a peer with a plan.
                 note("YIELDING HOST TO \(playerID)")
                 isAuthoritative = false
                 hostID = playerID
