@@ -711,7 +711,8 @@ private struct GameView: View {
                     )
                     .padding(.top, 4)
                 }
-                if mode == .online, !isSpectating, case .reconnecting = online.status {
+                // The table's host chases a dropped pilot even while watching.
+                if mode == .online, !isSpectating || online.isTableHost, case .reconnecting = online.status {
                     let cooldown = online.reinviteCooldownSecondsRemaining
                     Button {
                         online.reinviteDroppedPilots()
@@ -929,7 +930,7 @@ private struct GameView: View {
     /// The bench's place in line; for the pilots flying, who is waiting.
     private func bannerText(for table: OpenTable) -> String {
         if let line = online.benchLine { return "WATCHING · \(line)" }
-        if isSpectating { return "WATCHING · YOU'RE HOSTING" }
+        if isSpectating { return online.isTableHost ? "WATCHING · YOU'RE HOSTING" : "WATCHING" }
         if table.queue.isEmpty { return "OPEN TABLE · WINNER STAYS ON" }
         return "OPEN TABLE · \(table.queue.count) WAITING"
     }
@@ -961,7 +962,10 @@ private struct GameView: View {
         return TableCard(
             nextLine: nextLine,
             standings: table.standings.prefix(4).map { (name: name($0.playerID), wins: $0.wins) },
-            isHost: online.isTableHost
+            isHost: online.isTableHost,
+            // How the host's INVITE MORE went: the bay that usually shows
+            // this is long gone.
+            inviteNotice: online.isTableHost ? online.inviteNotice : nil
         )
     }
 
@@ -1710,6 +1714,7 @@ private struct TableCard {
     /// Wins at this table, most first.
     let standings: [(name: String, wins: Int)]
     let isHost: Bool
+    let inviteNotice: String?
 }
 
 private struct ResultsOverlay: View {
@@ -1791,6 +1796,14 @@ private struct ResultsOverlay: View {
                     .lineLimit(1).minimumScaleFactor(0.6)
                     .accessibilityLabel("Wins tonight: " + table.standings.map { "\($0.name) \($0.wins)" }.joined(separator: ", "))
             }
+            if let inviteNotice = table.inviteNotice {
+                Text(inviteNotice)
+                    .font(.caption2.monospaced().weight(.bold))
+                    .foregroundStyle(.orange)
+                    .lineLimit(2).minimumScaleFactor(0.7)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("table-invite-notice")
+            }
             HStack(spacing: 10) {
                 if table.isHost {
                     Button("INVITE MORE", action: inviteMore)
@@ -1829,6 +1842,11 @@ private struct ResultsOverlay: View {
 
     private func scoreLine(_ tally: Score) -> some View {
         let rival = localTeam.opponent
+        let label: String = if spectating {
+            "\(names?[localTeam] ?? "Cyan") \(tally[localTeam]), \(names?[rival] ?? "Orange") \(tally[rival])"
+        } else {
+            "You \(tally[localTeam]), rival \(tally[rival])"
+        }
         return HStack(spacing: 18) {
             Text(tally[localTeam].formatted()).foregroundStyle(localTeam == .cyan ? Color.cyan : .orange)
             Text("—").foregroundStyle(.secondary)
@@ -1836,9 +1854,7 @@ private struct ResultsOverlay: View {
         }
         .font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spectating
-            ? "\(names?[localTeam] ?? "Cyan") \(tally[localTeam]), \(names?[rival] ?? "Orange") \(tally[rival])"
-            : "You \(tally[localTeam]), rival \(tally[rival])")
+        .accessibilityLabel(label)
     }
 
     private var didLocalPlayerWin: Bool {

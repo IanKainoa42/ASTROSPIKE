@@ -724,10 +724,12 @@ final class GameSession {
                 FeedbackCenter.shared.impact()
             case .destruction:
                 FeedbackCenter.shared.impact()
-            case .matchEnded:
+            case let .matchEnded(winner):
                 // The bench cheers nobody in particular.
                 if !self.isSpectator { FeedbackCenter.shared.win() }
-                online.finishCompletedMatch()
+                // The winner matters to a table host that was not running
+                // this duel -- it keeps them on for the next.
+                online.finishCompletedMatch(winner: winner)
             }
         }
         online.onForfeit = { [weak self] winner in
@@ -737,6 +739,12 @@ final class GameSession {
             self.events = self.engine.lastEvents
             if online.isAuthoritative {
                 self.lobby?.hostDuelFinished(winner: winner, score: self.state.match.score)
+                // At a table the link stays up: tell every board the duel is
+                // over, rather than leave each to its own hold clock.
+                if online.openTable != nil {
+                    online.sendFullResync(self.engine.state)
+                    for event in self.engine.lastEvents { online.sendEvent(event) }
+                }
             }
         }
         online.onConnectionPaused = { [weak self] paused in

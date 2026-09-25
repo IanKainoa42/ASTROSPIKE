@@ -159,6 +159,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// Who sent the invitation this board accepted. Before a table is on
     /// record, only they may announce one.
     private var inviterID: String?
+    /// The chair this board flew when its own link dropped, so a rejoin to
+    /// the same chair keeps its arena and any other gets a fresh one.
+    private var seatBeforeDrop: Seat?
     private var intermissionTask: Task<Void, Never>?
     /// Re-sends the table to a pilot who sat down but has not said `.ready`,
     /// since GameKit drops anything sent before their delegate is installed.
@@ -742,9 +745,13 @@ final class OnlineMatchCoordinator: NSObject,
         let request = GKMatchRequest()
         // One seat per invited pilot: up to four on the court, or at an open
         // table everyone asked, since the bench holds the rest.
-        let partySize = asOpenTable
-            ? min(OpenTable.maxPilots, 1 + (recipients?.count ?? 1), GKMatchRequest.maxPlayersAllowedForMatch(of: .peerToPeer))
-            : min(4, 1 + (recipients?.count ?? 1))
+        let wanted = 1 + (recipients?.count ?? 1)
+        let partySize: Int
+        if asOpenTable {
+            partySize = min(OpenTable.maxPilots, wanted, GKMatchRequest.maxPlayersAllowedForMatch(of: .peerToPeer))
+        } else {
+            partySize = min(4, wanted)
+        }
         request.minPlayers = 2
         request.maxPlayers = partySize
         request.defaultNumberOfPlayers = partySize
@@ -1082,9 +1089,21 @@ final class OnlineMatchCoordinator: NSObject,
         cancelIntermission()
         handshakeTask?.cancel()
         doorSecondsRemaining = nil
+        // A new duel ends any hold still counting on this board from the
+        // last one; left running it would forfeit the duel just seated.
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        withdrawCallbacks()
+        // An ordinary rejoin stays paused until everyone is heard; at a table
+        // a board still paused by the last duel's hold must not carry that
+        // into this one.
+        if openTable != nil { onConnectionPaused?(false) }
         localSeat = seat
         isSpectating = seat == nil
-        if !resumingAfterDrop { seatingGeneration += 1 }
+        // A pilot resuming the very chair it dropped from keeps its arena;
+        // any other seat, or the bench, needs one built for it.
+        if !resumingAfterDrop || seat == nil || seat != seatBeforeDrop { seatingGeneration += 1 }
+        seatBeforeDrop = nil
         if let seat {
             note("SEATED AS \(seat.label) · LOCAL IS \(isAuthoritative ? "HOST" : "GUEST") · \(seating.count) PILOTS")
         } else {
@@ -1373,10 +1392,17 @@ final class OnlineMatchCoordinator: NSObject,
             guard seated || fromTableHost else { return }
             // A fresh plan: the table being set, the next duel after an
             // intermission, or a new duel for a board that is watching.
+            //
+            // At a table any new plan from its host is the next duel, whatever
+            // phase this board is in: one that never heard the last duel end
+            // must still move on rather than fly a duel that is over.
             let freshPlan = lifecycle.phase == .configuring
                 || lifecycle.phase == .intermission
-                || (isSpectating && fromTableHost && plan != seating)
-            if freshPlan, openTable == nil || fromTableHost {
+                || (fromTableHost && plan != seating)
+            // A pilot coming back from a dropped link takes its seat from
+            // whoever is running the rules now -- at a table that can be the
+            // guest who stepped up while the table's own host was away.
+            if freshPlan, openTable == nil || fromTableHost || resumingAfterDrop {
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
@@ -1631,7 +1657,10 @@ final class OnlineMatchCoordinator: NSObject,
         }
         let request = GKMatchRequest()
         request.minPlayers = 2
-        request.maxPlayers = 4
+        // A table seats more than a court: the call-back must not ask for a
+        // smaller match than the one it is adding to.
+        request.maxPlayers = openTable == nil ? 4
+            : min(OpenTable.maxPilots, GKMatchRequest.maxPlayersAllowedForMatch(of: .peerToPeer))
         request.recipients = missing
         request.inviteMessage = "Your seat is still open. Come back!"
         note("RE-INVITING \(missing.map(\.displayName).joined(separator: ", "))")
@@ -2060,6 +2089,7 @@ final class OnlineMatchCoordinator: NSObject,
             reconnectTask?.cancel()
             reconnectTask = nil
             resumingAfterDrop = true
+            seatBeforeDrop = localSeat
             note("REJOINING \(senderDisplayName) · SEAT WAS HELD")
         } else {
             note("INVITE ACCEPTED FROM \(senderDisplayName)")
@@ -2121,13 +2151,19 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     func leaveMatch() {
-        // A host walking away from its table says so first, or a guest it
-        // was flying against holds its chair for the length of a seat hold
-        // before anybody learns the table is gone.
+        leaveMatch(preservingStatus: false)
+    }
+
+    /// A host leaving its table, for whatever reason, says so first -- or a
+    /// guest it was flying against holds its chair for a whole seat hold
+    /// before anybody learns the table is gone.
+    private func announceTableClosed() {
         if isTableHost, var table = openTable, let match, !match.players.isEmpty {
             table.close()
             openTable = table
-            send(.table(table), mode: .reliable)
+            // Quietly: the link may be why we are leaving, and a throw here
+            // must not replace the reason already on the status line.
+            sendQuietly(.table(table), to: nil, mode: .reliable)
             note("TABLE CLOSED BY HOST")
             // Detached from this coordinator at once, disconnected a moment
             // later so the reliable send is on the wire before the link goes.
@@ -2142,7 +2178,6 @@ final class OnlineMatchCoordinator: NSObject,
                 self.closingMatch = nil
             }
         }
-        leaveMatch(preservingStatus: false)
     }
 
     /// The table this host just closed, kept only until its last message is out.
@@ -2150,6 +2185,7 @@ final class OnlineMatchCoordinator: NSObject,
     private var closingTask: Task<Void, Never>?
 
     private func leaveMatch(preservingStatus: Bool) {
+        announceTableClosed()
         withdrawCallbacks()
         disconnectTransport()
         reconnectTask?.cancel()
