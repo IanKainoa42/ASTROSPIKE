@@ -4,6 +4,15 @@ import Testing
 
 @Suite("Hull catalog")
 struct HullCatalogTests {
+    @Test("One hundred distinct ship concepts are staged without StoreKit placement")
+    func unassignedConceptCatalog() {
+        #expect(ShipConceptCatalog.all.count == 100)
+        #expect(Set(ShipConceptCatalog.all.map(\.id)).count == 100)
+        #expect(Set(ShipConceptCatalog.all.map(\.name)).count == 100)
+        #expect(ShipConceptCatalog.all.allSatisfy { $0.storePlacement == .undecided })
+        #expect(ShipConceptCatalog.all.allSatisfy { $0.outline.fitsEnvelope })
+    }
+
     @Test("Eight hulls, each with a unique name")
     func rosterSize() {
         #expect(Hull.allCases.count == 8)

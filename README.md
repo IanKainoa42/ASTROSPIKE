@@ -2,6 +2,8 @@
 
 ASTROSPIKE is a free-to-play, landscape-only iPhone and iPad arena game for iOS 18 and later. Every mode and every rule is free; the only in-app purchases are four cosmetic hulls, which change nothing about how a ship flies, bounces or scores. Two momentum-driven landers volley a fast, highly elastic luminous ball around a single centre net that hangs from the roof, trying to lift it up and drive it through the net itself — a portal the ball vanishes into.
 
+The Hangar also contains 100 browse-only ship concepts. They are deliberately unassigned: none has a StoreKit product ID, price, or sales channel until a future merchandising decision places it.
+
 ## Project layout
 
 - `ASTROSPIKE/` — SwiftUI app shell, SpriteKit renderer, touch controls, feedback, Game Center transport, and fixed-step display driver.

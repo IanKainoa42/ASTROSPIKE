@@ -38,6 +38,7 @@ struct HangarView: View {
                 if !compact {
                     Text("Hulls are cosmetic. Every ship flies and bounces the same, online and solo.")
                         .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                    ShipConceptShelf()
                     storeFooter
                 }
             }
@@ -254,6 +255,33 @@ struct HangarView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(spec.name), \(unlocked ? "unlocked" : "locked")\(isSelected ? ", selected" : "")")
         .accessibilityIdentifier("hull-\(spec.hull.rawValue)")
+    }
+}
+
+/// The catalog is browse-only until each design has a merchandising home.
+/// Keeping it visibly separate prevents a preview from looking purchasable.
+private struct ShipConceptShelf: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("100 UNASSIGNED SHIP DESIGNS")
+                .font(.caption2.monospaced().weight(.black)).tracking(1)
+                .foregroundStyle(.white.opacity(0.7))
+            Text("Created for the Hangar. Their store or in-app-purchase placement is intentionally undecided.")
+                .font(.caption2).foregroundStyle(.white.opacity(0.5))
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 2), spacing: 6) {
+                ForEach(ShipConceptCatalog.all) { concept in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(concept.name.uppercased()).font(.caption2.weight(.bold)).lineLimit(1)
+                        Text(concept.role.uppercased()).font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                    }
+                    .padding(7).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel("\(concept.name), \(concept.role), placement undecided")
+                }
+            }
+        }
+        .accessibilityIdentifier("unassigned-ship-concepts")
     }
 }
 
