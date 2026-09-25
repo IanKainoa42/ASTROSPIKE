@@ -165,6 +165,9 @@ final class OnlineMatchCoordinator: NSObject,
     /// Who was running the rules when this board's own link dropped: one of
     /// the pilots allowed to seat it again.
     private var hostBeforeDrop: String?
+    /// Everyone flying when this board's own link dropped. Only they may
+    /// seat it again -- never a pilot who was watching.
+    private var seatedBeforeDrop: Set<String> = []
     private var intermissionTask: Task<Void, Never>?
     /// Re-sends the table to a pilot who sat down but has not said `.ready`,
     /// since GameKit drops anything sent before their delegate is installed.
@@ -1162,19 +1165,27 @@ final class OnlineMatchCoordinator: NSObject,
     /// sending a plan -- or naming itself host inside one -- is not enough:
     /// - an open table is seated by its host;
     /// - an invitee by whoever invited it, since the inviter hosts;
-    /// - a board rejoining after its own drop by whoever called it back, the
-    ///   host it had, or the pilot who stepped up (the lowest ID left);
+    /// - a board rejoining after its own drop, at a table someone else hosts,
+    ///   by that host alone; otherwise only by a pilot who was flying with it
+    ///   -- whoever called it back, the host it had, or the pilot who stepped
+    ///   up (the lowest of them). Never the bench;
     /// - an automatch by the lowest player ID at the table.
     private func maySeat(_ playerID: String) -> Bool {
-        if let tableHost = openTable?.hostID, playerID == tableHost { return true }
         let localID = GKLocalPlayer.local.gamePlayerID
-        let lowestID = ((match?.players.map(\.gamePlayerID) ?? []) + [localID]).min()
+        if let tableHost = openTable?.hostID, tableHost != localID {
+            if playerID == tableHost { return true }
+            // The table's host seats every duel at its table, a rejoin included.
+            if resumingAfterDrop { return false }
+        }
         if resumingAfterDrop {
-            return playerID == inviterID || playerID == hostBeforeDrop || playerID == lowestID
+            let flewWithUs = seatedBeforeDrop.subtracting([localID])
+            guard flewWithUs.contains(playerID) else { return false }
+            return playerID == inviterID || playerID == hostBeforeDrop || playerID == flewWithUs.min()
         }
         switch role {
         case .invitee: return playerID == inviterID
-        case .automatch: return playerID == lowestID
+        case .automatch:
+            return playerID == ((match?.players.map(\.gamePlayerID) ?? []) + [localID]).min()
         case .inviter: return false
         }
     }
@@ -2134,6 +2145,7 @@ final class OnlineMatchCoordinator: NSObject,
             resumingAfterDrop = true
             seatBeforeDrop = localSeat
             hostBeforeDrop = hostID
+            seatedBeforeDrop = Set(seating.keys)
             note("REJOINING \(senderDisplayName) · SEAT WAS HELD")
         } else {
             note("INVITE ACCEPTED FROM \(senderDisplayName)")
@@ -2269,6 +2281,7 @@ final class OnlineMatchCoordinator: NSObject,
         inviterID = nil
         hostBeforeDrop = nil
         seatBeforeDrop = nil
+        seatedBeforeDrop = []
         isSpectating = false
         cancelIntermission()
         tableHandshakeTask?.cancel()
