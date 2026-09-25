@@ -261,6 +261,8 @@ struct HangarView: View {
 /// The catalog is browse-only until each design has a merchandising home.
 /// Keeping it visibly separate prevents a preview from looking purchasable.
 private struct ShipConceptShelf: View {
+    @State private var showingGallery = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("100 UNASSIGNED SHIP DESIGNS")
@@ -268,20 +270,104 @@ private struct ShipConceptShelf: View {
                 .foregroundStyle(.white.opacity(0.7))
             Text("Created for the Hangar. Their store or in-app-purchase placement is intentionally undecided.")
                 .font(.caption2).foregroundStyle(.white.opacity(0.5))
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 2), spacing: 6) {
-                ForEach(ShipConceptCatalog.all) { concept in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(concept.name.uppercased()).font(.caption2.weight(.bold)).lineLimit(1)
-                        Text(concept.role.uppercased()).font(.system(size: 8, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.5)).lineLimit(1)
-                    }
-                    .padding(7).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel("\(concept.name), \(concept.role), placement undecided")
-                }
+            Button {
+                showingGallery = true
+                FeedbackCenter.shared.tap()
+            } label: {
+                Label("VIEW 100 OUTLINES", systemImage: "square.grid.3x3.fill")
+                    .font(.caption.weight(.black)).tracking(1)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.bordered).tint(.cyan)
+            .accessibilityIdentifier("ship-concept-gallery-button")
         }
         .accessibilityIdentifier("unassigned-ship-concepts")
+        .sheet(isPresented: $showingGallery) {
+            ShipConceptGallery()
+        }
+    }
+}
+
+/// A visual, browse-only gallery. The catalog stays unassigned while every
+/// actual silhouette is inspectable at a useful size on phone and iPad.
+private struct ShipConceptGallery: View {
+    @Environment(\.dismiss) private var dismiss
+    private let columns = [GridItem(.adaptive(minimum: 132, maximum: 180), spacing: 10)]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(ShipConceptCatalog.all) { concept in
+                        ShipConceptCard(concept: concept)
+                    }
+                }
+                .padding(16)
+            }
+            .background(CosmicBackground())
+            .navigationTitle("100 Ship Outlines")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Done") { dismiss() } }
+        }
+        .preferredColorScheme(.dark)
+        .accessibilityIdentifier("ship-concept-gallery")
+    }
+}
+
+private struct ShipConceptCard: View {
+    let concept: ShipConcept
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ShipConceptBadge(outline: concept.outline, color: color)
+                .frame(height: 104)
+            Text(concept.name.uppercased())
+                .font(.caption2.weight(.black)).lineLimit(2).multilineTextAlignment(.center)
+            Text(concept.role.uppercased())
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.52)).lineLimit(1)
+        }
+        .padding(10).frame(maxWidth: .infinity, minHeight: 156)
+        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12)))
+        .accessibilityLabel("\(concept.name), \(concept.role), unassigned ship outline")
+    }
+
+    private var color: Color {
+        let colors: [Color] = [.cyan, .mint, .teal, .blue, .indigo, .purple, .pink, .orange, .yellow, .green]
+        let index = ShipConceptCatalog.all.firstIndex(where: { $0.id == concept.id }) ?? 0
+        return colors[index % colors.count]
+    }
+}
+
+private struct ShipConceptBadge: View {
+    let outline: HullOutline
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let envelope = HullOutline.envelope
+            let scale = min(size.width / (envelope.maxX - envelope.minX), size.height / (envelope.maxY - envelope.minY)) * 0.84
+            let midX = (envelope.minX + envelope.maxX) / 2
+            let midY = (envelope.minY + envelope.maxY) / 2
+            func map(_ point: SIMD2<Double>) -> CGPoint {
+                CGPoint(x: size.width / 2 + (point.x - midX) * scale,
+                        y: size.height / 2 - (point.y - midY) * scale)
+            }
+            var body = Path()
+            body.addLines(outline.silhouette.map(map))
+            body.closeSubpath()
+            context.addFilter(.shadow(color: color.opacity(0.85), radius: max(5, scale * 1.8)))
+            context.fill(body, with: .color(color))
+            context.stroke(body, with: .color(.white), lineWidth: max(1, scale * 0.4))
+            for detail in outline.details {
+                var path = Path()
+                path.addLines(detail.points.map(map))
+                if detail.closed { path.closeSubpath() }
+                context.stroke(path, with: .color(.white.opacity(0.9)), lineWidth: max(1, scale * 0.35))
+            }
+        }
     }
 }
 

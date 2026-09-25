@@ -11,6 +11,10 @@ struct HullCatalogTests {
         #expect(Set(ShipConceptCatalog.all.map(\.name)).count == 100)
         #expect(ShipConceptCatalog.all.allSatisfy { $0.storePlacement == .undecided })
         #expect(ShipConceptCatalog.all.allSatisfy { $0.outline.fitsEnvelope })
+        let outlineSignatures = Set(ShipConceptCatalog.all.map { concept in
+            concept.outline.silhouette.map { "\($0.x),\($0.y)" }.joined(separator: ";")
+        })
+        #expect(outlineSignatures.count == 100)
     }
 
     @Test("Eight hulls, each with a unique name")
