@@ -29,6 +29,7 @@ struct HangarView: View {
                 if !compact {
                     Text("HANGAR").font(.caption.monospaced().weight(.black)).tracking(3)
                         .foregroundStyle(.white.opacity(0.55))
+                    ShipConceptShelf()
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
                     ForEach(HullCatalog.all, id: \.hull) { spec in
@@ -38,7 +39,6 @@ struct HangarView: View {
                 if !compact {
                     Text("Hulls are cosmetic. Every ship flies and bounces the same, online and solo.")
                         .font(.caption2).foregroundStyle(.white.opacity(0.5))
-                    ShipConceptShelf()
                     storeFooter
                 }
             }
@@ -332,6 +332,7 @@ private struct ShipConceptCard: View {
         .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12)))
         .accessibilityLabel("\(concept.name), \(concept.role), unassigned ship outline")
+        .accessibilityIdentifier("ship-concept-\(concept.id)")
     }
 
     private var color: Color {
