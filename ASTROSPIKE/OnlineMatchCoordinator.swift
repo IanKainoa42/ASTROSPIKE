@@ -592,6 +592,10 @@ final class OnlineMatchCoordinator: NSObject,
             note("MATCHMAKING: CANCELLED BY PILOT")
             status = .ready(playerName: GKLocalPlayer.local.displayName)
         }
+        // With an invitation out, GameKit has already handed back a match and
+        // the table is waiting on it. Cancelling the search alone left that
+        // match connected and its door counting down behind the lobby.
+        if lifecycle.phase == .configuring { leaveMatch() }
     }
 
     func loadInvitees() {
@@ -911,7 +915,8 @@ final class OnlineMatchCoordinator: NSObject,
             connectedPeers: match.players.count,
             graceElapsed: graceElapsed
         ) else {
-            if match.players.isEmpty { note("WAITING FOR A PILOT TO CONNECT BEFORE SEATING") }
+            // Once per event, not once a second from the door's countdown.
+            if match.players.isEmpty, !graceElapsed { note("WAITING FOR A PILOT TO CONNECT BEFORE SEATING") }
             return
         }
         if graceElapsed, match.expectedPlayerCount > declinedInvites {
