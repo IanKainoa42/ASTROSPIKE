@@ -1497,12 +1497,14 @@ final class OnlineMatchCoordinator: NSObject,
                 seating = plan
                 hostID = playerID
                 hostTuning = tuning
-            } else if playerID < GKLocalPlayer.local.gamePlayerID, inThisDuel(playerID) {
+            } else if playerID < GKLocalPlayer.local.gamePlayerID, inThisDuel(playerID), !isTableHost {
                 // Two boards both think they host -- both stepped up during
                 // the same hold. The lower ID runs the rules, the same rule
                 // that seated the table, so this end stands down. Only to a
                 // pilot in this duel: a lower ID on the bench is not a rival
-                // host, just a peer with a plan.
+                // host, just a peer with a plan. And never an open table's
+                // own host, flying or watching: it seats every duel at its
+                // table, and a plan that claims otherwise is not believed.
                 note("YIELDING HOST TO \(playerID)")
                 isAuthoritative = false
                 hostID = playerID
