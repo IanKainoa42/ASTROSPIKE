@@ -131,7 +131,7 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 26)
+        #expect(WireEnvelope.currentVersion == 27)
     }
 
     @Test("A team-up seats the invited friend beside the host")
@@ -164,6 +164,17 @@ struct DoublesTests {
         #expect(OnlineSeating.seatingAfterHold(seating: teamUp, dropped: ["G:2"]) == ["G:1": .cyan])
         let four: [String: Seat] = ["G:1": .cyan, "G:2": .cyanWing, "G:3": .orange, "G:4": .orangeWing]
         #expect(OnlineSeating.seatingAfterHold(seating: four, dropped: ["G:3"])?.count == 3)
+    }
+
+    @Test("The host's bot in a dropped teammate's chair is the same game, not a new one")
+    func hostsBenchingIsRecognised() {
+        let three: [String: Seat] = ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing]
+        let benched: [String: Seat] = ["G:1": .cyan, "G:2": .orange]
+        #expect(OnlineSeating.benchesDropped(["G:3"], seating: three, plan: benched))
+        // Nobody dropped here: the same plan is a new game.
+        #expect(!OnlineSeating.benchesDropped([], seating: three, plan: benched))
+        // A plan that also moves somebody is a new game.
+        #expect(!OnlineSeating.benchesDropped(["G:3"], seating: three, plan: ["G:1": .orange, "G:2": .cyan]))
     }
 
     @Test("The last human on a side walking out is still a forfeit")

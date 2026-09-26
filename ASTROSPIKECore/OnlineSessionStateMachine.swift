@@ -169,6 +169,20 @@ public enum OnlineSeating {
         return bereft.isSubset(of: manned) ? staying : nil
     }
 
+    /// Whether a plan from whoever runs the rules is them handing the chairs
+    /// of pilots whose hold ran out to bots -- the same thing this board's
+    /// own hold clock will do -- rather than a new game. The two clocks
+    /// started when each board heard of the drop, so the host's can run out
+    /// first; taking its plan for a new game left this board's hold running,
+    /// and when it ran out there was nobody left to bench and it forfeited.
+    public static func benchesDropped(
+        _ dropped: Set<String>,
+        seating: [String: Seat],
+        plan: [String: Seat]
+    ) -> Bool {
+        !dropped.isEmpty && plan == seatingAfterHold(seating: seating, dropped: dropped)
+    }
+
     /// Whether the host should seat the table now.
     ///
     /// Game Center's `expectedPlayerCount` is the only word we get on who is

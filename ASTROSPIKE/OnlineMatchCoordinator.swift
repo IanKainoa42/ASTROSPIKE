@@ -630,8 +630,9 @@ final class OnlineMatchCoordinator: NSObject,
     }
 
     /// Asks several pilots at once and keeps the table going. The first to
-    /// connect duels the host at once; everyone after lands on the bench,
-    /// watches, and plays the winner. See `OpenTable`.
+    /// connect duels the host at once; everyone after watches the game in
+    /// progress and flies the next, two against one and a bot with three.
+    /// See `OpenTable`.
     func openTable(inviting players: [GKPlayer]) {
         startMatchmaking(
             recipients: Array(players.prefix(OpenTable.maxInvitees)),
@@ -687,7 +688,7 @@ final class OnlineMatchCoordinator: NSObject,
         return invitees.filter { !openTable.contains($0.gamePlayerID) }
     }
 
-    private static let openTableInviteMessage = "Open table in ASTROSPIKE · winner stays on"
+    private static let openTableInviteMessage = "Open table in ASTROSPIKE · everyone flies"
 
     /// A pilot's Game Center name, for the table's bench and standings.
     func pilotName(_ playerID: String) -> String {
@@ -1452,6 +1453,14 @@ final class OnlineMatchCoordinator: NSObject,
             // leaves us out is not for us.
             let fromTableHost = openTable?.hostID == playerID
             guard seated || fromTableHost else { return }
+            // Whoever runs the rules got to the end of a hold first and put a
+            // bot in the dropped pilot's chair. This board's clock would do
+            // the same any moment: do it now, and the game plays on.
+            if lifecycle.phase == .reconnecting, runsTheRules(playerID),
+               OnlineSeating.benchesDropped(droppedPilots, seating: seating, plan: plan) {
+                benchDroppedPilots(keeping: plan)
+                return
+            }
             // A fresh plan: the table being set, the next duel after an
             // intermission, or a new duel for a board that is watching.
             //
@@ -1627,7 +1636,11 @@ final class OnlineMatchCoordinator: NSObject,
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled else { return }
                 if remaining == 0 {
-                    if let benched = OnlineSeating.seatingAfterHold(seating: self.seating, dropped: self.droppedPilots) {
+                    // A table's host never hands a chair to a bot: nobody
+                    // else can seat the next game, so the table is over.
+                    let tableHostGone = self.openTable.map { self.droppedPilots.contains($0.hostID) } ?? false
+                    if !tableHostGone,
+                       let benched = OnlineSeating.seatingAfterHold(seating: self.seating, dropped: self.droppedPilots) {
                         self.benchDroppedPilots(keeping: benched)
                         return
                     }
@@ -1658,6 +1671,11 @@ final class OnlineMatchCoordinator: NSObject,
     private func benchDroppedPilots(keeping staying: [String: Seat]) {
         let names = droppedPilots.map { seatedPilotNames[$0] ?? "PILOT" }.joined(separator: ", ")
         note("SEAT HOLD EXPIRED · BOT TAKES \(names)'S CHAIR")
+        if isTableHost {
+            // They leave the line as well as the court.
+            for id in droppedPilots { openTable?.depart(id) }
+            broadcastTable()
+        }
         seating = staying
         let localID = GKLocalPlayer.local.gamePlayerID
         let peers = staying.keys.filter { $0 != localID }
@@ -1941,8 +1959,7 @@ final class OnlineMatchCoordinator: NSObject,
         hostTuning = preferredTuning
         isAuthoritative = true
         teamUp = false
-        let court = table.court.map { pilotName($0).uppercased() }.joined(separator: " V ")
-        note("OPEN TABLE: \(court) · \(table.queue.count) ON THE BENCH")
+        note("OPEN TABLE: \(courtLine(table)) · \(table.queue.count) ON THE BENCH")
         startConfiguredMatch()
         beginTableHandshake()
     }
@@ -1999,7 +2016,6 @@ final class OnlineMatchCoordinator: NSObject,
     /// and every other board waits for its plan -- or, if it never comes,
     /// calls the table closed.
     private func beginIntermission(winner: Team?) {
-        let winnerID = winner.flatMap { team in seating.first { $0.value == Seat.lead(team) }?.key }
         lifecycle.beginIntermission()
         isMatchReady = false
         withdrawCallbacks()
@@ -2018,10 +2034,13 @@ final class OnlineMatchCoordinator: NSObject,
         if status != .connected { status = .connected }
         let hosting = isTableHost
         if hosting, var table = openTable {
-            table.finishDuel(winnerID: winnerID)
+            let winners = winner.map { team in
+                table.side(team).map { pilotName($0).uppercased() }.joined(separator: " + ")
+            }
+            table.finishDuel(winner: winner)
             openTable = table
             broadcastTable()
-            note("DUEL \(table.duelsPlayed) OVER · \(winnerID.map { pilotName($0).uppercased() } ?? "NOBODY") STAYS ON")
+            note("GAME \(table.duelsPlayed) OVER · \(winners ?? "NOBODY") WON")
         } else {
             note("DUEL OVER · WAITING FOR THE HOST TO SEAT THE NEXT")
         }
@@ -2067,8 +2086,7 @@ final class OnlineMatchCoordinator: NSObject,
         hostTuning = preferredTuning
         isAuthoritative = true
         teamUp = false
-        let court = table.court.map { pilotName($0).uppercased() }.joined(separator: " V ")
-        note("DUEL \(table.duelsPlayed + 1): \(court) · \(table.queue.count) ON THE BENCH")
+        note("GAME \(table.duelsPlayed + 1): \(courtLine(table)) · \(table.queue.count) ON THE BENCH")
         startConfiguredMatch()
     }
 
@@ -2090,6 +2108,11 @@ final class OnlineMatchCoordinator: NSObject,
         }
         beginIntermission(winner: winner)
         return true
+    }
+
+    /// The game on the court, by name: IAN + JO V MAYA + BOT.
+    private func courtLine(_ table: OpenTable) -> String {
+        OpenTable.matchup(of: table.seats) { pilotName($0).uppercased() }
     }
 
     private func cancelIntermission() {

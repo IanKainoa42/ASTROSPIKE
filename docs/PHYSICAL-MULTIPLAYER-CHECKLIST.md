@@ -54,12 +54,13 @@ host A and pilots B, C, D.
 - [ ] Accept on B only. Confirm the duel A v B starts at once, without waiting for C or D to answer.
 - [ ] Accept on C mid-duel. Confirm C goes straight into the arena with no touch controls, the yellow `WATCHING · YOU'RE NEXT UP` banner, and both pilots' names on the scoreboard, and that the duel on A and B does not pause or stutter.
 - [ ] Confirm A and B each show `OPEN TABLE · 1 WAITING` under the side badges.
-- [ ] Finish the duel. On all three, confirm the results card shows `NEXT · … · 10s` counting down, and the wins tally, with no `BACK TO MENU`.
-- [ ] Confirm the winner keeps their colour and C takes the loser's chair when the count runs out, and that the loser now watches with `YOU'RE NEXT UP`.
-- [ ] If A lost, confirm A watches (no controls) while the duel B v C still plays and scores normally on every board.
-- [ ] On A's results card, tap `INVITE MORE`, pick D, and confirm D lands at the back of the bench (`#2 IN LINE` if two are waiting).
-- [ ] Leave the table from a bench device. Confirm nothing pauses and everyone behind them moves up a place.
+- [ ] Finish the duel. On all three, confirm the results card shows `NEXT · A + C V B + BOT · 10s` counting down, and the wins tally, with no `BACK TO MENU`.
+- [ ] When the count runs out, confirm all three fly at once on the doubles court: A and C together against B and a bot, with `A + C` and `B + BOT` on the scoreboard, and nobody watching.
+- [ ] Finish that game. Confirm both winners gain a win, and the next game pairs the pilots differently so somebody new flies beside the bot (after three games each of A, B and C has had a turn with it).
+- [ ] On A's results card, tap `INVITE MORE`, pick D, and confirm D watches the game in progress, then takes the bot's chair for a two-a-side game with nobody on the bench.
+- [ ] With five or more at the table, confirm the winning side stays on and both losers go to the back of the bench. Leave the table from a bench device. Confirm nothing pauses and everyone behind them moves up a place.
 - [ ] Lock the phone of a pilot who is flying, with somebody on the bench. Confirm the seat hold counts from 30 seconds, not 120, then awards the duel and seats the next pilot.
+- [ ] In a three-pilot game, lock the phone of the host's partner past the hold. Confirm a bot takes their chair, the game plays on, and they are gone from the table afterwards.
 - [ ] Close the table on A. Confirm every other device shows `A CLOSED THE TABLE`.
 
 ## Waiting, timeouts, and the link log

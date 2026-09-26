@@ -6,9 +6,12 @@ import Foundation
 //
 // The host sends one round of invitations to several pilots. The first to
 // connect kicks off a duel with the host straight away -- nobody waits on the
-// slowest phone. Everyone who turns up after that takes a place on the bench,
-// watches the duel in progress, and waits their turn. When a duel ends the
-// winner stays on, the loser goes to the back of the line, and whoever has
+// slowest phone. Everyone who turns up after that takes a place on the bench
+// and watches the game in progress. When it ends, everybody who fits on the
+// court flies the next one: three pilots are two against one and a bot, four
+// are two a side, and partners change every game so each pilot takes a turn
+// on the short-handed side. Only past four does anyone sit out: the winning
+// side stays on, the losers go to the back of the line, and whoever has
 // waited longest flies next, until the host closes the table.
 //
 // This file is the arithmetic: who is on the court, who is next, and who has
@@ -21,6 +24,12 @@ public struct OpenTable: Codable, Equatable, Sendable {
     public static let maxPilots = 6
     /// How many pilots one open table can ask at once.
     public static var maxInvitees: Int { maxPilots - 1 }
+    /// Chairs on the court: two a side.
+    public static let courtSeats = 4
+    /// The order chairs are filled in: one across the net first, so two
+    /// pilots duel, then the wings, so a third makes it two against one and
+    /// a bot on the empty wing.
+    public static let seatOrder = OnlineSeating.order(teamUp: false)
     /// How long the results card stays up before the next duel is seated.
     public static let intermissionSeconds = 10
     /// How long a board between duels waits past the intermission for the
@@ -33,10 +42,13 @@ public struct OpenTable: Codable, Equatable, Sendable {
     /// Game Center `gamePlayerID` of the pilot who opened the table. Only
     /// they seat duels and only their broadcast is believed.
     public let hostID: String
-    /// Who flies cyan and orange in the duel in progress, or the next one.
-    /// Empty between a pilot leaving and the next duel being seated.
+    /// Who flies each chair in the game in progress, or the next one.
+    /// Empty between a pilot leaving and the next game being seated; the
+    /// wings are empty in a duel, and one of them is a bot with three.
     public private(set) var cyan: String?
     public private(set) var orange: String?
+    public private(set) var cyanWing: String?
+    public private(set) var orangeWing: String?
     /// The bench, next up first.
     public private(set) var queue: [String]
     /// Duels won at this table, by player ID.
@@ -56,12 +68,42 @@ public struct OpenTable: Codable, Equatable, Sendable {
         duelsPlayed = 0
     }
 
-    /// The pilots on the court, cyan first.
-    public var court: [String] { [cyan, orange].compactMap { $0 } }
+    /// Who sits in one chair.
+    public func pilot(in seat: Seat) -> String? {
+        switch seat {
+        case .cyan: cyan
+        case .orange: orange
+        case .cyanWing: cyanWing
+        case .orangeWing: orangeWing
+        }
+    }
+
+    private mutating func seat(_ playerID: String?, in seat: Seat) {
+        switch seat {
+        case .cyan: cyan = playerID
+        case .orange: orange = playerID
+        case .cyanWing: cyanWing = playerID
+        case .orangeWing: orangeWing = playerID
+        }
+    }
+
+    /// Every filled chair.
+    public var seats: [Seat: String] {
+        var seats: [Seat: String] = [:]
+        for seat in Self.seatOrder { seats[seat] = pilot(in: seat) }
+        return seats
+    }
+
+    /// The pilots on the court, in the order their chairs are filled.
+    public var court: [String] { Self.seatOrder.compactMap { pilot(in: $0) } }
+    /// One side's pilots, lead first.
+    public func side(_ team: Team) -> [String] {
+        [Seat.lead(team), Seat.wing(team)].compactMap { pilot(in: $0) }
+    }
     /// Everyone at the table: the court, then the bench in order.
     public var pilots: [String] { court + queue }
     public var isFull: Bool { pilots.count >= Self.maxPilots }
-    /// Both chairs have a pilot in them.
+    /// Somebody is on each side of the net.
     public var isReady: Bool { cyan != nil && orange != nil }
 
     public func contains(_ playerID: String) -> Bool { pilots.contains(playerID) }
@@ -73,19 +115,30 @@ public struct OpenTable: Codable, Equatable, Sendable {
         queue.firstIndex(of: playerID).map { $0 + 1 }
     }
 
-    /// The host's seating plan for the duel on the court.
+    /// The host's seating plan for the game on the court. More than two
+    /// pilots in it is doubles, and the host flies a bot in any empty chair.
     public var plan: [String: Seat] {
         var plan: [String: Seat] = [:]
-        if let cyan { plan[cyan] = .cyan }
-        if let orange { plan[orange] = .orange }
+        for (seat, id) in seats { plan[id] = seat }
         return plan
     }
 
-    /// Who flies the next duel if it were seated now: whoever keeps their
-    /// chair, then the head of the bench into any empty one.
-    public var nextDuel: [String] {
-        var bench = queue[...]
-        return [cyan, orange].compactMap { $0 ?? bench.popFirst() }
+    /// The chairs of the next game if it were seated now, or nil while the
+    /// table is waiting on a challenger.
+    public var nextCourt: [Seat: String]? {
+        var next = self
+        return next.seatNextDuel() ? next.seats : nil
+    }
+
+    /// A game as the scoreboard says it: IAN + JO V MAYA + BOT. A side with
+    /// one pilot on a doubles court has a bot beside them.
+    public static func matchup(of seats: [Seat: String], name: (String) -> String) -> String {
+        let doubles = seats.count > 2
+        return [Team.cyan, .orange].map { team in
+            var side = [Seat.lead(team), Seat.wing(team)].compactMap { seats[$0] }.map(name)
+            if doubles, side.count == 1 { side.append("BOT") }
+            return side.joined(separator: " + ")
+        }.joined(separator: " V ")
     }
 
     /// A pilot sat down at the table. They join the back of the bench; the
@@ -102,38 +155,71 @@ public struct OpenTable: Codable, Equatable, Sendable {
     /// on the board: the night still happened.
     public mutating func depart(_ playerID: String) {
         queue.removeAll { $0 == playerID }
-        if cyan == playerID { cyan = nil }
-        if orange == playerID { orange = nil }
+        for seat in Self.seatOrder where pilot(in: seat) == playerID {
+            self.seat(nil, in: seat)
+        }
     }
 
-    /// A duel is over. The winner keeps their chair and the loser goes to
-    /// the back of the bench. With no winner -- nobody could say who won --
-    /// both go to the back in the order they sat, so the bench moves up.
-    /// A court pilot who already left is not put back in line.
-    public mutating func finishDuel(winnerID: String?) {
+    /// A game is over, and every pilot on the winning side has a win.
+    ///
+    /// While everybody at the table fits on the court nobody sits out: the
+    /// court stays, and with three or four on it partners change, so the
+    /// pilot flying beside the bot is somebody new each game. Past that the
+    /// winning side keeps its chairs and the losers go to the back of the
+    /// bench; with no winner -- nobody could say who won -- the whole court
+    /// goes to the back in the order it sat, so the bench moves up. A court
+    /// pilot who already left is not put back in line.
+    public mutating func finishDuel(winner: Team?) {
         duelsPlayed += 1
-        if let winnerID { wins[winnerID, default: 0] += 1 }
-        for (index, seated) in [cyan, orange].enumerated() {
-            guard let seated, seated != winnerID else { continue }
-            queue.append(seated)
-            if index == 0 { cyan = nil } else { orange = nil }
+        if let winner {
+            for id in side(winner) { wins[id, default: 0] += 1 }
         }
+        if pilots.count <= Self.courtSeats {
+            rotatePartners()
+            return
+        }
+        for seat in Self.seatOrder where seat.team != winner {
+            guard let seated = pilot(in: seat) else { continue }
+            queue.append(seated)
+            self.seat(nil, in: seat)
+        }
+    }
+
+    /// The same pilots in new pairs. Three pass the chairs round one place,
+    /// so each takes the side with the bot in turn; four keep the first
+    /// chair and pass the other three, so everyone partners everyone.
+    private mutating func rotatePartners() {
+        var order = court
+        switch order.count {
+        case 3: order.append(order.removeFirst())
+        case 4: order.append(order.remove(at: 1))
+        default: return
+        }
+        for seat in Self.seatOrder { self.seat(nil, in: seat) }
+        for (seat, id) in zip(Self.seatOrder, order) { self.seat(id, in: seat) }
     }
 
     public mutating func close() {
         isClosed = true
     }
 
-    /// Fills the empty chairs from the head of the bench. True when both
-    /// chairs are filled and a duel can start. Nobody moves unless both
-    /// chairs can be filled: a pilot left alone on the court would read as
-    /// flying a duel against nobody.
+    /// Fills the empty chairs from the head of the bench, up to two a side.
+    /// True when there is somebody on each side of the net and a game can
+    /// start. Nobody moves unless it can: a pilot left alone on the court
+    /// would read as flying against nobody.
     @discardableResult
     public mutating func seatNextDuel() -> Bool {
-        let empty = [cyan, orange].filter { $0 == nil }.count
-        guard queue.count >= empty else { return false }
-        if cyan == nil { cyan = queue.removeFirst() }
-        if orange == nil { orange = queue.removeFirst() }
+        guard court.count + queue.count >= 2 else { return false }
+        for seat in Self.seatOrder where pilot(in: seat) == nil && !queue.isEmpty {
+            self.seat(queue.removeFirst(), in: seat)
+        }
+        if !isReady {
+            // Somebody left and a side is empty: sit whoever is still here
+            // back down in order, so both sides of the net have a pilot.
+            let order = court
+            for seat in Self.seatOrder { self.seat(nil, in: seat) }
+            for (seat, id) in zip(Self.seatOrder, order) { self.seat(id, in: seat) }
+        }
         return true
     }
 
