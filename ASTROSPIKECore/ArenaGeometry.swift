@@ -168,6 +168,11 @@ public struct ArenaGeometry: Equatable, Sendable {
     public var netTopY: Double
     /// The rim, when there is one. Only read when `netStyle` is `.none`.
     public var hoop: HoopGeometry?
+    /// Walls, cuts and pegs the layout adds to the court. Empty on the
+    /// standard court, which is therefore untouched by any of it.
+    public var obstacles: [ArenaObstacle] = []
+    /// Which layout `obstacles` came from, for the board to name.
+    public var layout: ArenaLayout = .standard
 
     public init(
         halfWidth: Double = 0.96,

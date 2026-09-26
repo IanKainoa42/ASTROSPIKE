@@ -527,6 +527,15 @@ public struct AIController: InputSource, Sendable {
                     grip(hump.normal, from: incoming)
                 }
             }
+            if let obstacle = arena.obstacleContact(from: previous, to: position, radius: radius) {
+                position = obstacle.position
+                let inward = simd_dot(velocity, obstacle.normal)
+                if inward < 0 {
+                    let incoming = velocity
+                    velocity -= obstacle.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                    grip(obstacle.normal, from: incoming)
+                }
+            }
             // Whatever stands in the middle of this court -- and only that.
             // Rolling the ball through the wrong one is how a bot ends up
             // playing around a barrier that is not there.

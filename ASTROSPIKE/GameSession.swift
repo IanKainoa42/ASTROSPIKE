@@ -190,8 +190,7 @@ final class GameSession {
         let isDoubles = roster == Seat.doubles
         self.isDoubles = isDoubles
         let configuration = isDoubles ? SimulationConfiguration.doubles(from: configuration) : configuration
-        let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
-            : mode.court(ballRadius: configuration.ballRadius)
+        let court = Self.court(for: configuration, mode: mode, isDoubles: isDoubles)
         initialEngine.updateConfiguration(configuration)
         // The court goes on before the roster: the opening ball is staged as
         // part of seating, and it is staged into this arena.
@@ -299,7 +298,21 @@ final class GameSession {
     private var court: ArenaGeometry { court(for: engine.configuration) }
 
     private func court(for configuration: SimulationConfiguration) -> ArenaGeometry {
-        isDoubles ? .doubles(ballRadius: configuration.ballRadius) : mode.court(ballRadius: configuration.ballRadius)
+        Self.court(for: configuration, mode: mode, isDoubles: isDoubles)
+    }
+
+    /// The one place a table's court is cut: doubles or duel, for this ball,
+    /// with the chosen layout's walls built in. Only the portal court takes a
+    /// layout; the parked volleyball and hoop courts stay as they were.
+    private static func court(
+        for configuration: SimulationConfiguration,
+        mode: GameMode,
+        isDoubles: Bool
+    ) -> ArenaGeometry {
+        let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
+            : mode.court(ballRadius: configuration.ballRadius)
+        guard court.netStyle == .roofPortal else { return court }
+        return court.laidOut(configuration.arenaLayout)
     }
 
     /// The pilot's sliders, as this table plays them: doubles fixes the

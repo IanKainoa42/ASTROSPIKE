@@ -56,6 +56,14 @@ struct AppRootView: View {
         if arguments.contains("--arrange-pads") {
             UserDefaults.standard.set(true, forKey: "arrangePads")
         }
+        // `--arena diamond` picks the court the way the Settings picker does,
+        // so each layout can be screenshotted without working the sheet.
+        if let flag = arguments.firstIndex(of: "--arena"), arguments.indices.contains(flag + 1),
+           let layout = ArenaLayout(rawValue: arguments[flag + 1]) {
+            let store = FlightTuningStore()
+            store.arenaLayout = layout
+            _tuning = State(initialValue: store)
+        }
         let warmupMode = arguments.contains("--warmup")
         _resultsPreviewWinner = State(
             initialValue: arguments.contains("--results-win") ? .cyan
@@ -1600,7 +1608,13 @@ private struct SettingsView: View {
                         Text("Best of 5").tag(3)
                     }
                     .accessibilityIdentifier("match-length")
-                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length applies to solo matches and to any online match you host.")
+                    Picker("Arena", selection: $tuning.arenaLayout) {
+                        ForEach(ArenaLayout.allCases, id: \.self) { layout in
+                            Text(layout.title).tag(layout)
+                        }
+                    }
+                    .accessibilityIdentifier("arena-layout")
+                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length and arena apply to solo and doubles matches and to any online match you host.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

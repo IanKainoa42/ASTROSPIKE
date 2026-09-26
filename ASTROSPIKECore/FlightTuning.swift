@@ -23,6 +23,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// default stays at 1 because a bare rule state is a single set by
     /// construction, not a match anybody plays.
     public var setsToWin: Int
+    /// The court. The host's choice, like the match length.
+    public var arenaLayout: ArenaLayout = .standard
 
     /// The one baseline every mode flies. The online preset and the warm-up
     /// bay are built from these same numbers, so a quick game against a bot
@@ -43,7 +45,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     )
 
     public var configuration: SimulationConfiguration {
-        SimulationConfiguration(
+        var configuration = SimulationConfiguration(
             gravity: .init(0, -gravityMagnitude),
             initialThrustAcceleration: thrustAcceleration,
             maximumThrustAcceleration: thrustAcceleration,
@@ -55,6 +57,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
             allowedFloorBounces: allowedBouncesPerHit,
             tractorStrength: tractorStrength
         )
+        configuration.arenaLayout = arenaLayout
+        return configuration
     }
 }
 
@@ -83,6 +87,9 @@ public final class FlightTuningStore {
     public var setsToWin: Int {
         didSet { defaults.set(setsToWin, forKey: Keys.setsToWin) }
     }
+    public var arenaLayout: ArenaLayout {
+        didSet { defaults.set(arenaLayout.rawValue, forKey: Keys.arenaLayout) }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -103,6 +110,7 @@ public final class FlightTuningStore {
             range: 1 ... 5
         )
         setsToWin = Self.load(defaults, key: Keys.setsToWin, fallback: baked.setsToWin, range: 1 ... 3)
+        arenaLayout = defaults.string(forKey: Keys.arenaLayout).flatMap(ArenaLayout.init(rawValue:)) ?? baked.arenaLayout
     }
 
     public var snapshot: FlightTuningSnapshot {
@@ -116,7 +124,8 @@ public final class FlightTuningStore {
             ballDropSpeed: ballDropSpeed,
             tractorStrength: tractorStrength,
             allowedBouncesPerHit: allowedBouncesPerHit,
-            setsToWin: setsToWin
+            setsToWin: setsToWin,
+            arenaLayout: arenaLayout
         )
     }
 
@@ -134,6 +143,7 @@ public final class FlightTuningStore {
         tractorStrength = baked.tractorStrength
         allowedBouncesPerHit = baked.allowedBouncesPerHit
         setsToWin = baked.setsToWin
+        arenaLayout = baked.arenaLayout
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
 
@@ -159,6 +169,7 @@ public final class FlightTuningStore {
         static let allowedBouncesPerHit = "tuning.allowedBouncesPerHit"
         static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
         static let setsToWin = "tuning.setsToWin"
+        static let arenaLayout = "tuning.arenaLayout"
         /// Keys earlier builds wrote from sliders that no longer exist. The
         /// touch cap went in build 94: touches are free now, so a stepper
         /// value from before would set a rule that no longer exists.
@@ -176,6 +187,7 @@ public final class FlightTuningStore {
         static let all = retired + [
             allowedBouncesPerHit,
             setsToWin,
+            arenaLayout,
         ]
     }
 }

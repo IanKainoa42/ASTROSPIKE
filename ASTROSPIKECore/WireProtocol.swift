@@ -99,7 +99,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     drops that ball straight back in instead of re-serving both, and
     //     the doubles goal is cut to its small ball. A build 102 host would
     //     stop the rally the new guest expects to keep flying.
-    public static let currentVersion: UInt16 = 28
+    // 29: the host's tuning carries the arena layout, and the engine
+    //     collides against the layout's walls and pegs. A build 103 guest
+    //     would fly an open court through the host's obstacles.
+    public static let currentVersion: UInt16 = 29
 
     public var version: UInt16
     public var sequence: UInt64

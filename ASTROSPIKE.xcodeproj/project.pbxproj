@@ -31,6 +31,7 @@
 		44C4C481489A9951E0515F09 /* tractorHum.wav in Resources */ = {isa = PBXBuildFile; fileRef = 84352B3F6DCACAAA90DCD3BF /* tractorHum.wav */; };
 		4531AFF3E344E822E5BBEEDE /* Soundscape.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85F7067A0FF1B4269F53702 /* Soundscape.swift */; };
 		480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */; };
+		48720106053A8B5076C1A1F6 /* ArenaLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4719289BA07891CDC9CFD53 /* ArenaLayoutTests.swift */; };
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		4ABE3DC27EA7E0AA4E79BA2D /* ASTROSPIKECore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		4CEC3317A8917605AAC45A0C /* PlayerNetworkCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CB16356936325F802C04C97 /* PlayerNetworkCopyTests.swift */; };
@@ -62,6 +63,7 @@
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
 		A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D871F54459735F6332B8CFC /* StandingInviteTests.swift */; };
+		A12CC34BF17A32569673F600 /* ArenaLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9889197C7F993ABB89039F0E /* ArenaLayout.swift */; };
 		A61FACE961EBBD01FCDED5CD /* LinkLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E28FE156CD107D158B232 /* LinkLogView.swift */; };
 		A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */; };
 		A8A27D1780F192AA000EECBC /* TrackSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */; };
@@ -224,6 +226,7 @@
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
 		9739AF060E01614EDB007C1C /* LegalLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalLinks.swift; sourceTree = "<group>"; };
+		9889197C7F993ABB89039F0E /* ArenaLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaLayout.swift; sourceTree = "<group>"; };
 		998E28FE156CD107D158B232 /* LinkLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkLogView.swift; sourceTree = "<group>"; };
 		9A61EBE7A32C3AF4322C50CE /* OpenTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTable.swift; sourceTree = "<group>"; };
 		9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRulesTests.swift; sourceTree = "<group>"; };
@@ -234,6 +237,7 @@
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
 		AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B2AF5602E676640836669183 /* StandingInvite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandingInvite.swift; sourceTree = "<group>"; };
+		B4719289BA07891CDC9CFD53 /* ArenaLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaLayoutTests.swift; sourceTree = "<group>"; };
 		B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioCenter.swift; sourceTree = "<group>"; };
 		BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideCyan.mp3; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
@@ -298,6 +302,7 @@
 			children = (
 				A3A9B354B5E4A268F1331755 /* AIController.swift */,
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
+				9889197C7F993ABB89039F0E /* ArenaLayout.swift */,
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				D2E0D253FE310DD9B613C53A /* GuestPrediction.swift */,
 				A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */,
@@ -393,6 +398,7 @@
 			isa = PBXGroup;
 			children = (
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
+				B4719289BA07891CDC9CFD53 /* ArenaLayoutTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
 				1718C582551AF16144D011A9 /* BallContactTests.swift */,
 				3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */,
@@ -586,6 +592,7 @@
 			files = (
 				EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */,
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
+				A12CC34BF17A32569673F600 /* ArenaLayout.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				BBAB0DC9D3E3338A97BB6A15 /* GuestPrediction.swift in Sources */,
 				A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */,
@@ -645,6 +652,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
+				48720106053A8B5076C1A1F6 /* ArenaLayoutTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
 				F9182CDFF749B4D8C21C8CCA /* BallContactTests.swift in Sources */,
 				BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */,
@@ -833,7 +841,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 103;
+				CURRENT_PROJECT_VERSION = 104;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -893,7 +901,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 103;
+				CURRENT_PROJECT_VERSION = 104;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

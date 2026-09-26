@@ -388,6 +388,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// How many balls are in play at once: one on every court but doubles,
     /// which flies two. Every ball shares `ballRadius`.
     public var ballCount: Int
+    /// Which court the match is played in. Rides the wire inside the host's
+    /// tuning, so a guest builds the same walls it is simulating against.
+    public var arenaLayout: ArenaLayout = .standard
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var serveDelay: Double
@@ -1263,6 +1266,9 @@ public struct SimulationEngine: Sendable {
             ) != nil || arena.hoopRimContact(
                 position: bolt.position,
                 radius: BoltState.radius
+            ) != nil || arena.obstacleContact(
+                position: bolt.position,
+                radius: BoltState.radius
             ) != nil
             if bolt.ticksRemaining == 0 || outside || struckMiddle { continue }
             survivors.append(bolt)
@@ -1423,6 +1429,26 @@ public struct SimulationEngine: Sendable {
                         intensity: abs(inwardSpeed)
                     ))
                 }
+            }
+        }
+
+        // The layout's walls and pegs are solid to hulls, the same give as
+        // the hump.
+        if let obstacle = arena.obstacleContact(
+            from: previousPosition,
+            to: ship.position,
+            radius: radius
+        ) {
+            ship.position = obstacle.position
+            let inwardSpeed = simd_dot(ship.velocity, obstacle.normal)
+            if inwardSpeed < 0 {
+                ship.velocity -= obstacle.normal * ((1 + 0.12) * inwardSpeed)
+            }
+            if inwardSpeed < -Self.effectImpactSpeed {
+                effects.append(.collisionEffect(
+                    position: ship.position,
+                    intensity: abs(inwardSpeed)
+                ))
             }
         }
 
@@ -1622,6 +1648,26 @@ public struct SimulationEngine: Sendable {
             // the floor curving up at the ends of the court.
         }
 
+        // The layout's cuts and pegs. A cut at the floor is floor, like the
+        // corner arcs; anything standing in the court is just a surface.
+        if let obstacle = arena.obstacleContact(
+            from: previousPosition,
+            to: state.balls[ballIndex].position,
+            radius: r
+        ) {
+            state.balls[ballIndex].position = obstacle.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, obstacle.normal)
+            if inwardSpeed < 0 {
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= obstacle.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                grip(obstacle.normal, from: incoming, ballIndex: ballIndex)
+            }
+            if obstacle.isGround, obstacle.normal.y > 0.5, !floorRegistered {
+                floorRegistered = true
+                contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
+            }
+        }
+
         if let corner = arena.cornerContact(position: state.balls[ballIndex].position, radius: r) {
             state.balls[ballIndex].position = corner.position
             let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, corner.normal)
@@ -1630,7 +1676,7 @@ public struct SimulationEngine: Sendable {
                 state.balls[ballIndex].velocity -= corner.normal * ((1 + Self.ballRestitution) * inwardSpeed)
                 grip(corner.normal, from: incoming, ballIndex: ballIndex)
             }
-            if corner.normal.y > 0.5 {
+            if corner.normal.y > 0.5, !floorRegistered {
                 floorRegistered = true
                 contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
             }

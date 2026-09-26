@@ -1,6 +1,7 @@
 import ASTROSPIKECore
 import SpriteKit
 import UIKit
+import simd
 
 @MainActor
 final class ArenaScene: SKScene {
@@ -374,6 +375,7 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(floorNode)
 
         if arena.hasHump { addHump() }
+        addObstacles()
         switch arena.netStyle {
         case .roofPortal: addPortalNet()
         case .floorWall: addStandingNet()
@@ -525,6 +527,66 @@ final class ArenaScene: SKScene {
         }
         path.closeSubpath()
         return path
+    }
+
+    /// The layout's cuts, ledges and pegs, drawn as the capsules the
+    /// simulation collides against: the spine stroked at the obstacle's own
+    /// radius, so a ball is seen to kiss exactly the edge it bounces off.
+    private func addObstacles() {
+        guard !arena.obstacles.isEmpty else { return }
+        // Cuts run into the walls and roof so nothing can get behind them;
+        // the court outline crops off the part buried in the wall.
+        let crop = SKCropNode()
+        // Not boundsPath(): it crosses itself at the corner tangents, so its
+        // fill leaves the middle of the court out.
+        let lowerLeft = point(-arena.halfWidth, arena.floorY)
+        let upperRight = point(arena.halfWidth, arena.ceilingY)
+        let court = CGRect(
+            x: min(lowerLeft.x, upperRight.x), y: min(lowerLeft.y, upperRight.y),
+            width: abs(upperRight.x - lowerLeft.x), height: abs(upperRight.y - lowerLeft.y)
+        )
+        let mask = SKShapeNode(path: CGPath(
+            roundedRect: court,
+            cornerWidth: abs(point(arena.halfWidth, 0).x - point(arena.cornerTangentX, 0).x),
+            cornerHeight: abs(point(0, arena.ceilingY).y - point(0, arena.ceilingY - arena.cornerRadiusY).y),
+            transform: nil
+        ))
+        mask.fillColor = .white
+        mask.strokeColor = .clear
+        crop.maskNode = mask
+        crop.zPosition = 0
+        arenaLayer.addChild(crop)
+        for obstacle in arena.obstacles {
+            // Walked in world units and mapped point by point, so a court
+            // drawn wider than it is tall still lines up with the physics.
+            let spine = obstacle.end - obstacle.start
+            let length = simd_length(spine)
+            let along = length > 1e-9 ? spine / length : SIMD2(1.0, 0)
+            let heading = atan2(along.y, along.x)
+            let outline = CGMutablePath()
+            let arc = 16
+            for (center, from) in [(obstacle.end, heading - .pi / 2), (obstacle.start, heading + .pi / 2)] {
+                for step in 0 ... arc {
+                    let theta = from + Double(step) / Double(arc) * .pi
+                    let world = center + SIMD2(cos(theta), sin(theta)) * obstacle.radius
+                    let scene = point(world.x, world.y)
+                    if outline.isEmpty { outline.move(to: scene) } else { outline.addLine(to: scene) }
+                }
+            }
+            outline.closeSubpath()
+            let fill = SKShapeNode(path: outline)
+            fill.strokeColor = .clear
+            fill.fillColor = SKColor(white: 0.16, alpha: 1)
+            fill.zPosition = -2
+            crop.addChild(fill)
+
+            let edge = SKShapeNode(path: outline)
+            edge.strokeColor = .white.withAlphaComponent(0.55)
+            edge.lineWidth = 3
+            edge.glowWidth = 1
+            edge.fillColor = .clear
+            crop.addChild(edge)
+        }
     }
 
     /// The hump the net hangs from: the corner fillet mirrored into the middle
