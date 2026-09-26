@@ -105,17 +105,6 @@ final class OnlineMatchCoordinator: NSObject,
         for player in match?.players ?? [] { names[player.gamePlayerID] = player.displayName }
         return names
     }
-    /// The latest input from every other pilot, by seat -- and only while it
-    /// is still fresh. A packet is a statement about one tick, not a standing
-    /// order: past `inputExpirySeconds` the seat goes quiet rather than
-    /// keeping a dead pilot's throttle open. Rebuilt on each read, so hoist it
-    /// out of a per-seat loop.
-    var remoteInputs: [Seat: PlayerInput] {
-        let now = Self.now
-        return inputBuffers.compactMapValues {
-            $0.current(at: now, expiringAfter: Self.inputExpirySeconds)
-        }
-    }
     /// Seats whose first packet has been noted, so the log says it once.
     private var heardSeats: Set<Seat> = []
     /// Peers whose packets carry another wire version, noted once each.
@@ -175,6 +164,15 @@ final class OnlineMatchCoordinator: NSObject,
     /// Set by the app from the pilot profile; sent with the ready handshake.
     var localHull: Hull = .lancet
     private(set) var pingMilliseconds: Int?
+    /// The round trip steadied over several pings: what a guest sets its
+    /// lead by, since one slow ping must not swing its clock.
+    private var roundTrip = RoundTripEstimator()
+    /// The round trip in simulation ticks, for the guest's clock.
+    var roundTripTicks: UInt64 { roundTrip.ticks() }
+    /// The last few inputs this board sent, resent with each new one so a
+    /// lost packet costs nothing.
+    private var sentInputs: [PlayerInput] = []
+    private static let inputRedundancy = 3
     /// Rolling on-device log of Game Center events, oldest first.
     private(set) var eventLog: [String] = []
 
@@ -857,7 +855,20 @@ final class OnlineMatchCoordinator: NSObject,
 
     func sendInput(_ input: PlayerInput) {
         guard let localSeat else { return }
-        send(.input(seat: localSeat, value: input), mode: .unreliable)
+        sentInputs.append(input)
+        if sentInputs.count > Self.inputRedundancy { sentInputs.removeFirst(sentInputs.count - Self.inputRedundancy) }
+        send(.inputs(seat: localSeat, values: sentInputs), mode: .unreliable)
+    }
+
+    /// What another pilot had under their thumb on `tick`, or their last
+    /// word -- nil once they have gone quiet: a packet is a statement about
+    /// one tick, not a standing order, so past `inputExpirySeconds` the seat
+    /// coasts rather than keeping a dead pilot's throttle open. The host flies a guest on the
+    /// input sent for the tick being played, not whatever arrived last: the
+    /// guest runs ahead so its inputs are here in time, and playing them on
+    /// their own tick is what lets its prediction match the host exactly.
+    func remoteInput(for seat: Seat, tick: UInt64) -> PlayerInput? {
+        inputBuffers[seat]?.input(forTick: tick, at: Self.now, expiringAfter: Self.inputExpirySeconds)
     }
 
     func sendSnapshot(_ state: WorldState) {
@@ -1126,8 +1137,10 @@ final class OnlineMatchCoordinator: NSObject,
         lifecycle.beginMatch()
         snapshotGate.reset()
         eventGate.reset()
-        // The last duel's inputs belong to whoever sat in those chairs.
+        // The last duel's inputs belong to whoever sat in those chairs, and
+        // every duel counts its ticks from zero.
         inputBuffers = [:]
+        sentInputs = []
         heardSeats = []
         droppedPilots = []
         pendingForfeitWinner = nil
@@ -1428,15 +1441,9 @@ final class OnlineMatchCoordinator: NSObject,
         }
         switch envelope.payload {
         case let .input(seat, value):
-            // A pilot flies the chair the plan gave them and no other. At an
-            // open table the bench shares the match with the court, and
-            // nothing it sends may steer a ship.
-            guard lifecycle.acceptsGameplayData, seat != localSeat, seating[playerID] == seat else { return }
-            var buffer = inputBuffers[seat] ?? RemoteInputBuffer()
-            if heardSeats.insert(seat).inserted {
-                note("FIRST INPUT FROM \(seat.label) AT TICK \(value.tick)")
-            }
-            if buffer.accept(value, at: Self.now) { inputBuffers[seat] = buffer }
+            acceptInputs([value], for: seat, from: playerID)
+        case let .inputs(seat, values):
+            acceptInputs(values, for: seat, from: playerID)
         case let .seating(plan, tuning, teamUp):
             guard lifecycle.acceptsNetworkMessages else { return }
             let seated = plan[GKLocalPlayer.local.gamePlayerID] != nil
@@ -1572,6 +1579,7 @@ final class OnlineMatchCoordinator: NSObject,
                 guard pendingPing == sentAt else { return }
                 let now = DispatchTime.now().uptimeNanoseconds
                 pingMilliseconds = Int((now - sentAt) / 1_000_000)
+                roundTrip.record(Double(now - sentAt) / 1_000_000)
                 pendingPing = nil
                 return
             }
@@ -1582,6 +1590,22 @@ final class OnlineMatchCoordinator: NSObject,
                 if let onResync { onResync(state) } else { pendingResync = state }
             }
         }
+    }
+
+    /// A pilot's inputs, one or a batch. A pilot flies the chair the plan
+    /// gave them and no other: at an open table the bench shares the match
+    /// with the court, and nothing it sends may steer a ship.
+    private func acceptInputs(_ values: [PlayerInput], for seat: Seat, from playerID: String) {
+        guard lifecycle.acceptsGameplayData, seat != localSeat, seating[playerID] == seat,
+              !values.isEmpty else { return }
+        var buffer = inputBuffers[seat] ?? RemoteInputBuffer()
+        if heardSeats.insert(seat).inserted, let first = values.first {
+            note("FIRST INPUT FROM \(seat.label) AT TICK \(first.tick)")
+        }
+        // Every one of them, not just the newest: an older input that fills
+        // a gap left by a lost packet is still the one for its tick.
+        for value in values { buffer.accept(value, at: Self.now) }
+        inputBuffers[seat] = buffer
     }
 
     /// A pilot dropped. Their chair is held for two minutes -- thirty seconds
@@ -2285,6 +2309,8 @@ final class OnlineMatchCoordinator: NSObject,
         droppedPilots = []
         teamUp = false
         pingMilliseconds = nil
+        roundTrip.reset()
+        sentInputs = []
         pendingPing = nil
         ownPings = []
         pilotHulls = [:]

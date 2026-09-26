@@ -75,10 +75,10 @@ xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
 
 - `GKMatchmakerViewController` provides automatic matching and friend invitations.
 - Hosting is role-based: the inviter hosts; an invitee never hosts; in automatch the lowest `gamePlayerID` hosts.
-- Inputs are sent unreliably every two simulation ticks (~60 Hz at 120 Hz sim).
+- Inputs are sent unreliably every two simulation ticks (~60 Hz at 120 Hz sim), each packet repeating the two before it so a lost packet costs nothing. The thumb is read on the ticks it is sent and held between them, which is exactly what the host plays.
 - Host snapshots are sent unreliably every six ticks (~20 Hz).
 - Lifecycle and scoring events are sent reliably.
-- Guests predict their local ship and reconcile by blend-or-snap against host snapshots.
+- Guests run a full round trip ahead of each snapshot (`GuestClock`), so their inputs reach the host before it plays those ticks, and the host flies every input on the tick it was sent for. On a snapshot the guest re-runs the ticks since with the inputs it really sent (`GuestRollForward`), so on a working link its own ship is never corrected; anything left over reconciles by blend-or-snap. `GuestPredictionTests` measures this over a simulated slow and lossy link.
 - A disconnect opens a 120-second seat-hold window. Reconnection triggers a reliable full resync; expiry finishes the match by forfeit.
 - An open table invites up to five pilots at once on one `GKMatch`. The first to connect duels the host immediately; later arrivals sit on a bench and spectate the host's snapshots. After each duel the winner stays on, the loser goes to the back of the bench, and the host seats the next duel on the same match after a ten-second intermission, until the host closes the table. The rotation lives in `OpenTable` (Core) and is broadcast whole, so every board shows the same line. With somebody on the bench the seat hold drops to 30 seconds.
 
