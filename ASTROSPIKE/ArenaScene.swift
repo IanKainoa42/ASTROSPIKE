@@ -77,8 +77,8 @@ final class ArenaScene: SKScene {
     private var plumeSeed = 0
     private var didBuild = false
     /// Each sprung peg's drawing, by obstacle index, moved every frame to
-    /// where the snapshot has the peg, and the tether back to its anchor.
-    private var bumperNodes: [Int: (body: SKNode, tether: SKShapeNode)] = [:]
+    /// where the snapshot has the peg along its track.
+    private var bumperNodes: [Int: SKNode] = [:]
     /// The ends the court was last drawn for. The teams change ends between
     /// sets, so every half-coloured mark is drawn for whoever is on that half.
     private var drawnSidesSwapped = false
@@ -167,6 +167,7 @@ final class ArenaScene: SKScene {
             beamRigs[seat] = rig
             actorLayer.addChild(rig.crop)
             actorLayer.addChild(rig.tether)
+            actorLayer.addChild(rig.edge)
         }
         configureActorNodes()
     }
@@ -183,13 +184,17 @@ final class ArenaScene: SKScene {
     private static let smokeDensity: Double = 2
 
     /// The tractor cone ahead of each nose: a gradient cropped to the cone the
-    /// engine grabs with, plus the tether drawn to a gripped ball.
+    /// engine grabs with, its outline, and the tether drawn to whatever it
+    /// has hold of. The lab's alphas ported one for one read far dimmer on a
+    /// phone than on the lab's canvas, so the fill, edge and motes are run
+    /// hotter here than the lab's numbers.
     @MainActor
     final class BeamRig {
         let crop = SKCropNode()
         let mask = SKShapeNode()
         let glow = SKSpriteNode(texture: ArenaScene.beamGradientTexture)
         let tether = SKShapeNode()
+        let edge = SKShapeNode()
         var budget = 0.0
 
         init() {
@@ -199,16 +204,22 @@ final class ArenaScene: SKScene {
             glow.color = ArenaScene.beamColor
             glow.colorBlendFactor = 1
             glow.blendMode = .add
-            glow.alpha = 0.22 * ArenaScene.beamGain
+            glow.alpha = 0.55
             crop.addChild(glow)
             crop.zPosition = 3
             crop.isHidden = true
             tether.strokeColor = ArenaScene.beamColor
-            tether.lineWidth = 2
+            tether.lineWidth = 3
             tether.glowWidth = 0
             tether.blendMode = .add
             tether.zPosition = 3.2
             tether.isHidden = true
+            edge.fillColor = .clear
+            edge.strokeColor = ArenaScene.beamColor
+            edge.lineWidth = 1.5
+            edge.blendMode = .add
+            edge.zPosition = 3.05
+            edge.isHidden = true
         }
     }
 
@@ -566,18 +577,25 @@ final class ArenaScene: SKScene {
             let holder = SKNode()
             crop.addChild(holder)
             if obstacle.isSprung {
-                let anchor = SKShapeNode(circleOfRadius: 3)
-                anchor.position = point(obstacle.start.x, obstacle.start.y)
-                anchor.fillColor = .white.withAlphaComponent(0.35)
-                anchor.strokeColor = .clear
-                anchor.zPosition = -3
-                crop.addChild(anchor)
-                let tether = SKShapeNode()
-                tether.strokeColor = .white.withAlphaComponent(0.3)
-                tether.lineWidth = 2
-                tether.zPosition = -3
-                crop.addChild(tether)
-                bumperNodes[index] = (holder, tether)
+                // The peg's track: a faint rod from one stop to the other,
+                // with a tick at each end so it reads as a rail it slides on.
+                let travel = arena.bumperTravel
+                let low = point(obstacle.start.x, obstacle.start.y - travel)
+                let high = point(obstacle.start.x, obstacle.start.y + travel)
+                let rail = CGMutablePath()
+                rail.move(to: low)
+                rail.addLine(to: high)
+                for end in [low, high] {
+                    rail.move(to: CGPoint(x: end.x - 7, y: end.y))
+                    rail.addLine(to: CGPoint(x: end.x + 7, y: end.y))
+                }
+                let track = SKShapeNode(path: rail)
+                track.strokeColor = .white.withAlphaComponent(0.32)
+                track.lineWidth = 3
+                track.lineCap = .round
+                track.zPosition = -3
+                crop.addChild(track)
+                bumperNodes[index] = holder
             }
             // Walked in world units and mapped point by point, so a court
             // drawn wider than it is tall still lines up with the physics.
@@ -854,18 +872,14 @@ final class ArenaScene: SKScene {
             didBuild = false
         }
         if !didBuild { buildArena() }
-        for (index, nodes) in bumperNodes where index < snapshot.bumpers.count && index < arena.obstacles.count {
+        for (index, holder) in bumperNodes where index < snapshot.bumpers.count && index < arena.obstacles.count {
             // Through `point` at both ends, not one scale: the court is drawn
             // wider than it is tall.
             let anchor = arena.obstacles[index].start
             let moved = anchor + snapshot.bumpers[index].offset
             let from = point(anchor.x, anchor.y)
             let to = point(moved.x, moved.y)
-            nodes.body.position = CGPoint(x: to.x - from.x, y: to.y - from.y)
-            let line = CGMutablePath()
-            line.move(to: from)
-            line.addLine(to: to)
-            nodes.tether.path = line
+            holder.position = CGPoint(x: to.x - from.x, y: to.y - from.y)
         }
         // The effects below run on wall time, not ticks: there is no update
         // loop, so each drawn snapshot is one frame, and a paused match that
@@ -1445,6 +1459,7 @@ final class ArenaScene: SKScene {
         guard state.tractorActive, !state.isDestroyed, let snapshot else {
             rig.crop.isHidden = true
             rig.tether.isHidden = true
+            rig.edge.isHidden = true
             beamPulls[seat] = nil
             return
         }
@@ -1466,6 +1481,8 @@ final class ArenaScene: SKScene {
         path.closeSubpath()
         rig.mask.path = path
         rig.crop.isHidden = false
+        rig.edge.path = path
+        rig.edge.isHidden = false
         let tipPoint = point(tip.x, tip.y)
         let reach = point(tip.x + range * 1.08, tip.y + range * 1.08)
         rig.glow.position = tipPoint
@@ -1483,6 +1500,21 @@ final class ArenaScene: SKScene {
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
             if hold > grip { grip = hold; held = index }
         }
+        // A Bumpers peg in the cone is hauled along its track, graded the
+        // same way; the tether goes to whichever the beam holds hardest.
+        var heldPeg: SIMD2<Double>?
+        for (index, obstacle) in arena.obstacles.enumerated()
+        where obstacle.isSprung && index < snapshot.bumpers.count {
+            let peg = obstacle.start + snapshot.bumpers[index].offset
+            let offset = peg - tip
+            let distance = simd_length(offset)
+            guard distance > 0, distance < range else { continue }
+            let along = simd_dot(offset / distance, heading)
+            guard along > cone else { continue }
+            let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
+            if hold > grip { grip = hold; held = nil; heldPeg = peg }
+        }
+        rig.edge.alpha = 0.35 + 0.4 * CGFloat(grip)
         beamPulls[seat] = BeamPull(grip: grip, x: tip.x)
         let centre = tip + heading * (range * 0.5)
         lights.append(FloorLight(
@@ -1492,9 +1524,10 @@ final class ArenaScene: SKScene {
             intensity: 0.35 + 0.5 * CGFloat(grip)
         ))
 
-        if let held, grip > 0 {
-            ballGrips[held] = max(ballGrips[held], grip)
-            let ball = snapshot.balls[held].position
+        let target: SIMD2<Double>? = held.map { snapshot.balls[$0].position } ?? heldPeg
+        if let target, grip > 0 {
+            if let held { ballGrips[held] = max(ballGrips[held], grip) }
+            let ball = target
             let ahead = point(tip.x + heading.x, tip.y + heading.y)
             let span = hypot(ahead.x - tipPoint.x, ahead.y - tipPoint.y)
             let from = CGPoint(
@@ -1511,7 +1544,7 @@ final class ArenaScene: SKScene {
                 y: (from.y + to.y) / 2 + CGFloat(cos(now * 7)) * wobble
             ))
             rig.tether.path = tether
-            rig.tether.alpha = 0.45 * CGFloat(grip) * gain
+            rig.tether.alpha = min(1, 0.3 + 0.6 * CGFloat(grip) * gain)
             rig.tether.isHidden = false
         } else {
             rig.tether.isHidden = true
@@ -1521,7 +1554,7 @@ final class ArenaScene: SKScene {
         // Motes pour in from the far part of the cone toward the nose,
         // carried along with the ship.
         let pointsPerUnit = pointsPerWorldUnit
-        rig.budget += dt * 120
+        rig.budget += dt * 180
         while rig.budget >= 1 {
             rig.budget -= 1
             let angle = nose + .random(in: -halfAngle ... halfAngle)
@@ -1534,14 +1567,14 @@ final class ArenaScene: SKScene {
                 x: tipPoint.x + CGFloat(state.velocity.x) * pointsPerUnit * CGFloat(life),
                 y: tipPoint.y + CGFloat(state.velocity.y) * pointsPerUnit * CGFloat(life)
             )
-            let size = CGFloat.random(in: 5 ... 9) * fx
+            let size = CGFloat.random(in: 6 ... 11) * max(fx, 1)
             flash(
                 at: start,
                 color: Double.random(in: 0 ... 1) < 0.2 ? .white : Self.beamColor,
                 size: size,
                 grow: 0.2,
                 life: life,
-                alpha: 0.5 * gain,
+                alpha: min(1, 0.6 * gain),
                 z: 3.1,
                 destination: end
             )
@@ -1656,7 +1689,7 @@ final class ArenaScene: SKScene {
     /// Smoke keeps more body further out than a light does.
     private static let smokeTexture = radialTexture(stops: [(0, 0.9), (0.55, 0.45), (1, 0)])
     /// The beam's cone fill: full at the nose, a seventh of that at the rim.
-    private static let beamGradientTexture = radialTexture(stops: [(0, 1), (1, 0.03 / 0.22)], clipOutside: true)
+    private static let beamGradientTexture = radialTexture(stops: [(0, 1), (1, 0.3)], clipOutside: true)
 
     private static func radialTexture(stops: [(CGFloat, CGFloat)], clipOutside: Bool = false) -> SKTexture {
         let side: CGFloat = 64

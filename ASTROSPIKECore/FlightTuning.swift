@@ -25,6 +25,10 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public var setsToWin: Int
     /// The court. The host's choice, like the match length.
     public var arenaLayout: ArenaLayout = .standard
+    /// How hard the beam hauls a Bumpers peg along its track, times the baked
+    /// pull. A match rule, so the host's number rides the wire.
+    public var pegPull: Double = 1.0
+    public static let pegPullRange: ClosedRange<Double> = 0.25 ... 2.5
 
     /// The one baseline every mode flies. The online preset and the warm-up
     /// bay are built from these same numbers, so a quick game against a bot
@@ -58,6 +62,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
             tractorStrength: tractorStrength
         )
         configuration.arenaLayout = arenaLayout
+        configuration.pegPull = pegPull
         return configuration
     }
 }
@@ -90,6 +95,9 @@ public final class FlightTuningStore {
     public var arenaLayout: ArenaLayout {
         didSet { defaults.set(arenaLayout.rawValue, forKey: Keys.arenaLayout) }
     }
+    public var pegPull: Double {
+        didSet { defaults.set(pegPull, forKey: Keys.pegPull) }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -111,6 +119,10 @@ public final class FlightTuningStore {
         )
         setsToWin = Self.load(defaults, key: Keys.setsToWin, fallback: baked.setsToWin, range: 1 ... 3)
         arenaLayout = defaults.string(forKey: Keys.arenaLayout).flatMap(ArenaLayout.init(rawValue:)) ?? baked.arenaLayout
+        let range = FlightTuningSnapshot.pegPullRange
+        pegPull = defaults.object(forKey: Keys.pegPull) == nil
+            ? baked.pegPull
+            : min(range.upperBound, max(range.lowerBound, defaults.double(forKey: Keys.pegPull)))
     }
 
     public var snapshot: FlightTuningSnapshot {
@@ -125,7 +137,8 @@ public final class FlightTuningStore {
             tractorStrength: tractorStrength,
             allowedBouncesPerHit: allowedBouncesPerHit,
             setsToWin: setsToWin,
-            arenaLayout: arenaLayout
+            arenaLayout: arenaLayout,
+            pegPull: pegPull
         )
     }
 
@@ -144,6 +157,7 @@ public final class FlightTuningStore {
         allowedBouncesPerHit = baked.allowedBouncesPerHit
         setsToWin = baked.setsToWin
         arenaLayout = baked.arenaLayout
+        pegPull = baked.pegPull
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
 
@@ -170,6 +184,7 @@ public final class FlightTuningStore {
         static let allowedTouchesPerSide = "tuning.allowedTouchesPerSide"
         static let setsToWin = "tuning.setsToWin"
         static let arenaLayout = "tuning.arenaLayout"
+        static let pegPull = "tuning.pegPull"
         /// Keys earlier builds wrote from sliders that no longer exist. The
         /// touch cap went in build 94: touches are free now, so a stepper
         /// value from before would set a rule that no longer exists.
@@ -188,6 +203,7 @@ public final class FlightTuningStore {
             allowedBouncesPerHit,
             setsToWin,
             arenaLayout,
+            pegPull,
         ]
     }
 }

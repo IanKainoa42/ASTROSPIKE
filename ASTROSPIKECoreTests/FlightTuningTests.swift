@@ -28,9 +28,23 @@ struct FlightTuningTests {
             let first = FlightTuningStore(defaults: defaults)
             first.allowedBouncesPerHit = 4
             first.setsToWin = 3
+            first.pegPull = 1.7
 
             let restored = FlightTuningStore(defaults: defaults)
             #expect(restored.snapshot == first.snapshot)
+        }
+    }
+
+    @Test("Peg pull defaults to 1x, persists, is clamped, and reaches the engine")
+    func pegPullPersists() throws {
+        try withIsolatedDefaults { defaults in
+            #expect(FlightTuningStore(defaults: defaults).pegPull == 1)
+            FlightTuningStore(defaults: defaults).pegPull = 0.6
+            let restored = FlightTuningStore(defaults: defaults)
+            #expect(restored.pegPull == 0.6)
+            #expect(restored.configuration.pegPull == 0.6)
+            defaults.set(40.0, forKey: "tuning.pegPull")
+            #expect(FlightTuningStore(defaults: defaults).pegPull == FlightTuningSnapshot.pegPullRange.upperBound)
         }
     }
 

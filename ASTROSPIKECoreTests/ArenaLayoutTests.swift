@@ -220,93 +220,171 @@ struct ArenaLayoutTests {
         #expect(ArenaGeometry.standard.laidOut(.bumpers).obstacles.count == 4)
     }
 
-    @Test("A hull shoves a peg off its anchor, never past its travel, and it swings home and settles")
-    func shipShovesPeg() {
+    /// A Bumpers match in play, with the ball and cyan parked out of the way.
+    private static func pegCourt(pegPull: Double = 1) -> SimulationEngine {
         var engine = Self.engine(.bumpers)
+        var configuration = engine.configuration
+        configuration.pegPull = pegPull
+        engine.updateConfiguration(configuration)
         for _ in 0 ..< 600 where engine.state.match.phase != .playing { engine.step(inputs: [:]) }
-        let index = engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 && $0.start.y < 0 }!
+        engine.state.balls[0].position = SIMD2(-0.85, 0.55)
+        engine.state.balls[0].velocity = .zero
+        engine.state.ships[.cyan]?.position = SIMD2(-0.6, engine.arena.floorY + 0.1)
+        return engine
+    }
+
+    private static func lowerRightPeg(_ engine: SimulationEngine) -> Int {
+        engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 && $0.start.y < 0 }!
+    }
+
+    @Test("A hull shoves a peg along its track, never off it or past its end, and it stays where it stops")
+    func shipShovesPeg() {
+        var engine = Self.pegCourt()
+        let index = Self.lowerRightPeg(engine)
         let peg = engine.arena.obstacles[index]
         let reach = ShipHitbox.shared.reach
         let travel = engine.arena.bumperTravel
-        engine.state.ships[.orange]?.position = peg.start + SIMD2(-(reach + peg.radius + 0.01), 0)
-        engine.state.ships[.orange]?.velocity = SIMD2(1.5, 0)
-        engine.state.ships[.cyan]?.position = SIMD2(-0.6, engine.arena.floorY + 0.1)
+        // Up into it from underneath.
+        engine.state.ships[.orange]?.position = peg.start + SIMD2(0, -(reach + peg.radius + 0.01))
+        engine.state.ships[.orange]?.velocity = SIMD2(0, 1.5)
+        engine.state.ships[.orange]?.angle = .pi / 2
         var furthest = 0.0
         for _ in 0 ..< 12 {
             engine.step(inputs: [:])
-            furthest = max(furthest, simd_length(engine.state.bumpers[index].offset))
+            furthest = max(furthest, abs(engine.state.bumpers[index].offset.y))
+            #expect(engine.state.bumpers[index].offset.x == 0)
         }
-        #expect(furthest > 0.02)
-        #expect(engine.state.bumpers[index].offset.x > 0)
-        // Get the hull out of the way and let it swing home.
+        #expect(engine.state.bumpers[index].offset.y > 0.02)
+        // Get the hull out of the way: the peg glides to a stop and stays.
         engine.state.ships[.orange]?.position = SIMD2(0.6, engine.arena.floorY + 0.1)
         engine.state.ships[.orange]?.velocity = .zero
-        for _ in 0 ..< 120 {
+        for _ in 0 ..< 60 { engine.step(inputs: [:]) }
+        let parked = engine.state.bumpers[index].offset.y
+        for _ in 0 ..< 240 {
             engine.step(inputs: [:])
-            furthest = max(furthest, simd_length(engine.state.bumpers[index].offset))
+            furthest = max(furthest, abs(engine.state.bumpers[index].offset.y))
         }
         #expect(furthest <= travel + 1e-9)
-        #expect(simd_length(engine.state.bumpers[index].offset) < 0.005)
-        #expect(simd_length(engine.state.bumpers[index].velocity) < 0.05)
+        #expect(parked > 0.02)
+        #expect(engine.state.bumpers[index].offset.y == parked)
+        #expect(engine.state.bumpers[index].velocity == .zero)
     }
 
-    @Test("The tractor beam draws a peg off its anchor, and it swings home when let go")
-    func tractorDrawsPeg() {
-        var engine = Self.engine(.bumpers)
-        for _ in 0 ..< 600 where engine.state.match.phase != .playing { engine.step(inputs: [:]) }
-        let index = engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 && $0.start.y < 0 }!
+    @Test("A hull flying square into a peg's side meets a post: the track has no sideways give")
+    func pegHasNoSidewaysGive() {
+        var engine = Self.pegCourt()
+        let index = Self.lowerRightPeg(engine)
         let peg = engine.arena.obstacles[index]
-        let travel = engine.arena.bumperTravel
-        let spot = peg.start + SIMD2(-0.3, 0)
-        engine.state.balls[0].position = SIMD2(-0.6, 0.6)
-        engine.state.ships[.cyan]?.position = SIMD2(-0.6, engine.arena.floorY + 0.1)
-        var furthest = 0.0
-        for tick in 0 ..< 90 {
+        let reach = ShipHitbox.shared.reach
+        engine.state.ships[.orange]?.position = peg.start + SIMD2(-(reach + peg.radius + 0.01), 0)
+        engine.state.ships[.orange]?.velocity = SIMD2(1.5, 0)
+        for _ in 0 ..< 12 { engine.step(inputs: [:]) }
+        #expect(engine.state.bumpers[index].offset.x == 0)
+        #expect(abs(engine.state.bumpers[index].offset.y) < 0.01)
+        #expect((engine.state.ships[.orange]?.velocity.x ?? 1) < 0.5)
+    }
+
+    /// How far the beam hauls the lower-right peg in `ticks`, held from
+    /// below with the nose straight up at it.
+    private static func beamHaul(pegPull: Double, ticks: Int) -> (engine: SimulationEngine, index: Int) {
+        var engine = Self.pegCourt(pegPull: pegPull)
+        let index = Self.lowerRightPeg(engine)
+        let spot = engine.arena.obstacles[index].start + SIMD2(0, -0.3)
+        for tick in 0 ..< ticks {
             // Hold the hull still, nose on the peg: only the beam acts.
             engine.state.ships[.orange]?.position = spot
             engine.state.ships[.orange]?.velocity = .zero
-            engine.state.ships[.orange]?.angle = 0
+            engine.state.ships[.orange]?.angle = .pi / 2
             engine.state.ships[.orange]?.angularVelocity = 0
             engine.step(inputs: [.orange: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false, tractor: true)])
-            furthest = max(furthest, simd_length(engine.state.bumpers[index].offset))
         }
-        // Drawn toward the nose, which is toward the net.
-        #expect(engine.state.bumpers[index].offset.x < -0.03)
-        #expect(furthest <= travel + 1e-9)
-        for tick in 90 ..< 210 {
-            engine.state.ships[.orange]?.position = spot
-            engine.state.ships[.orange]?.velocity = .zero
-            engine.step(inputs: [.orange: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false)])
-        }
-        #expect(simd_length(engine.state.bumpers[index].offset) < 0.005)
+        return (engine, index)
     }
 
-    @Test("A peg swinging home kicks a ball sitting in its way")
+    @Test("The tractor beam draws a peg along its track toward the nose, and it stays when let go")
+    func tractorDrawsPeg() {
+        var (engine, index) = Self.beamHaul(pegPull: 1, ticks: 90)
+        let travel = engine.arena.bumperTravel
+        // Drawn down toward the nose.
+        #expect(engine.state.bumpers[index].offset.y < -0.03)
+        #expect(engine.state.bumpers[index].offset.y >= -travel - 1e-9)
+        #expect(engine.state.bumpers[index].offset.x == 0)
+        engine.state.ships[.orange]?.position = SIMD2(0.6, engine.arena.floorY + 0.1)
+        for tick in 90 ..< 150 {
+            engine.step(inputs: [.orange: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false)])
+        }
+        let parked = engine.state.bumpers[index].offset.y
+        for tick in 150 ..< 270 {
+            engine.step(inputs: [.orange: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false)])
+        }
+        #expect(parked < -0.03)
+        #expect(engine.state.bumpers[index].offset.y == parked)
+    }
+
+    @Test("Peg pull scales the beam's haul on a peg")
+    func pegPullScales() {
+        let soft = Self.beamHaul(pegPull: 0.5, ticks: 20)
+        let hard = Self.beamHaul(pegPull: 2, ticks: 20)
+        let softMoved = -soft.engine.state.bumpers[soft.index].offset.y
+        let hardMoved = -hard.engine.state.bumpers[hard.index].offset.y
+        #expect(softMoved > 0)
+        #expect(hardMoved > softMoved * 2, "soft \(softMoved) hard \(hardMoved)")
+    }
+
+    @Test("A bolt knocks a peg along its track: from below it lifts, clipping the underside lifts, dead centre from the side does nothing")
+    func boltKnocksPeg() {
+        let speed = FlightTuningSnapshot.defaults.configuration.boltSpeed
+        func shoot(from offset: SIMD2<Double>, heading: SIMD2<Double>) -> (velocity: Double, bolts: Int) {
+            var engine = Self.pegCourt()
+            let index = Self.lowerRightPeg(engine)
+            let peg = engine.arena.obstacles[index]
+            engine.state.ships[.orange]?.position = SIMD2(0.6, engine.arena.floorY + 0.1)
+            engine.state.bolts = [BoltState(
+                id: 1, owner: .orange,
+                position: peg.start + offset,
+                velocity: heading * speed,
+                ticksRemaining: 60
+            )]
+            var fastest = 0.0
+            for _ in 0 ..< 20 {
+                engine.step(inputs: [:])
+                let v = engine.state.bumpers[index].velocity.y
+                if abs(v) > abs(fastest) { fastest = v }
+            }
+            return (fastest, engine.state.bolts.count)
+        }
+        let below = shoot(from: SIMD2(0, -0.2), heading: SIMD2(0, 1))
+        #expect(below.velocity > 0.2, "below \(below.velocity)")
+        #expect(below.bolts == 0)
+        let clip = shoot(from: SIMD2(-0.2, -0.04), heading: SIMD2(1, 0))
+        #expect(clip.velocity > 0.05, "clip \(clip.velocity)")
+        let side = shoot(from: SIMD2(-0.2, 0), heading: SIMD2(1, 0))
+        #expect(abs(side.velocity) < 1e-9)
+        #expect(side.bolts == 0)
+    }
+
+    @Test("A peg sent along its track kicks a ball in its way")
     func pegKicksBall() {
-        var engine = Self.engine(.bumpers)
-        for _ in 0 ..< 600 where engine.state.match.phase != .playing { engine.step(inputs: [:]) }
+        var engine = Self.pegCourt()
         let index = engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 && $0.start.y > 0 }!
         let peg = engine.arena.obstacles[index]
         let r = engine.configuration.ballRadius
-        let travel = engine.arena.bumperTravel
-        // Peg held back toward the net, ball at rest half a swing ahead of
-        // it: the peg is at full speed when it arrives. (Resting on the
-        // anchor itself the damped peg barely creeps into it.)
-        engine.state.bumpers[index] = BumperState(offset: SIMD2(-travel, 0))
+        // Peg driven upward along its track, ball resting just above it.
+        engine.state.bumpers[index] = BumperState(velocity: SIMD2(0, 1.0))
         engine.state.balls[0] = BallState(
-            position: peg.start + SIMD2(-travel / 2 + peg.radius + r + 0.002, 0),
+            position: peg.start + SIMD2(0, peg.radius + r + 0.02),
             velocity: .zero,
             radius: r
         )
         var kicked = 0.0
-        for _ in 0 ..< 40 {
+        for _ in 0 ..< 20 {
             engine.step(inputs: [:])
-            kicked = max(kicked, engine.state.balls[0].velocity.x)
+            kicked = max(kicked, engine.state.balls[0].velocity.y)
         }
         #expect(kicked > 0.3, "kicked \(kicked)")
     }
 
-    @Test("Every peg is back on its anchor for the next rally, and the wire carries where they are")
+    @Test("Every peg is back on the middle of its track for the next rally, and the wire carries where they are")
     func pegsResetAndTravel() throws {
         var engine = Self.engine(.bumpers)
         #expect(engine.state.bumpers.count == engine.arena.obstacles.count)

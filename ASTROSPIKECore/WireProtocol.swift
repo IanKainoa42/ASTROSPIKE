@@ -104,7 +104,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     would fly an open court through the host's obstacles.
     // 30: Bumpers' pegs are sprung. WorldState carries `bumpers`, where each
     //     peg has been shoved to; a build 104 board would not decode it.
-    public static let currentVersion: UInt16 = 30
+    // 31: pegs slide on their own upright tracks and stay where they are
+    //     left instead of springing home, bolts knock them along, and the
+    //     host's tuning carries pegPull. A build 105 board would spring the
+    //     pegs back and decode no pegPull.
+    public static let currentVersion: UInt16 = 31
 
     public var version: UInt16
     public var sequence: UInt64

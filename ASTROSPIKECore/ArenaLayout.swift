@@ -87,9 +87,10 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
     /// All four corners cut off flat at a steep angle: shots up the side wall
     /// are thrown in toward the goal, and floor rolls kick up early.
     case diamond
-    /// Two round pegs a side on springs, in toward the net and well off the
-    /// wall: shove one with your hull and it swings back into the ball,
-    /// like a foosball man.
+    /// Two round pegs a side, in toward the net and well off the wall, each
+    /// on its own short upright track like a foosball goalie. Shove one with
+    /// your hull, haul it with the beam or shoot it along, and it stays
+    /// wherever it stops.
     case bumpers
     /// A shelf out of each side wall, sloping down toward the net.
     case ledges
@@ -149,7 +150,7 @@ extension ArenaGeometry {
         return court
     }
 
-    /// Furthest a sprung peg can be shoved off its anchor, stretched with the
+    /// How far a peg can slide either way along its track, stretched with the
     /// court like everything else.
     public var bumperTravel: Double { 0.10 * widthScale }
 

@@ -1614,7 +1614,17 @@ private struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("arena-layout")
-                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length and arena apply to solo and doubles matches and to any online match you host.")
+                    if tuning.arenaLayout == .bumpers {
+                        TuningSlider(
+                            title: "Peg pull",
+                            value: $tuning.pegPull,
+                            range: FlightTuningSnapshot.pegPullRange,
+                            step: 0.05,
+                            readout: { $0.formatted(.number.precision(.fractionLength(2))) + "x" }
+                        )
+                        .accessibilityIdentifier("peg-pull")
+                    }
+                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena and peg pull apply to solo and doubles matches and to any online match you host.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
