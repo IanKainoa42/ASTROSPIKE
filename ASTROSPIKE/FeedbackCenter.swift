@@ -39,6 +39,13 @@ final class FeedbackCenter {
         UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.65)
     }
 
+    /// A contact in play: the haptic only. The scene plays the contact's own
+    /// sound (thunk off the ball, thud off a wall), which replaced the tone.
+    func impactHaptic() {
+        guard hapticsEnabled else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.65)
+    }
+
     /// Menu selection tick: haptic only, no tone.
     func tap() {
         guard hapticsEnabled else { return }

@@ -15,6 +15,21 @@ final class SoundBank {
         case offsideOrange
         case thrusterCyan
         case thrusterOrange
+        // Rendered from the FX Lab picks (thump, crack, thunk, thud, hum).
+        case boltFire
+        case boltHit
+        case ballHit
+        case wallHit
+        case tractorHum
+
+        /// The lab sounds ship as WAV: they are short, and the lead-in trim
+        /// and sustain search are for recordings, not synthesis.
+        var isRendered: Bool {
+            switch self {
+            case .boltFire, .boltHit, .ballHit, .wallHit, .tractorHum: true
+            default: false
+            }
+        }
 
         static func offside(_ team: Team) -> Cue { team == .cyan ? .offsideCyan : .offsideOrange }
         static func thruster(_ team: Team) -> Cue { team == .cyan ? .thrusterCyan : .thrusterOrange }
@@ -47,17 +62,22 @@ final class SoundBank {
         let format = SpatialAudioCenter.shared.mixFormat
         let held: Set<Cue> = [.thrusterCyan, .thrusterOrange]
         for cue in Cue.allCases {
-            guard let buffer = Self.load(cue.rawValue, into: format, looping: held.contains(cue))
+            guard let buffer = Self.load(cue, into: format, looping: held.contains(cue))
             else { continue }
             buffers[cue] = buffer
         }
-        for _ in 0..<6 {
+        // Bolts, their hits and every contact now sound, so a busy rally
+        // needs more voices than the old goal-and-offside set did.
+        for _ in 0..<10 {
             voices.append(SpatialAudioCenter.shared.makeVoice(format: format))
         }
         for cue in [Cue.thrusterCyan, .thrusterOrange] {
             let (voice, speed) = SpatialAudioCenter.shared.makePitchedVoice(format: format)
             loops[cue] = voice
             loopSpeeds[cue] = speed
+        }
+        for team in [Team.cyan, .orange] {
+            hums[team] = SpatialAudioCenter.shared.makeFilteredVoice(format: format)
         }
     }
 
@@ -111,11 +131,48 @@ final class SoundBank {
         }
     }
 
+    /// The tractor hum for one team, driven every frame like the thruster:
+    /// it swells in over 0.12s while a beam is up and dies over 0.25s after,
+    /// and opens up -- louder and brighter -- the harder the beam has the ball.
+    func driveHum(_ team: Team, active: Bool, grip: Double, positionX: Float, dt: Double) {
+        guard let (voice, filter) = hums[team] else { return }
+        let step = Float(max(0, min(dt, 0.1)))
+        var level = humLevels[team] ?? 0
+        if active && enabled {
+            level = min(1, level + step / 0.12)
+        } else {
+            level = max(0, level - step / 0.25)
+        }
+        humLevels[team] = level
+        guard level > 0 else {
+            if voice.isPlaying { voice.stop() }
+            return
+        }
+        guard let buffer = buffers[.tractorHum] else { return }
+        let g = Float(max(0, min(1, grip)))
+        voice.position = AVAudio3DPoint(x: positionX, y: 0, z: -1)
+        voice.volume = Self.humVolume * (0.55 + 0.45 * g) * level
+        filter.bands[0].frequency = 320 + 1400 * g
+        if !voice.isPlaying {
+            SpatialAudioCenter.shared.ensureRunning()
+            voice.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts])
+            voice.play()
+        }
+    }
+
     func stopEverything() {
         for voice in voices { voice.stop() }
         for voice in loops.values { voice.stop() }
+        for (voice, _) in hums.values { voice.stop() }
         spools.removeAll()
+        humLevels.removeAll()
     }
+
+    private var hums: [Team: (AVAudioPlayerNode, AVAudioUnitEQ)] = [:]
+    private var humLevels: [Team: Float] = [:]
+    /// The file is the lab hum at 0.57 of full scale; the lab played it at
+    /// 0.22 of its own level, so this is the gain that restores it.
+    private static let humVolume: Float = 0.386
 
     /// Seconds from the pad going down to the engine sitting at full song.
     private static let spoolUp: Float = 0.85
@@ -146,11 +203,11 @@ final class SoundBank {
     /// tenths of a second of nothing, and a sound effect that arrives four
     /// tenths of a second after the thing it describes reads as a bug.
     private static func load(
-        _ name: String,
+        _ cue: Cue,
         into format: AVAudioFormat,
         looping: Bool = false
     ) -> AVAudioPCMBuffer? {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "mp3"),
+        guard let url = Bundle.main.url(forResource: cue.rawValue, withExtension: cue.isRendered ? "wav" : "mp3"),
               let file = try? AVAudioFile(forReading: url) else { return nil }
         let frames = AVAudioFrameCount(file.length)
         guard frames > 0,
@@ -173,6 +230,7 @@ final class SoundBank {
             return source
         }
         guard error == nil, converted.frameLength > 0 else { return nil }
+        if cue.isRendered { return converted }
         let trimmed = trimmingLeadIn(converted)
         return looping ? sustainWindow(trimmed) : trimmed
     }

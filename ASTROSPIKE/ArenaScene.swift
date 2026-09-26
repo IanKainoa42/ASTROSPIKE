@@ -10,10 +10,38 @@ final class ArenaScene: SKScene {
     var rings: [WarmupRing] = [] { didSet { renderRings() } }
     private var ringNodes: [UInt64: SKShapeNode] = [:]
 
+    /// Everything that sits in the arena, so a hit can shake the whole court
+    /// by moving one node. The vignette hangs off the scene instead: it is
+    /// the lens, and the lens does not shake.
+    private let worldNode = SKNode()
     private let arenaLayer = SKNode()
     private let trailLayer = SKNode()
     private let plumeLayer = SKNode()
     private let actorLayer = SKNode()
+    /// The lit floor. A faint grid is always there; each light only shows up
+    /// where it falls on a grid line, plus a soft pool on top.
+    private let gridBase = SKSpriteNode()
+    private let gridLightCrop = SKCropNode()
+    private let gridLightLayer = SKNode()
+    private let poolLightLayer = SKNode()
+    private var gridLightSprites: [SKSpriteNode] = []
+    private var poolLightSprites: [SKSpriteNode] = []
+    private var transientLights: [TransientLight] = []
+    private let vignette = SKSpriteNode()
+    private var shakeAmount: CGFloat = 0
+    private var lastRenderTime: TimeInterval?
+    /// The bolt punch the engine hands a ball. A bolt hit is the one
+    /// collision whose intensity is this exact number, which is how the
+    /// scene tells it apart without a kind on the event.
+    var boltPunch = SimulationConfiguration().boltPunch
+    /// Which seats are pulling, how hard the beam has the ball, and where,
+    /// for the tractor hum. Empty while nobody is holding a beam.
+    private(set) var beamPulls: [Seat: BeamPull] = [:]
+    struct BeamPull { var grip: Double; var x: Double }
+    private var beamRigs: [Seat: BeamRig] = [:]
+    private var gripRings: [SKShapeNode] = []
+    private var smokeBudgets: [Seat: Double] = [:]
+    private var fireCores: [Seat: [SKSpriteNode]] = [:]
     /// The court this scene draws. Set before the view appears; changing it
     /// tears the arena layer down and rebuilds it, so the drawn court can
     /// never disagree with the one the simulation is colliding against.
@@ -41,14 +69,10 @@ final class ArenaScene: SKScene {
     private var ballSpinTick: UInt64?
     private static let tickDuration = SimulationConfiguration().stepDuration
     private var boltNodes: [UInt64: SKNode] = [:]
-    /// The tractor cone ahead of each nose, redrawn every frame it is on.
-    private var beamNodes: [Seat: SKShapeNode] = [:]
     /// How far the beam reaches, taken from the engine that does the pulling
     /// so the drawing can never disagree with the grab.
     var tractorRange = SimulationConfiguration().tractorRange
     private var ballTrails: [[CGPoint]] = []
-    private var wakeAnchors: [Seat: CGPoint] = [:]
-    private var plumeBudgets: [Seat: Double] = [:]
     private var plumeSeed = 0
     private var didBuild = false
     /// The ends the court was last drawn for. The teams change ends between
@@ -69,16 +93,49 @@ final class ArenaScene: SKScene {
         super.init(size: size)
         backgroundColor = SKColor(red: 0.015, green: 0.025, blue: 0.07, alpha: 1)
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        addChild(arenaLayer)
-        addChild(trailLayer)
-        addChild(plumeLayer)
-        addChild(actorLayer)
+        addChild(worldNode)
+        // The view ignores sibling order, so every layer here is stacked by z:
+        // grid and its light at the very bottom, under the court markings.
+        gridBase.zPosition = -6
+        gridBase.alpha = 0.035
+        worldNode.addChild(gridBase)
+        gridLightCrop.zPosition = -5.8
+        gridLightCrop.addChild(gridLightLayer)
+        // The lab composited the lit grid at 85%.
+        gridLightLayer.alpha = 0.85
+        worldNode.addChild(gridLightCrop)
+        poolLightLayer.zPosition = -5.6
+        worldNode.addChild(poolLightLayer)
+        worldNode.addChild(arenaLayer)
+        worldNode.addChild(trailLayer)
+        worldNode.addChild(plumeLayer)
+        worldNode.addChild(actorLayer)
+        vignette.zPosition = 50
+        addChild(vignette)
         for seat in Seat.allCases {
             let ship = SKShapeNode()
             let exhaust = SKSpriteNode(texture: ArenaScene.puffTexture, size: CGSize(width: 30, height: 34))
             shipNodes[seat] = ship
             exhaustNodes[seat] = exhaust
             actorLayer.addChild(ship)
+            // The hot core of the burn: a white-hot tongue inside an amber
+            // one, flickered per frame. Only lit while the engine is.
+            fireCores[seat] = [
+                (SKColor(red: 1, green: 0.96, blue: 0.88, alpha: 1), CGSize(width: 15, height: 34), CGFloat(0.95)),
+                (SKColor(red: 1, green: 0.78, blue: 0.47, alpha: 1), CGSize(width: 25, height: 53), CGFloat(0.8)),
+            ].map { color, size, alpha in
+                let core = SKSpriteNode(texture: ArenaScene.puffTexture, size: size)
+                core.anchorPoint = CGPoint(x: 0.5, y: 1)
+                core.position = CGPoint(x: 0, y: -16)
+                core.color = color
+                core.colorBlendFactor = 1
+                core.blendMode = .add
+                core.alpha = alpha
+                core.zPosition = -0.9
+                core.isHidden = true
+                ship.addChild(core)
+                return core
+            }
             let marker = SKLabelNode(fontNamed: "Menlo-Bold")
             marker.fontSize = 11
             marker.fontColor = Self.hullColor(for: seat)
@@ -89,31 +146,89 @@ final class ArenaScene: SKScene {
             actorLayer.addChild(marker)
         }
         for ball in balls { actorLayer.addChild(ball) }
+        for _ in balls {
+            // Sits outside the ball's edge, so the silhouette stays hard.
+            let ring = SKShapeNode()
+            ring.strokeColor = Self.beamColor
+            ring.fillColor = .clear
+            ring.lineWidth = 2
+            ring.glowWidth = 0
+            ring.zPosition = 0.5
+            ring.isHidden = true
+            gripRings.append(ring)
+            actorLayer.addChild(ring)
+        }
         for seat in Seat.allCases {
-            let beam = SKShapeNode()
-            // The node's alpha multiplies this one, so the breath below is
-            // worth fill * amplitude on screen. At 0.06 that came to under a
-            // single 8-bit level and the pulse simply wasn't there.
-            beam.fillColor = Self.beamColor.withAlphaComponent(0.15)
-            // No stroke: an outline is the loudest thing a shape can wear,
-            // and the beam is meant to be felt in the ball rather than read.
-            beam.strokeColor = .clear
-            beam.lineWidth = 0
-            beam.blendMode = .add
-            beam.zPosition = 3
-            beam.isHidden = true
-            beamNodes[seat] = beam
-            actorLayer.addChild(beam)
+            let rig = BeamRig()
+            beamRigs[seat] = rig
+            actorLayer.addChild(rig.crop)
+            actorLayer.addChild(rig.tether)
         }
         configureActorNodes()
     }
 
     static let beamColor = SKColor(red: 0.70, green: 0.42, blue: 1.0, alpha: 1)
+    /// The lab's beam gain, picked at 1.65: every part of the beam that has a
+    /// brightness is multiplied by it.
+    private static let beamGain: CGFloat = 1.65
+    /// The lab's floor-light intensity pick.
+    private static let lightIntensity: CGFloat = 1.1
+    /// The lab's hit-shake pick, 0 to 1.
+    private static let shakeGain: CGFloat = 0.35
+    /// The lab's smoke density pick, 0 to 2.
+    private static let smokeDensity: Double = 2
+
+    /// The tractor cone ahead of each nose: a gradient cropped to the cone the
+    /// engine grabs with, plus the tether drawn to a gripped ball.
+    @MainActor
+    final class BeamRig {
+        let crop = SKCropNode()
+        let mask = SKShapeNode()
+        let glow = SKSpriteNode(texture: ArenaScene.beamGradientTexture)
+        let tether = SKShapeNode()
+        var budget = 0.0
+
+        init() {
+            mask.fillColor = .white
+            mask.strokeColor = .clear
+            crop.maskNode = mask
+            glow.color = ArenaScene.beamColor
+            glow.colorBlendFactor = 1
+            glow.blendMode = .add
+            glow.alpha = 0.22 * ArenaScene.beamGain
+            crop.addChild(glow)
+            crop.zPosition = 3
+            crop.isHidden = true
+            tether.strokeColor = ArenaScene.beamColor
+            tether.lineWidth = 2
+            tether.glowWidth = 0
+            tether.blendMode = .add
+            tether.zPosition = 3.2
+            tether.isHidden = true
+        }
+    }
+
+    private struct TransientLight {
+        var position: CGPoint
+        var radius: CGFloat
+        var color: SKColor
+        var intensity: CGFloat
+        var born: TimeInterval
+        var life: TimeInterval
+    }
+
+    private struct FloorLight {
+        var position: CGPoint
+        var radius: CGFloat
+        var color: SKColor
+        var intensity: CGFloat
+    }
 
     required init?(coder aDecoder: NSCoder) { nil }
 
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
+        buildVignette()
         didBuild = false
         buildArena()
         renderSnapshot()
@@ -205,6 +320,7 @@ final class ArenaScene: SKScene {
         didBuild = true
         arenaLayer.removeAllChildren()
         let frame = arenaRect
+        buildLighting(in: frame)
 
         let leftZone = SKShapeNode(rect: CGRect(
             x: frame.minX,
@@ -654,16 +770,29 @@ final class ArenaScene: SKScene {
             didBuild = false
         }
         if !didBuild { buildArena() }
-        for seat in Seat.allCases { update(seat: seat, state: snapshot.ships[seat]) }
+        // The effects below run on wall time, not ticks: there is no update
+        // loop, so each drawn snapshot is one frame, and a paused match that
+        // stops sending snapshots simply stops them.
+        let now = CACurrentMediaTime()
+        let dt = lastRenderTime.map { min(0.05, max(0, now - $0)) } ?? 0
+        lastRenderTime = now
+        var lights: [FloorLight] = []
+        ballGrips = Array(repeating: 0, count: snapshot.balls.count)
+        for seat in Seat.allCases {
+            update(seat: seat, state: snapshot.ships[seat], dt: dt, lights: &lights)
+        }
         // Turn each seam by however far its ball spun since the last drawn
         // snapshot, counted in engine ticks so a guest that skips a few
         // draws still shows the turn it missed.
         let spunTicks = ballSpinTick.map { snapshot.tick > $0 ? Double(min(snapshot.tick - $0, 30)) : 0 } ?? 0
         ballSpinTick = snapshot.tick
         let tint = snapshot.lastBallToucher.map { Self.color($0) }
+        let fx = labScale
         for (index, node) in balls.enumerated() {
+            let ring = gripRings[index]
             guard index < snapshot.balls.count else {
                 node.isHidden = true
+                ring.isHidden = true
                 continue
             }
             let ball = snapshot.balls[index]
@@ -675,42 +804,278 @@ final class ArenaScene: SKScene {
             node.spin(by: ball.spin * spunTicks * Self.tickDuration)
             // Ball tint by last touch (possession cue)
             node.tint(tint)
+            // The beam's hold on the ball, drawn as a rim just outside it.
+            let grip = ballGrips[index]
+            ring.isHidden = grip <= 0
+            if grip > 0 {
+                let wobble = reduceMotion ? 0 : CGFloat(sin(now * 12)) * fx
+                let radius = CGFloat(ball.radius) * pointsPerWorldUnit + 4 * fx + wobble
+                ring.path = CGPath(
+                    ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
+                    transform: nil
+                )
+                ring.position = node.position
+                ring.alpha = 0.75 * CGFloat(grip)
+            }
         }
         updateTrails(snapshot)
-        updateBolts(snapshot)
+        updateBolts(snapshot, lights: &lights)
+        updateShake(dt: dt)
+        drawLights(lights, now: now)
     }
 
+    /// How hard any beam has each ball this frame, 0 to 1.
+    private var ballGrips: [Double] = []
+
+    /// The FX Lab was laid out on a 904pt-wide court; every effect size and
+    /// speed below is in its units and scaled by this to the real court.
+    private var labScale: CGFloat { arenaRect.width / 904 }
+
+    // MARK: - Floor lighting
+
+    /// The grid texture, the crop mask that confines light to its lines, and
+    /// the faint always-on copy. Rebuilt with the court, since the grid is
+    /// laid on the court's own rectangle.
+    private func buildLighting(in frame: CGRect) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        let step = 24 * frame.width / 904
+        let image = UIGraphicsImageRenderer(size: frame.size).image { context in
+            let cg = context.cgContext
+            cg.setStrokeColor(UIColor.white.cgColor)
+            cg.setLineWidth(1)
+            var x: CGFloat = 0.5
+            while x <= frame.width {
+                cg.move(to: CGPoint(x: x, y: 0))
+                cg.addLine(to: CGPoint(x: x, y: frame.height))
+                x += step
+            }
+            var y = frame.height - 0.5
+            while y >= 0 {
+                cg.move(to: CGPoint(x: 0, y: y))
+                cg.addLine(to: CGPoint(x: frame.width, y: y))
+                y -= step
+            }
+            cg.strokePath()
+        }
+        let texture = SKTexture(image: image)
+        let centre = CGPoint(x: frame.midX, y: frame.midY)
+        gridBase.texture = texture
+        gridBase.size = frame.size
+        gridBase.position = centre
+        let mask = SKSpriteNode(texture: texture, size: frame.size)
+        mask.position = centre
+        gridLightCrop.maskNode = mask
+    }
+
+    /// Darkens the corners of the whole view. Built at the view's size, since
+    /// it frames the screen rather than the court.
+    private func buildVignette() {
+        guard size.width > 0, size.height > 0 else { return }
+        let scale = size.width / 960
+        let bounds = size
+        let image = UIGraphicsImageRenderer(size: bounds).image { context in
+            let edge = UIColor(red: 2 / 255, green: 3 / 255, blue: 8 / 255, alpha: 1)
+            let colors = [edge.withAlphaComponent(0).cgColor, edge.withAlphaComponent(0.85 * Self.vignetteAmount).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])
+            else { return }
+            let centre = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+            context.cgContext.drawRadialGradient(
+                gradient,
+                startCenter: centre,
+                startRadius: 180 * scale,
+                endCenter: centre,
+                endRadius: 620 * scale,
+                options: [.drawsAfterEndLocation]
+            )
+        }
+        vignette.texture = SKTexture(image: image)
+        vignette.size = bounds
+        vignette.position = .zero
+    }
+
+    /// The lab's vignette pick.
+    private static let vignetteAmount: CGFloat = 0.2
+
+    private func addLight(at position: CGPoint, radius: CGFloat, color: SKColor, intensity: CGFloat = 1, life: TimeInterval) {
+        transientLights.append(TransientLight(
+            position: position,
+            radius: radius,
+            color: color,
+            intensity: intensity,
+            born: CACurrentMediaTime(),
+            life: life
+        ))
+    }
+
+    /// One pooled sprite pair per light: a wide one seen only through the
+    /// grid lines, and a soft pool over the floor.
+    private func drawLights(_ frameLights: [FloorLight], now: TimeInterval) {
+        transientLights.removeAll { now - $0.born >= $0.life }
+        var all = frameLights
+        for light in transientLights {
+            let fade = 1 - CGFloat((now - light.born) / light.life)
+            all.append(FloorLight(position: light.position, radius: light.radius, color: light.color, intensity: light.intensity * fade))
+        }
+        while gridLightSprites.count < all.count {
+            for (layer, isGrid) in [(gridLightLayer, true), (poolLightLayer, false)] {
+                let sprite = SKSpriteNode(texture: Self.puffTexture)
+                sprite.colorBlendFactor = 1
+                sprite.blendMode = .add
+                layer.addChild(sprite)
+                if isGrid { gridLightSprites.append(sprite) } else { poolLightSprites.append(sprite) }
+            }
+        }
+        let gain = Self.lightIntensity
+        for index in gridLightSprites.indices {
+            let grid = gridLightSprites[index]
+            let pool = poolLightSprites[index]
+            guard index < all.count else {
+                grid.isHidden = true
+                pool.isHidden = true
+                continue
+            }
+            let light = all[index]
+            grid.isHidden = false
+            grid.position = light.position
+            grid.size = CGSize(width: light.radius * 2.4, height: light.radius * 2.4)
+            grid.color = light.color
+            grid.alpha = min(1, 0.9 * light.intensity * gain)
+            pool.isHidden = false
+            pool.position = light.position
+            pool.size = CGSize(width: light.radius * 1.6, height: light.radius * 1.6)
+            pool.color = light.color
+            pool.alpha = 0.07 * light.intensity * gain
+        }
+    }
+
+    // MARK: - Shake
+
+    /// Shake is in lab units; the whole court moves, the vignette does not.
+    private func kick(_ amount: CGFloat) {
+        guard !reduceMotion else { return }
+        shakeAmount = max(shakeAmount, amount * Self.shakeGain * labScale)
+    }
+
+    private func updateShake(dt: Double) {
+        guard !reduceMotion, shakeAmount > 0 else {
+            shakeAmount = 0
+            worldNode.position = .zero
+            return
+        }
+        worldNode.position = CGPoint(
+            x: .random(in: -shakeAmount ... shakeAmount),
+            y: .random(in: -shakeAmount ... shakeAmount)
+        )
+        shakeAmount = max(0, shakeAmount - 30 * labScale * CGFloat(dt))
+    }
+
+    // MARK: - Bolts
+
     /// Bolts are keyed by simulation id so a node lives exactly as long as its
-    /// bolt: a new id gets a muzzle flash, a vanished id gets a fizzle.
-    private func updateBolts(_ snapshot: WorldState) {
+    /// bolt: a new id gets a muzzle flash, a vanished id gets a ring.
+    /// Plasma: a team-coloured halo round a white-hot core, shedding
+    /// afterimages as it goes.
+    private func updateBolts(_ snapshot: WorldState, lights: inout [FloorLight]) {
+        let fx = labScale
         var live = Set<UInt64>()
         for bolt in snapshot.bolts {
             live.insert(bolt.id)
             let position = point(bolt.position.x, bolt.position.y)
-            let heading = CGFloat(atan2(bolt.velocity.y, bolt.velocity.x)) - .pi / 2
+            let color = Self.color(bolt.owner)
+            lights.append(FloorLight(position: position, radius: 85 * fx, color: color, intensity: 0.9))
             if let node = boltNodes[bolt.id] {
                 node.position = position
-                node.zRotation = heading
+                if !reduceMotion {
+                    flash(at: position, color: color, size: 16 * fx, grow: 0.4, life: 0.14, alpha: 0.5)
+                }
                 continue
             }
-            let color: SKColor = bolt.owner == .cyan ? .cyan : .orange
-            let node = SKShapeNode(rectOf: CGSize(width: 3, height: 18), cornerRadius: 1.5)
-            node.fillColor = .white
-            node.strokeColor = color
-            node.lineWidth = 1.5
-            node.glowWidth = 6
+            let node = SKNode()
+            let halo = SKSpriteNode(texture: Self.puffTexture, size: CGSize(width: 34 * fx, height: 34 * fx))
+            halo.color = color
+            halo.colorBlendFactor = 1
+            halo.blendMode = .add
+            halo.alpha = 0.85
+            node.addChild(halo)
+            let core = SKSpriteNode(texture: Self.puffTexture, size: CGSize(width: 13 * fx, height: 13 * fx))
+            core.blendMode = .add
+            core.zPosition = 0.1
+            node.addChild(core)
             node.zPosition = 6
             node.position = position
-            node.zRotation = heading
             actorLayer.addChild(node)
             boltNodes[bolt.id] = node
-            if !reduceMotion { flash(at: position, color: color, scale: 0.9, life: 0.16) }
+            SoundBank.shared.play(.boltFire, positionX: Float(bolt.position.x))
+            addLight(at: position, radius: 120 * fx, color: color, life: 0.14)
+            if !reduceMotion {
+                flash(at: position, color: color, size: 70 * fx, grow: 1.6, life: 0.2, alpha: 1)
+                flash(at: position, color: .white, size: 26 * fx, grow: 1.4, life: 0.1, alpha: 1)
+            }
         }
         for (id, node) in boltNodes where !live.contains(id) {
-            if !reduceMotion { flash(at: node.position, color: .white, scale: 0.5, life: 0.22) }
+            let color = (node.children.first as? SKSpriteNode)?.color ?? .white
+            ring(at: node.position, color: color)
+            addLight(at: node.position, radius: 130 * fx, color: color, life: 0.18)
             node.removeFromParent()
             boltNodes[id] = nil
         }
+    }
+
+    /// A bolt that struck the ball: a hot spot left on the floor where it hit,
+    /// cooling over 1.2s, and a kick through the court.
+    private func boltHit(at world: SIMD2<Double>) {
+        let volume: Float = 1
+        SoundBank.shared.play(.boltHit, positionX: Float(world.x), volume: volume)
+        kick(4)
+        guard !reduceMotion else { return }
+        let fx = labScale
+        let position = point(world.x, world.y)
+        let color = snapshot?.lastBallToucher.map { Self.color($0) } ?? .white
+        for (tone, size, alpha, curve) in [
+            (color, 34 * fx, CGFloat(0.5), SKActionTimingMode.linear),
+            (SKColor(red: 1, green: 0.94, blue: 0.86, alpha: 1), 10 * fx, CGFloat(0.6), .easeOut),
+        ] {
+            let decal = SKSpriteNode(texture: Self.puffTexture, size: CGSize(width: size, height: size))
+            decal.color = tone
+            decal.colorBlendFactor = 1
+            decal.blendMode = .add
+            decal.alpha = alpha
+            decal.zPosition = -1
+            decal.position = position
+            plumeLayer.addChild(decal)
+            let fade = SKAction.fadeOut(withDuration: 1.2)
+            fade.timingMode = curve
+            decal.run(.sequence([fade, .removeFromParent()]))
+        }
+    }
+
+    private func ring(at position: CGPoint, color: SKColor) {
+        guard !reduceMotion else { return }
+        let fx = labScale
+        let node = SKShapeNode(circleOfRadius: 6 * fx)
+        node.strokeColor = color
+        node.fillColor = .clear
+        node.lineWidth = 4 * fx
+        node.glowWidth = 0
+        node.blendMode = .add
+        node.zPosition = 21
+        node.position = position
+        actorLayer.addChild(node)
+        let life = 0.3
+        node.run(.sequence([
+            .customAction(withDuration: life) { node, elapsed in
+                guard let shape = node as? SKShapeNode else { return }
+                let k = elapsed / CGFloat(life)
+                let radius = (6 + 70 * k) * fx
+                shape.path = CGPath(
+                    ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
+                    transform: nil
+                )
+                shape.lineWidth = (4 * (1 - k) + 0.5) * fx
+                shape.alpha = 1 - k
+            },
+            .removeFromParent(),
+        ]))
     }
 
     private func flash(at position: CGPoint, color: SKColor, scale: CGFloat, life: TimeInterval) {
@@ -724,6 +1089,66 @@ final class ArenaScene: SKScene {
         puff.alpha = 0.9
         actorLayer.addChild(puff)
         puff.run(.sequence([.group([.scale(by: 2.4, duration: life), .fadeOut(withDuration: life)]), .removeFromParent()]))
+    }
+
+    /// A lab-style flash: `size` across at birth, `grow` times that at death,
+    /// fading out linearly, optionally drifting to `destination`.
+    private func flash(
+        at position: CGPoint,
+        color: SKColor,
+        size: CGFloat,
+        grow: CGFloat,
+        life: TimeInterval,
+        alpha: CGFloat,
+        z: CGFloat = 5,
+        destination: CGPoint? = nil
+    ) {
+        let puff = SKSpriteNode(texture: Self.puffTexture, size: CGSize(width: size, height: size))
+        puff.color = color
+        puff.colorBlendFactor = 1
+        puff.blendMode = .add
+        puff.zPosition = z
+        puff.position = position
+        puff.alpha = alpha
+        actorLayer.addChild(puff)
+        var motion: [SKAction] = [.scale(to: grow, duration: life), .fadeOut(withDuration: life)]
+        if let destination { motion.append(.move(to: destination, duration: life)) }
+        puff.run(.sequence([.group(motion), .removeFromParent()]))
+    }
+
+    /// A spark thrown along `angle`: a team-coloured streak with a bright
+    /// core, slowing under `drag` (the fraction of speed left after a second).
+    private func streak(
+        at position: CGPoint,
+        angle: CGFloat,
+        speed: CGFloat,
+        life: TimeInterval,
+        core: SKColor,
+        halo: SKColor,
+        drag: Double
+    ) {
+        let fx = labScale
+        let length = max(2, speed * 0.035)
+        let node = SKNode()
+        node.position = position
+        node.zRotation = angle
+        node.zPosition = 22
+        for (color, width, alpha) in [(halo, 2.4 * fx, CGFloat(0.9)), (core, max(0.6, fx), CGFloat(1))] {
+            let line = SKSpriteNode(color: color, size: CGSize(width: length, height: width))
+            // Anchored at the head, so the streak trails behind where it is going.
+            line.anchorPoint = CGPoint(x: 1, y: 0.5)
+            line.blendMode = .add
+            line.alpha = alpha
+            node.addChild(line)
+        }
+        actorLayer.addChild(node)
+        let travel = speed * CGFloat((1 - pow(drag, life)) / log(1 / drag))
+        let move = SKAction.move(by: CGVector(dx: cos(angle) * travel, dy: sin(angle) * travel), duration: life)
+        move.timingMode = .easeOut
+        node.run(.sequence([
+            .group([move, .scaleX(to: 0.4, duration: life), .fadeOut(withDuration: life)]),
+            .removeFromParent(),
+        ]))
     }
 
     func present(_ events: [SimulationEvent]) {
@@ -746,14 +1171,71 @@ final class ArenaScene: SKScene {
                 for (seat, ship) in snapshot?.ships ?? [:] where seat.team == team && ship.isDestroyed {
                     sparks(at: point(ship.position.x, ship.position.y), color: team == .cyan ? .cyan : .orange)
                 }
-            case let .collisionEffect(position, _):
-                sparks(at: point(position.x, position.y), color: .white)
+            case let .collisionEffect(position, intensity):
+                if intensity == boltPunch {
+                    boltHit(at: position)
+                } else {
+                    impact(at: position, intensity: intensity)
+                }
             case .rallyReset, .setEnded:
                 ballTrails.removeAll()
-                wakeAnchors.removeAll()
             case .matchEnded:
                 break
             }
+        }
+    }
+
+    /// A contact, thrown as sparks along the bounce. The event carries no
+    /// kind or normal, so both are read off the snapshot: an event on a ball
+    /// is a ball contact, and the ship nearest it (if any is close) is the
+    /// one that hit it; anything else is a ship off a wall, the hump or
+    /// another ship, and flies off the way that ship is now going.
+    private func impact(at world: SIMD2<Double>, intensity: Double) {
+        guard let snapshot else { return }
+        let fx = labScale
+        let position = point(world.x, world.y)
+        // The engine gates these at 0.25 world units a second; the lab gated
+        // the same contacts at 90, so its speeds are the engine's times 360.
+        let speed = CGFloat(intensity * 360)
+        var normal: SIMD2<Double>?
+        var team: Team?
+        let nearestBall = snapshot.balls.min { simd_length($0.position - world) < simd_length($1.position - world) }
+        let onBall = nearestBall.map { simd_length($0.position - world) <= $0.radius * 1.5 } ?? false
+        let ships = snapshot.ships.filter { !$0.value.isDestroyed }
+        if onBall, let ball = nearestBall {
+            let closest = ships.min { simd_length($0.value.position - ball.position) < simd_length($1.value.position - ball.position) }
+            if let (seat, ship) = closest, simd_length(ship.position - ball.position) < ball.radius + 0.12 {
+                team = seat.team
+                normal = ball.position - ship.position
+            } else {
+                normal = ball.velocity
+            }
+        } else if let (_, ship) = ships.min(by: { simd_length($0.value.position - world) < simd_length($1.value.position - world) }),
+                  simd_length(ship.position - world) < 0.1 {
+            normal = ship.velocity
+        }
+        SoundBank.shared.play(
+            onBall ? .ballHit : .wallHit,
+            positionX: Float(world.x),
+            volume: Float(min(1, max(0.15, speed / 500)))
+        )
+        let tint = team.map { Self.color($0) } ?? .white
+        addLight(at: position, radius: min(140, max(60, speed * 0.3)) * fx, color: onBall ? tint : .white, life: 0.12)
+        kick(min(6, max(1, speed / 90)))
+        guard !reduceMotion else { return }
+        let aim = normal.flatMap { simd_length($0) > 1e-6 ? CGFloat(atan2($0.y, $0.x)) : nil }
+        let count = Int(min(10, max(4, speed / 60)).rounded())
+        for _ in 0 ..< count {
+            let angle = aim.map { $0 + .random(in: -1 ... 1) } ?? .random(in: 0 ... 2 * .pi)
+            streak(
+                at: position,
+                angle: angle,
+                speed: .random(in: 150 ... 420) * min(1.4, max(0.5, speed / 400)) * fx,
+                life: .random(in: 0.18 ... 0.34),
+                core: .white,
+                halo: tint,
+                drag: 0.04
+            )
         }
     }
 
@@ -789,10 +1271,17 @@ final class ArenaScene: SKScene {
         }
     }
 
-    private func update(seat: Seat, state: ShipState?) {
+    private func update(seat: Seat, state: ShipState?, dt: Double, lights: inout [FloorLight]) {
         guard let shipNode = shipNodes[seat], let exhaust = exhaustNodes[seat] else { return }
         let marker = markerNodes[seat]
-        guard let state else { shipNode.isHidden = true; marker?.isHidden = true; return }
+        guard let state else {
+            shipNode.isHidden = true
+            marker?.isHidden = true
+            beamRigs[seat]?.crop.isHidden = true
+            beamRigs[seat]?.tether.isHidden = true
+            beamPulls[seat] = nil
+            return
+        }
         shipNode.isHidden = state.isDestroyed
         if let marker {
             let doubles = (snapshot?.ships.count ?? 0) > 2
@@ -830,104 +1319,257 @@ final class ArenaScene: SKScene {
         exhaust.xScale = thrusting ? hullWidth : min(hullWidth, 1)
         exhaust.yScale = thrusting ? 2.0 : 0.62
         exhaust.alpha = thrusting ? 1 : 0.38
-        emitPlume(from: shipNode, seat: seat, state: state)
-        emitWake(from: shipNode, seat: seat, state: state)
-        updateBeam(seat: seat, state: state)
+        // The hot core, flickering in length while the engine is lit.
+        for core in fireCores[seat] ?? [] {
+            core.isHidden = !thrusting || state.isDestroyed
+            core.xScale = hullWidth
+            core.yScale = reduceMotion ? 1 : .random(in: 0.8 ... 1.2)
+        }
+        if !state.isDestroyed {
+            let fx = labScale
+            let nozzle = worldNode.convert(CGPoint(x: 0, y: -16), from: shipNode)
+            if thrusting {
+                let glow = worldNode.convert(CGPoint(x: 0, y: -38), from: shipNode)
+                lights.append(FloorLight(position: glow, radius: 120 * fx, color: Self.color(seat.team), intensity: 0.9))
+            } else {
+                lights.append(FloorLight(position: nozzle, radius: 40 * fx, color: Self.color(seat.team), intensity: 0.35))
+            }
+        }
+        emitSmoke(from: shipNode, seat: seat, state: state, dt: dt)
+        updateBeam(seat: seat, state: state, dt: dt, lights: &lights)
     }
 
-    /// The beam is drawn as the cone the engine actually uses, tip at the
-    /// nose, so what a pilot sees is exactly what can grab the ball. Both
-    /// numbers come from the engine; nothing here re-states the geometry.
-    ///
-    /// It is deliberately faint. The beam is meant to be felt in the ball's
-    /// path rather than watched, so the cone sits barely above the floor and
-    /// only leans brighter as the ball comes into its grip.
-    private func updateBeam(seat: Seat, state: ShipState) {
-        guard let beam = beamNodes[seat] else { return }
-        guard state.tractorActive, !state.isDestroyed, let snapshot else { beam.isHidden = true; return }
+    /// The flow beam: a violet cone brightest at the nose, with motes pouring
+    /// in toward the ship, and a tether and a rim on the ball it has hold of.
+    /// The cone is the one the engine grabs with -- both numbers come from
+    /// the engine; nothing here re-states the geometry.
+    private func updateBeam(seat: Seat, state: ShipState, dt: Double, lights: inout [FloorLight]) {
+        guard let rig = beamRigs[seat] else { return }
+        guard state.tractorActive, !state.isDestroyed, let snapshot else {
+            rig.crop.isHidden = true
+            rig.tether.isHidden = true
+            beamPulls[seat] = nil
+            return
+        }
+        let fx = labScale
+        let gain = Self.beamGain
         let range = tractorRange
-        let halfAngle = acos(SimulationEngine.tractorCone)
+        let cone = SimulationEngine.tractorCone
+        let halfAngle = acos(cone)
         let nose = state.angle
+        let heading = SIMD2(cos(nose), sin(nose))
         let tip = state.position
         let left = tip + SIMD2(cos(nose + halfAngle), sin(nose + halfAngle)) * range
-        let mid = tip + SIMD2(cos(nose), sin(nose)) * (range * 1.08)
+        let mid = tip + heading * (range * 1.08)
         let right = tip + SIMD2(cos(nose - halfAngle), sin(nose - halfAngle)) * range
         let path = CGMutablePath()
         path.move(to: point(tip.x, tip.y))
         path.addLine(to: point(left.x, left.y))
         path.addQuadCurve(to: point(right.x, right.y), control: point(mid.x, mid.y))
         path.closeSubpath()
-        beam.path = path
-        beam.isHidden = false
-        // Leans up as the ball comes into its grip.
-        let distance = snapshot.balls.map { simd_length($0.position - tip) }.min() ?? range
-        let grip = max(0, 1 - distance / range)
-        // A slow breath, phased off the tick so both peers see the same one.
-        // There is no update loop here, and wall clock would drift apart.
-        let breath = reduceMotion ? 0 : sin(Double(snapshot.tick % Self.beamPulseTicks)
-            / Double(Self.beamPulseTicks) * 2 * .pi) * 0.10
-        beam.alpha = 0.32 + CGFloat(grip) * 0.22 + CGFloat(breath)
+        rig.mask.path = path
+        rig.crop.isHidden = false
+        let tipPoint = point(tip.x, tip.y)
+        let reach = point(tip.x + range * 1.08, tip.y + range * 1.08)
+        rig.glow.position = tipPoint
+        rig.glow.size = CGSize(width: 2 * (reach.x - tipPoint.x), height: 2 * (reach.y - tipPoint.y))
+
+        // Grip: strongest close in and dead ahead, nothing outside the cone.
+        var grip = 0.0
+        var held: Int?
+        for (index, ball) in snapshot.balls.enumerated() {
+            let offset = ball.position - tip
+            let distance = simd_length(offset)
+            guard distance > 0, distance < range else { continue }
+            let along = simd_dot(offset / distance, heading)
+            guard along > cone else { continue }
+            let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
+            if hold > grip { grip = hold; held = index }
+        }
+        beamPulls[seat] = BeamPull(grip: grip, x: tip.x)
+        let centre = tip + heading * (range * 0.5)
+        lights.append(FloorLight(
+            position: point(centre.x, centre.y),
+            radius: 110 * fx,
+            color: Self.beamColor,
+            intensity: 0.35 + 0.5 * CGFloat(grip)
+        ))
+
+        if let held, grip > 0 {
+            ballGrips[held] = max(ballGrips[held], grip)
+            let ball = snapshot.balls[held].position
+            let ahead = point(tip.x + heading.x, tip.y + heading.y)
+            let span = hypot(ahead.x - tipPoint.x, ahead.y - tipPoint.y)
+            let from = CGPoint(
+                x: tipPoint.x + (ahead.x - tipPoint.x) / span * 18 * fx,
+                y: tipPoint.y + (ahead.y - tipPoint.y) / span * 18 * fx
+            )
+            let to = point(ball.x, ball.y)
+            let now = CACurrentMediaTime()
+            let wobble: CGFloat = reduceMotion ? 0 : 6 * fx
+            let tether = CGMutablePath()
+            tether.move(to: from)
+            tether.addQuadCurve(to: to, control: CGPoint(
+                x: (from.x + to.x) / 2 + CGFloat(sin(now * 9)) * wobble,
+                y: (from.y + to.y) / 2 + CGFloat(cos(now * 7)) * wobble
+            ))
+            rig.tether.path = tether
+            rig.tether.alpha = 0.45 * CGFloat(grip) * gain
+            rig.tether.isHidden = false
+        } else {
+            rig.tether.isHidden = true
+        }
+
+        guard !reduceMotion else { return }
+        // Motes pour in from the far part of the cone toward the nose,
+        // carried along with the ship.
+        let pointsPerUnit = pointsPerWorldUnit
+        rig.budget += dt * 120
+        while rig.budget >= 1 {
+            rig.budget -= 1
+            let angle = nose + .random(in: -halfAngle ... halfAngle)
+            let reachOut = Double.random(in: 0.6 ... 1) * range
+            let start = point(tip.x + cos(angle) * reachOut, tip.y + sin(angle) * reachOut)
+            let distance = hypot(start.x - tipPoint.x, start.y - tipPoint.y)
+            let speed = CGFloat.random(in: 180 ... 280) * fx
+            let life = TimeInterval(distance / max(speed, 1))
+            let end = CGPoint(
+                x: tipPoint.x + CGFloat(state.velocity.x) * pointsPerUnit * CGFloat(life),
+                y: tipPoint.y + CGFloat(state.velocity.y) * pointsPerUnit * CGFloat(life)
+            )
+            let size = CGFloat.random(in: 5 ... 9) * fx
+            flash(
+                at: start,
+                color: Double.random(in: 0 ... 1) < 0.2 ? .white : Self.beamColor,
+                size: size,
+                grow: 0.2,
+                life: life,
+                alpha: 0.5 * gain,
+                z: 3.1,
+                destination: end
+            )
+        }
     }
 
-    /// One breath of the beam, in simulation ticks: 1.2s at 120 Hz.
-    private static let beamPulseTicks: UInt64 = 144
-
-    /// A drifting ship leaves vapour rather than a pen line: one soft puff
-    /// every few points of travel, laid down where the ship was and left to
-    /// swell and fade in place.
-    private func emitWake(from shipNode: SKShapeNode, seat: Seat, state: ShipState) {
-        guard !reduceMotion, !state.isDestroyed else { return }
-        let here = shipNode.position
-        let spacing: CGFloat = 5
-        guard let anchor = wakeAnchors[seat] else {
-            wakeAnchors[seat] = here
-            return
+    /// Fire and smoke: the burn throws grey smoke back along the nose axis
+    /// (drawn with ordinary alpha, which is what makes it read as smoke and
+    /// not light) with a few hot sparks; an idle engine lets a thin wisp
+    /// rise. Density tracks wall time, not frame rate.
+    private func emitSmoke(from shipNode: SKShapeNode, seat: Seat, state: ShipState, dt: Double) {
+        guard !reduceMotion, !state.isDestroyed, dt > 0 else { return }
+        let fx = labScale
+        let density = Self.smokeDensity
+        let thrusting = state.thrustLevel > 0
+        var budget = (smokeBudgets[seat] ?? 0) + dt * (thrusting ? 26 : 3 * density)
+        let nozzle = worldNode.convert(CGPoint(x: 0, y: -16), from: shipNode)
+        let back = CGVector(dx: -cos(state.angle), dy: -sin(state.angle))
+        let pointsPerUnit = pointsPerWorldUnit
+        let carried = CGVector(dx: CGFloat(state.velocity.x) * pointsPerUnit, dy: CGFloat(state.velocity.y) * pointsPerUnit)
+        while budget >= 1 {
+            budget -= 1
+            if thrusting {
+                let push = CGFloat.random(in: 60 ... 110) * fx
+                smokePuff(
+                    at: CGPoint(
+                        x: nozzle.x + back.dx * 10 * fx + .random(in: -3 ... 3) * fx,
+                        y: nozzle.y + back.dy * 10 * fx + .random(in: -3 ... 3) * fx
+                    ),
+                    velocity: CGVector(
+                        dx: back.dx * push + carried.dx * 0.25 + .random(in: -15 ... 15) * fx,
+                        dy: back.dy * push + carried.dy * 0.25 + .random(in: -15 ... 15) * fx
+                    ),
+                    size: .random(in: 9 ... 14) * fx,
+                    grow: .random(in: 4 ... 6),
+                    life: .random(in: 1.1 ... 1.6),
+                    peak: 0.2 * CGFloat(density),
+                    rise: 0.12,
+                    drag: 0.9
+                )
+                if Double.random(in: 0 ... 1) < 0.35 {
+                    let thrown = CGVector(
+                        dx: back.dx * .random(in: 160 ... 300) * fx + .random(in: -40 ... 40) * fx,
+                        dy: back.dy * .random(in: 160 ... 300) * fx + .random(in: -40 ... 40) * fx
+                    )
+                    streak(
+                        at: nozzle,
+                        angle: atan2(thrown.dy, thrown.dx),
+                        speed: hypot(thrown.dx, thrown.dy),
+                        life: .random(in: 0.12 ... 0.25),
+                        core: SKColor(red: 1, green: 0.9, blue: 0.71, alpha: 1),
+                        halo: Self.color(seat.team),
+                        drag: 0.05
+                    )
+                }
+            } else {
+                smokePuff(
+                    at: nozzle,
+                    velocity: CGVector(dx: .random(in: -8 ... 8) * fx, dy: .random(in: 4 ... 14) * fx),
+                    size: 6 * fx,
+                    grow: 4,
+                    life: 1.4,
+                    peak: 0.1 * CGFloat(density),
+                    rise: 0.3,
+                    drag: 0.95
+                )
+            }
         }
-        let travelled = hypot(here.x - anchor.x, here.y - anchor.y)
-        guard travelled >= spacing else { return }
-        wakeAnchors[seat] = here
-        let team = seat.team
-        plumeSeed &+= 1
-        let jitter = Double((plumeSeed &* 7919) % 199) / 199 - 0.5
-        let scale = Double(shipNode.xScale)
-        let puff = SKSpriteNode(texture: Self.puffTexture)
-        puff.color = team == .cyan
-            ? SKColor(red: 0.0, green: 0.88, blue: 1.0, alpha: 1)
-            : SKColor(red: 1.0, green: 0.40, blue: 0.0, alpha: 1)
+        smokeBudgets[seat] = budget
+    }
+
+    private func smokePuff(
+        at position: CGPoint,
+        velocity: CGVector,
+        size: CGFloat,
+        grow: CGFloat,
+        life: TimeInterval,
+        peak: CGFloat,
+        rise: Double,
+        drag: Double
+    ) {
+        let puff = SKSpriteNode(texture: Self.smokeTexture, size: CGSize(width: size, height: size))
+        puff.color = Self.smokeColor
         puff.colorBlendFactor = 1
-        puff.blendMode = .add
-        puff.zPosition = -3
+        puff.blendMode = .alpha
         puff.alpha = 0
-        puff.setScale(CGFloat(scale * (0.42 + jitter * 0.12)))
-        puff.position = CGPoint(x: here.x + CGFloat(jitter * 3), y: here.y - CGFloat(jitter * 3))
+        puff.zPosition = -2.5
+        puff.position = position
         plumeLayer.addChild(puff)
-        let life = 0.62 + jitter * 0.12
+        // Distance covered by a velocity that keeps `drag` of itself a second.
+        let travel = CGFloat((1 - pow(drag, life)) / log(1 / drag))
+        let move = SKAction.move(by: CGVector(dx: velocity.dx * travel, dy: velocity.dy * travel), duration: life)
+        move.timingMode = .easeOut
         puff.run(.sequence([
             .group([
-                .scale(by: 2.2, duration: life),
+                move,
+                .scale(to: grow, duration: life),
                 .sequence([
-                    .fadeAlpha(to: 0.38, duration: life * 0.12),
-                    .fadeOut(withDuration: life * 0.88),
+                    .fadeAlpha(to: peak, duration: life * rise),
+                    .fadeOut(withDuration: life * (1 - rise)),
                 ]),
             ]),
             .removeFromParent(),
         ]))
     }
 
+    private static let smokeColor = SKColor(red: 0.50, green: 0.53, blue: 0.61, alpha: 1)
+
     /// Soft radial falloff, built once. Sprites are far cheaper than one
     /// SKShapeNode per puff, and a gradient reads as vapour rather than a disc.
-    private static let puffTexture: SKTexture = {
+    private static let puffTexture = radialTexture(stops: [(0, 1), (0.45, 0.35), (1, 0)])
+    /// Smoke keeps more body further out than a light does.
+    private static let smokeTexture = radialTexture(stops: [(0, 0.9), (0.55, 0.45), (1, 0)])
+    /// The beam's cone fill: full at the nose, a seventh of that at the rim.
+    private static let beamGradientTexture = radialTexture(stops: [(0, 1), (1, 0.03 / 0.22)], clipOutside: true)
+
+    private static func radialTexture(stops: [(CGFloat, CGFloat)], clipOutside: Bool = false) -> SKTexture {
         let side: CGFloat = 64
         let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
-            let colors = [
-                UIColor(white: 1, alpha: 1).cgColor,
-                UIColor(white: 1, alpha: 0.35).cgColor,
-                UIColor(white: 1, alpha: 0).cgColor,
-            ] as CFArray
+            let colors = stops.map { UIColor(white: 1, alpha: $0.1).cgColor } as CFArray
+            var locations = stops.map(\.0)
             guard let gradient = CGGradient(
                 colorsSpace: CGColorSpaceCreateDeviceRGB(),
                 colors: colors,
-                locations: [0, 0.45, 1]
+                locations: &locations
             ) else { return }
             let centre = CGPoint(x: side / 2, y: side / 2)
             context.cgContext.drawRadialGradient(
@@ -936,67 +1578,10 @@ final class ArenaScene: SKScene {
                 startRadius: 0,
                 endCenter: centre,
                 endRadius: side / 2,
-                options: []
+                options: clipOutside ? [] : []
             )
         }
         return SKTexture(image: image)
-    }()
-
-    /// Spends a thrust-proportional budget so puff density tracks throttle
-    /// instead of frame rate, then trails smoke back along the nose axis.
-    private func emitPlume(from shipNode: SKShapeNode, seat: Seat, state: ShipState) {
-        guard !reduceMotion, !state.isDestroyed, state.thrustLevel > 0 else { return }
-        var budget = (plumeBudgets[seat] ?? 0) + 0.3
-        while budget >= 1 {
-            budget -= 1
-            spawnPuff(from: shipNode, team: seat.team, state: state)
-        }
-        plumeBudgets[seat] = budget
-    }
-
-    private func spawnPuff(from shipNode: SKShapeNode, team: Team, state: ShipState) {
-        plumeSeed &+= 1
-        let jitter = Double((plumeSeed &* 7919) % 199) / 199 - 0.5
-        let drift = Double((plumeSeed &* 104_729) % 173) / 173 - 0.5
-
-        let scale = Double(shipNode.xScale)
-        let origin = convert(CGPoint(x: 0, y: -34), from: shipNode)
-        let back = (x: -cos(state.angle), y: -sin(state.angle))
-        let side = (x: -sin(state.angle), y: cos(state.angle))
-        let travel = 46 * scale
-        let spread = 15 * scale
-
-        let puff = SKSpriteNode(texture: Self.puffTexture)
-        puff.color = team == .cyan
-            ? SKColor(red: 0.0, green: 0.90, blue: 1.0, alpha: 1)
-            : SKColor(red: 1.0, green: 0.42, blue: 0.0, alpha: 1)
-        puff.colorBlendFactor = 1
-        puff.blendMode = .add
-        puff.zPosition = -2
-        puff.alpha = 0
-        puff.setScale(CGFloat(scale * (0.44 + jitter * 0.1)))
-        puff.position = CGPoint(
-            x: origin.x + CGFloat(side.x * 4 * jitter * scale),
-            y: origin.y + CGFloat(side.y * 4 * jitter * scale)
-        )
-        plumeLayer.addChild(puff)
-
-        let destination = CGPoint(
-            x: origin.x + CGFloat(back.x * travel + side.x * spread * drift),
-            y: origin.y + CGFloat(back.y * travel + side.y * spread * drift)
-        )
-        let life = 0.58 + jitter * 0.14
-        puff.run(.sequence([
-            .group([
-                .move(to: destination, duration: life),
-                .scale(by: 3.1, duration: life),
-                .sequence([
-                    .fadeAlpha(to: 0.48, duration: life * 0.16),
-                    .fadeOut(withDuration: life * 0.84),
-                ]),
-            ]),
-            .removeFromParent(),
-        ]))
     }
 
     private func updateTrails(_ snapshot: WorldState) {
@@ -1004,7 +1589,6 @@ final class ArenaScene: SKScene {
             trailLayer.removeAllChildren()
             plumeLayer.removeAllChildren()
             ballTrails.removeAll()
-            wakeAnchors.removeAll()
             return
         }
         if ballTrails.count != snapshot.balls.count {

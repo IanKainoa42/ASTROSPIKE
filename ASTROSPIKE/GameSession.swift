@@ -219,6 +219,7 @@ final class GameSession {
         scene.scaleMode = .resizeFill
         scene.arena = court
         scene.tractorRange = engine.configuration.tractorRange
+        scene.boltPunch = engine.configuration.boltPunch
         scene.snapshot = state
         // After the snapshot: the goal calls are drawn for the ends in it.
         scene.localTeam = mode == .warmup || isSpectator ? nil : localSeat.team
@@ -316,6 +317,7 @@ final class GameSession {
         engine.updateArena(court(for: configuration))
         scene.arena = engine.arena
         scene.tractorRange = engine.configuration.tractorRange
+        scene.boltPunch = engine.configuration.boltPunch
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
     }
@@ -367,6 +369,7 @@ final class GameSession {
         let configuration = resolved(configuration)
         engine.updateConfiguration(configuration)
         scene.tractorRange = engine.configuration.tractorRange
+        scene.boltPunch = engine.configuration.boltPunch
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
         demoAI?.updateConfiguration(configuration)
         engine.prepareNextRally(mirrored: false)
@@ -543,7 +546,7 @@ final class GameSession {
             lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces)
         }
         for event in events where presentsLocalEvents {
-            if case .collisionEffect = event { FeedbackCenter.shared.impact() }
+            if case .collisionEffect = event { FeedbackCenter.shared.impactHaptic() }
             if case let .matchEnded(winner) = event, !isSpectator {
                 switch MatchEndCue.forLocalSide(localSeat.team, winner: winner) {
                 case .win: FeedbackCenter.shared.win()
@@ -628,12 +631,23 @@ final class GameSession {
         // last set of burning teams sits there through a countdown or a
         // finish. The bed has to answer the phase, not the stale set, or a
         // point scored with the throttle down drones under the restart.
-        let live = (isPaused || state.match.phase != .playing) ? [] : thrustingTeams
+        let playing = !isPaused && state.match.phase == .playing
+        let live = playing ? thrustingTeams : []
         for team in Team.allCases {
             SoundBank.shared.driveLoop(
                 .thruster(team),
                 pressed: live.contains(team),
                 positionX: Float(thrustCenter[team] ?? 0),
+                dt: dt
+            )
+            // The hum answers the same phase gate: a beam held through a
+            // restart would otherwise drone under the countdown.
+            let pulls = scene.beamPulls.filter { $0.key.team == team }.values
+            SoundBank.shared.driveHum(
+                team,
+                active: playing && !pulls.isEmpty,
+                grip: pulls.map(\.grip).max() ?? 0,
+                positionX: Float(pulls.first?.x ?? 0),
                 dt: dt
             )
         }
@@ -723,7 +737,7 @@ final class GameSession {
                     bounceAllowance: self.engine.configuration.allowedFloorBounces
                 )
             case .collisionEffect:
-                FeedbackCenter.shared.impact()
+                FeedbackCenter.shared.impactHaptic()
             case .destruction:
                 FeedbackCenter.shared.impact()
             case let .matchEnded(winner):

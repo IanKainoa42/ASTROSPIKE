@@ -63,6 +63,26 @@ final class SpatialAudioCenter {
         return (voice, speed)
     }
 
+    /// A voice with a speed control and a resonant low-pass ahead of the
+    /// environment, so a held sound can be opened up while it plays. Mono end
+    /// to end, like the pitched voice.
+    func makeFilteredVoice(format: AVAudioFormat) -> (AVAudioPlayerNode, AVAudioUnitEQ) {
+        let voice = AVAudioPlayerNode()
+        let filter = AVAudioUnitEQ(numberOfBands: 1)
+        let band = filter.bands[0]
+        band.filterType = .resonantLowPass
+        band.frequency = 320
+        band.bandwidth = 0.47
+        band.bypass = false
+        engine.attach(voice)
+        engine.attach(filter)
+        engine.connect(voice, to: filter, format: format)
+        engine.connect(filter, to: environment, format: format)
+        voice.renderingAlgorithm = .HRTF
+        ensureRunning()
+        return (voice, filter)
+    }
+
     func play(frequency: Double, duration: Double, positionX: Float) {
         if !engine.isRunning { try? engine.start() }
         guard engine.isRunning else { return }
