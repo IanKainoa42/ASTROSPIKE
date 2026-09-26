@@ -3,6 +3,10 @@ import simd
 
 public enum WirePayload: Codable, Equatable, Sendable {
     case input(seat: Seat, value: PlayerInput)
+    /// The sender's last few inputs, newest last. The channel is unreliable,
+    /// so each packet repeats the ones before it: a single lost packet no
+    /// longer leaves the host flying a pilot on an input they have let go of.
+    case inputs(seat: Seat, values: [PlayerInput])
     case snapshot(WorldState)
     case event(SimulationEvent)
     case ready
@@ -83,7 +87,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     plan that leaves a pilot out now benches them to watch instead of
     //     being ignored -- a build 100 invitee would sit in the bay forever
     //     waiting for a seat the host is never going to give it.
-    public static let currentVersion: UInt16 = 25
+    // 26: guest timing. Inputs travel in batches (inputs(seat:values:)), the
+    //     host plays each on the tick it was sent for, and the guest runs a
+    //     full round trip ahead. A build 25 host flies a guest's last input
+    //     whatever its tick, so this guest would feel pulled around by it.
+    public static let currentVersion: UInt16 = 26
 
     public var version: UInt16
     public var sequence: UInt64
@@ -132,15 +140,39 @@ public struct RemoteInputBuffer: Sendable {
     public private(set) var latest: PlayerInput?
     /// When `latest` arrived, on the receiver's own clock.
     public private(set) var receivedAt: TimeInterval = 0
+    /// Recent inputs, oldest first, one per tick. A guest runs ahead of the
+    /// host, so its inputs arrive before the ticks they are for; the host
+    /// plays each on its own tick instead of whatever came in last.
+    private var recent: [PlayerInput] = []
+    /// About a second of inputs at one every other tick.
+    private static let depth = 64
 
     public init() {}
 
+    /// Keeps an input. True when it is the newest yet; an older one that
+    /// arrived out of order is still kept for its tick, but never replaces
+    /// the newest.
     @discardableResult
     public mutating func accept(_ input: PlayerInput, at time: TimeInterval = 0) -> Bool {
+        if !recent.contains(where: { $0.tick == input.tick }) {
+            let index = recent.firstIndex { $0.tick > input.tick } ?? recent.endIndex
+            recent.insert(input, at: index)
+            if recent.count > Self.depth { recent.removeFirst(recent.count - Self.depth) }
+        }
         guard latest == nil || input.tick > latest!.tick else { return false }
         latest = input
         receivedAt = time
         return true
+    }
+
+    /// What the pilot had under their thumb on `tick`: the newest input sent
+    /// for that tick or before it, since a thumb holds between packets. Nil
+    /// once the pilot has gone quiet, exactly as `current(at:expiringAfter:)`.
+    public func input(forTick tick: UInt64, at time: TimeInterval, expiringAfter timeout: TimeInterval) -> PlayerInput? {
+        guard latest != nil, time - receivedAt < timeout else { return nil }
+        // Everything we hold is for later ticks: the earliest is the best
+        // word there is on what they were doing.
+        return recent.last { $0.tick <= tick } ?? recent.first
     }
 
     /// The pilot's last input, or nil once it is too old to fly by.

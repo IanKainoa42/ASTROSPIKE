@@ -132,8 +132,11 @@ final class GameSession {
     /// the local clock can be rolled forward through what the thumb did since.
     private var localInputHistory: [UInt64: PlayerInput] = [:]
     private var smoothing = GuestSmoothing()
-    /// How many ticks a late snapshot may be re-simulated before it just snaps.
-    private static let maximumRollForward: UInt64 = 24
+    /// How many ticks of the guest's own inputs are kept for replaying a
+    /// snapshot. Past the longest roll-forward, with room to spare.
+    private static let inputHistoryDepth: UInt64 = GuestRollForward.maximumTicks + 40
+    /// The input sent on the last even tick, flown again on the odd one.
+    private var heldOnlineInput: PlayerInput?
     /// The thumb as of the last simulated tick, so a roll past the guest's
     /// own clock flies what the pilot is doing rather than nothing.
     private var latestLocalInput: PlayerInput?
@@ -433,6 +436,21 @@ final class GameSession {
             localInput = demoAI.input(for: engine.state, seat: localSeat, tick: tick)
             self.demoAI = demoAI
         }
+        if mode == .online {
+            // Online, the thumb is read on the ticks it is sent and held
+            // between them -- exactly what the host plays, since it holds
+            // each input until the next arrives. Reading it every tick here
+            // meant any change on an odd tick was a guaranteed disagreement
+            // with the host, and a correction on the next snapshot.
+            if tick.isMultiple(of: 2) {
+                heldOnlineInput = localInput
+            } else if let held = heldOnlineInput {
+                localInput = PlayerInput(
+                    tick: tick, torque: held.torque, thrust: held.thrust,
+                    fire: held.fire, tractor: held.tractor
+                )
+            }
+        }
         latestLocalInput = localInput
         var inputs: [Seat: PlayerInput] = [:]
         if let flownSeat { inputs[flownSeat] = localInput }
@@ -476,11 +494,13 @@ final class GameSession {
             }
             if !online.isAuthoritative, !isSpectator {
                 localInputHistory[tick] = localInput
-                if tick > 64 { localInputHistory[tick - 64] = nil }
+                let depth = Self.inputHistoryDepth
+                if tick > depth { localInputHistory[tick - depth] = nil }
             }
-            let remote = online.remoteInputs
+            // Every other pilot on the input they sent for this very tick:
+            // the host flies a guest exactly as the guest flew itself.
             for seat in engine.state.ships.keys where seat != flownSeat && inputs[seat] == nil {
-                inputs[seat] = remote[seat] ?? .idle(tick: tick)
+                inputs[seat] = online.remoteInput(for: seat, tick: tick) ?? .idle(tick: tick)
             }
             engine.step(inputs: inputs)
             if online.isAuthoritative, tick.isMultiple(of: 6) {
@@ -625,65 +645,47 @@ final class GameSession {
             guard let self, !online.isAuthoritative else { return }
             let displayed = self.smoothing.apply(to: self.state)
             let predicted = self.engine.state
-            // Keep the online physics: a rebuilt engine defaults to the solo
-            // tuning, and the guest's own ship then flies a different game
-            // between snapshots.
-            var rolled = SimulationEngine(
-                state: authoritative,
-                configuration: self.engine.configuration,
-                // Not just the tuning: the court is cut from the ball, and a
-                // rebuilt engine would default to the nominal one -- the guest
-                // would roll forward against a goal mouth the host has not got.
-                arena: self.engine.arena
+            // The snapshot left the host half a round trip ago. Re-run the
+            // ticks since, with the inputs this board really sent, up to where
+            // its clock should be: a round trip ahead of the snapshot, so what
+            // it sends lands before the host plays that tick. With the host
+            // playing each input on its own tick, the two then agree and this
+            // board's own ship does not move under the pilot. See
+            // `GuestClock` and `GuestRollForward`, and the latency tests that
+            // measure it.
+            let target = GuestClock.target(
+                predicted: predicted.tick,
+                authoritative: authoritative.tick,
+                roundTripTicks: online.roundTripTicks
             )
-            rolled.followsHost = true
-            // The snapshot left the host a ping ago. Re-run the ticks the guest
-            // has already flown since, with the inputs it actually gave, so the
-            // world never steps backwards on arrival -- and if the guest's
-            // clock had fallen level with or behind the host's, run it ahead
-            // by half a ping so the inputs it sends land for the tick the
-            // host is about to play rather than one it has already played.
-            let halfPingTicks = UInt64(max(0, online.pingMilliseconds ?? 0)) * 120 / 2000
-            let lead = min(Self.maximumRollForward, halfPingTicks + 3)
-            let target = max(predicted.tick, authoritative.tick + lead)
-            let ahead = target - authoritative.tick
-            let remote = online.remoteInputs
-            if ahead <= Self.maximumRollForward, [.serve, .playing].contains(authoritative.match.phase) {
-                var bots = self.pilots
-                while rolled.state.tick < target {
-                    let tick = rolled.state.tick
-                    var inputs: [Seat: PlayerInput] = [:]
-                    if let flown = self.flownSeat {
-                        inputs[flown] = self.localInputHistory[tick] ?? self.latestLocalInput ?? .idle(tick: tick)
-                    }
-                    for seat in rolled.state.ships.keys where seat != self.flownSeat {
-                        if var bot = bots[seat] {
-                            inputs[seat] = bot.input(for: rolled.state, seat: seat, tick: tick)
-                            bots[seat] = bot
-                        } else {
-                            inputs[seat] = remote[seat] ?? .idle(tick: tick)
-                        }
-                    }
-                    rolled.step(inputs: inputs)
-                }
-                self.pilots = bots
-            }
-            var resolved = rolled.state
-            if let flown = self.flownSeat, let mine = predicted.ships[flown], let hostShip = resolved.ships[flown] {
-                resolved.ships[flown] = StateReconciler().reconcile(
-                    predicted: mine,
-                    authoritative: hostShip
-                )
-            }
+            let history = self.localInputHistory
+            let latest = self.latestLocalInput
+            let resolution = GuestRollForward.resolve(
+                authoritative: authoritative,
+                predicted: predicted,
+                target: target,
+                // Keep the online physics and court: a rebuilt engine
+                // defaults to the solo tuning and the nominal goal mouth.
+                configuration: self.engine.configuration,
+                arena: self.engine.arena,
+                flownSeat: self.flownSeat,
+                bots: self.pilots,
+                localInput: { history[$0] ?? latest ?? .idle(tick: $0) },
+                remoteInput: { seat, tick in online.remoteInput(for: seat, tick: tick) ?? .idle(tick: tick) }
+            )
+            self.pilots = resolution.bots
+            let resolved = resolution.state
             self.engine = SimulationEngine(
                 state: resolved,
                 configuration: self.engine.configuration,
                 arena: self.engine.arena
             )
             self.engine.followsHost = true
-            // The guest's clock was renumbered: what it did at its old tick
-            // numbers says nothing about the new ones.
-            if target != predicted.tick { self.localInputHistory = [:] }
+            // Only a clock thrown well back -- a snapshot too old to roll
+            // forward -- makes the inputs kept under its old tick numbers
+            // wrong. A tick's easing back re-flies those numbers, which is
+            // exactly what they are kept for.
+            if resolved.tick + 1 < predicted.tick { self.localInputHistory = [:] }
             self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.flownSeat)
             self.state = resolved
             self.announceStakes()

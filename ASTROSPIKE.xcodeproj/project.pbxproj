@@ -61,8 +61,10 @@
 		21070817E58B330270E15FA4 /* OpenTableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D786A69AEA84A035E5137A21 /* OpenTableTests.swift */; };
 		A61FACE961EBBD01FCDED5CD /* LinkLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E28FE156CD107D158B232 /* LinkLogView.swift */; };
 		A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */; };
+		33095F0DE8B1EF4537C2680A /* GuestPredictionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01CC591A3F62EC87710FDFF /* GuestPredictionTests.swift */; };
 		A8A27D1780F192AA000EECBC /* TrackSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */; };
 		A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */; };
+		A7F0689CC7F4CC7175A81B84 /* GuestPrediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60380525B22D03F681786261 /* GuestPrediction.swift */; };
 		A9CC6A505E6B540052A930D6 /* goal.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 2C3D25E49598037842E7D41C /* goal.mp3 */; };
 		AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */; };
 		ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */; };
@@ -203,6 +205,7 @@
 		6E6C209D8015028776DDD2A2 /* MatchRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRules.swift; sourceTree = "<group>"; };
 		74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterOrange.mp3; sourceTree = "<group>"; };
 		802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothingTests.swift; sourceTree = "<group>"; };
+		D01CC591A3F62EC87710FDFF /* GuestPredictionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestPredictionTests.swift; sourceTree = "<group>"; };
 		812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackGeometry.swift; sourceTree = "<group>"; };
 		828D26A07A966607CF8F1287 /* Hulls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hulls.swift; sourceTree = "<group>"; };
 		83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineMatchCoordinator.swift; sourceTree = "<group>"; };
@@ -218,6 +221,7 @@
 		9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRulesTests.swift; sourceTree = "<group>"; };
 		A3A9B354B5E4A268F1331755 /* AIController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIController.swift; sourceTree = "<group>"; };
 		A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothing.swift; sourceTree = "<group>"; };
+		60380525B22D03F681786261 /* GuestPrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestPrediction.swift; sourceTree = "<group>"; };
 		A85F7067A0FF1B4269F53702 /* Soundscape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Soundscape.swift; sourceTree = "<group>"; };
 		A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIControllerTests.swift; sourceTree = "<group>"; };
 		AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -281,6 +285,7 @@
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */,
+				60380525B22D03F681786261 /* GuestPrediction.swift */,
 				828D26A07A966607CF8F1287 /* Hulls.swift */,
 				056582DB470999C16355D1FE /* HullStore.swift */,
 				047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */,
@@ -381,6 +386,7 @@
 				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
 				802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */,
+				D01CC591A3F62EC87710FDFF /* GuestPredictionTests.swift */,
 				58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */,
 				64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */,
 				07221F436E712100C50841C1 /* LobbyTests.swift */,
@@ -562,6 +568,7 @@
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */,
+				A7F0689CC7F4CC7175A81B84 /* GuestPrediction.swift in Sources */,
 				FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */,
 				077E31AEAA3268F71CF606CB /* Hulls.swift in Sources */,
 				C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */,
@@ -626,6 +633,7 @@
 				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
 				A6C3DE32AE41A52B0AFC4F7C /* GuestSmoothingTests.swift in Sources */,
+				33095F0DE8B1EF4537C2680A /* GuestPredictionTests.swift in Sources */,
 				0E4F35B9E15BE39946916228 /* HullCatalogTests.swift in Sources */,
 				52A7F44624480DE67BF75C2B /* KeyboardControlTests.swift in Sources */,
 				769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */,
