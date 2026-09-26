@@ -218,14 +218,29 @@ public struct MatchRules: Sendable {
         ]
     }
 
-    public mutating func resolve(_ contacts: [RuleContact]) -> [SimulationEvent] {
+    /// `goalsKeepPlaying` is the two-ball court: a goal scores and the rally
+    /// goes on, because the ball that went in drops straight back into play
+    /// and the other one was never stopped. Only a set or match point, or a
+    /// fault, sends everyone back to a serve.
+    public mutating func resolve(_ contacts: [RuleContact], goalsKeepPlaying: Bool = false) -> [SimulationEvent] {
         guard state.phase == .playing else { return [] }
 
-        if let goal = contacts.compactMap({ contact -> Team? in
+        let goals = contacts.compactMap { contact -> Team? in
             guard case let .ballEnteredGoal(defending) = contact else { return nil }
             return defending
-        }).first {
+        }
+        if let goal = goals.first, !goalsKeepPlaying {
             return awardPoint(to: goal.opponent, reason: .goal)
+        }
+        if !goals.isEmpty {
+            var events: [SimulationEvent] = []
+            for defending in goals {
+                events += awardPoint(to: defending.opponent, reason: .goal)
+                let setEnded = events.contains { if case .setEnded = $0 { true } else { false } }
+                if state.phase == .finished || setEnded { return events }
+                state.phase = .playing
+            }
+            return events
         }
 
         for contact in contacts {

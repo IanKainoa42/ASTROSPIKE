@@ -131,7 +131,7 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 27)
+        #expect(WireEnvelope.currentVersion == 28)
     }
 
     @Test("A team-up seats the invited friend beside the host")
@@ -214,6 +214,19 @@ struct DoublesTests {
         #expect(ArenaGeometry.standard.widthScale == 1)
     }
 
+    @Test("The doubles goal is cut to its small ball, not stretched by the taller roof")
+    func doublesGoalMatchesItsBall() {
+        let court = ArenaGeometry.doubles(ballRadius: BallState.nominalRadius)
+        let duel = ArenaGeometry.standard(ballRadius: BallState.nominalRadius)
+        #expect(abs(court.portalFaceHeight - duel.portalFaceHeight) < 1e-12)
+        // Smaller than the duel goal on its default double-size ball.
+        let bigBallDuel = ArenaGeometry.standard(ballRadius: BallState.nominalRadius * 2)
+        #expect(court.portalFaceHeight < bigBallDuel.portalFaceHeight)
+        // The mouth still sits under the same collar, and the lips still
+        // hang off the slab's new bottom.
+        #expect(court.portalMouthTopY == court.humpUndersideY - ArenaGeometry.portalCollar)
+    }
+
     @Test("Two balls are staged apart and drift to opposite halves")
     func twoBallServe() {
         var engine = bigCourtEngine()
@@ -227,6 +240,33 @@ struct DoublesTests {
         #expect(balls[0].velocity.x * balls[1].velocity.x < 0)
         // The compatibility accessor still reads the first ball.
         #expect(engine.state.ball == balls[0])
+    }
+
+    @Test("A two-ball goal scores and drops that ball back in; the other never stops")
+    func twoBallGoalPlaysOn() {
+        var engine = bigCourtEngine()
+        for _ in 0 ..< 600 where engine.state.match.phase != .playing { engine.step(inputs: [:]) }
+        #expect(engine.state.match.phase == .playing)
+        let arena = engine.arena
+        // Ball 0 about to cross the cyan face mid-mouth; ball 1 floating
+        // high on the orange side, nowhere near anything.
+        let mouthY = (arena.netBottomY + arena.portalMouthTopY) / 2
+        engine.state.balls[0] = BallState(
+            position: SIMD2(-(arena.netHalfWidth + BallState.nominalRadius + 0.004), mouthY),
+            velocity: SIMD2(2, 0), radius: BallState.nominalRadius
+        )
+        engine.state.balls[1] = BallState(position: SIMD2(0.60, 0.10), velocity: SIMD2(0.3, 0), radius: BallState.nominalRadius)
+        let before = engine.state.match.score
+        engine.step(inputs: [:])
+        #expect(engine.state.match.score.orange == before.orange + 1)
+        #expect(engine.state.match.phase == .playing)
+        // Scored ball re-dropped at centre, drifting to the half that conceded.
+        let redropped = engine.state.balls[0]
+        #expect(abs(redropped.position.x) < 0.05)
+        #expect(redropped.velocity.x < 0)
+        // The other ball kept flying.
+        #expect(engine.state.balls[1].position.x > 0.60)
+        #expect(engine.state.balls[1].velocity.x > 0)
     }
 
     @Test("Spawns stretch with the court")

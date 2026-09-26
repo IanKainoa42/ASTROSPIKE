@@ -313,4 +313,32 @@ struct MatchStakeTests {
             }
         }
     }
+
+    @Test("Two-ball goals keep playing until the set is decided")
+    func goalsKeepPlaying() {
+        var rules = MatchRules(state: MatchRuleState(phase: .playing))
+        let events = rules.resolve([.ballEnteredGoal(defending: .cyan)], goalsKeepPlaying: true)
+        #expect(rules.state.score.orange == 1)
+        #expect(rules.state.phase == .playing)
+        #expect(events.contains { if case .point = $0 { true } else { false } })
+        // Both balls in on one step: two points, still playing.
+        _ = rules.resolve([.ballEnteredGoal(defending: .cyan), .ballEnteredGoal(defending: .orange)], goalsKeepPlaying: true)
+        #expect(rules.state.score == Score(cyan: 1, orange: 2))
+        #expect(rules.state.phase == .playing)
+        // One ball: a goal is a serve, as ever.
+        var single = MatchRules(state: MatchRuleState(phase: .playing))
+        _ = single.resolve([.ballEnteredGoal(defending: .cyan)])
+        #expect(single.state.phase == .serve)
+    }
+
+    @Test("A two-ball goal that ends the set still stops for the serve")
+    func setPointStopsTwoBallPlay() {
+        var rules = MatchRules(state: MatchRuleState(score: Score(cyan: 0, orange: 6), phase: .playing, setsToWin: 2))
+        let events = rules.resolve([.ballEnteredGoal(defending: .cyan), .ballEnteredGoal(defending: .cyan)], goalsKeepPlaying: true)
+        #expect(events.contains { if case .setEnded = $0 { true } else { false } })
+        #expect(rules.state.phase == .serve)
+        // The second ball's goal lands after the set is over: it is dropped.
+        #expect(rules.state.score == Score())
+        #expect(rules.state.sets.orange == 1)
+    }
 }

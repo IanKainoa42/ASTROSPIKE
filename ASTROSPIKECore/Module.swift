@@ -563,6 +563,9 @@ public struct SimulationEngine: Sendable {
     /// guest thought it saw end cannot pull the ball out from under one the
     /// host is still playing.
     public var followsHost = false
+    /// Which balls went into a goal this step, and whose goal it was, so a
+    /// two-ball rally that plays on can put just those balls back up.
+    private var goalsThisStep: [Int: Team] = [:]
 
     public init(
         state: WorldState,
@@ -789,6 +792,7 @@ public struct SimulationEngine: Sendable {
         }
 
         let previousBallPositions = state.balls.map(\.position)
+        goalsThisStep.removeAll()
         for ballIndex in state.balls.indices {
             state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
             (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
@@ -849,9 +853,14 @@ public struct SimulationEngine: Sendable {
             return
         }
 
-        let ruleEvents = rules.resolve(contacts)
+        let ruleEvents = rules.resolve(contacts, goalsKeepPlaying: state.balls.count > 1)
         lastEvents = ruleEvents + collisionEffects
         state.match = rules.state
+        if state.match.phase == .playing {
+            for (ballIndex, defending) in goalsThisStep.sorted(by: { $0.key < $1.key }) {
+                redropBall(ballIndex, toward: defending)
+            }
+        }
         if state.match.phase == .serve {
             let concedingTeam = ruleEvents.compactMap { event -> Team? in
                 guard case let .point(scoringTeam, _) = event else { return nil }
@@ -933,6 +942,23 @@ public struct SimulationEngine: Sendable {
                 radius: configuration.ballRadius
             )
         }
+    }
+
+    /// Put a scored ball straight back into a live rally: dead centre under
+    /// the goal, already falling, drifting to the side that just conceded --
+    /// a serve for one ball that never stops the other.
+    private mutating func redropBall(_ index: Int, toward team: Team) {
+        guard state.balls.indices.contains(index) else { return }
+        let sign = state.halfSign(of: team)
+        let salt = 16 + UInt64(index) * 2
+        state.balls[index] = BallState(
+            position: SIMD2(0, configuration.ballDropHeight),
+            velocity: SIMD2(
+                sign * Self.serveDriftSpeed * serveDraw(salt, in: Self.serveDriftRange),
+                -configuration.ballDropSpeed * serveDraw(salt + 1, in: Self.serveDropRange)
+            ),
+            radius: configuration.ballRadius
+        )
     }
 
     /// True when the engine keeps its own book instead of handing contacts
@@ -1529,9 +1555,9 @@ public struct SimulationEngine: Sendable {
             if netHit.crossedFace, !blockedByLip, netHit.position.y <= arena.portalMouthTopY {
                 state.balls[ballIndex].position = netHit.position
                 // The face on your half is the one you defend.
-                contacts.append(.ballEnteredGoal(
-                    defending: state.team(onHalfAt: netHit.fromLeft ? -1 : 1)
-                ))
+                let defending = state.team(onHalfAt: netHit.fromLeft ? -1 : 1)
+                contacts.append(.ballEnteredGoal(defending: defending))
+                goalsThisStep[ballIndex] = defending
                 return
             }
             if netHit.position.y > arena.portalMouthTopY {

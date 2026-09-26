@@ -251,13 +251,22 @@ public struct ArenaGeometry: Equatable, Sendable {
     public static let doublesScale = 1.25
 
     /// The doubles court cut for a ball of `radius`.
+    ///
+    /// The goal mouth is cut to the ball, not the room. Left to the default,
+    /// the slab ends at the duel court's tuned 0.184 -- an absolute height --
+    /// while the taller roof lifts the top of the mouth by 0.16, so the goal
+    /// came out 0.372 tall: 4.4 small balls, against 1.5 big ones in a duel.
+    /// Hanging the slab down to the same face height a duel court would give
+    /// this ball keeps the goal the size it was tuned at.
     public static func doubles(ballRadius: Double) -> ArenaGeometry {
-        ArenaGeometry(
+        var court = ArenaGeometry(
             halfWidth: Self.standard.halfWidth * doublesScale,
             floorY: Self.standard.floorY * doublesScale,
             ceilingY: Self.standard.ceilingY * doublesScale,
             ballRadius: ballRadius
         )
+        court.netBottomY = court.portalMouthTopY - standard(ballRadius: ballRadius).portalFaceHeight
+        return court
     }
 
     /// The standard court cut for a ball of `radius`. The goal mouth is the

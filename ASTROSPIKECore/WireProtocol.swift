@@ -95,7 +95,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     pilots fly two against one and a bot. A build 26 guest would drop
     //     the wings from the table it is shown and put the wrong names on
     //     the court.
-    public static let currentVersion: UInt16 = 27
+    // 28: two-ball goals play on. A goal on the doubles court scores and
+    //     drops that ball straight back in instead of re-serving both, and
+    //     the doubles goal is cut to its small ball. A build 102 host would
+    //     stop the rally the new guest expects to keep flying.
+    public static let currentVersion: UInt16 = 28
 
     public var version: UInt16
     public var sequence: UInt64
