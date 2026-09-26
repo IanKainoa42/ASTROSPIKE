@@ -76,6 +76,9 @@ final class ArenaScene: SKScene {
     private var ballTrails: [[CGPoint]] = []
     private var plumeSeed = 0
     private var didBuild = false
+    /// Each sprung peg's drawing, by obstacle index, moved every frame to
+    /// where the snapshot has the peg, and the tether back to its anchor.
+    private var bumperNodes: [Int: (body: SKNode, tether: SKShapeNode)] = [:]
     /// The ends the court was last drawn for. The teams change ends between
     /// sets, so every half-coloured mark is drawn for whoever is on that half.
     private var drawnSidesSwapped = false
@@ -533,6 +536,7 @@ final class ArenaScene: SKScene {
     /// simulation collides against: the spine stroked at the obstacle's own
     /// radius, so a ball is seen to kiss exactly the edge it bounces off.
     private func addObstacles() {
+        bumperNodes.removeAll()
         guard !arena.obstacles.isEmpty else { return }
         // Cuts run into the walls and roof so nothing can get behind them;
         // the court outline crops off the part buried in the wall.
@@ -556,7 +560,25 @@ final class ArenaScene: SKScene {
         crop.maskNode = mask
         crop.zPosition = 0
         arenaLayer.addChild(crop)
-        for obstacle in arena.obstacles {
+        for (index, obstacle) in arena.obstacles.enumerated() {
+            // A sprung peg is drawn at its anchor inside a holder the frame
+            // loop slides around; a fixed one straight into the crop.
+            let holder = SKNode()
+            crop.addChild(holder)
+            if obstacle.isSprung {
+                let anchor = SKShapeNode(circleOfRadius: 3)
+                anchor.position = point(obstacle.start.x, obstacle.start.y)
+                anchor.fillColor = .white.withAlphaComponent(0.35)
+                anchor.strokeColor = .clear
+                anchor.zPosition = -3
+                crop.addChild(anchor)
+                let tether = SKShapeNode()
+                tether.strokeColor = .white.withAlphaComponent(0.3)
+                tether.lineWidth = 2
+                tether.zPosition = -3
+                crop.addChild(tether)
+                bumperNodes[index] = (holder, tether)
+            }
             // Walked in world units and mapped point by point, so a court
             // drawn wider than it is tall still lines up with the physics.
             let spine = obstacle.end - obstacle.start
@@ -578,14 +600,14 @@ final class ArenaScene: SKScene {
             fill.strokeColor = .clear
             fill.fillColor = SKColor(white: 0.16, alpha: 1)
             fill.zPosition = -2
-            crop.addChild(fill)
+            holder.addChild(fill)
 
             let edge = SKShapeNode(path: outline)
             edge.strokeColor = .white.withAlphaComponent(0.55)
             edge.lineWidth = 3
             edge.glowWidth = 1
             edge.fillColor = .clear
-            crop.addChild(edge)
+            holder.addChild(edge)
         }
     }
 
@@ -832,6 +854,19 @@ final class ArenaScene: SKScene {
             didBuild = false
         }
         if !didBuild { buildArena() }
+        for (index, nodes) in bumperNodes where index < snapshot.bumpers.count && index < arena.obstacles.count {
+            // Through `point` at both ends, not one scale: the court is drawn
+            // wider than it is tall.
+            let anchor = arena.obstacles[index].start
+            let moved = anchor + snapshot.bumpers[index].offset
+            let from = point(anchor.x, anchor.y)
+            let to = point(moved.x, moved.y)
+            nodes.body.position = CGPoint(x: to.x - from.x, y: to.y - from.y)
+            let line = CGMutablePath()
+            line.move(to: from)
+            line.addLine(to: to)
+            nodes.tether.path = line
+        }
         // The effects below run on wall time, not ticks: there is no update
         // loop, so each drawn snapshot is one frame, and a paused match that
         // stops sending snapshots simply stops them.

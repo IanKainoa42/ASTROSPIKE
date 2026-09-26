@@ -12,16 +12,35 @@ public struct ArenaObstacle: Equatable, Sendable {
     /// lands on top of it has bounced, exactly as the corner arcs count.
     /// Pegs and ledges are not ground -- a ball resting on one rolls off.
     public var isGround: Bool
+    /// Hung on a spring from where it is drawn rather than bolted down: a
+    /// hull can shove it off its anchor, and it swings back -- into the ball,
+    /// if the ball is in the way. Where it is now lives on the world state.
+    public var isSprung: Bool
 
-    public init(start: SIMD2<Double>, end: SIMD2<Double>, radius: Double, isGround: Bool = false) {
+    public init(
+        start: SIMD2<Double>,
+        end: SIMD2<Double>,
+        radius: Double,
+        isGround: Bool = false,
+        isSprung: Bool = false
+    ) {
         self.start = start
         self.end = end
         self.radius = radius
         self.isGround = isGround
+        self.isSprung = isSprung
     }
 
-    public static func peg(_ center: SIMD2<Double>, radius: Double) -> ArenaObstacle {
-        ArenaObstacle(start: center, end: center, radius: radius)
+    public static func peg(_ center: SIMD2<Double>, radius: Double, sprung: Bool = false) -> ArenaObstacle {
+        ArenaObstacle(start: center, end: center, radius: radius, isSprung: sprung)
+    }
+
+    /// The same obstacle moved by `offset`.
+    func shifted(by offset: SIMD2<Double>) -> ArenaObstacle {
+        var moved = self
+        moved.start += offset
+        moved.end += offset
+        return moved
     }
 
     /// The same obstacle on the other half of the court.
@@ -30,7 +49,8 @@ public struct ArenaObstacle: Equatable, Sendable {
             start: SIMD2(-start.x, start.y),
             end: SIMD2(-end.x, end.y),
             radius: radius,
-            isGround: isGround
+            isGround: isGround,
+            isSprung: isSprung
         )
     }
 
@@ -44,6 +64,19 @@ public struct ArenaObstacle: Equatable, Sendable {
     }
 }
 
+/// Where a sprung peg is: how far it has been shoved off its anchor, and
+/// how fast it is moving. One per obstacle in `ArenaGeometry.obstacles`;
+/// fixed ones stay at zero.
+public struct BumperState: Codable, Equatable, Sendable {
+    public var offset: SIMD2<Double>
+    public var velocity: SIMD2<Double>
+
+    public init(offset: SIMD2<Double> = .zero, velocity: SIMD2<Double> = .zero) {
+        self.offset = offset
+        self.velocity = velocity
+    }
+}
+
 /// Which court the match is played in. Every layout is the same game -- the
 /// roof-hung goal, the same rules -- with different surfaces to bank the ball
 /// off. Layouts are mirrored across the net so neither half is the lucky one,
@@ -54,7 +87,9 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
     /// All four corners cut off flat at a steep angle: shots up the side wall
     /// are thrown in toward the goal, and floor rolls kick up early.
     case diamond
-    /// Two round pegs a side, out of the way of the goal and the spawns.
+    /// Two round pegs a side on springs, in toward the net and well off the
+    /// wall: shove one with your hull and it swings back into the ball,
+    /// like a foosball man.
     case bumpers
     /// A shelf out of each side wall, sloping down toward the net.
     case ledges
@@ -83,8 +118,8 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
             ]
         case .bumpers:
             [
-                .peg(SIMD2(0.60, 0.26), radius: 0.06),
-                .peg(SIMD2(0.62, -0.18), radius: 0.06),
+                .peg(SIMD2(0.48, 0.26), radius: 0.06, sprung: true),
+                .peg(SIMD2(0.50, -0.22), radius: 0.06, sprung: true),
             ]
         case .ledges:
             [
@@ -106,10 +141,26 @@ extension ArenaGeometry {
                 start: obstacle.start * scale,
                 end: obstacle.end * scale,
                 radius: obstacle.radius * widthScale,
-                isGround: obstacle.isGround
+                isGround: obstacle.isGround,
+                isSprung: obstacle.isSprung
             )
         }
         court.obstacles = right + right.map(\.mirrored)
+        return court
+    }
+
+    /// Furthest a sprung peg can be shoved off its anchor, stretched with the
+    /// court like everything else.
+    public var bumperTravel: Double { 0.10 * widthScale }
+
+    /// This court with every sprung peg moved to where `bumpers` has it. A
+    /// peg with no entry sits on its anchor.
+    public func displaced(by bumpers: [BumperState]) -> ArenaGeometry {
+        guard !bumpers.isEmpty else { return self }
+        var court = self
+        for index in court.obstacles.indices where index < bumpers.count && court.obstacles[index].isSprung {
+            court.obstacles[index] = court.obstacles[index].shifted(by: bumpers[index].offset)
+        }
         return court
     }
 
@@ -118,11 +169,12 @@ extension ArenaGeometry {
     /// shipped obstacle is back into the court.
     public func obstacleContact(
         position: SIMD2<Double>,
-        radius: Double
-    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>, isGround: Bool)? {
-        var best: (position: SIMD2<Double>, normal: SIMD2<Double>, isGround: Bool)?
+        radius: Double,
+        where included: (ArenaObstacle) -> Bool = { _ in true }
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>, isGround: Bool, index: Int)? {
+        var best: (position: SIMD2<Double>, normal: SIMD2<Double>, isGround: Bool, index: Int)?
         var deepest = 0.0
-        for obstacle in obstacles {
+        for (index, obstacle) in obstacles.enumerated() where included(obstacle) {
             let closest = obstacle.closestPoint(to: position)
             let away = position - closest
             let distance = simd_length(away)
@@ -131,7 +183,7 @@ extension ArenaGeometry {
             guard depth > 0, depth > deepest else { continue }
             let normal = distance > 1e-9 ? away / distance : SIMD2(0, 1)
             deepest = depth
-            best = (closest + normal * reach, normal, obstacle.isGround)
+            best = (closest + normal * reach, normal, obstacle.isGround, index)
         }
         return best
     }
@@ -141,14 +193,15 @@ extension ArenaGeometry {
     public func obstacleContact(
         from start: SIMD2<Double>,
         to end: SIMD2<Double>,
-        radius: Double
-    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>, isGround: Bool)? {
+        radius: Double,
+        where included: (ArenaObstacle) -> Bool = { _ in true }
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>, isGround: Bool, index: Int)? {
         guard !obstacles.isEmpty else { return nil }
         let travel = simd_distance(start, end)
         let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
         for step in 1 ... steps {
             let sample = start + (end - start) * (Double(step) / Double(steps))
-            if let contact = obstacleContact(position: sample, radius: radius) {
+            if let contact = obstacleContact(position: sample, radius: radius, where: included) {
                 return contact
             }
         }

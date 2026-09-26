@@ -102,7 +102,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 29: the host's tuning carries the arena layout, and the engine
     //     collides against the layout's walls and pegs. A build 103 guest
     //     would fly an open court through the host's obstacles.
-    public static let currentVersion: UInt16 = 29
+    // 30: Bumpers' pegs are sprung. WorldState carries `bumpers`, where each
+    //     peg has been shoved to; a build 104 board would not decode it.
+    public static let currentVersion: UInt16 = 30
 
     public var version: UInt16
     public var sequence: UInt64

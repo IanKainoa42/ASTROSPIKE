@@ -479,6 +479,8 @@ public struct AIController: InputSource, Sendable {
         var spin = state.ball.spin
         var earliestArrival: Plan?
         var firstReachable: Plan?
+        // Sprung pegs are rolled against where they stand now.
+        let field = arena.displaced(by: state.bumpers)
         func grip(_ normal: SIMD2<Double>, from incoming: SIMD2<Double>) {
             (velocity, spin) = BallState.gripped(
                 velocity,
@@ -527,7 +529,7 @@ public struct AIController: InputSource, Sendable {
                     grip(hump.normal, from: incoming)
                 }
             }
-            if let obstacle = arena.obstacleContact(from: previous, to: position, radius: radius) {
+            if let obstacle = field.obstacleContact(from: previous, to: position, radius: radius) {
                 position = obstacle.position
                 let inward = simd_dot(velocity, obstacle.normal)
                 if inward < 0 {
