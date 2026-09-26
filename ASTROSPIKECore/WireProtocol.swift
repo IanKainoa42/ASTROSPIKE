@@ -91,7 +91,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     host plays each on the tick it was sent for, and the guest runs a
     //     full round trip ahead. A build 25 host flies a guest's last input
     //     whatever its tick, so this guest would feel pulled around by it.
-    public static let currentVersion: UInt16 = 26
+    // 27: open tables seat up to four. OpenTable gained both wings, so three
+    //     pilots fly two against one and a bot. A build 26 guest would drop
+    //     the wings from the table it is shown and put the wrong names on
+    //     the court.
+    public static let currentVersion: UInt16 = 27
 
     public var version: UInt16
     public var sequence: UInt64

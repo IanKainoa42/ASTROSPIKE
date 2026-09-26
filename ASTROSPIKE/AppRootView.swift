@@ -340,7 +340,8 @@ private enum InviteFormat: Hashable {
     /// Up to three on your side against bots, or two a side.
     case teamUp
     /// Ask up to five at once. The first to join flies you; everyone after
-    /// watches from the bench and plays the winner.
+    /// watches the game in progress and flies the next: three is two
+    /// against one and a bot, four is two a side.
     case openTable
     /// The host of a running open table asking more pilots to the bench.
     case addToTable
@@ -384,8 +385,8 @@ private struct InviteSheet: View {
         switch format {
         case .duel: "Pick a pilot. You fly in the warm-up bay while they answer."
         case .teamUp: "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
-        case .openTable: "Pick up to five. The first to join starts a duel with you; everyone after watches from the bench and plays the winner. Winner stays on."
-        case .addToTable: "They join the back of the bench and play the winner when their turn comes."
+        case .openTable: "Pick up to five. The first to join starts a duel with you; anyone after watches the game in progress, then everyone flies the next: three is two against one and a bot, four is two a side. Past four, winners stay on."
+        case .addToTable: "They watch the game in progress and fly the next one. Past four pilots, they wait their turn on the bench."
         }
     }
 
@@ -917,12 +918,18 @@ private struct GameView: View {
     private var isSpectating: Bool { session.isSpectator }
 
     /// Who flies each colour, by Game Center name, at an open table -- where
-    /// the pilots change every duel and OPPONENT says nothing.
+    /// the pilots change every game and OPPONENT says nothing. A pilot alone
+    /// on a side of a doubles court is flying with a bot: IAN + BOT.
     private var courtNames: [Team: String]? {
         guard table != nil else { return nil }
         var names: [Team: String] = [:]
-        for (id, seat) in online.seating where !seat.isWing {
-            names[seat.team] = online.pilotName(id).uppercased()
+        for team in [Team.cyan, .orange] {
+            var side = [Seat.lead(team), Seat.wing(team)]
+                .compactMap { seat in online.seating.first { $0.value == seat }?.key }
+                .map { online.pilotName($0).uppercased() }
+            guard !side.isEmpty else { continue }
+            if session.isDoubles, side.count == 1 { side.append("BOT") }
+            names[team] = side.joined(separator: " + ")
         }
         return names
     }
@@ -931,7 +938,9 @@ private struct GameView: View {
     private func bannerText(for table: OpenTable) -> String {
         if let line = online.benchLine { return "WATCHING · \(line)" }
         if isSpectating { return online.isTableHost ? "WATCHING · YOU'RE HOSTING" : "WATCHING" }
-        if table.queue.isEmpty { return "OPEN TABLE · WINNER STAYS ON" }
+        if table.queue.isEmpty {
+            return table.court.count > 2 ? "OPEN TABLE · PARTNERS ROTATE" : "OPEN TABLE · WINNER STAYS ON"
+        }
         return "OPEN TABLE · \(table.queue.count) WAITING"
     }
 
@@ -952,9 +961,8 @@ private struct GameView: View {
         guard let table else { return nil }
         let localID = online.localPlayerID
         func name(_ id: String) -> String { id == localID ? "YOU" : online.pilotName(id).uppercased() }
-        let next = table.nextDuel
-        let nextLine: String = if next.count == 2 {
-            "NEXT · \(next.map(name).joined(separator: " V "))"
+        let nextLine: String = if let next = table.nextCourt {
+            "NEXT · \(OpenTable.matchup(of: next, name: name))"
                 + (online.intermissionSecondsRemaining.map { " · \($0)s" } ?? "")
         } else {
             online.isTableHost ? "WAITING FOR A CHALLENGER" : "WAITING ON THE HOST"
@@ -1864,7 +1872,7 @@ private struct ResultsOverlay: View {
 }
 
 /// One line under the side badges at an open table: the bench's place in
-/// line, or for the pilots flying, how many are waiting to play the winner.
+/// line, or for the pilots flying, how many are waiting to fly.
 private struct OpenTableBanner: View {
     let text: String
     let isWatching: Bool
