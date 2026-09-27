@@ -32,9 +32,8 @@ struct ArenaLayoutTests {
         return engine
     }
 
-    /// `shoved` counts a sprung peg as reaching the whole of its travel in
-    /// every direction, for room that has to stay clear however hard the
-    /// pegs have been knocked about.
+    /// `shoved` counts a sprung peg as anywhere on its track, for room that
+    /// has to stay clear however the pegs have been left.
     private static func deepestPenetration(
         _ arena: ArenaGeometry,
         _ position: SIMD2<Double>,
@@ -42,8 +41,12 @@ struct ArenaLayoutTests {
         shoved: Bool = false
     ) -> Double {
         arena.obstacles.map { obstacle in
-            let reach = obstacle.radius + (shoved && obstacle.isSprung ? arena.bumperTravel : 0)
-            return reach + radius - simd_distance(position, obstacle.closestPoint(to: position))
+            var obstacle = obstacle
+            if shoved && obstacle.isSprung {
+                obstacle.start.y -= arena.bumperTravel
+                obstacle.end.y += arena.bumperTravel
+            }
+            return obstacle.radius + radius - simd_distance(position, obstacle.closestPoint(to: position))
         }.max() ?? -.infinity
     }
 
@@ -82,7 +85,7 @@ struct ArenaLayoutTests {
             for sign in [-1.0, 1.0] {
                 // Spawns, lead and wing, with a hull's worth of room.
                 for depth in [0.55, 0.80] {
-                    #expect(Self.deepestPenetration(court, SIMD2(sign * depth * w, -0.45 * h), hull + 0.02, shoved: true) < 0)
+                    #expect(Self.deepestPenetration(court, SIMD2(sign * depth * w, -0.45 * h), hull + 0.02, shoved: true) < 0, "hull \(hull) depth \(depth)")
                 }
                 // Where the AI parks to strike and to defend -- with the pegs
                 // at rest: a hull parking there just shoves one aside.
@@ -113,13 +116,22 @@ struct ArenaLayoutTests {
     func noPockets(_ layout: ArenaLayout) {
         for (court, ball) in Self.courts(layout) {
             for obstacle in court.obstacles {
+                if obstacle.isSprung {
+                    // Well off the side wall, and run to either end of its
+                    // track it shuts the gap to every size of ball.
+                    #expect(court.halfWidth - abs(obstacle.start.x) - obstacle.radius > ball * 2)
+                    let top = court.ceilingY - (obstacle.start.y + court.bumperTravel) - obstacle.radius
+                    let bottom = (obstacle.start.y - court.bumperTravel) - court.floorY - obstacle.radius
+                    for gap in [top, bottom] {
+                        #expect(gap > 0 && gap < BallState.nominalRadius * 2, "gap \(gap)")
+                    }
+                    continue
+                }
                 for end in [obstacle.start, obstacle.end] {
                     // An end either sits in a wall, floor or roof, or is at
                     // least a ball's width clear of all of them.
-                    // A sprung peg keeps the gap even shoved hard at the wall.
-                    let reach = obstacle.radius + (obstacle.isSprung ? court.bumperTravel : 0)
-                    let clearX = court.halfWidth - abs(end.x) - reach
-                    let clearY = min(court.ceilingY - end.y, end.y - court.floorY) - reach
+                    let clearX = court.halfWidth - abs(end.x) - obstacle.radius
+                    let clearY = min(court.ceilingY - end.y, end.y - court.floorY) - obstacle.radius
                     let buried = clearX < 0 || clearY < 0
                     #expect(buried || (clearX > ball * 2 && clearY > ball * 2))
                 }
@@ -175,7 +187,7 @@ struct ArenaLayoutTests {
     func pegBounces() {
         var engine = Self.engine(.bumpers)
         for _ in 0 ..< 600 where engine.state.match.phase != .playing { engine.step(inputs: [:]) }
-        let peg = engine.arena.obstacles.first { $0.start == $0.end && $0.start.x > 0 && $0.start.y > 0 }!
+        let peg = engine.arena.obstacles.first { $0.start == $0.end && $0.start.x > 0 }!
         let r = engine.configuration.ballRadius
         engine.state.balls[0] = BallState(position: peg.start + SIMD2(0, peg.radius + r + 0.01), velocity: SIMD2(0, -1.5), radius: r)
         let floorBefore = engine.state.match.floorContacts
@@ -217,7 +229,7 @@ struct ArenaLayoutTests {
                 #expect(court.obstacles.allSatisfy { $0.isSprung == (layout == .bumpers) })
             }
         }
-        #expect(ArenaGeometry.standard.laidOut(.bumpers).obstacles.count == 4)
+        #expect(ArenaGeometry.standard.laidOut(.bumpers).obstacles.count == 2)
     }
 
     /// A Bumpers match in play, with the ball and cyan parked out of the way.
@@ -233,14 +245,14 @@ struct ArenaLayoutTests {
         return engine
     }
 
-    private static func lowerRightPeg(_ engine: SimulationEngine) -> Int {
-        engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 && $0.start.y < 0 }!
+    private static func rightPeg(_ engine: SimulationEngine) -> Int {
+        engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 }!
     }
 
     @Test("A hull shoves a peg along its track, never off it or past its end, and it stays where it stops")
     func shipShovesPeg() {
         var engine = Self.pegCourt()
-        let index = Self.lowerRightPeg(engine)
+        let index = Self.rightPeg(engine)
         let peg = engine.arena.obstacles[index]
         let reach = ShipHitbox.shared.reach
         let travel = engine.arena.bumperTravel
@@ -258,22 +270,23 @@ struct ArenaLayoutTests {
         // Get the hull out of the way: the peg glides to a stop and stays.
         engine.state.ships[.orange]?.position = SIMD2(0.6, engine.arena.floorY + 0.1)
         engine.state.ships[.orange]?.velocity = .zero
-        for _ in 0 ..< 60 { engine.step(inputs: [:]) }
+        for _ in 0 ..< 360 { engine.step(inputs: [:]) }
         let parked = engine.state.bumpers[index].offset.y
         for _ in 0 ..< 240 {
             engine.step(inputs: [:])
             furthest = max(furthest, abs(engine.state.bumpers[index].offset.y))
         }
         #expect(furthest <= travel + 1e-9)
-        #expect(parked > 0.02)
-        #expect(engine.state.bumpers[index].offset.y == parked)
+        // One solid shove carries it a good way down a floor-to-roof track.
+        #expect(parked > 0.3, "parked \(parked)")
+        #expect(engine.state.bumpers[index].offset.y == parked, "parked \(parked) now \(engine.state.bumpers[index].offset.y)")
         #expect(engine.state.bumpers[index].velocity == .zero)
     }
 
     @Test("A hull flying square into a peg's side meets a post: the track has no sideways give")
     func pegHasNoSidewaysGive() {
         var engine = Self.pegCourt()
-        let index = Self.lowerRightPeg(engine)
+        let index = Self.rightPeg(engine)
         let peg = engine.arena.obstacles[index]
         let reach = ShipHitbox.shared.reach
         engine.state.ships[.orange]?.position = peg.start + SIMD2(-(reach + peg.radius + 0.01), 0)
@@ -284,11 +297,11 @@ struct ArenaLayoutTests {
         #expect((engine.state.ships[.orange]?.velocity.x ?? 1) < 0.5)
     }
 
-    /// How far the beam hauls the lower-right peg in `ticks`, held from
+    /// How far the beam hauls the right peg in `ticks`, held from
     /// below with the nose straight up at it.
     private static func beamHaul(pegPull: Double, ticks: Int) -> (engine: SimulationEngine, index: Int) {
         var engine = Self.pegCourt(pegPull: pegPull)
-        let index = Self.lowerRightPeg(engine)
+        let index = Self.rightPeg(engine)
         let spot = engine.arena.obstacles[index].start + SIMD2(0, -0.3)
         for tick in 0 ..< ticks {
             // Hold the hull still, nose on the peg: only the beam acts.
@@ -321,6 +334,42 @@ struct ArenaLayoutTests {
         #expect(engine.state.bumpers[index].offset.y == parked)
     }
 
+    @Test("A hull runs a peg all the way up its track and all the way back down, and the beam hauls it most of the way from the floor")
+    func pegRunsFullTrack() {
+        var engine = Self.pegCourt()
+        let index = Self.rightPeg(engine)
+        let peg = engine.arena.obstacles[index]
+        let travel = engine.arena.bumperTravel
+        let reach = ShipHitbox.shared.reach
+        #expect(travel > 0.5)
+        // Push from underneath, then from on top, keeping the hull on it.
+        for direction in [1.0, -1.0] {
+            for tick in 0 ..< 600 {
+                let side = peg.start + engine.state.bumpers[index].offset
+                engine.state.ships[.orange]?.position = side + SIMD2(0, -direction * (reach + peg.radius - 0.005))
+                engine.state.ships[.orange]?.velocity = SIMD2(0, direction * 1.2)
+                engine.state.ships[.orange]?.angle = direction * .pi / 2
+                engine.state.ships[.orange]?.angularVelocity = 0
+                engine.step(inputs: [.orange: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false)])
+                if engine.state.bumpers[index].offset.y * direction >= travel - 1e-9 { break }
+            }
+            #expect(abs(engine.state.bumpers[index].offset.y - direction * travel) < 1e-9, "\(direction): \(engine.state.bumpers[index].offset.y) of \(travel)")
+        }
+        // Back on its anchor, then hauled down by a ship skimming the floor
+        // beside it, nose on the peg.
+        engine.state.bumpers[index] = BumperState()
+        let low = SIMD2(peg.start.x + 0.25, engine.arena.floorY + reach + 0.01)
+        for tick in 0 ..< 720 {
+            let toward = peg.start + engine.state.bumpers[index].offset - low
+            engine.state.ships[.orange]?.position = low
+            engine.state.ships[.orange]?.velocity = .zero
+            engine.state.ships[.orange]?.angle = atan2(toward.y, toward.x)
+            engine.state.ships[.orange]?.angularVelocity = 0
+            engine.step(inputs: [.orange: PlayerInput(tick: UInt64(tick), torque: 0, thrust: false, tractor: true)])
+        }
+        #expect(engine.state.bumpers[index].offset.y < -travel * 0.8, "hauled to \(engine.state.bumpers[index].offset.y) of \(-travel)")
+    }
+
     @Test("Peg pull scales the beam's haul on a peg")
     func pegPullScales() {
         let soft = Self.beamHaul(pegPull: 0.5, ticks: 20)
@@ -336,7 +385,7 @@ struct ArenaLayoutTests {
         let speed = FlightTuningSnapshot.defaults.configuration.boltSpeed
         func shoot(from offset: SIMD2<Double>, heading: SIMD2<Double>) -> (velocity: Double, bolts: Int) {
             var engine = Self.pegCourt()
-            let index = Self.lowerRightPeg(engine)
+            let index = Self.rightPeg(engine)
             let peg = engine.arena.obstacles[index]
             engine.state.ships[.orange]?.position = SIMD2(0.6, engine.arena.floorY + 0.1)
             engine.state.bolts = [BoltState(
@@ -366,7 +415,7 @@ struct ArenaLayoutTests {
     @Test("A peg sent along its track kicks a ball in its way")
     func pegKicksBall() {
         var engine = Self.pegCourt()
-        let index = engine.arena.obstacles.firstIndex { $0.isSprung && $0.start.x > 0 && $0.start.y > 0 }!
+        let index = Self.rightPeg(engine)
         let peg = engine.arena.obstacles[index]
         let r = engine.configuration.ballRadius
         // Peg driven upward along its track, ball resting just above it.

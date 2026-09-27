@@ -577,18 +577,12 @@ final class ArenaScene: SKScene {
             let holder = SKNode()
             crop.addChild(holder)
             if obstacle.isSprung {
-                // The peg's track: a faint rod from one stop to the other,
-                // with a tick at each end so it reads as a rail it slides on.
-                let travel = arena.bumperTravel
-                let low = point(obstacle.start.x, obstacle.start.y - travel)
-                let high = point(obstacle.start.x, obstacle.start.y + travel)
+                // The peg's track: a faint rod floor to roof, like a
+                // foosball rod wall to wall. The peg stops just short of
+                // either end (`bumperTravel`).
                 let rail = CGMutablePath()
-                rail.move(to: low)
-                rail.addLine(to: high)
-                for end in [low, high] {
-                    rail.move(to: CGPoint(x: end.x - 7, y: end.y))
-                    rail.addLine(to: CGPoint(x: end.x + 7, y: end.y))
-                }
+                rail.move(to: point(obstacle.start.x, arena.floorY))
+                rail.addLine(to: point(obstacle.start.x, arena.ceilingY))
                 let track = SKShapeNode(path: rail)
                 track.strokeColor = .white.withAlphaComponent(0.32)
                 track.lineWidth = 3

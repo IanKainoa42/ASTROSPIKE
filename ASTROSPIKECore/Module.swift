@@ -613,11 +613,13 @@ public struct SimulationEngine: Sendable {
     /// A peg on its track: a little lighter than a hull, so a ship shoves it
     /// along but feels it, and much heavier than the ball, which it kicks.
     static let bumperMass = 1.20
-    /// A peg slides on its own short upright track, like a foosball goalie
-    /// on its rod. Nothing pulls it back: it glides to a stop and stays
-    /// wherever it was left. Drag bleeds speed off each second, and a little
-    /// dry friction brings a slow peg to a dead stop instead of creeping.
-    static let bumperDrag = 4.0
+    /// A peg slides on its own upright track, like a foosball goalie on its
+    /// rod. Nothing pulls it back: it glides to a stop and stays wherever it
+    /// was left. Drag bleeds speed off each second -- light enough that a
+    /// good shove carries it a long way down a floor-to-roof track -- and a
+    /// little dry friction brings a slow peg to a dead stop instead of
+    /// creeping.
+    static let bumperDrag = 1.5
     static let bumperFriction = 0.35
     /// A hull and a peg meet with a dull knock, not a bounce.
     static let shipBumperRestitution = 0.2

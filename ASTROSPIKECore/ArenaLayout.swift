@@ -12,9 +12,9 @@ public struct ArenaObstacle: Equatable, Sendable {
     /// lands on top of it has bounced, exactly as the corner arcs count.
     /// Pegs and ledges are not ground -- a ball resting on one rolls off.
     public var isGround: Bool
-    /// Hung on a spring from where it is drawn rather than bolted down: a
-    /// hull can shove it off its anchor, and it swings back -- into the ball,
-    /// if the ball is in the way. Where it is now lives on the world state.
+    /// Riding an upright track rather than bolted down: a hull, the beam or
+    /// a bolt slides it up or down, and it stays where it stops. Where it is
+    /// now lives on the world state.
     public var isSprung: Bool
 
     public init(
@@ -87,10 +87,10 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
     /// All four corners cut off flat at a steep angle: shots up the side wall
     /// are thrown in toward the goal, and floor rolls kick up early.
     case diamond
-    /// Two round pegs a side, in toward the net and well off the wall, each
-    /// on its own short upright track like a foosball goalie. Shove one with
-    /// your hull, haul it with the beam or shoot it along, and it stays
-    /// wherever it stops.
+    /// One round peg a side, in toward the net and well off the wall, on an
+    /// upright track that runs almost floor to roof like a foosball goalie.
+    /// Shove it with your hull, haul it with the beam or shoot it along, and
+    /// it stays wherever it stops -- all the way up or down seals that end.
     case bumpers
     /// A shelf out of each side wall, sloping down toward the net.
     case ledges
@@ -103,6 +103,9 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
         case .ledges: "Ledges"
         }
     }
+
+    /// The Bumpers peg, in standard-court units.
+    static let pegRadius = 0.06
 
     /// The right half of the layout, in standard-court units. Mirrored onto
     /// the left and stretched with the court by `ArenaGeometry.laidOut`.
@@ -118,10 +121,9 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
                 ArenaObstacle(start: SIMD2(0.99, -0.37), end: SIMD2(0.72, -0.67), radius: 0.03, isGround: true),
             ]
         case .bumpers:
-            [
-                .peg(SIMD2(0.48, 0.26), radius: 0.06, sprung: true),
-                .peg(SIMD2(0.50, -0.22), radius: 0.06, sprung: true),
-            ]
+            // In from the old 0.48: a peg left at the bottom of its track
+            // must still clear a hull respawning at the lead spot.
+            [.peg(SIMD2(0.42, 0), radius: Self.pegRadius, sprung: true)]
         case .ledges:
             [
                 ArenaObstacle(start: SIMD2(0.99, 0.14), end: SIMD2(0.68, -0.01), radius: 0.022),
@@ -151,8 +153,16 @@ extension ArenaGeometry {
     }
 
     /// How far a peg can slide either way along its track, stretched with the
-    /// court like everything else.
-    public var bumperTravel: Double { 0.10 * widthScale }
+    /// court like everything else. At either end it stops `bumperEndGap`
+    /// short of the roof or floor: too tight for any size of ball to pass,
+    /// so a peg run all the way up or down shuts that way.
+    public var bumperTravel: Double {
+        ceilingY - Self.bumperEndGap * heightScale - ArenaLayout.pegRadius * widthScale
+    }
+
+    /// The gap a peg at the end of its track leaves to the roof or floor, in
+    /// standard units -- under the smallest ball's diameter.
+    public static let bumperEndGap = 0.04
 
     /// This court with every sprung peg moved to where `bumpers` has it. A
     /// peg with no entry sits on its anchor.

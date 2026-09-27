@@ -56,4 +56,23 @@ struct GuestSmoothingTests {
         smoothing.capture(displayed: displayed, corrected: corrected, excluding: nil)
         #expect(smoothing.apply(to: corrected).balls.count == 1)
     }
+
+    @Test("A peg the snapshot moves slides there along its track; a big jump snaps")
+    func pegCorrectionSlides() {
+        var displayed = WorldState(ships: [:])
+        displayed.bumpers = [BumperState(offset: SIMD2(0, 0.10)), BumperState(offset: SIMD2(0, -0.2))]
+        var corrected = displayed
+        corrected.bumpers[0].offset.y = 0.16
+        corrected.bumpers[1].offset.y = 0.2
+        var smoothing = GuestSmoothing()
+        smoothing.capture(displayed: displayed, corrected: corrected, excluding: nil)
+        #expect(abs(smoothing.bumperError - 0.06) < 1e-9)
+        let first = smoothing.apply(to: corrected)
+        #expect(abs(first.bumpers[0].offset.y - 0.10) < 1e-9)
+        #expect(first.bumpers[1].offset.y == 0.2)
+        for _ in 0 ..< 30 { smoothing.decay(dt: 1.0 / 60.0) }
+        #expect(abs(smoothing.apply(to: corrected).bumpers[0].offset.y - 0.16) < 0.001)
+        smoothing.reset()
+        #expect(smoothing.bumperError == 0)
+    }
 }

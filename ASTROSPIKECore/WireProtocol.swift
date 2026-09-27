@@ -108,7 +108,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     left instead of springing home, bolts knock them along, and the
     //     host's tuning carries pegPull. A build 105 board would spring the
     //     pegs back and decode no pegPull.
-    public static let currentVersion: UInt16 = 31
+    // 32: Bumpers is one peg a side on a floor-to-roof track, with lighter
+    //     drag. A build 106 board has two pegs a side: its `bumpers` would
+    //     not line up with the host's obstacles.
+    public static let currentVersion: UInt16 = 32
 
     public var version: UInt16
     public var sequence: UInt64
