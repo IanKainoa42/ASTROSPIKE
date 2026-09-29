@@ -50,6 +50,17 @@ final class OnlineMatchCoordinator: NSObject,
     /// Everyone the local pilot can invite without leaving the app: recent
     /// opponents first, then Game Center friends once that consent is given.
     private(set) var invitees: [GKPlayer] = []
+    
+    /// The opponents from the last completed online match, for the rematch
+    /// feature. Preserved across `leaveMatch()` calls so the results screen
+    /// can offer "Rematch" after the match object is disconnected.
+    private(set) var lastMatchOpponents: [GKPlayer] = []
+    
+    /// Whether a rematch is available: the last match had opponents Game
+    /// Center still knows about and no open table was involved.
+    var canRematch: Bool {
+        !lastMatchOpponents.isEmpty
+    }
     private(set) var isLoadingInvitees = false
     /// The latest word from an invited pilot, shown in the warm-up bay.
     private(set) var inviteNotice: String?
@@ -627,6 +638,45 @@ final class OnlineMatchCoordinator: NSObject,
     /// A team-up seats them on the inviter's side instead of across the net.
     func invite(_ players: [GKPlayer], teamUp: Bool = false) {
         startMatchmaking(recipients: players, teamUp: teamUp)
+    }
+
+    /// Re-invites the opponents from the last completed online match.
+    /// Safe to call when `canRematch` is false; simply does nothing.
+    func rematch() {
+        guard canRematch else {
+            note("REMATCH: NO LAST OPPONENTS AVAILABLE")
+            return
+        }
+        note("REMATCH: RE-INVITING \(lastMatchOpponents.map(\.displayName).joined(separator: ", "))")
+        invite(lastMatchOpponents)
+    }
+
+    /// Preserves the current match's opponents before the match object is
+    /// disconnected, enabling the rematch feature from the results screen.
+    private func saveLastMatchOpponents() {
+        guard let match else { return }
+        let localID = GKLocalPlayer.local.gamePlayerID
+        let opponents = match.players.filter { player in
+            guard let seat = seating[player.gamePlayerID] else { return true }
+            guard let localSeat else { return true }
+            return seat.team != localSeat.team
+        }
+        guard !opponents.isEmpty else {
+            lastMatchOpponents = match.players
+            note("REMATCH: SAVED \(lastMatchOpponents.count) OPPONENT(S) (ALL PEERS)")
+            return
+        }
+        lastMatchOpponents = opponents
+        note("REMATCH: SAVED \(lastMatchOpponents.count) OPPONENT(S)")
+    }
+
+    /// Clears the saved last match opponents. Called when the pilot explicitly
+    /// starts a new search or invite that is not a rematch.
+    func clearRematchOpponents() {
+        if !lastMatchOpponents.isEmpty {
+            note("REMATCH: CLEARED SAVED OPPONENTS")
+            lastMatchOpponents = []
+        }
     }
 
     /// Asks several pilots at once and keeps the table going. The first to
@@ -2383,6 +2433,10 @@ final class OnlineMatchCoordinator: NSObject,
             beginIntermission(winner: winner)
             return
         }
+        // Preserve opponents for rematch before the match is disconnected.
+        // Only non-table matches: tables involve rotating opponents where
+        // rematch semantics are unclear.
+        saveLastMatchOpponents()
         lifecycle.finish()
         withdrawCallbacks()
         isMatchReady = false
