@@ -206,7 +206,7 @@ final class ArenaScene: SKScene {
             glow.color = ArenaScene.beamColor
             glow.colorBlendFactor = 1
             glow.blendMode = .add
-            glow.alpha = 0.4
+            glow.alpha = 0.3
             crop.addChild(glow)
             crop.zPosition = 3
             crop.isHidden = true
@@ -273,8 +273,9 @@ final class ArenaScene: SKScene {
                 node = SKShapeNode(ellipseOf: diameter)
                 node.strokeColor = SKColor(red: 1, green: 0.86, blue: 0.3, alpha: 0.9)
                 node.fillColor = SKColor(red: 1, green: 0.86, blue: 0.3, alpha: 0.07)
+                // Crisp: a glow round the rim read as a smudge.
                 node.lineWidth = 3
-                node.glowWidth = 7
+                node.glowWidth = 0
                 node.zPosition = -0.5
                 node.alpha = 0
                 actorLayer.addChild(node)
@@ -578,16 +579,26 @@ final class ArenaScene: SKScene {
             // loop slides around; a fixed one straight into the crop.
             let holder = SKNode()
             crop.addChild(holder)
-            if obstacle.isSprung {
-                // The peg's track: a faint rod floor to roof, like a
-                // foosball rod wall to wall. The peg stops just short of
+            // A sprung peg wears the colour of the team whose half it is on,
+            // and follows it when the teams change ends.
+            let pegColor: SKColor? = obstacle.isSprung
+                ? Self.color(obstacle.start.x < 0 ? leftTeam : leftTeam.opponent)
+                : nil
+            if let pegColor {
+                // The peg's track: a dashed rod floor to roof, like a
+                // foosball rod wall to wall. Shorter, tighter dashes than
+                // the MAX CROSS line beside it. The peg stops just short of
                 // either end (`bumperTravel`).
                 let rail = CGMutablePath()
-                rail.move(to: point(obstacle.start.x, arena.floorY))
-                rail.addLine(to: point(obstacle.start.x, arena.ceilingY))
+                var y = arena.floorY
+                while y < arena.ceilingY {
+                    rail.move(to: point(obstacle.start.x, y))
+                    rail.addLine(to: point(obstacle.start.x, min(y + 0.022, arena.ceilingY)))
+                    y += 0.05
+                }
                 let track = SKShapeNode(path: rail)
-                track.strokeColor = .white.withAlphaComponent(0.32)
-                track.lineWidth = 3
+                track.strokeColor = pegColor.withAlphaComponent(0.5)
+                track.lineWidth = 2.5
                 track.lineCap = .round
                 track.zPosition = -3
                 crop.addChild(track)
@@ -617,11 +628,26 @@ final class ArenaScene: SKScene {
             holder.addChild(fill)
 
             let edge = SKShapeNode(path: outline)
-            edge.strokeColor = .white.withAlphaComponent(0.55)
+            edge.strokeColor = pegColor?.withAlphaComponent(0.85) ?? .white.withAlphaComponent(0.55)
             edge.lineWidth = 3
             edge.glowWidth = 1
             edge.fillColor = .clear
             holder.addChild(edge)
+
+            if let pegColor {
+                // A tinted face and a lit hub, so the peg reads as a part
+                // that moves rather than a stone in the court.
+                // Opaque, so the rail does not show through the peg.
+                var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+                pegColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+                fill.fillColor = SKColor(red: 0.08 + r * 0.2, green: 0.08 + g * 0.2, blue: 0.1 + b * 0.2, alpha: 1)
+                let hubRadius = abs(point(obstacle.radius * 0.28, 0).x - point(0, 0).x)
+                let hub = SKShapeNode(circleOfRadius: hubRadius)
+                hub.position = point(obstacle.start.x, obstacle.start.y)
+                hub.fillColor = pegColor.withAlphaComponent(0.7)
+                hub.strokeColor = .clear
+                holder.addChild(hub)
+            }
         }
     }
 
@@ -1518,9 +1544,9 @@ final class ArenaScene: SKScene {
         let centre = tip + heading * (range * 0.5)
         lights.append(FloorLight(
             position: point(centre.x, centre.y),
-            radius: 150 * fx,
+            radius: 130 * fx,
             color: Self.beamColor,
-            intensity: 0.7 + 0.4 * CGFloat(grip)
+            intensity: 0.45 + 0.35 * CGFloat(grip)
         ))
 
         let target: SIMD2<Double>? = held.map { snapshot.balls[$0].position } ?? heldPeg

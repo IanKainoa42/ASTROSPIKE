@@ -1023,6 +1023,9 @@ public struct SimulationEngine: Sendable {
         }
         state.balls = stagedBalls(moving: false)
         state.bolts.removeAll()
+        // Every point starts from the same court: pegs back on the middle
+        // of their tracks.
+        seatBumpers()
         // A fresh ball has nobody's fingerprints on it -- and no hull is still
         // holding a debounce from the rally that just ended, which would eat
         // the first touch of this one.

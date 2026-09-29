@@ -446,6 +446,25 @@ struct ArenaLayoutTests {
         #expect(Self.engine(.diamond).state.bumpers.isEmpty)
     }
 
+    @Test("A point puts every peg back on the middle of its track")
+    func pegsResetOnAPoint() {
+        var engine = Self.engine(.bumpers)
+        let radius = engine.state.balls[0].radius
+        engine.state.balls[0] = BallState(
+            position: SIMD2(-(engine.arena.netHalfWidth + radius + 0.004), 0.30),
+            velocity: SIMD2(2, 0),
+            radius: radius
+        )
+        engine.state.bumpers[0] = BumperState(offset: SIMD2(0, 0.3), velocity: .zero)
+        var scored = false
+        for _ in 0 ..< 60 where !scored {
+            engine.step(inputs: [:])
+            scored = engine.lastEvents.contains { if case .point = $0 { true } else { false } }
+        }
+        #expect(scored)
+        #expect(engine.state.bumpers.allSatisfy { $0 == BumperState() }, "\(engine.state.bumpers)")
+    }
+
     // Bot rallies run long even on the standard court -- 1,500 to 6,000
     // ticks between points -- so this is a deadlock check, not a pace one:
     // a ball wedged somewhere would stop the score for good.
