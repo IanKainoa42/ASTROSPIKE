@@ -186,8 +186,10 @@ final class ArenaScene: SKScene {
     /// The tractor cone ahead of each nose: a gradient cropped to the cone the
     /// engine grabs with, its outline, and the tether drawn to whatever it
     /// has hold of. The lab's alphas ported one for one read far dimmer on a
-    /// phone than on the lab's canvas, so the fill, edge and motes are run
-    /// hotter here than the lab's numbers.
+    /// phone than on the lab's canvas, so the edge and motes are run hotter
+    /// here than the lab's numbers. The fill is not: build 106 ran it hot
+    /// too and it washed out the lit grid under the cone, which is the
+    /// beam's light; the grid light carries the brightness instead.
     @MainActor
     final class BeamRig {
         let crop = SKCropNode()
@@ -204,7 +206,7 @@ final class ArenaScene: SKScene {
             glow.color = ArenaScene.beamColor
             glow.colorBlendFactor = 1
             glow.blendMode = .add
-            glow.alpha = 0.55
+            glow.alpha = 0.4
             crop.addChild(glow)
             crop.zPosition = 3
             crop.isHidden = true
@@ -1495,10 +1497,13 @@ final class ArenaScene: SKScene {
             if hold > grip { grip = hold; held = index }
         }
         // A Bumpers peg in the cone is hauled along its track, graded the
-        // same way; the tether goes to whichever the beam holds hardest.
+        // same way, but only draws the tether when no ball is in the cone:
+        // a peg hauled to the nose would otherwise out-grip the ball every
+        // frame and take its rim and tether away, though the ball is still
+        // being pulled.
         var heldPeg: SIMD2<Double>?
         for (index, obstacle) in arena.obstacles.enumerated()
-        where obstacle.isSprung && index < snapshot.bumpers.count {
+        where held == nil && obstacle.isSprung && index < snapshot.bumpers.count {
             let peg = obstacle.start + snapshot.bumpers[index].offset
             let offset = peg - tip
             let distance = simd_length(offset)
@@ -1506,16 +1511,16 @@ final class ArenaScene: SKScene {
             let along = simd_dot(offset / distance, heading)
             guard along > cone else { continue }
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
-            if hold > grip { grip = hold; held = nil; heldPeg = peg }
+            if hold > grip { grip = hold; heldPeg = peg }
         }
         rig.edge.alpha = 0.35 + 0.4 * CGFloat(grip)
         beamPulls[seat] = BeamPull(grip: grip, x: tip.x)
         let centre = tip + heading * (range * 0.5)
         lights.append(FloorLight(
             position: point(centre.x, centre.y),
-            radius: 110 * fx,
+            radius: 150 * fx,
             color: Self.beamColor,
-            intensity: 0.35 + 0.5 * CGFloat(grip)
+            intensity: 0.7 + 0.4 * CGFloat(grip)
         ))
 
         let target: SIMD2<Double>? = held.map { snapshot.balls[$0].position } ?? heldPeg
@@ -1683,7 +1688,7 @@ final class ArenaScene: SKScene {
     /// Smoke keeps more body further out than a light does.
     private static let smokeTexture = radialTexture(stops: [(0, 0.9), (0.55, 0.45), (1, 0)])
     /// The beam's cone fill: full at the nose, a seventh of that at the rim.
-    private static let beamGradientTexture = radialTexture(stops: [(0, 1), (1, 0.3)], clipOutside: true)
+    private static let beamGradientTexture = radialTexture(stops: [(0, 1), (1, 0.15)], clipOutside: true)
 
     private static func radialTexture(stops: [(CGFloat, CGFloat)], clipOutside: Bool = false) -> SKTexture {
         let side: CGFloat = 64
