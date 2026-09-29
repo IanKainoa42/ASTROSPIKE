@@ -83,9 +83,11 @@ struct ArenaLayoutTests {
         for (court, ball) in Self.courts(layout) {
             let w = court.widthScale, h = court.heightScale
             for sign in [-1.0, 1.0] {
-                // Spawns, lead and wing, with a hull's worth of room.
+                // Spawns, lead and wing, with a hull's worth of room -- with
+                // the pegs at rest, since every point reseats them before a
+                // hull spawns.
                 for depth in [0.55, 0.80] {
-                    #expect(Self.deepestPenetration(court, SIMD2(sign * depth * w, -0.45 * h), hull + 0.02, shoved: true) < 0, "hull \(hull) depth \(depth)")
+                    #expect(Self.deepestPenetration(court, SIMD2(sign * depth * w, -0.45 * h), hull + 0.02) < 0, "hull \(hull) depth \(depth)")
                 }
                 // Where the AI parks to strike and to defend -- with the pegs
                 // at rest: a hull parking there just shoves one aside.

@@ -121,9 +121,11 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
                 ArenaObstacle(start: SIMD2(0.99, -0.37), end: SIMD2(0.72, -0.67), radius: 0.03, isGround: true),
             ]
         case .bumpers:
-            // In from the old 0.48: a peg left at the bottom of its track
-            // must still clear a hull respawning at the lead spot.
-            [.peg(SIMD2(0.42, 0), radius: Self.pegRadius, sprung: true)]
+            // On the MAX CROSS line (`opponentCrossingLimit`, half the
+            // half-width): the peg rides the line that is already drawn
+            // there instead of a rail of its own. Pegs reseat every point,
+            // so a hull spawning below one never finds it parked there.
+            [.peg(SIMD2(0.48, 0), radius: Self.pegRadius, sprung: true)]
         case .ledges:
             [
                 ArenaObstacle(start: SIMD2(0.99, 0.14), end: SIMD2(0.68, -0.01), radius: 0.022),

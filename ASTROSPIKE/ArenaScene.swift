@@ -584,24 +584,8 @@ final class ArenaScene: SKScene {
             let pegColor: SKColor? = obstacle.isSprung
                 ? Self.color(obstacle.start.x < 0 ? leftTeam : leftTeam.opponent)
                 : nil
-            if let pegColor {
-                // The peg's track: a dashed rod floor to roof, like a
-                // foosball rod wall to wall. Shorter, tighter dashes than
-                // the MAX CROSS line beside it. The peg stops just short of
-                // either end (`bumperTravel`).
-                let rail = CGMutablePath()
-                var y = arena.floorY
-                while y < arena.ceilingY {
-                    rail.move(to: point(obstacle.start.x, y))
-                    rail.addLine(to: point(obstacle.start.x, min(y + 0.022, arena.ceilingY)))
-                    y += 0.05
-                }
-                let track = SKShapeNode(path: rail)
-                track.strokeColor = pegColor.withAlphaComponent(0.5)
-                track.lineWidth = 2.5
-                track.lineCap = .round
-                track.zPosition = -3
-                crop.addChild(track)
+            if pegColor != nil {
+                // No rail of its own: the peg rides the MAX CROSS line.
                 bumperNodes[index] = holder
             }
             // Walked in world units and mapped point by point, so a court
