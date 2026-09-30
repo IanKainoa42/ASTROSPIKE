@@ -42,6 +42,7 @@ final class ArenaScene: SKScene {
     private var beamRigs: [Seat: BeamRig] = [:]
     private var gripRings: [SKShapeNode] = []
     private var smokeBudgets: [Seat: Double] = [:]
+    private var blastBudgets: [Seat: Double] = [:]
     private var fireCores: [Seat: [SKSpriteNode]] = [:]
     /// The court this scene draws. Set before the view appears; changing it
     /// tears the arena layer down and rebuilds it, so the drawn court can
@@ -1453,6 +1454,7 @@ final class ArenaScene: SKScene {
             }
         }
         emitSmoke(from: shipNode, seat: seat, state: state, dt: dt)
+        emitBlast(seat: seat, state: state, dt: dt)
         updateBeam(seat: seat, state: state, dt: dt, lights: &lights)
     }
 
@@ -1653,6 +1655,73 @@ final class ArenaScene: SKScene {
             }
         }
         smokeBudgets[seat] = budget
+    }
+
+    /// The jet hitting the ball: while a ball sits in the exhaust cone (the
+    /// same cone `applyExhaustWash` shoves it with), spray hot streaks and
+    /// vapour off the ball down the plume, with a warm flash on its face.
+    /// Strength follows the engine's own falloff, so it is loudest right at
+    /// the nozzle and fades to nothing at the edge of the wash.
+    private func emitBlast(seat: Seat, state: ShipState, dt: Double) {
+        guard !reduceMotion, !state.isDestroyed, state.thrustLevel > 0, dt > 0, let snapshot else { return }
+        let range = SimulationConfiguration().exhaustWashRange
+        let cone = SimulationEngine.exhaustWashCone
+        let tail = SIMD2(-cos(state.angle), -sin(state.angle))
+        let fx = labScale
+        let back = CGVector(dx: CGFloat(tail.x), dy: CGFloat(tail.y))
+        var budget = blastBudgets[seat] ?? 0
+        for ball in snapshot.balls {
+            let offset = ball.position - state.position
+            let distance = simd_length(offset)
+            guard distance > 0.000_001, distance < range else { continue }
+            let along = simd_dot(offset / distance, tail)
+            guard along > cone else { continue }
+            let strength = CGFloat((1 - distance / range) * (0.4 + 0.6 * (along - cone) / (1 - cone)))
+            let centre = point(ball.position.x, ball.position.y)
+            let radius = CGFloat(ball.radius) * pointsPerWorldUnit
+            budget += dt * Double(70 * strength)
+            while budget >= 1 {
+                budget -= 1
+                let side = CGFloat.random(in: -1 ... 1)
+                let start = CGPoint(
+                    x: centre.x - back.dy * side * radius + back.dx * radius * 0.6,
+                    y: centre.y + back.dx * side * radius + back.dy * radius * 0.6
+                )
+                let angle = atan2(back.dy, back.dx) + side * 0.7
+                let speed = CGFloat.random(in: 140 ... 320) * fx * (0.6 + strength)
+                if Bool.random() {
+                    streak(
+                        at: start,
+                        angle: angle,
+                        speed: speed,
+                        life: .random(in: 0.15 ... 0.3),
+                        core: SKColor(red: 1, green: 0.9, blue: 0.71, alpha: 1),
+                        halo: Self.color(seat.team),
+                        drag: 0.05
+                    )
+                } else {
+                    smokePuff(
+                        at: start,
+                        velocity: CGVector(dx: cos(angle) * speed * 0.5, dy: sin(angle) * speed * 0.5),
+                        size: .random(in: 8 ... 13) * fx,
+                        grow: .random(in: 3 ... 5),
+                        life: .random(in: 0.5 ... 0.9),
+                        peak: 0.28,
+                        rise: 0.1,
+                        drag: 0.85
+                    )
+                }
+            }
+            flash(
+                at: centre,
+                color: Self.color(seat.team),
+                size: (radius * 2 + 10 * fx) * (1 + 0.5 * strength),
+                grow: 1.6,
+                life: 0.12,
+                alpha: 0.55 * strength
+            )
+        }
+        blastBudgets[seat] = budget
     }
 
     private func smokePuff(

@@ -466,7 +466,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
         boltLifetime: Double = 0.8,
         boltCooldown: Double = 0.45,
         boltPunch: Double = 1.15,
-        exhaustWashStrength: Double = 0.65,
+        exhaustWashStrength: Double = 0.85,
         exhaustWashRange: Double = 0.36,
         tractorStrength: Double = 2.6,
         tractorRange: Double = 0.82,
@@ -1159,7 +1159,8 @@ public struct SimulationEngine: Sendable {
     /// It is not a touch -- nothing has hit anything -- so it never clears
     /// the bounce allowance the way a hull does: hovering under a ball to
     /// cushion it keeps it off the floor, it does not reset the count.
-    private static let exhaustWashCone = 0.80
+    /// Public so `ArenaScene` throws its blast spray over the same cone.
+    public static let exhaustWashCone = 0.80
 
     private mutating func applyExhaustWash(dt: Double, ballIndex: Int) {
         let range = configuration.exhaustWashRange
