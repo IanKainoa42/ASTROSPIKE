@@ -570,12 +570,20 @@ private struct HomeView: View {
                         MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
                         MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND ON YOUR WING", icon: "person.2.fill", compact: true) { sheet = .doubles }
                     }
+                    // Friend-first: invite and rematch above automatch.
+                    MenuButton(title: "INVITE FRIEND", subtitle: "DUEL A FRIEND OR RECENT OPPONENT", icon: "person.2.wave.2.fill") { sheet = .invite }
+                    if online.canRematch {
+                        MenuButton(
+                            title: "REMATCH",
+                            subtitle: rematchSubtitle,
+                            icon: "arrow.triangle.2.circlepath"
+                        ) { online.rematch() }
+                    }
                     MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
                     MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
                     // Volleyball, basketball and the circuit are parked (Ian may spin them into
                     // their own game); `sheet = .modes` still opens them if ever wanted back.
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
-                        SmallMenuButton(title: "INVITE", icon: "person.2.wave.2.fill") { sheet = .invite }
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
                         SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
                         SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
@@ -596,6 +604,13 @@ private struct HomeView: View {
         case .authenticating, .matching, .reconnecting: .yellow
         case .signedOut: .white.opacity(0.6)
         }
+    }
+
+    private var rematchSubtitle: String {
+        let names = online.lastMatchOpponents.map(\.displayName)
+        if names.isEmpty { return "RE-INVITE LAST OPPONENT" }
+        if names.count == 1 { return "DUEL \(names[0].uppercased()) AGAIN" }
+        return "PLAY \(names.joined(separator: ", ").uppercased()) AGAIN"
     }
 }
 
@@ -828,8 +843,11 @@ private struct GameView: View {
                     spectating: isSpectating,
                     table: tableCard,
                     notice: linkFailure,
+                    canRematch: mode == .online && online.canRematch && table == nil,
+                    rematchOpponentNames: online.lastMatchOpponents.map(\.displayName),
                     playAgain: playAgain,
                     challenge: challengeNext,
+                    rematch: rematchOpponent,
                     inviteMore: inviteToTable,
                     exit: leaveGame
                 )
@@ -1083,6 +1101,12 @@ private struct GameView: View {
     private func challengeNext() {
         guard let next = resultsPlan.nextRival else { return }
         continueWith(mode.withRival(next))
+    }
+
+    private func rematchOpponent() {
+        guard mode == .online, online.canRematch else { return }
+        leaveGame()
+        online.rematch()
     }
 }
 
@@ -1762,8 +1786,13 @@ private struct ResultsOverlay: View {
     var table: TableCard? = nil
     /// Why the link ended, if it did.
     var notice: String? = nil
+    /// Whether a rematch with the same opponent(s) is available.
+    var canRematch = false
+    /// The opponent names for the rematch button subtitle.
+    var rematchOpponentNames: [String] = []
     let playAgain: () -> Void
     let challenge: () -> Void
+    var rematch: () -> Void = {}
     var inviteMore: () -> Void = {}
     let exit: () -> Void
 
@@ -1853,6 +1882,13 @@ private struct ResultsOverlay: View {
 
     @ViewBuilder private var standardButtons: some View {
         VStack(spacing: 14) {
+            // Friend-first: rematch above other options for online matches.
+            if canRematch {
+                Button(rematchButtonLabel, action: rematch)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                    .accessibilityIdentifier("results-rematch")
+            }
             if plan.canPlayAgain {
                 Button("PLAY AGAIN", action: playAgain)
                     .buttonStyle(.borderedProminent)
@@ -1870,6 +1906,14 @@ private struct ResultsOverlay: View {
                 .tint(.white)
                 .accessibilityIdentifier("results-back-to-menu")
         }
+    }
+
+    private var rematchButtonLabel: String {
+        if rematchOpponentNames.isEmpty { return "REMATCH" }
+        if rematchOpponentNames.count == 1 {
+            return "REMATCH \(rematchOpponentNames[0].uppercased())"
+        }
+        return "REMATCH"
     }
 
     private func scoreLine(_ tally: Score) -> some View {

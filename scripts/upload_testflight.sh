@@ -16,8 +16,17 @@ BUILD_DIR="$REPO/build"
 ARCHIVE="$BUILD_DIR/$SCHEME.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
 
-BUILD_NUM=$(sed -n 's/.*CURRENT_PROJECT_VERSION: "\(.*\)"/\1/p' project.yml)
+BUILD_NUM=$(sed -n 's/.*CURRENT_PROJECT_VERSION:[[:space:]]*["'\''"]*\([0-9]*\)["'\''"]*/\1/p' project.yml)
 echo "=== Preparing TestFlight upload for $SCHEME build $BUILD_NUM ==="
+
+# Set DEVELOPER_DIR if not already set, preferring Xcode.app or Xcode-26.6.0.app
+if [ -z "${DEVELOPER_DIR:-}" ]; then
+  if [ -d "/Applications/Xcode-26.6.0.app/Contents/Developer" ]; then
+    export DEVELOPER_DIR="/Applications/Xcode-26.6.0.app/Contents/Developer"
+  else
+    export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+  fi
+fi
 
 # Force /usr/bin before Homebrew so rsync/openrsync doesn't break export
 export PATH=/usr/bin:$PATH
