@@ -633,7 +633,8 @@ private struct GameView: View {
     @State private var builtGeneration: Int
     @State private var showPause = false
     @State private var showLeaveConfirmation = false
-    @State private var emoteTrayOpen = false
+    /// `--emote-tray` opens it on arrival, for layout screenshots.
+    @State private var emoteTrayOpen = ProcessInfo.processInfo.arguments.contains("--emote-tray")
     /// Set when the local side scores, so the emote button invites a taunt.
     @State private var emoteNudge = false
     /// Why the link ended, when it ended for a reason the seat hold does not
@@ -814,9 +815,8 @@ private struct GameView: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             if emoteTrayOpen, showsEmoteButton {
-                EmoteTray { emote in
-                    session.playEmote(emote)
-                    emoteTrayOpen = false
+                EmoteTray(readyAt: session.emoteReadyAt) { emote in
+                    if session.playEmote(emote) { emoteTrayOpen = false }
                 }
                 .padding(.top, 54).padding(.trailing, 20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -2103,11 +2103,30 @@ private struct EmoteButton: View {
     }
 }
 
-/// The emotes, one tap each. Picking one closes the tray.
+/// The emotes, one tap each. Picking one closes the tray. While the
+/// cooldown runs the tray stays open, dimmed, with the seconds left on it,
+/// so a tap that cannot play yet still visibly answers.
 private struct EmoteTray: View {
+    let readyAt: Date
     let play: (Emote) -> Void
 
     var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let remaining = readyAt.timeIntervalSince(context.date)
+            tray(coolingDown: remaining > 0)
+                .overlay {
+                    if remaining > 0 {
+                        Text("READY IN \(Int(remaining.rounded(.up)))s")
+                            .font(.system(size: 13, weight: .black, design: .rounded))
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(.black.opacity(0.7), in: Capsule())
+                            .allowsHitTesting(false)
+                    }
+                }
+        }
+    }
+
+    private func tray(coolingDown: Bool) -> some View {
         HStack(spacing: 6) {
             ForEach(Emote.allCases, id: \.self) { emote in
                 Button { play(emote) } label: {
@@ -2124,6 +2143,8 @@ private struct EmoteTray: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(coolingDown)
+                .opacity(coolingDown ? 0.4 : 1)
                 .accessibilityLabel(emote.name)
                 .accessibilityIdentifier("emote-\(emote.rawValue)")
             }
