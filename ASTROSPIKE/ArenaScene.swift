@@ -67,6 +67,9 @@ final class ArenaScene: SKScene {
     /// The hull's own exhaust width, kept so the idle ember can be pinned
     /// narrower than a wide hull's lit plume.
     private var exhaustWidths: [Seat: CGFloat] = [:]
+    /// Each seat's hull look: the colours and shapes of its bolts, beam,
+    /// flame and smoke. Set with the hull in `setHull`.
+    private var looks: [Seat: HullLook] = [:]
     /// One node per ball the engine can field. Doubles plays two; a duel
     /// plays one and the second sits hidden.
     private let balls = (0 ..< SimulationConfiguration.maximumBallCount).map { _ in BallNode() }
@@ -125,24 +128,6 @@ final class ArenaScene: SKScene {
             shipNodes[seat] = ship
             exhaustNodes[seat] = exhaust
             actorLayer.addChild(ship)
-            // The hot core of the burn: a white-hot tongue inside an amber
-            // one, flickered per frame. Only lit while the engine is.
-            fireCores[seat] = [
-                (SKColor(red: 1, green: 0.96, blue: 0.88, alpha: 1), CGSize(width: 15, height: 34), CGFloat(0.95)),
-                (SKColor(red: 1, green: 0.78, blue: 0.47, alpha: 1), CGSize(width: 25, height: 53), CGFloat(0.8)),
-            ].map { color, size, alpha in
-                let core = SKSpriteNode(texture: ArenaScene.puffTexture, size: size)
-                core.anchorPoint = CGPoint(x: 0.5, y: 1)
-                core.position = CGPoint(x: 0, y: -16)
-                core.color = color
-                core.colorBlendFactor = 1
-                core.blendMode = .add
-                core.alpha = alpha
-                core.zPosition = -0.9
-                core.isHidden = true
-                ship.addChild(core)
-                return core
-            }
             let marker = SKLabelNode(fontNamed: "Menlo-Bold")
             marker.fontSize = 11
             marker.fontColor = Self.hullColor(for: seat)
@@ -225,6 +210,19 @@ final class ArenaScene: SKScene {
             edge.blendMode = .add
             edge.zPosition = 3.05
             edge.isHidden = true
+        }
+
+        func apply(_ look: HullLook) {
+            let color = ArenaScene.color(look.primary)
+            glow.color = color
+            tether.strokeColor = color
+            edge.strokeColor = color
+            switch look.beam {
+            case .heavy: tether.lineWidth = 5; edge.lineWidth = 3
+            case .pulses: tether.lineWidth = 4.5; edge.lineWidth = 2
+            case .twin, .dashes: tether.lineWidth = 2.2; edge.lineWidth = 1.5
+            case .ripples, .chevrons, .glitch, .sparkle: tether.lineWidth = 3; edge.lineWidth = 1.5
+            }
         }
     }
 
@@ -898,6 +896,7 @@ final class ArenaScene: SKScene {
         lastRenderTime = now
         var lights: [FloorLight] = []
         ballGrips = Array(repeating: 0, count: snapshot.balls.count)
+        ballGripColors = Array(repeating: Self.beamColor, count: snapshot.balls.count)
         for seat in Seat.allCases {
             update(seat: seat, state: snapshot.ships[seat], dt: dt, lights: &lights)
         }
@@ -928,6 +927,7 @@ final class ArenaScene: SKScene {
             let grip = ballGrips[index]
             ring.isHidden = grip <= 0
             if grip > 0 {
+                ring.strokeColor = ballGripColors[index]
                 let wobble = reduceMotion ? 0 : CGFloat(sin(now * 12)) * fx
                 let radius = CGFloat(ball.radius) * pointsPerWorldUnit + 4 * fx + wobble
                 ring.path = CGPath(
@@ -946,6 +946,8 @@ final class ArenaScene: SKScene {
 
     /// How hard any beam has each ball this frame, 0 to 1.
     private var ballGrips: [Double] = []
+    /// The beam colour of whoever has the strongest hold on each ball.
+    private var ballGripColors: [SKColor] = []
 
     /// The FX Lab was laid out on a 904pt-wide court; every effect size and
     /// speed below is in its units and scaled by this to the real court.
@@ -1093,7 +1095,8 @@ final class ArenaScene: SKScene {
 
     /// Bolts are keyed by simulation id so a node lives exactly as long as its
     /// bolt: a new id gets a muzzle flash, a vanished id gets a ring.
-    /// Plasma: a team-coloured halo round a white-hot core, shedding
+    /// Each bolt is drawn in its shooter's hull look -- halo in the hull's
+    /// primary colour, core in its accent, shaped by the hull -- shedding
     /// afterimages as it goes.
     private func updateBolts(_ snapshot: WorldState, lights: inout [FloorLight]) {
         let fx = labScale
@@ -1101,35 +1104,30 @@ final class ArenaScene: SKScene {
         for bolt in snapshot.bolts {
             live.insert(bolt.id)
             let position = point(bolt.position.x, bolt.position.y)
-            let color = Self.color(bolt.owner)
+            let look = hullLook(bolt.seat)
+            let color = Self.color(look.primary)
+            let ahead = point(bolt.position.x + bolt.velocity.x * 0.01, bolt.position.y + bolt.velocity.y * 0.01)
+            let heading = atan2(ahead.y - position.y, ahead.x - position.x)
             lights.append(FloorLight(position: position, radius: 85 * fx, color: color, intensity: 0.9))
             if let node = boltNodes[bolt.id] {
                 node.position = position
+                if look.bolt != .block { node.zRotation = heading }
                 if !reduceMotion {
-                    flash(at: position, color: color, size: 16 * fx, grow: 0.4, life: 0.14, alpha: 0.5)
+                    boltTrail(look: look, at: position, heading: heading)
                 }
                 continue
             }
-            let node = SKNode()
-            let halo = SKSpriteNode(texture: Self.puffTexture, size: CGSize(width: 34 * fx, height: 34 * fx))
-            halo.color = color
-            halo.colorBlendFactor = 1
-            halo.blendMode = .add
-            halo.alpha = 0.85
-            node.addChild(halo)
-            let core = SKSpriteNode(texture: Self.puffTexture, size: CGSize(width: 13 * fx, height: 13 * fx))
-            core.blendMode = .add
-            core.zPosition = 0.1
-            node.addChild(core)
+            let node = boltNode(look: look)
             node.zPosition = 6
             node.position = position
+            if look.bolt != .block { node.zRotation = heading }
             actorLayer.addChild(node)
             boltNodes[bolt.id] = node
             SoundBank.shared.play(.boltFire, positionX: Float(bolt.position.x))
             addLight(at: position, radius: 120 * fx, color: color, life: 0.14)
             if !reduceMotion {
                 flash(at: position, color: color, size: 70 * fx, grow: 1.6, life: 0.2, alpha: 1)
-                flash(at: position, color: .white, size: 26 * fx, grow: 1.4, life: 0.1, alpha: 1)
+                flash(at: position, color: Self.color(look.secondary), size: 26 * fx, grow: 1.4, life: 0.1, alpha: 1)
             }
         }
         for (id, node) in boltNodes where !live.contains(id) {
@@ -1139,6 +1137,140 @@ final class ArenaScene: SKScene {
             node.removeFromParent()
             boltNodes[id] = nil
         }
+    }
+
+    /// A bolt in its hull's shape, travelling along +x. The first child is
+    /// always the halo in the hull's primary colour: the ring a bolt leaves
+    /// when it dies is read from it.
+    private func boltNode(look: HullLook) -> SKNode {
+        let fx = labScale
+        let node = SKNode()
+        let primary = Self.color(look.primary)
+        let accent = Self.color(look.secondary)
+        func sprite(_ texture: SKTexture, _ width: CGFloat, _ height: CGFloat, _ color: SKColor, alpha: CGFloat = 1, y: CGFloat = 0) -> SKSpriteNode {
+            let sprite = SKSpriteNode(texture: texture, size: CGSize(width: width * fx, height: height * fx))
+            sprite.color = color
+            sprite.colorBlendFactor = 1
+            sprite.blendMode = .add
+            sprite.alpha = alpha
+            sprite.position = CGPoint(x: 0, y: y * fx)
+            node.addChild(sprite)
+            return sprite
+        }
+        let puff = Self.puffTexture
+        switch look.bolt {
+        case .needle:
+            sprite(puff, 52, 12, primary, alpha: 0.9)
+            sprite(puff, 30, 4, accent).zPosition = 0.1
+        case .slug:
+            sprite(puff, 44, 44, primary, alpha: 0.9)
+            sprite(puff, 19, 19, accent).zPosition = 0.1
+        case .wave:
+            let halo = sprite(puff, 18, 42, primary, alpha: 0.9)
+            sprite(puff, 8, 22, accent).zPosition = 0.1
+            if !reduceMotion {
+                halo.run(.repeatForever(.sequence([
+                    .scaleY(to: 0.55, duration: 0.09),
+                    .scaleY(to: 1.15, duration: 0.09),
+                ])))
+            }
+        case .chevron:
+            sprite(Self.chevronTexture, 34, 34, primary)
+            sprite(puff, 10, 10, accent).zPosition = 0.1
+        case .block:
+            sprite(Self.squareTexture, 30, 30, primary)
+            sprite(Self.squareTexture, 14, 14, accent).zPosition = 0.1
+            if !reduceMotion { node.run(.repeatForever(.rotate(byAngle: .pi, duration: 0.25))) }
+        case .shard:
+            let halo = sprite(Self.diamondTexture, 40, 26, primary)
+            sprite(Self.diamondTexture, 20, 10, accent).zPosition = 0.1
+            if !reduceMotion {
+                halo.run(.repeatForever(.sequence([
+                    .fadeAlpha(to: 0.25, duration: 0.04),
+                    .fadeAlpha(to: 1, duration: 0.04),
+                    .wait(forDuration: 0.07),
+                ])))
+            }
+        case .twin:
+            sprite(puff, 20, 20, primary, alpha: 0.9, y: 6)
+            sprite(puff, 20, 20, primary, alpha: 0.9, y: -6)
+            sprite(puff, 8, 8, accent, y: 6).zPosition = 0.1
+            sprite(puff, 8, 8, accent, y: -6).zPosition = 0.1
+        case .orb:
+            sprite(puff, 34, 34, primary, alpha: 0.85)
+            sprite(puff, 13, 13, accent).zPosition = 0.1
+        }
+        return node
+    }
+
+    /// The afterimage a bolt leaves each frame, in its hull's style.
+    private func boltTrail(look: HullLook, at position: CGPoint, heading: CGFloat) {
+        let fx = labScale
+        let color = Self.color(look.primary)
+        switch look.bolt {
+        case .slug:
+            flash(at: position, color: color, size: 24 * fx, grow: 0.5, life: 0.2, alpha: 0.55)
+            if Double.random(in: 0 ... 1) < 0.5 {
+                streak(
+                    at: position,
+                    angle: heading + .pi + .random(in: -0.6 ... 0.6),
+                    speed: .random(in: 60 ... 140) * fx,
+                    life: .random(in: 0.15 ... 0.3),
+                    core: Self.color(look.secondary),
+                    halo: color,
+                    drag: 0.05
+                )
+            }
+        case .orb:
+            flash(at: position, color: color, size: 16 * fx, grow: 0.4, life: 0.14, alpha: 0.5)
+            let scatter = CGPoint(x: position.x + .random(in: -7 ... 7) * fx, y: position.y + .random(in: -7 ... 7) * fx)
+            sprite(Self.starTexture, at: scatter, size: .random(in: 7 ... 12) * fx, color: .white, life: 0.3, rotation: .random(in: 0 ... .pi))
+        case .needle:
+            flash(at: position, color: color, size: 10 * fx, grow: 0.3, life: 0.1, alpha: 0.6)
+        case .shard:
+            if Bool.random() {
+                sprite(Self.diamondTexture, at: position, size: 18 * fx, color: color, life: 0.12, rotation: heading)
+            }
+        case .twin:
+            let across = CGVector(dx: -sin(heading) * 6 * fx, dy: cos(heading) * 6 * fx)
+            for side: CGFloat in [-1, 1] {
+                flash(at: CGPoint(x: position.x + across.dx * side, y: position.y + across.dy * side),
+                      color: color, size: 10 * fx, grow: 0.4, life: 0.12, alpha: 0.5)
+            }
+        case .chevron:
+            sprite(Self.chevronTexture, at: position, size: 22 * fx, color: color, life: 0.12, rotation: heading)
+        case .wave, .block:
+            flash(at: position, color: color, size: 16 * fx, grow: 0.4, life: 0.14, alpha: 0.5)
+        }
+    }
+
+    /// A textured afterimage or mote: born at `size`, fading out over
+    /// `life`, optionally drifting to `destination`.
+    private func sprite(
+        _ texture: SKTexture,
+        at position: CGPoint,
+        size: CGFloat,
+        color: SKColor,
+        life: TimeInterval,
+        rotation: CGFloat = 0,
+        alpha: CGFloat = 0.8,
+        aspect: CGFloat = 1,
+        grow: CGFloat = 0.5,
+        z: CGFloat = 5,
+        destination: CGPoint? = nil
+    ) {
+        let node = SKSpriteNode(texture: texture, size: CGSize(width: size * aspect, height: size))
+        node.color = color
+        node.colorBlendFactor = 1
+        node.blendMode = .add
+        node.zPosition = z
+        node.zRotation = rotation
+        node.position = position
+        node.alpha = alpha
+        actorLayer.addChild(node)
+        var motion: [SKAction] = [.scale(to: grow, duration: life), .fadeOut(withDuration: life)]
+        if let destination { motion.append(.move(to: destination, duration: life)) }
+        node.run(.sequence([.group(motion), .removeFromParent()]))
     }
 
     /// A bolt that struck the ball: a hot spot left on the floor where it hit,
@@ -1380,6 +1512,7 @@ final class ArenaScene: SKScene {
     /// leave a ship in the wrong team's colour.
     private func applyEmote(seat: Seat, ship: SKShapeNode, exhaust: SKSpriteNode) {
         var color = Self.hullColor(for: seat)
+        var flame = Self.color(hullLook(seat).flame)
         if let active = activeEmotes[seat] {
             let t = (CACurrentMediaTime() - active.start) / active.emote.duration
             if t >= 1 {
@@ -1393,14 +1526,15 @@ final class ArenaScene: SKScene {
                 ship.glowWidth *= CGFloat(pose.glow)
                 if let hue = pose.hue {
                     color = SKColor(hue: CGFloat(hue), saturation: 0.8, brightness: 1, alpha: 1)
+                    flame = color
                 }
             }
         }
         if ship.fillColor != color {
             ship.fillColor = color
             ship.strokeColor = color
-            exhaust.color = color
         }
+        exhaust.color = flame
     }
 
     func present(_ events: [SimulationEvent]) {
@@ -1571,22 +1705,26 @@ final class ArenaScene: SKScene {
         let hullWidth = exhaustWidths[seat] ?? 1
         exhaust.isHidden = state.isDestroyed
         exhaust.xScale = thrusting ? hullWidth : min(hullWidth, 1)
-        exhaust.yScale = thrusting ? 2.0 : 0.62
+        let look = hullLook(seat)
+        exhaust.yScale = thrusting ? 2.0 * CGFloat(look.flameLength) : 0.62
         exhaust.alpha = thrusting ? 1 : 0.38
-        // The hot core, flickering in length while the engine is lit.
+        // The hot core, flickering in length while the engine is lit, by as
+        // much as the hull's flame flickers. Twin nozzles each burn narrower.
+        let flicker = CGFloat(look.flicker)
         for core in fireCores[seat] ?? [] {
             core.isHidden = !thrusting || state.isDestroyed
-            core.xScale = hullWidth
-            core.yScale = reduceMotion ? 1 : .random(in: 0.8 ... 1.2)
+            core.xScale = look.twinNozzles ? hullWidth * 0.5 : hullWidth
+            core.yScale = CGFloat(look.flameLength) * (reduceMotion ? 1 : .random(in: (1 - flicker) ... (1 + flicker)))
         }
         if !state.isDestroyed {
             let fx = labScale
             let nozzle = worldNode.convert(CGPoint(x: 0, y: -16), from: shipNode)
+            let flame = Self.color(look.flame)
             if thrusting {
                 let glow = worldNode.convert(CGPoint(x: 0, y: -38), from: shipNode)
-                lights.append(FloorLight(position: glow, radius: 120 * fx, color: Self.color(seat.team), intensity: 0.9))
+                lights.append(FloorLight(position: glow, radius: 120 * fx, color: flame, intensity: 0.9))
             } else {
-                lights.append(FloorLight(position: nozzle, radius: 40 * fx, color: Self.color(seat.team), intensity: 0.35))
+                lights.append(FloorLight(position: nozzle, radius: 40 * fx, color: flame, intensity: 0.35))
             }
         }
         applyEmote(seat: seat, ship: shipNode, exhaust: exhaust)
@@ -1674,19 +1812,26 @@ final class ArenaScene: SKScene {
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
             if hold > grip { grip = hold; heldPoint = ship.position }
         }
+        let look = hullLook(seat)
+        let beamColor = Self.color(look.primary)
+        let accent = Self.color(look.secondary)
+        let now = CACurrentMediaTime()
         rig.edge.alpha = 0.35 + 0.4 * CGFloat(grip)
         beamPulls[seat] = BeamPull(grip: grip, x: tip.x)
         let centre = tip + heading * (range * 0.5)
         lights.append(FloorLight(
             position: point(centre.x, centre.y),
             radius: 130 * fx,
-            color: Self.beamColor,
+            color: beamColor,
             intensity: 0.45 + 0.35 * CGFloat(grip)
         ))
 
         let target: SIMD2<Double>? = held.map { snapshot.balls[$0].position } ?? heldPoint
         if let target, grip > 0 {
-            if let held { ballGrips[held] = max(ballGrips[held], grip) }
+            if let held, grip > ballGrips[held] {
+                ballGrips[held] = grip
+                ballGripColors[held] = beamColor
+            }
             let ball = target
             let ahead = point(tip.x + heading.x, tip.y + heading.y)
             let span = hypot(ahead.x - tipPoint.x, ahead.y - tipPoint.y)
@@ -1695,16 +1840,58 @@ final class ArenaScene: SKScene {
                 y: tipPoint.y + (ahead.y - tipPoint.y) / span * 18 * fx
             )
             let to = point(ball.x, ball.y)
-            let now = CACurrentMediaTime()
-            let wobble: CGFloat = reduceMotion ? 0 : 6 * fx
-            let tether = CGMutablePath()
-            tether.move(to: from)
-            tether.addQuadCurve(to: to, control: CGPoint(
+            let wobble: CGFloat = reduceMotion ? 0 : (look.beam == .ripples ? 16 : 6) * fx
+            var control = CGPoint(
                 x: (from.x + to.x) / 2 + CGFloat(sin(now * 9)) * wobble,
                 y: (from.y + to.y) / 2 + CGFloat(cos(now * 7)) * wobble
-            ))
-            rig.tether.path = tether
-            rig.tether.alpha = min(1, 0.3 + 0.6 * CGFloat(grip) * gain)
+            )
+            if look.beam == .glitch, !reduceMotion {
+                control.x += .random(in: -10 ... 10) * fx
+                control.y += .random(in: -10 ... 10) * fx
+            }
+            let tether = CGMutablePath()
+            if look.beam == .twin {
+                // Two lines a few points either side of the one line.
+                let length = max(hypot(to.x - from.x, to.y - from.y), 1)
+                let across = CGVector(dx: -(to.y - from.y) / length * 3.5 * fx, dy: (to.x - from.x) / length * 3.5 * fx)
+                for side: CGFloat in [-1, 1] {
+                    let shift = CGVector(dx: across.dx * side, dy: across.dy * side)
+                    tether.move(to: CGPoint(x: from.x + shift.dx, y: from.y + shift.dy))
+                    tether.addQuadCurve(
+                        to: CGPoint(x: to.x + shift.dx, y: to.y + shift.dy),
+                        control: CGPoint(x: control.x + shift.dx, y: control.y + shift.dy)
+                    )
+                }
+            } else {
+                tether.move(to: from)
+                tether.addQuadCurve(to: to, control: control)
+            }
+            // Dashes run down the line toward the nose: a growing phase
+            // slides the pattern back toward the start of the path.
+            switch look.beam {
+            case .dashes:
+                rig.tether.path = tether.copy(dashingWithPhase: reduceMotion ? 0 : CGFloat(now * 140) * fx, lengths: [7 * fx, 6 * fx])
+            case .chevrons:
+                rig.tether.path = tether.copy(dashingWithPhase: reduceMotion ? 0 : CGFloat(now * 110) * fx, lengths: [16 * fx, 7 * fx])
+            default:
+                rig.tether.path = tether
+            }
+            var alpha = min(1, 0.3 + 0.6 * CGFloat(grip) * gain)
+            if !reduceMotion {
+                switch look.beam {
+                case .pulses: alpha *= 0.6 + 0.4 * CGFloat(abs(sin(now * 5)))
+                case .glitch where Double.random(in: 0 ... 1) < 0.2: alpha *= 0.15
+                case .sparkle where Double.random(in: 0 ... 1) < 0.5:
+                    let t = CGFloat.random(in: 0.1 ... 0.9)
+                    let along = CGPoint(
+                        x: (1 - t) * (1 - t) * from.x + 2 * (1 - t) * t * control.x + t * t * to.x,
+                        y: (1 - t) * (1 - t) * from.y + 2 * (1 - t) * t * control.y + t * t * to.y
+                    )
+                    sprite(Self.starTexture, at: along, size: .random(in: 8 ... 13) * fx, color: .white, life: 0.25, rotation: .random(in: 0 ... .pi), z: 3.3)
+                default: break
+                }
+            }
+            rig.tether.alpha = alpha
             rig.tether.isHidden = false
         } else {
             rig.tether.isHidden = true
@@ -1714,7 +1901,13 @@ final class ArenaScene: SKScene {
         // Motes pour in from the far part of the cone toward the nose,
         // carried along with the ship.
         let pointsPerUnit = pointsPerWorldUnit
-        rig.budget += dt * 180
+        let rate: Double = switch look.beam {
+        case .glitch: 90
+        case .heavy, .pulses: 130
+        case .ripples: 70
+        default: 180
+        }
+        rig.budget += dt * rate
         while rig.budget >= 1 {
             rig.budget -= 1
             let angle = nose + .random(in: -halfAngle ... halfAngle)
@@ -1728,53 +1921,90 @@ final class ArenaScene: SKScene {
                 y: tipPoint.y + CGFloat(state.velocity.y) * pointsPerUnit * CGFloat(life)
             )
             let size = CGFloat.random(in: 6 ... 11) * max(fx, 1)
-            flash(
-                at: start,
-                color: Double.random(in: 0 ... 1) < 0.2 ? .white : Self.beamColor,
-                size: size,
-                grow: 0.2,
-                life: life,
-                alpha: min(1, 0.6 * gain),
-                z: 3.1,
-                destination: end
-            )
+            let color = Double.random(in: 0 ... 1) < 0.25 ? accent : beamColor
+            let alpha = min(1, 0.6 * gain)
+            // Pointed motes face the nose they are pouring into.
+            let inward = atan2(end.y - start.y, end.x - start.x)
+            switch look.beam {
+            case .dashes:
+                sprite(Self.puffTexture, at: start, size: size * 0.45, color: color, life: life,
+                       rotation: inward, alpha: alpha, aspect: 5, grow: 0.6, z: 3.1, destination: end)
+            case .chevrons:
+                sprite(Self.chevronTexture, at: start, size: size * 1.5, color: color, life: life,
+                       rotation: inward, alpha: alpha, grow: 0.5, z: 3.1, destination: end)
+            case .ripples:
+                sprite(Self.ringTexture, at: start, size: size * 1.4, color: color, life: life,
+                       alpha: alpha, grow: 0.2, z: 3.1, destination: end)
+            case .glitch:
+                sprite(Self.diamondTexture, at: start, size: size * 1.3, color: color, life: life * 0.6,
+                       rotation: inward, alpha: alpha, grow: 0.6, z: 3.1, destination: end)
+            case .sparkle:
+                sprite(Self.starTexture, at: start, size: size * 1.4, color: Bool.random() ? .white : color, life: life,
+                       rotation: .random(in: 0 ... .pi), alpha: alpha, grow: 0.2, z: 3.1, destination: end)
+            case .heavy:
+                sprite(Self.squareTexture, at: start, size: size * 1.2, color: color, life: life,
+                       rotation: inward, alpha: alpha, grow: 0.3, z: 3.1, destination: end)
+            case .pulses, .twin:
+                flash(at: start, color: color, size: look.beam == .pulses ? size * 1.4 : size * 0.8,
+                      grow: 0.2, life: life, alpha: alpha, z: 3.1, destination: end)
+            }
         }
     }
 
-    /// Fire and smoke: the burn throws grey smoke back along the nose axis
+    /// Fire and smoke: the burn throws smoke back along the nose axis
     /// (drawn with ordinary alpha, which is what makes it read as smoke and
     /// not light) with a few hot sparks; an idle engine lets a thin wisp
-    /// rise. Density tracks wall time, not frame rate.
+    /// rise. Density tracks wall time, not frame rate. The hull's look sets
+    /// the smoke's colour, size, how long it hangs and its style -- soot,
+    /// vapour, bubble rings, wisps, or glitter that glows instead.
     private func emitSmoke(from shipNode: SKShapeNode, seat: Seat, state: ShipState, dt: Double) {
         guard !reduceMotion, !state.isDestroyed, dt > 0 else { return }
         let fx = labScale
         let density = Self.smokeDensity
         let thrusting = state.thrustLevel > 0
+        let look = hullLook(seat)
+        let size = CGFloat(look.smokeSize)
+        let linger = look.smokeLife
+        let opacity = CGFloat(look.smokeOpacity)
+        let color = Self.color(look.smoke)
+        let glitter = look.smokeStyle == .glitter
+        let texture: SKTexture = look.smokeStyle == .bubbles ? Self.ringTexture : Self.smokeTexture
+        // Bubbles keep their ring instead of swelling into a blur.
+        let swell: CGFloat = look.smokeStyle == .bubbles ? 0.5 : 1
         var budget = (smokeBudgets[seat] ?? 0) + dt * (thrusting ? 26 : 3 * density)
-        let nozzle = worldNode.convert(CGPoint(x: 0, y: -16), from: shipNode)
+        let nozzles: [CGFloat] = look.twinNozzles ? [-Self.twinNozzleX, Self.twinNozzleX] : [0]
         let back = CGVector(dx: -cos(state.angle), dy: -sin(state.angle))
         let pointsPerUnit = pointsPerWorldUnit
         let carried = CGVector(dx: CGFloat(state.velocity.x) * pointsPerUnit, dy: CGFloat(state.velocity.y) * pointsPerUnit)
         while budget >= 1 {
             budget -= 1
+            let nozzle = worldNode.convert(CGPoint(x: nozzles.randomElement() ?? 0, y: -16), from: shipNode)
             if thrusting {
                 let push = CGFloat.random(in: 60 ... 110) * fx
+                let at = CGPoint(
+                    x: nozzle.x + back.dx * 10 * fx + .random(in: -3 ... 3) * fx,
+                    y: nozzle.y + back.dy * 10 * fx + .random(in: -3 ... 3) * fx
+                )
                 smokePuff(
-                    at: CGPoint(
-                        x: nozzle.x + back.dx * 10 * fx + .random(in: -3 ... 3) * fx,
-                        y: nozzle.y + back.dy * 10 * fx + .random(in: -3 ... 3) * fx
-                    ),
+                    at: at,
                     velocity: CGVector(
                         dx: back.dx * push + carried.dx * 0.25 + .random(in: -15 ... 15) * fx,
                         dy: back.dy * push + carried.dy * 0.25 + .random(in: -15 ... 15) * fx
                     ),
-                    size: .random(in: 9 ... 14) * fx,
-                    grow: .random(in: 4 ... 6),
-                    life: .random(in: 1.1 ... 1.6),
-                    peak: 0.2 * CGFloat(density),
-                    rise: 0.12,
-                    drag: 0.9
+                    size: .random(in: 9 ... 14) * fx * size,
+                    grow: .random(in: 4 ... 6) * swell,
+                    life: .random(in: 1.1 ... 1.6) * linger,
+                    peak: 0.2 * CGFloat(density) * opacity,
+                    rise: look.smokeStyle == .bubbles ? 0.2 : 0.12,
+                    drag: 0.9,
+                    color: color,
+                    texture: texture,
+                    glows: glitter
                 )
+                if glitter, Double.random(in: 0 ... 1) < 0.3 {
+                    sprite(Self.starTexture, at: at, size: .random(in: 6 ... 10) * fx, color: .white,
+                           life: .random(in: 0.3 ... 0.6), rotation: .random(in: 0 ... .pi), alpha: 0.9, grow: 0.2, z: -2.4)
+                }
                 if Double.random(in: 0 ... 1) < 0.35 {
                     let thrown = CGVector(
                         dx: back.dx * .random(in: 160 ... 300) * fx + .random(in: -40 ... 40) * fx,
@@ -1785,8 +2015,8 @@ final class ArenaScene: SKScene {
                         angle: atan2(thrown.dy, thrown.dx),
                         speed: hypot(thrown.dx, thrown.dy),
                         life: .random(in: 0.12 ... 0.25),
-                        core: SKColor(red: 1, green: 0.9, blue: 0.71, alpha: 1),
-                        halo: Self.color(seat.team),
+                        core: Self.color(look.flameCore),
+                        halo: Self.color(look.flame),
                         drag: 0.05
                     )
                 }
@@ -1794,12 +2024,15 @@ final class ArenaScene: SKScene {
                 smokePuff(
                     at: nozzle,
                     velocity: CGVector(dx: .random(in: -8 ... 8) * fx, dy: .random(in: 4 ... 14) * fx),
-                    size: 6 * fx,
-                    grow: 4,
-                    life: 1.4,
-                    peak: 0.1 * CGFloat(density),
+                    size: 6 * fx * size,
+                    grow: 4 * swell,
+                    life: 1.4 * linger,
+                    peak: 0.1 * CGFloat(density) * opacity,
                     rise: 0.3,
-                    drag: 0.95
+                    drag: 0.95,
+                    color: color,
+                    texture: texture,
+                    glows: glitter
                 )
             }
         }
@@ -1818,6 +2051,7 @@ final class ArenaScene: SKScene {
         let tail = SIMD2(-cos(state.angle), -sin(state.angle))
         let fx = labScale
         let back = CGVector(dx: CGFloat(tail.x), dy: CGFloat(tail.y))
+        let look = hullLook(seat)
         var budget = blastBudgets[seat] ?? 0
         for ball in snapshot.balls {
             let offset = ball.position - state.position
@@ -1844,8 +2078,8 @@ final class ArenaScene: SKScene {
                         angle: angle,
                         speed: speed,
                         life: .random(in: 0.15 ... 0.3),
-                        core: SKColor(red: 1, green: 0.9, blue: 0.71, alpha: 1),
-                        halo: Self.color(seat.team),
+                        core: Self.color(look.flameCore),
+                        halo: Self.color(look.flame),
                         drag: 0.05
                     )
                 } else {
@@ -1863,7 +2097,7 @@ final class ArenaScene: SKScene {
             }
             flash(
                 at: centre,
-                color: Self.color(seat.team),
+                color: Self.color(look.flame),
                 size: (radius * 2 + 10 * fx) * (1 + 0.5 * strength),
                 grow: 1.6,
                 life: 0.12,
@@ -1881,12 +2115,15 @@ final class ArenaScene: SKScene {
         life: TimeInterval,
         peak: CGFloat,
         rise: Double,
-        drag: Double
+        drag: Double,
+        color: SKColor = ArenaScene.smokeColor,
+        texture: SKTexture = ArenaScene.smokeTexture,
+        glows: Bool = false
     ) {
-        let puff = SKSpriteNode(texture: Self.smokeTexture, size: CGSize(width: size, height: size))
-        puff.color = Self.smokeColor
+        let puff = SKSpriteNode(texture: texture, size: CGSize(width: size, height: size))
+        puff.color = color
         puff.colorBlendFactor = 1
-        puff.blendMode = .alpha
+        puff.blendMode = glows ? .add : .alpha
         puff.alpha = 0
         puff.zPosition = -2.5
         puff.position = position
@@ -1941,6 +2178,52 @@ final class ArenaScene: SKScene {
         return SKTexture(image: image)
     }
 
+    /// White hull-look shapes for bolts, motes and smoke, tinted per hull.
+    /// Pointed shapes point along +x, the way a node at zRotation 0 travels.
+    /// A soft blur round each one so it reads as light, not a sticker.
+    private static let chevronTexture = shapeTexture { path, side in
+        path.move(to: CGPoint(x: side * 0.82, y: side * 0.5))
+        path.addLine(to: CGPoint(x: side * 0.3, y: side * 0.84))
+        path.addLine(to: CGPoint(x: side * 0.44, y: side * 0.5))
+        path.addLine(to: CGPoint(x: side * 0.3, y: side * 0.16))
+        path.closeSubpath()
+    }
+    private static let diamondTexture = shapeTexture { path, side in
+        path.move(to: CGPoint(x: side * 0.9, y: side * 0.5))
+        path.addLine(to: CGPoint(x: side * 0.5, y: side * 0.7))
+        path.addLine(to: CGPoint(x: side * 0.1, y: side * 0.5))
+        path.addLine(to: CGPoint(x: side * 0.5, y: side * 0.3))
+        path.closeSubpath()
+    }
+    private static let squareTexture = shapeTexture { path, side in
+        path.addRect(CGRect(x: side * 0.25, y: side * 0.25, width: side * 0.5, height: side * 0.5))
+    }
+    private static let starTexture = shapeTexture { path, side in
+        let c = side / 2
+        for i in 0 ..< 8 {
+            let angle = CGFloat(i) * .pi / 4
+            let r = i.isMultiple(of: 2) ? side * 0.45 : side * 0.09
+            let p = CGPoint(x: c + cos(angle) * r, y: c + sin(angle) * r)
+            if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
+        }
+        path.closeSubpath()
+    }
+    private static let ringTexture = radialTexture(stops: [(0, 0), (0.6, 0.1), (0.8, 0.9), (1, 0)])
+
+    private static func shapeTexture(_ draw: (CGMutablePath, CGFloat) -> Void) -> SKTexture {
+        let side: CGFloat = 64
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            let path = CGMutablePath()
+            draw(path, side)
+            let cg = context.cgContext
+            cg.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+            cg.setFillColor(UIColor.white.cgColor)
+            cg.addPath(path)
+            cg.fillPath()
+        }
+        return SKTexture(image: image)
+    }
+
     private func updateTrails(_ snapshot: WorldState) {
         guard !reduceMotion else {
             trailLayer.removeAllChildren()
@@ -1982,7 +2265,49 @@ final class ArenaScene: SKScene {
         ship.path = hull.spec.outline.cgPath
         exhaustWidths[seat] = CGFloat(hull.spec.exhaustWidth)
         exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
+        let look = hull.look
+        looks[seat] = look
+        beamRigs[seat]?.apply(look)
+        buildFireCores(for: seat, ship: ship, look: look)
     }
+
+    private func hullLook(_ seat: Seat) -> HullLook {
+        looks[seat] ?? Hull.defaultHull(forSeat: seat).look
+    }
+
+    static func color(_ rgb: SIMD3<Double>) -> SKColor {
+        SKColor(red: CGFloat(rgb.x), green: CGFloat(rgb.y), blue: CGFloat(rgb.z), alpha: 1)
+    }
+
+    /// The hot core of the burn: a white-hot tongue inside a flame-coloured
+    /// one at each nozzle, flickered per frame. Only lit while the engine is.
+    /// A twin-boom hull burns at the foot of each boom.
+    private func buildFireCores(for seat: Seat, ship: SKShapeNode, look: HullLook) {
+        for core in fireCores[seat] ?? [] { core.removeFromParent() }
+        let nozzles: [CGFloat] = look.twinNozzles ? [-Self.twinNozzleX, Self.twinNozzleX] : [0]
+        let outer = look.flame * 0.65 + look.flameCore * 0.35
+        fireCores[seat] = nozzles.flatMap { x in
+            [
+                (Self.color(look.flameCore), CGSize(width: 15, height: 34), CGFloat(0.95)),
+                (Self.color(outer), CGSize(width: 25, height: 53), CGFloat(0.8)),
+            ].map { color, size, alpha in
+                let core = SKSpriteNode(texture: ArenaScene.puffTexture, size: size)
+                core.anchorPoint = CGPoint(x: 0.5, y: 1)
+                core.position = CGPoint(x: x, y: -16)
+                core.color = color
+                core.colorBlendFactor = 1
+                core.blendMode = .add
+                core.alpha = alpha
+                core.zPosition = -0.9
+                core.isHidden = true
+                ship.addChild(core)
+                return core
+            }
+        }
+    }
+
+    /// Where the Hornet's booms end, in outline units either side of the keel.
+    private static let twinNozzleX: CGFloat = 17
 
     /// Mostly aspect-fit, blended toward stretch-to-fill (the old iPhone
     /// look) so the court still fills more of a tall/wide view instead of

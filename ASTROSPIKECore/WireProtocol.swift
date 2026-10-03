@@ -120,7 +120,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 34: bolts shove enemy hulls and the beam pulls enemy ships and bends
     //     enemy bolts; SimulationEvent gained shipZapped. A build 115 board
     //     would fly through the bolts and fail to decode the event.
-    public static let currentVersion: UInt16 = 34
+    // 35: BoltState gained `seat`, the hull that fired it, so a guest draws
+    //     each bolt in its shooter's hull look. A build 116 snapshot has no
+    //     seat on its bolts and would not decode.
+    public static let currentVersion: UInt16 = 35
 
     public var version: UInt16
     public var sequence: UInt64

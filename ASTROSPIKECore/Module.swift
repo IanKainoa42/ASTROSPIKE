@@ -272,6 +272,9 @@ public struct BoltState: Codable, Equatable, Sendable {
 
     public var id: UInt64
     public var owner: Team
+    /// The ship that fired it. Drawing only: the bolt is drawn in that
+    /// hull's look. Every rule reads `owner`.
+    public var seat: Seat
     public var position: SIMD2<Double>
     public var velocity: SIMD2<Double>
     public var ticksRemaining: UInt64
@@ -279,12 +282,14 @@ public struct BoltState: Codable, Equatable, Sendable {
     public init(
         id: UInt64,
         owner: Team,
+        seat: Seat? = nil,
         position: SIMD2<Double>,
         velocity: SIMD2<Double>,
         ticksRemaining: UInt64
     ) {
         self.id = id
         self.owner = owner
+        self.seat = seat ?? .lead(owner)
         self.position = position
         self.velocity = velocity
         self.ticksRemaining = ticksRemaining
@@ -1144,6 +1149,7 @@ public struct SimulationEngine: Sendable {
         state.bolts.append(BoltState(
             id: state.nextBoltID,
             owner: seat.team,
+            seat: seat,
             // Leaves from just past the nose so it cannot spawn inside a ball
             // already resting against the hull.
             position: ship.position + axis * ((shipHitboxes[seat] ?? .shared).noseReach + 0.005),
