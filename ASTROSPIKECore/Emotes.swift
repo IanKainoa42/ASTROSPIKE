@@ -22,15 +22,15 @@ public enum Emote: String, Codable, CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// Shown on the picker and floated over the ship as it plays.
-    public var glyph: String {
+    /// SF Symbol shown on the picker. Never an emoji.
+    public var symbol: String {
         switch self {
-        case .barrelRoll: "🌀"
-        case .victoryBounce: "🕺"
-        case .fireworks: "🎆"
-        case .rainbow: "🌈"
-        case .shockwave: "💥"
-        case .wave: "👋"
+        case .barrelRoll: "arrow.triangle.2.circlepath"
+        case .victoryBounce: "figure.dance"
+        case .fireworks: "sparkles"
+        case .rainbow: "rainbow"
+        case .shockwave: "burst"
+        case .wave: "hand.wave"
         }
     }
 

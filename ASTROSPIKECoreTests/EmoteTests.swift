@@ -26,6 +26,15 @@ struct EmoteTests {
         }
     }
 
+    /// Ian's rule: no emoji anywhere. The picker draws SF Symbols, whose
+    /// names are plain ASCII.
+    @Test("Emote icons are SF Symbol names, never emoji")
+    func symbolsAreNotEmoji() {
+        for emote in Emote.allCases {
+            #expect(!emote.symbol.isEmpty && emote.symbol.unicodeScalars.allSatisfy(\.isASCII), "\(emote)")
+        }
+    }
+
     @Test("Every emote ends with the hull at rest")
     func endsAtRest() {
         for emote in Emote.allCases {

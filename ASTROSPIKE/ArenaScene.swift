@@ -62,8 +62,6 @@ final class ArenaScene: SKScene {
     private var markerNodes: [Seat: SKLabelNode] = [:]
     /// Each seat's emote in progress and when it began, in wall time.
     private var activeEmotes: [Seat: (emote: Emote, start: TimeInterval)] = [:]
-    /// The emote's glyph, floating over its ship while it plays.
-    private var emoteGlyphs: [Seat: SKLabelNode] = [:]
     var localSeat: Seat?
     private var exhaustNodes: [Seat: SKSpriteNode] = [:]
     /// The hull's own exhaust width, kept so the idle ember can be pinned
@@ -1278,14 +1276,6 @@ final class ArenaScene: SKScene {
     /// each frame, and the bursts are effects around it.
     func playEmote(_ emote: Emote, for seat: Seat) {
         activeEmotes[seat] = (emote, CACurrentMediaTime())
-        emoteGlyphs[seat]?.removeFromParent()
-        let glyph = SKLabelNode(text: emote.glyph)
-        glyph.fontSize = max(20, 30 * labScale)
-        glyph.verticalAlignmentMode = .bottom
-        glyph.zPosition = 24
-        glyph.position = shipNodes[seat]?.position ?? .zero
-        emoteGlyphs[seat] = glyph
-        actorLayer.addChild(glyph)
         let key = "emote-\(seat.rawValue)"
         actorLayer.removeAction(forKey: key)
         var steps: [SKAction] = []
@@ -1331,15 +1321,12 @@ final class ArenaScene: SKScene {
     /// the hull back exactly as it was drawn once the emote is over -- colour
     /// included, so an emote cut short by a rebuild or a match end can never
     /// leave a ship in the wrong team's colour.
-    private func applyEmote(seat: Seat, ship: SKShapeNode, exhaust: SKSpriteNode, isDestroyed: Bool) {
+    private func applyEmote(seat: Seat, ship: SKShapeNode, exhaust: SKSpriteNode) {
         var color = Self.hullColor(for: seat)
-        let glyph = emoteGlyphs[seat]
         if let active = activeEmotes[seat] {
             let t = (CACurrentMediaTime() - active.start) / active.emote.duration
             if t >= 1 {
                 activeEmotes[seat] = nil
-                glyph?.removeFromParent()
-                emoteGlyphs[seat] = nil
             } else {
                 let pose = active.emote.pose(at: t)
                 if !reduceMotion {
@@ -1349,11 +1336,6 @@ final class ArenaScene: SKScene {
                 ship.glowWidth *= CGFloat(pose.glow)
                 if let hue = pose.hue {
                     color = SKColor(hue: CGFloat(hue), saturation: 0.8, brightness: 1, alpha: 1)
-                }
-                if let glyph {
-                    let rise = reduceMotion ? 0 : CGFloat(t) * 26 * labScale
-                    glyph.position = CGPoint(x: ship.position.x, y: ship.position.y + 26 * labScale + rise)
-                    glyph.alpha = isDestroyed ? 0 : CGFloat(min(1, (1 - t) / 0.3))
                 }
             }
         }
@@ -1548,7 +1530,7 @@ final class ArenaScene: SKScene {
                 lights.append(FloorLight(position: nozzle, radius: 40 * fx, color: Self.color(seat.team), intensity: 0.35))
             }
         }
-        applyEmote(seat: seat, ship: shipNode, exhaust: exhaust, isDestroyed: state.isDestroyed)
+        applyEmote(seat: seat, ship: shipNode, exhaust: exhaust)
         emitSmoke(from: shipNode, seat: seat, state: state, dt: dt)
         emitBlast(seat: seat, state: state, dt: dt)
         updateBeam(seat: seat, state: state, dt: dt, lights: &lights)
@@ -1964,8 +1946,9 @@ final class ArenaScene: SKScene {
 
     /// Share of the window width kept clear of the court on each side in
     /// landscape, safe area included. Sized so a pad still fits beside an
-    /// iPhone's rounded corners.
-    static let controlMarginFraction: CGFloat = 0.20
+    /// iPhone's rounded corners. 0.18 since build 115 (was 0.20): the court
+    /// was drawn narrower than its world shape and read as squashed.
+    static let controlMarginFraction: CGFloat = 0.18
 
     /// Points per world unit for things drawn round (ball, hulls). The court
     /// is stretched a little differently on each axis; the geometric mean

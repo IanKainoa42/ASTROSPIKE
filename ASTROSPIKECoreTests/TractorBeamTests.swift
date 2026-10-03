@@ -62,9 +62,9 @@ struct TractorBeamTests {
     @Test("The drawn cone is the cone that grabs")
     func coneIsNarrowAndLong() {
         let engine = playing()
-        // A ball 35 degrees off the nose is outside the cone; 25 is inside.
-        #expect(cos(35 * .pi / 180) < SimulationEngine.tractorCone)
-        #expect(cos(25 * .pi / 180) > SimulationEngine.tractorCone)
+        // A ball 26 degrees off the nose is outside the cone; 20 is inside.
+        #expect(cos(26 * .pi / 180) < SimulationEngine.tractorCone)
+        #expect(cos(20 * .pi / 180) > SimulationEngine.tractorCone)
         #expect(engine.configuration.tractorRange > 0.7, "the beam is a long reach")
     }
 

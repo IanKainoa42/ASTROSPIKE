@@ -2131,7 +2131,10 @@ private struct EmoteTray: View {
             ForEach(Emote.allCases, id: \.self) { emote in
                 Button { play(emote) } label: {
                     VStack(spacing: 1) {
-                        Text(emote.glyph).font(.system(size: 22))
+                        Image(systemName: emote.symbol)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(height: 24)
                         Text(emote.name.uppercased())
                             .font(.system(size: 7, weight: .heavy, design: .rounded))
                             .foregroundStyle(.white.opacity(0.8))

@@ -1185,12 +1185,11 @@ public struct SimulationEngine: Sendable {
     /// nose and gone at `tractorRange`. Like the wash it is not a touch, so
     /// reeling a ball in never clears the bounce allowance -- the touch
     /// comes when it lands on the hull.
-    /// The cosine of the cone's half-angle: higher is narrower. 0.86 is a
-    /// touch under 31 degrees: a long thin reach rather than a wide fan.
-    /// Paired with the longer range it grabs about as much court as the old
-    /// wide cone did, just further out and straighter ahead.
+    /// The cosine of the cone's half-angle: higher is narrower. 0.92 is
+    /// about 23 degrees (build 115; was 0.86, 31 degrees, which Ian found too
+    /// wide): a long thin reach rather than a fan, aimed with the nose.
     /// Public so `ArenaScene` draws the volume that actually grabs.
-    public static let tractorCone = 0.86
+    public static let tractorCone = 0.92
 
     /// Every impulse the beam hands the ball comes back out of the hull at
     /// this ratio, which is what makes the grab conserve momentum.
