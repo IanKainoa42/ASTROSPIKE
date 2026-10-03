@@ -60,6 +60,10 @@ final class ArenaScene: SKScene {
     /// YOU and ALLY over the two ships on the pilot's side in doubles, where
     /// two hulls share a colour and nothing else says which one you fly.
     private var markerNodes: [Seat: SKLabelNode] = [:]
+    /// Each seat's emote in progress and when it began, in wall time.
+    private var activeEmotes: [Seat: (emote: Emote, start: TimeInterval)] = [:]
+    /// The emote's glyph, floating over its ship while it plays.
+    private var emoteGlyphs: [Seat: SKLabelNode] = [:]
     var localSeat: Seat?
     private var exhaustNodes: [Seat: SKSpriteNode] = [:]
     /// The hull's own exhaust width, kept so the idle ember can be pinned
@@ -1269,6 +1273,97 @@ final class ArenaScene: SKScene {
         ]))
     }
 
+    /// Plays `emote` on `seat`'s ship, replacing any it is already playing.
+    /// Drawing only: the hull's pose is laid over what the snapshot says
+    /// each frame, and the bursts are effects around it.
+    func playEmote(_ emote: Emote, for seat: Seat) {
+        activeEmotes[seat] = (emote, CACurrentMediaTime())
+        emoteGlyphs[seat]?.removeFromParent()
+        let glyph = SKLabelNode(text: emote.glyph)
+        glyph.fontSize = max(20, 30 * labScale)
+        glyph.verticalAlignmentMode = .bottom
+        glyph.zPosition = 24
+        glyph.position = shipNodes[seat]?.position ?? .zero
+        emoteGlyphs[seat] = glyph
+        actorLayer.addChild(glyph)
+        let key = "emote-\(seat.rawValue)"
+        actorLayer.removeAction(forKey: key)
+        var steps: [SKAction] = []
+        var elapsed = 0.0
+        for (index, fraction) in emote.bursts.enumerated() {
+            let at = fraction * emote.duration
+            if at > elapsed { steps.append(.wait(forDuration: at - elapsed)) }
+            elapsed = at
+            steps.append(.run { [weak self] in self?.emoteBurst(emote, seat: seat, index: index) })
+        }
+        actorLayer.run(.sequence(steps), withKey: key)
+    }
+
+    private func emoteBurst(_ emote: Emote, seat: Seat, index: Int) {
+        guard let ship = shipNodes[seat], !ship.isHidden else { return }
+        let at = ship.position
+        let team = Self.hullColor(for: seat)
+        let fx = labScale
+        switch emote {
+        case .barrelRoll:
+            sparks(at: at, color: team)
+        case .victoryBounce:
+            flash(at: CGPoint(x: at.x, y: at.y - 14 * fx), color: team, scale: 0.7, life: 0.35)
+            sparks(at: CGPoint(x: at.x, y: at.y - 10 * fx), color: .white)
+        case .fireworks:
+            // Each shell goes off a little higher and to a side, in its own colour.
+            let side: CGFloat = index % 2 == 0 ? -1 : 1
+            let shell = CGPoint(x: at.x + side * CGFloat(14 + index * 10) * fx, y: at.y + CGFloat(40 + index * 16) * fx)
+            let hue = [0.95, 0.15, 0.55][index % 3]
+            let color = SKColor(hue: hue, saturation: 0.75, brightness: 1, alpha: 1)
+            if !reduceMotion { flash(at: shell, color: color, scale: 0.9, life: 0.4) }
+            sparks(at: shell, color: color)
+        case .rainbow:
+            sparks(at: at, color: .white)
+        case .shockwave:
+            goalBurst(at: at, color: team)
+        case .wave:
+            flash(at: at, color: team, scale: 1.1, life: 0.5)
+        }
+    }
+
+    /// Lays the emote's pose over the hull the snapshot just placed, and puts
+    /// the hull back exactly as it was drawn once the emote is over -- colour
+    /// included, so an emote cut short by a rebuild or a match end can never
+    /// leave a ship in the wrong team's colour.
+    private func applyEmote(seat: Seat, ship: SKShapeNode, exhaust: SKSpriteNode, isDestroyed: Bool) {
+        var color = Self.hullColor(for: seat)
+        let glyph = emoteGlyphs[seat]
+        if let active = activeEmotes[seat] {
+            let t = (CACurrentMediaTime() - active.start) / active.emote.duration
+            if t >= 1 {
+                activeEmotes[seat] = nil
+                glyph?.removeFromParent()
+                emoteGlyphs[seat] = nil
+            } else {
+                let pose = active.emote.pose(at: t)
+                if !reduceMotion {
+                    ship.xScale *= CGFloat(pose.scaleX)
+                    ship.yScale *= CGFloat(pose.scaleY)
+                }
+                ship.glowWidth *= CGFloat(pose.glow)
+                if let hue = pose.hue {
+                    color = SKColor(hue: CGFloat(hue), saturation: 0.8, brightness: 1, alpha: 1)
+                }
+                if let glyph {
+                    let rise = reduceMotion ? 0 : CGFloat(t) * 26 * labScale
+                    glyph.position = CGPoint(x: ship.position.x, y: ship.position.y + 26 * labScale + rise)
+                    glyph.alpha = isDestroyed ? 0 : CGFloat(min(1, (1 - t) / 0.3))
+                }
+            }
+        }
+        if ship.fillColor != color {
+            ship.fillColor = color
+            ship.strokeColor = color
+            exhaust.color = color
+        }
+    }
+
     func present(_ events: [SimulationEvent]) {
         for event in events {
             switch event {
@@ -1453,6 +1548,7 @@ final class ArenaScene: SKScene {
                 lights.append(FloorLight(position: nozzle, radius: 40 * fx, color: Self.color(seat.team), intensity: 0.35))
             }
         }
+        applyEmote(seat: seat, ship: shipNode, exhaust: exhaust, isDestroyed: state.isDestroyed)
         emitSmoke(from: shipNode, seat: seat, state: state, dt: dt)
         emitBlast(seat: seat, state: state, dt: dt)
         updateBeam(seat: seat, state: state, dt: dt, lights: &lights)

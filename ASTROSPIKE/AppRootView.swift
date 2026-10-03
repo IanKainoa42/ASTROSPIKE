@@ -633,6 +633,9 @@ private struct GameView: View {
     @State private var builtGeneration: Int
     @State private var showPause = false
     @State private var showLeaveConfirmation = false
+    @State private var emoteTrayOpen = false
+    /// Set when the local side scores, so the emote button invites a taunt.
+    @State private var emoteNudge = false
     /// Why the link ended, when it ended for a reason the seat hold does not
     /// cover. Non-nil puts a card over the arena instead of leaving the pilot
     /// flying a match that is already over.
@@ -719,7 +722,15 @@ private struct GameView: View {
                         spectating: isSpectating,
                         actionLabel: table != nil ? "Leave the table"
                             : mode == .online ? "Leave online match" : "Pause match",
-                        actionIcon: mode == .online ? "xmark" : "pause.fill"
+                        actionIcon: mode == .online ? "xmark" : "pause.fill",
+                        emote: showsEmoteButton ? EmoteButtonState(
+                            readyAt: session.emoteReadyAt,
+                            nudge: emoteNudge,
+                            isOpen: emoteTrayOpen
+                        ) {
+                            emoteTrayOpen.toggle()
+                            emoteNudge = false
+                        } : nil
                     ) {
                         if mode == .online {
                             showLeaveConfirmation = true
@@ -802,6 +813,15 @@ private struct GameView: View {
             )
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
+            if emoteTrayOpen, showsEmoteButton {
+                EmoteTray { emote in
+                    session.playEmote(emote)
+                    emoteTrayOpen = false
+                }
+                .padding(.top, 54).padding(.trailing, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topTrailing)))
+            }
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
             if let seconds = session.setBreakCountdown {
                 CountdownView(value: seconds, title: session.lastPointText, caption: "SWITCH SIDES")
@@ -916,7 +936,26 @@ private struct GameView: View {
         .onChange(of: scenePhase) { _, phase in
             session.setApplicationActive(phase == .active)
         }
+        .onChange(of: session.state.match.score[localTeam]) { old, new in
+            // A point for our side invites a taunt; the nudge lapses with
+            // the serve rather than glowing all rally.
+            guard showsEmoteButton, new > old else { return }
+            emoteNudge = true
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                emoteNudge = false
+            }
         }
+        .onChange(of: session.state.match.phase) { _, phase in
+            if phase == .finished { emoteTrayOpen = false }
+        }
+        .animation(.easeOut(duration: 0.15), value: emoteTrayOpen)
+        }
+    }
+
+    private var showsEmoteButton: Bool {
+        mode != .warmup && !isSpectating && session.canEmote
+            && session.state.match.phase != .finished
     }
 
     /// Where the court sits on screen, in global coordinates. The scene
@@ -1257,6 +1296,7 @@ private struct MatchHUD: View {
     var spectating = false
     let actionLabel: String
     let actionIcon: String
+    var emote: EmoteButtonState? = nil
     let action: () -> Void
 
     /// The scoreboard sits the way the court does: each side's score over its
@@ -1285,6 +1325,7 @@ private struct MatchHUD: View {
             }
             Spacer()
             score(team: leftTeam.opponent)
+            if let emote { EmoteButton(state: emote) }
             Button(action: action) {
                 Image(systemName: actionIcon)
                     .font(.system(size: 15, weight: .bold))
@@ -1589,6 +1630,7 @@ private struct SettingsView: View {
     @AppStorage("clusterControls") private var clusterControls = false
     @AppStorage("haptics") private var haptics = true
     @AppStorage(Soundscape.enabledKey) private var music = true
+    @AppStorage(GameSession.muteEmotesKey) private var muteEmotes = false
     @AppStorage("arrangePads") private var arrangePads = false
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
@@ -1618,6 +1660,7 @@ private struct SettingsView: View {
                 Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
                 Toggle("Haptics", isOn: $haptics)
                 Toggle("Music", isOn: $music)
+                Toggle("Hide other pilots' emotes", isOn: $muteEmotes)
                     .onChange(of: music) { _, on in Soundscape.shared.enabled = on }
                 LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
                 Section("Match Rules") {
@@ -2018,3 +2061,74 @@ private extension AIDifficulty {
 }
 
 #Preview { AppRootView() }
+
+struct EmoteButtonState {
+    let readyAt: Date
+    /// Our side just scored: the button glows to invite a taunt.
+    let nudge: Bool
+    let isOpen: Bool
+    let toggle: () -> Void
+}
+
+/// Opens the emote tray. A ring drains round it while the cooldown runs.
+private struct EmoteButton: View {
+    let state: EmoteButtonState
+
+    var body: some View {
+        Button(action: state.toggle) {
+            TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                let remaining = max(0, state.readyAt.timeIntervalSince(context.date))
+                Image(systemName: state.isOpen ? "xmark" : "face.smiling.inverse")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(state.nudge ? .yellow : .white)
+                    .frame(width: 34, height: 34)
+                    .background(.black.opacity(0.45), in: Circle())
+                    .overlay(Circle().stroke(state.nudge ? .yellow : .white.opacity(0.25), lineWidth: state.nudge ? 2 : 1))
+                    .overlay(
+                        Circle()
+                            .trim(from: 0, to: remaining / EmoteCooldown.interval)
+                            .stroke(.white.opacity(0.8), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                    )
+                    .shadow(color: state.nudge ? .yellow.opacity(0.8) : .clear, radius: 8)
+                    .scaleEffect(state.nudge ? 1.1 : 1)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .accessibilityLabel(state.isOpen ? "Close emotes" : "Emotes")
+        .accessibilityIdentifier("emote-button")
+        .animation(.easeOut(duration: 0.3), value: state.nudge)
+    }
+}
+
+/// The emotes, one tap each. Picking one closes the tray.
+private struct EmoteTray: View {
+    let play: (Emote) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(Emote.allCases, id: \.self) { emote in
+                Button { play(emote) } label: {
+                    VStack(spacing: 1) {
+                        Text(emote.glyph).font(.system(size: 22))
+                        Text(emote.name.uppercased())
+                            .font(.system(size: 7, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                    }
+                    .frame(width: 50, height: 48)
+                    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.2)))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(emote.name)
+                .accessibilityIdentifier("emote-\(emote.rawValue)")
+            }
+        }
+        .padding(6)
+        .background(.ultraThinMaterial.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
+    }
+}

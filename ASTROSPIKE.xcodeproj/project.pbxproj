@@ -48,6 +48,8 @@
 		769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07221F436E712100C50841C1 /* LobbyTests.swift */; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
 		7B0A96B4A21AAAFDED620A63 /* SoundBank.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A34F8A0F4853AB40D1C40B /* SoundBank.swift */; };
+		7D7AE085AA869108B2933733 /* EmoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4CC0793BBEF7450A3DFF60 /* EmoteTests.swift */; };
+		80AAF95DAC953B7A45D6D7ED /* Emotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E7824A8B02D40366234B000 /* Emotes.swift */; };
 		80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */; };
 		81CFFE5928F7D9BC1B3CB1F3 /* thrusterCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 3642C970AB86552313466CC5 /* thrusterCyan.mp3 */; };
 		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
@@ -230,6 +232,7 @@
 		998E28FE156CD107D158B232 /* LinkLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkLogView.swift; sourceTree = "<group>"; };
 		9A61EBE7A32C3AF4322C50CE /* OpenTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTable.swift; sourceTree = "<group>"; };
 		9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRulesTests.swift; sourceTree = "<group>"; };
+		9E7824A8B02D40366234B000 /* Emotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Emotes.swift; sourceTree = "<group>"; };
 		A3A9B354B5E4A268F1331755 /* AIController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIController.swift; sourceTree = "<group>"; };
 		A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothing.swift; sourceTree = "<group>"; };
 		A6CB5308EA9B7118F94E2301 /* GuestPredictionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestPredictionTests.swift; sourceTree = "<group>"; };
@@ -242,6 +245,7 @@
 		BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideCyan.mp3; sourceTree = "<group>"; };
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
 		BE59B8B356F6882B1E3B31EF /* volleySuspense.m4a */ = {isa = PBXFileReference; path = volleySuspense.m4a; sourceTree = "<group>"; };
+		BF4CC0793BBEF7450A3DFF60 /* EmoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmoteTests.swift; sourceTree = "<group>"; };
 		CF08260D34E017255668BDB7 /* ShipHitboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipHitboxTests.swift; sourceTree = "<group>"; };
 		D2E0D253FE310DD9B613C53A /* GuestPrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestPrediction.swift; sourceTree = "<group>"; };
 		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
@@ -303,6 +307,7 @@
 				A3A9B354B5E4A268F1331755 /* AIController.swift */,
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
 				9889197C7F993ABB89039F0E /* ArenaLayout.swift */,
+				9E7824A8B02D40366234B000 /* Emotes.swift */,
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				D2E0D253FE310DD9B613C53A /* GuestPrediction.swift */,
 				A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */,
@@ -404,6 +409,7 @@
 				3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */,
 				8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */,
 				BACCBC1253D91A47299D2645 /* DoublesTests.swift */,
+				BF4CC0793BBEF7450A3DFF60 /* EmoteTests.swift */,
 				2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */,
 				5211B3B5D2863EC2D8B8BD32 /* FlightTuningTests.swift */,
 				A6CB5308EA9B7118F94E2301 /* GuestPredictionTests.swift */,
@@ -593,6 +599,7 @@
 				EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */,
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
 				A12CC34BF17A32569673F600 /* ArenaLayout.swift in Sources */,
+				80AAF95DAC953B7A45D6D7ED /* Emotes.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				BBAB0DC9D3E3338A97BB6A15 /* GuestPrediction.swift in Sources */,
 				A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */,
@@ -658,6 +665,7 @@
 				BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */,
 				5E6A28DD8A98ABAAEB45CCA4 /* CourtVariantTests.swift in Sources */,
 				767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */,
+				7D7AE085AA869108B2933733 /* EmoteTests.swift in Sources */,
 				B3B59A8989F3D6AD990EED59 /* FlightControlMappingTests.swift in Sources */,
 				ACF6DC617500AF740FD3C27F /* FlightTuningTests.swift in Sources */,
 				EB0848085249FCDC1CDCC129 /* GuestPredictionTests.swift in Sources */,
@@ -841,7 +849,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 112;
+				CURRENT_PROJECT_VERSION = 113;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -901,7 +909,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 112;
+				CURRENT_PROJECT_VERSION = 113;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

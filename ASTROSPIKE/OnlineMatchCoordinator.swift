@@ -374,6 +374,8 @@ final class OnlineMatchCoordinator: NSObject,
         }
     }
     var onEvent: ((SimulationEvent) -> Void)?
+    /// A seated peer's ship plays an emote.
+    var onEmote: ((Seat, Emote) -> Void)?
     var onForfeit: ((Team) -> Void)?
     var onConnectionPaused: ((Bool) -> Void)?
     var onReconnect: (() -> Void)?
@@ -931,6 +933,14 @@ final class OnlineMatchCoordinator: NSObject,
     func sendEvent(_ event: SimulationEvent) {
         guard isAuthoritative else { return }
         send(.event(event), mode: .reliable)
+    }
+
+    /// Best effort: a taunt that does not arrive is a taunt missed, never a
+    /// broken link, so a failed send is noted and dropped rather than ending
+    /// the match the way a failed reliable send of real state does.
+    func sendEmote(_ emote: Emote) {
+        guard localSeat != nil, lifecycle.acceptsGameplayData else { return }
+        sendQuietly(.emote(emote), to: nil, mode: .reliable)
     }
 
     func sendFullResync(_ state: WorldState) {
@@ -1612,6 +1622,12 @@ final class OnlineMatchCoordinator: NSObject,
                   pilotHulls[playerID] != hull else { return }
             pilotHulls[playerID] = hull
             note("\(pilotName(playerID).uppercased()) FLIES \(hull.spec.name.uppercased())")
+        case let .emote(emote):
+            // The seat comes from the plan, not the sender: a bench pilot has
+            // no ship to play it on, and nobody can play one on someone else's.
+            guard lifecycle.acceptsGameplayData, playerID != GKLocalPlayer.local.gamePlayerID,
+                  let seat = seating[playerID] else { return }
+            onEmote?(seat, emote)
         case let .table(table):
             // Only the pilot who opened the table speaks for it -- and who
             // that is was settled before any peer could say otherwise: the
@@ -2407,6 +2423,7 @@ final class OnlineMatchCoordinator: NSObject,
         onSnapshot = nil
         onResync = nil
         onEvent = nil
+        onEmote = nil
         onForfeit = nil
         onConnectionPaused = nil
         onReconnect = nil

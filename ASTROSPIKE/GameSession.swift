@@ -122,6 +122,16 @@ final class GameSession {
     /// The seat this board's thumb flies, or nil on the bench.
     private var flownSeat: Seat? { isSpectator ? nil : localSeat }
     private weak var online: OnlineMatchCoordinator?
+    /// Settings: hide the emotes other pilots play.
+    static let muteEmotesKey = "muteOtherPilotsEmotes"
+    private var emoteCooldown = EmoteCooldown()
+    /// Each peer's own clock, a touch shorter than theirs so a pair sent on
+    /// cooldown that arrive bunched by the network both still play.
+    private var heardEmotes: [Seat: EmoteCooldown] = [:]
+    /// When the local pilot may emote again, for the button's cooldown ring.
+    private(set) var emoteReadyAt: Date = .distantPast
+    /// Whether this board flies a ship it could emote with.
+    var canEmote: Bool { flownSeat != nil }
     /// The host mirrors the score to the lobby; guests leave it alone.
     private weak var lobby: LobbyService?
     private var frameDriver: FrameDriver?
@@ -276,6 +286,17 @@ final class GameSession {
         thrustingTeams = []
         thrustCenter = [:]
         offsideLastFrame = []
+    }
+
+    /// Plays `emote` on the local ship and sends it to the court. Refused
+    /// (false) while the cooldown runs or with no ship to play it on.
+    @discardableResult
+    func playEmote(_ emote: Emote) -> Bool {
+        guard let seat = flownSeat, emoteCooldown.attempt(at: CACurrentMediaTime()) else { return false }
+        emoteReadyAt = Date().addingTimeInterval(emoteCooldown.interval)
+        scene.playEmote(emote, for: seat)
+        if mode == .online { online?.sendEmote(emote) }
+        return true
     }
 
     func togglePause() {
@@ -760,6 +781,13 @@ final class GameSession {
                 // this duel -- it keeps them on for the next.
                 online.finishCompletedMatch(winner: winner)
             }
+        }
+        online.onEmote = { [weak self] seat, emote in
+            guard let self, !UserDefaults.standard.bool(forKey: Self.muteEmotesKey) else { return }
+            var heard = self.heardEmotes[seat] ?? EmoteCooldown(interval: EmoteCooldown.interval - 0.5)
+            guard heard.attempt(at: CACurrentMediaTime()) else { return }
+            self.heardEmotes[seat] = heard
+            self.scene.playEmote(emote, for: seat)
         }
         online.onForfeit = { [weak self] winner in
             guard let self else { return }

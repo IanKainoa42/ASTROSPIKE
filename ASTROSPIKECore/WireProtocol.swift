@@ -24,6 +24,9 @@ public enum WirePayload: Codable, Equatable, Sendable {
     /// change, and before every seating plan, so a pilot left out of the
     /// plan knows they are on the bench rather than lost.
     case table(OpenTable)
+    /// The sender's ship plays a celebration. Cosmetic only, and the seat is
+    /// read from the seating plan rather than trusted from the sender.
+    case emote(Emote)
 }
 
 public struct WireEnvelope: Codable, Equatable, Sendable {
@@ -111,7 +114,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 32: Bumpers is one peg a side on a floor-to-roof track, with lighter
     //     drag. A build 106 board has two pegs a side: its `bumpers` would
     //     not line up with the host's obstacles.
-    public static let currentVersion: UInt16 = 32
+    // 33: WirePayload gained emote(Emote). A build 112 peer cannot decode
+    //     one, and a reliable message it cannot decode would read as a
+    //     broken link rather than a taunt it missed.
+    public static let currentVersion: UInt16 = 33
 
     public var version: UInt16
     public var sequence: UInt64
