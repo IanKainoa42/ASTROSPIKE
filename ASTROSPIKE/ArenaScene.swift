@@ -1169,6 +1169,63 @@ final class ArenaScene: SKScene {
         }
     }
 
+    static let zapColor = SKColor(red: 0.62, green: 0.9, blue: 1, alpha: 1)
+
+    /// An enemy bolt hit `seat`'s hull: lightning crackles over the ship it
+    /// shoved. The arcs ride the ship node, so they go where the hull goes,
+    /// and flicker through a few jagged frames before they die.
+    private func zap(seat: Seat, at world: SIMD2<Double>) {
+        SoundBank.shared.play(.boltHit, positionX: Float(world.x), volume: 0.8)
+        kick(3)
+        sparks(at: point(world.x, world.y), color: Self.zapColor)
+        guard let ship = shipNodes[seat] else { return }
+        guard !reduceMotion else {
+            flash(at: point(world.x, world.y), color: Self.zapColor, scale: 0.6, life: 0.3)
+            return
+        }
+        // Children are drawn in outline units; this many make one point.
+        let perPoint = 1 / max(0.0001, CGFloat(ShipHitbox.worldPerOutlineUnit) * pointsPerWorldUnit)
+        let reach = CGFloat(ShipHitbox.shared.reach / ShipHitbox.worldPerOutlineUnit)
+        ship.childNode(withName: "zap")?.removeFromParent()
+        let crackle = SKNode()
+        crackle.name = "zap"
+        crackle.zPosition = 2
+        ship.addChild(crackle)
+        var frames: [SKShapeNode] = []
+        for _ in 0..<3 {
+            let path = CGMutablePath()
+            for _ in 0..<5 {
+                let heading = CGFloat.random(in: 0..<(2 * .pi))
+                var radius = reach * CGFloat.random(in: 0.2...0.5)
+                path.move(to: CGPoint(x: cos(heading) * radius, y: sin(heading) * radius))
+                var angle = heading
+                for _ in 0..<4 {
+                    radius += reach * CGFloat.random(in: 0.18...0.32)
+                    angle += CGFloat.random(in: -0.5...0.5)
+                    path.addLine(to: CGPoint(x: cos(angle) * radius, y: sin(angle) * radius))
+                }
+            }
+            let arc = SKShapeNode(path: path)
+            arc.strokeColor = Self.zapColor
+            arc.lineWidth = 1.4 * perPoint
+            arc.glowWidth = 3 * perPoint
+            arc.lineJoin = .miter
+            arc.blendMode = .add
+            arc.isHidden = true
+            crackle.addChild(arc)
+            frames.append(arc)
+        }
+        var steps: [SKAction] = []
+        for flicker in 0..<8 {
+            let shown = frames[flicker % frames.count]
+            steps.append(.run { for frame in frames { frame.isHidden = frame !== shown } })
+            steps.append(.wait(forDuration: 0.045))
+        }
+        steps.append(.fadeOut(withDuration: 0.12))
+        steps.append(.removeFromParent())
+        crackle.run(.sequence(steps))
+    }
+
     private func ring(at position: CGPoint, color: SKColor) {
         guard !reduceMotion else { return }
         let fx = labScale
@@ -1372,6 +1429,8 @@ final class ArenaScene: SKScene {
                 } else {
                     impact(at: position, intensity: intensity)
                 }
+            case let .shipZapped(seat, position):
+                zap(seat: seat, at: position)
             case .rallyReset, .setEnded:
                 ballTrails.removeAll()
             case .matchEnded:
@@ -1591,7 +1650,7 @@ final class ArenaScene: SKScene {
         // a peg hauled to the nose would otherwise out-grip the ball every
         // frame and take its rim and tether away, though the ball is still
         // being pulled.
-        var heldPeg: SIMD2<Double>?
+        var heldPoint: SIMD2<Double>?
         for (index, obstacle) in arena.obstacles.enumerated()
         where held == nil && obstacle.isSprung && index < snapshot.bumpers.count {
             let peg = obstacle.start + snapshot.bumpers[index].offset
@@ -1601,7 +1660,19 @@ final class ArenaScene: SKScene {
             let along = simd_dot(offset / distance, heading)
             guard along > cone else { continue }
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
-            if hold > grip { grip = hold; heldPeg = peg }
+            if hold > grip { grip = hold; heldPoint = peg }
+        }
+        // An enemy hull in the cone is hauled too, and tethered the same way
+        // when no ball is: otherwise holding a ship would look like nothing.
+        for (other, ship) in snapshot.ships
+        where held == nil && other.team != seat.team && !ship.isDestroyed {
+            let offset = ship.position - tip
+            let distance = simd_length(offset)
+            guard distance > 0, distance < range else { continue }
+            let along = simd_dot(offset / distance, heading)
+            guard along > cone else { continue }
+            let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
+            if hold > grip { grip = hold; heldPoint = ship.position }
         }
         rig.edge.alpha = 0.35 + 0.4 * CGFloat(grip)
         beamPulls[seat] = BeamPull(grip: grip, x: tip.x)
@@ -1613,7 +1684,7 @@ final class ArenaScene: SKScene {
             intensity: 0.45 + 0.35 * CGFloat(grip)
         ))
 
-        let target: SIMD2<Double>? = held.map { snapshot.balls[$0].position } ?? heldPeg
+        let target: SIMD2<Double>? = held.map { snapshot.balls[$0].position } ?? heldPoint
         if let target, grip > 0 {
             if let held { ballGrips[held] = max(ballGrips[held], grip) }
             let ball = target

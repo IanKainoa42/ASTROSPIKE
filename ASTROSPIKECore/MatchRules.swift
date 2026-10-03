@@ -155,6 +155,8 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
     case point(scoringTeam: Team, reason: PointReason)
     case destruction(team: Team, reason: PointReason)
     case collisionEffect(position: SIMD2<Double>, intensity: Double)
+    /// An enemy bolt hit `seat`'s hull at `position` and shoved it.
+    case shipZapped(seat: Seat, position: SIMD2<Double>)
     case rallyReset
     /// A set went to `winner` and the next one starts from love; `sets` is
     /// the tally after it. Never sent for the set that ends the match.

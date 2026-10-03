@@ -117,7 +117,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 33: WirePayload gained emote(Emote). A build 112 peer cannot decode
     //     one, and a reliable message it cannot decode would read as a
     //     broken link rather than a taunt it missed.
-    public static let currentVersion: UInt16 = 33
+    // 34: bolts shove enemy hulls and the beam pulls enemy ships and bends
+    //     enemy bolts; SimulationEvent gained shipZapped. A build 115 board
+    //     would fly through the bolts and fail to decode the event.
+    public static let currentVersion: UInt16 = 34
 
     public var version: UInt16
     public var sequence: UInt64

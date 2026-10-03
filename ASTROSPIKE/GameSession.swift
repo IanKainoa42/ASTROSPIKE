@@ -581,6 +581,7 @@ final class GameSession {
         }
         for event in events where presentsLocalEvents {
             if case .collisionEffect = event { FeedbackCenter.shared.impactHaptic() }
+            if case let .shipZapped(seat, _) = event, seat == flownSeat { FeedbackCenter.shared.impact() }
             if case let .matchEnded(winner) = event, !isSpectator {
                 switch MatchEndCue.forLocalSide(localSeat.team, winner: winner) {
                 case .win: FeedbackCenter.shared.win()
@@ -772,6 +773,8 @@ final class GameSession {
                 )
             case .collisionEffect:
                 FeedbackCenter.shared.impactHaptic()
+            case let .shipZapped(seat, _):
+                if seat == self.flownSeat { FeedbackCenter.shared.impact() }
             case .destruction:
                 FeedbackCenter.shared.impact()
             case let .matchEnded(winner):

@@ -253,10 +253,10 @@ public struct ShipState: Codable, Equatable, Sendable {
     }
 }
 
-/// A bolt from a ship's nose. It only ever talks to the ball: hulls fly
-/// through it, and it flies the whole court. The gate is on the trigger,
-/// not the bolt: a ship can only fire from its own half. Hitting the ball
-/// is a touch by the owner, same as a hull would be.
+/// A bolt from a ship's nose. It flies the whole court and plays the ball;
+/// since build 116 it also shoves an enemy hull it hits (its own side's
+/// hulls fly through it), and an enemy beam bends it. The gate is on the
+/// trigger, not the bolt: a ship can only fire from its own half.
 public struct BoltState: Codable, Equatable, Sendable {
     /// Thin enough that a pilot can clip the edge of the ball on purpose.
     public static let radius = 0.007
@@ -817,6 +817,7 @@ public struct SimulationEngine: Sendable {
                 && (state.match.phase == .playing || configuration.sandbox)
             state.ships[seat] = ship
         }
+        applyTractorToShips(dt: dt)
         resolveShipShipCollisions(
             previousPositions: previousShipPositions,
             effects: &collisionEffects
@@ -850,7 +851,7 @@ public struct SimulationEngine: Sendable {
             applyTractorBeam(dt: dt, ballIndex: ballIndex)
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
-        advanceBolts(effects: &collisionEffects)
+        advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects)
         resolveBallBallCollisions(effects: &collisionEffects)
         for ballIndex in state.balls.indices {
             resolveBallShipCollisions(
@@ -1230,7 +1231,84 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    private mutating func advanceBolts(effects: inout [SimulationEvent]) {
+    /// How hard `ship`'s beam holds whatever sits at `point`, and the unit
+    /// direction from the ship out to it. Nil with the beam off, or outside
+    /// its cone or range. The same grade the ball feels.
+    private func tractorGrip(of ship: ShipState, at point: SIMD2<Double>) -> (grip: Double, toward: SIMD2<Double>)? {
+        let range = configuration.tractorRange
+        guard ship.tractorActive, !ship.isDestroyed, range > 0, configuration.tractorStrength > 0 else { return nil }
+        let offset = point - ship.position
+        let distance = simd_length(offset)
+        guard distance > 0.000_001, distance < range else { return nil }
+        let toward = offset / distance
+        let along = simd_dot(toward, SIMD2(cos(ship.angle), sin(ship.angle)))
+        guard along > Self.tractorCone else { return nil }
+        return ((1 - distance / range) * (along - Self.tractorCone) / (1 - Self.tractorCone), toward)
+    }
+
+    /// Share of `tractorStrength` an enemy hull in the beam feels. Two hulls
+    /// weigh the same, so the pull is split evenly: the target is drawn in
+    /// and the puller is drawn out to meet it. Half the ball's pull at the
+    /// nose is about half of full thrust -- strong up close, and a pilot
+    /// who thrusts away still gets out.
+    static let tractorShipPull = 0.5
+
+    /// The beam reaches enemy ships the way it reaches the ball: it draws
+    /// the hull toward the nose and damps the two ships' closing speed, and
+    /// every bit of it comes back out of the puller. Never a teammate.
+    private mutating func applyTractorToShips(dt: Double) {
+        for seat in Seat.allCases {
+            guard var puller = state.ships[seat], puller.tractorActive, !puller.isDestroyed else { continue }
+            for target in Seat.allCases where target.team != seat.team {
+                guard var ship = state.ships[target], !ship.isDestroyed,
+                      let hold = tractorGrip(of: puller, at: ship.position) else { continue }
+                let pull = hold.toward * (configuration.tractorStrength * Self.tractorShipPull * hold.grip * dt)
+                ship.velocity -= pull
+                puller.velocity += pull
+                let damp = min(1, configuration.tractorDrag * hold.grip * dt) / 2
+                let bleed = (ship.velocity - puller.velocity) * damp
+                ship.velocity -= bleed
+                puller.velocity += bleed
+                state.ships[target] = ship
+            }
+            state.ships[seat] = puller
+        }
+    }
+
+    /// How fast, in radians a second at full grip, an enemy beam turns a
+    /// bolt toward its nose. Bolts are massless and keep their speed: the
+    /// beam only bends their line. Strong enough that a shot passing
+    /// through the cone visibly hooks, and a shot down the beam is reeled
+    /// onto the nose, where it is caught.
+    static let tractorBoltTurn = 9.0
+
+    private func bendBolt(_ bolt: inout BoltState, dt: Double) {
+        for seat in Seat.allCases where seat.team != bolt.owner {
+            guard let ship = state.ships[seat], let hold = tractorGrip(of: ship, at: bolt.position) else { continue }
+            let speed = simd_length(bolt.velocity)
+            guard speed > 0.000_001 else { continue }
+            let heading = bolt.velocity / speed
+            let home = -hold.toward
+            let off = atan2(heading.x * home.y - heading.y * home.x, simd_dot(heading, home))
+            let limit = Self.tractorBoltTurn * hold.grip * dt
+            let turn = min(limit, max(-limit, off))
+            bolt.velocity = SIMD2(
+                heading.x * cos(turn) - heading.y * sin(turn),
+                heading.x * sin(turn) + heading.y * cos(turn)
+            ) * speed
+        }
+    }
+
+    /// What an enemy bolt does to a hull: a shove down the bolt's line, in
+    /// world units a second. No spin and no turn -- the nose stays where the
+    /// pilot aimed it -- and no touch, no point. A ship holding the bolt in
+    /// its own beam catches it instead: the bolt dies on the nose.
+    static let boltShipKick = 0.45
+
+    private mutating func advanceBolts(
+        previousShipPositions: [Seat: SIMD2<Double>],
+        effects: inout [SimulationEvent]
+    ) {
         guard !state.bolts.isEmpty else { return }
         let dt = configuration.stepDuration
         let field = arena.displaced(by: state.bumpers)
@@ -1240,6 +1318,7 @@ public struct SimulationEngine: Sendable {
         // three punches in a single tick.
         var struckBalls = Set<Int>()
         for var bolt in state.bolts {
+            bendBolt(&bolt, dt: dt)
             let previous = bolt.position
             bolt.position += bolt.velocity * dt
             bolt.ticksRemaining -= 1
@@ -1263,6 +1342,41 @@ public struct SimulationEngine: Sendable {
                 if let contact, earliest == nil || contact < earliest!.contact {
                     earliest = (ballIndex, contact)
                 }
+            }
+            // Enemy hulls stand in a bolt's way; its own side's do not. The
+            // sweep runs in each ship's moving frame, like the ball's, so a
+            // thin nose cannot slip between two steps.
+            var shipHit: (seat: Seat, contact: Double)?
+            for seat in Seat.allCases where seat.team != bolt.owner {
+                guard let ship = state.ships[seat], !ship.isDestroyed else { continue }
+                let hitbox = shipHitboxes[seat] ?? .shared
+                let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+                let left = SIMD2(-axis.y, axis.x)
+                func local(_ offset: SIMD2<Double>) -> SIMD2<Double> {
+                    SIMD2(simd_dot(offset, axis), simd_dot(offset, left))
+                }
+                let reach = BoltState.radius + ShipHitbox.skin
+                let start = local(previous - (previousShipPositions[seat] ?? ship.position))
+                let contact: Double? = hitbox.contains(start) || hitbox.distance(from: start) <= reach
+                    ? 0
+                    : hitbox.sweepTime(from: start, to: local(bolt.position - ship.position), radius: reach)
+                if let contact, shipHit == nil || contact < shipHit!.contact {
+                    shipHit = (seat, contact)
+                }
+            }
+            if let shipHit, earliest.map({ shipHit.contact <= $0.contact }) ?? true,
+               var ship = state.ships[shipHit.seat] {
+                let touch = previous + (bolt.position - previous) * shipHit.contact
+                if tractorGrip(of: ship, at: previous) != nil {
+                    effects.append(.collisionEffect(position: touch, intensity: configuration.boltPunch))
+                } else {
+                    let speed = simd_length(bolt.velocity)
+                    let travel = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
+                    ship.velocity += travel * Self.boltShipKick
+                    state.ships[shipHit.seat] = ship
+                    effects.append(.shipZapped(seat: shipHit.seat, position: touch))
+                }
+                continue
             }
             if let earliest {
                 let ballIndex = earliest.ballIndex
