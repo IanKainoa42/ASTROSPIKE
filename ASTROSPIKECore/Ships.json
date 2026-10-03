@@ -1,0 +1,3466 @@
+{
+  "schema": "astro-ships",
+  "version": 1,
+  "hulls": [
+    {
+      "id": "lancet",
+      "name": "Lancet",
+      "role": "Interceptor",
+      "blurb": "Raked needle nose, swept wings hooked forward at the tips, split tail. The original.",
+      "exhaustWidth": 0.75,
+      "outline": {
+        "silhouette": [[0, 30], [3.5, 14], [7, 1], [21, -16], [14, -19], [6, -11], [0, -15], [-6, -11], [-14, -19], [-21, -16], [-7, 1], [-3.5, 14]],
+        "details": [
+          {"points": [[0, 16], [0, 4]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "anvil",
+      "name": "Anvil",
+      "role": "Heavy lander",
+      "blurb": "Blunt chisel nose, boxy shoulders and two outboard engine pods hanging wide off the hull.",
+      "exhaustWidth": 1.9,
+      "outline": {
+        "silhouette": [[-7, 26], [7, 26], [13, 12], [11, -2], [21, -4], [22, -19], [12, -19], [9, -9], [-9, -9], [-12, -19], [-22, -19], [-21, -4], [-11, -2], [-13, 12]],
+        "details": [
+          {"points": [[0, 18], [6, 13], [6, 5], [0, 0], [-6, 5], [-6, 13]], "closed": true}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "manta",
+      "name": "Manta",
+      "role": "Delta wing",
+      "blurb": "One broad blended wing with a notched trailing edge. Reads wide on the screen, flies the same.",
+      "exhaustWidth": 1.3,
+      "outline": {
+        "silhouette": [[0, 24], [5, 14], [22, -10], [22, -15], [12, -13], [6, -17], [0, -11], [-6, -17], [-12, -13], [-22, -15], [-22, -10], [-5, 14]],
+        "details": [
+          {"points": [[0, 15], [3, 8], [0, 1], [-3, 8]], "closed": true}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "kestrel",
+      "name": "Kestrel",
+      "role": "Forward-swept",
+      "blurb": "Wings that sweep the wrong way, rooted at the tail and reaching for the nose.",
+      "exhaustWidth": 0.9,
+      "outline": {
+        "silhouette": [[0, 30], [4, 18], [5, -2], [21, 6], [22, 0], [6, -14], [9, -19], [0, -15], [-9, -19], [-6, -14], [-22, 0], [-21, 6], [-5, -2], [-4, 18]],
+        "details": [
+          {"points": [[0, 20], [0, 8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "bulwark",
+      "name": "Bulwark",
+      "role": "Armoured brick",
+      "blurb": "A shield plate for a nose, welded seams down the hull and skids for engines.",
+      "exhaustWidth": 2.1,
+      "outline": {
+        "silhouette": [[-11, 26], [11, 26], [15, 20], [16, -4], [20, -8], [20, -19], [10, -19], [8, -12], [-8, -12], [-10, -19], [-20, -19], [-20, -8], [-16, -4], [-15, 20]],
+        "details": [
+          {"points": [[-4, 17], [4, 17], [4, 10], [-4, 10]], "closed": true},
+          {"points": [[-8, 22], [-8, -6]], "closed": false},
+          {"points": [[8, 22], [8, -6]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "wraith",
+      "name": "Wraith",
+      "role": "Stealth kite",
+      "blurb": "Faceted diamond planform with a chevron canopy. Nothing on it is a curve.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 30], [6, 14], [19, 2], [21, -6], [10, -9], [7, -19], [0, -13], [-7, -19], [-10, -9], [-21, -6], [-19, 2], [-6, 14]],
+        "details": [
+          {"points": [[-7, 5], [0, 12], [7, 5]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "hornet",
+      "name": "Hornet",
+      "role": "Twin boom",
+      "blurb": "A short central pod slung between two long engine booms with a porthole up front.",
+      "exhaustWidth": 1.6,
+      "outline": {
+        "silhouette": [[0, 26], [6, 14], [7, 2], [13, 4], [21, 2], [21, -19], [13, -19], [13, -6], [7, -8], [4, -13], [0, -10], [-4, -13], [-7, -8], [-13, -6], [-13, -19], [-21, -19], [-21, 2], [-13, 4], [-7, 2], [-6, 14]],
+        "details": [
+          {"points": [[0, 16], [3.5, 14], [3.5, 10], [0, 8], [-3.5, 10], [-3.5, 14]], "closed": true}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 2,
+        "nozzleSpacing": 34,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "comet",
+      "name": "Comet",
+      "role": "Pod racer",
+      "blurb": "Round pressure pod on three raked fins. The friendliest silhouette in the hangar.",
+      "exhaustWidth": 1.2,
+      "outline": {
+        "silhouette": [[0, 24], [8, 21], [13, 15], [15, 9], [13, 2], [10, -3], [20, -19], [11, -19], [5, -12], [3, -14], [0, -19], [-3, -14], [-5, -12], [-11, -19], [-20, -19], [-10, -3], [-13, 2], [-15, 9], [-13, 15], [-8, 21]],
+        "details": [
+          {"points": [[0, 16], [3.5, 14.5], [5, 11], [3.5, 7.5], [0, 6], [-3.5, 7.5], [-5, 11], [-3.5, 14.5]], "closed": true}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    }
+  ],
+  "concepts": [
+    {
+      "id": "concept-001",
+      "name": "Needle Wasp",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 30], [3, 15], [7, 2], [14, -16], [5, -13], [0, -19], [-5, -13], [-14, -16], [-7, 2], [-3, 15]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-002",
+      "name": "Redline",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 27], [6, 12], [19, 5], [15, -3], [7, -8], [12, -19], [0, -14], [-12, -19], [-7, -8], [-15, -3], [-19, 5], [-6, 12]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-003",
+      "name": "Sparrowhawk",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 29], [9, 13], [19, 3], [11, -5], [7, -19], [0, -12], [-7, -19], [-11, -5], [-19, 3], [-9, 13]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-004",
+      "name": "Quickthorn",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 25], [6, 18], [16, 12], [21, -4], [13, -7], [17, -19], [6, -14], [0, -18], [-6, -14], [-17, -19], [-13, -7], [-21, -4], [-16, 12], [-6, 18]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-005",
+      "name": "Forkstar",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 28], [5, 15], [18, 9], [12, 1], [19, -12], [7, -10], [0, -19], [-7, -10], [-19, -12], [-12, 1], [-18, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-006",
+      "name": "Crosswind",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 30], [3, 15], [7, 2], [15, -16], [5, -13.55], [0, -19], [-4.55, -13.55], [-15, -16], [-7, 2], [-2.55, 15]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-007",
+      "name": "Mistral",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 27.8], [6, 12], [20, 5], [16, -3], [7, -8], [13, -19], [0.45, -14.55], [-13, -19], [-7, -8], [-16, -3], [-20, 5], [-6, 12]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-008",
+      "name": "Razorwing",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 29.8], [9, 13], [20, 3], [12, -5], [7, -19], [0, -12], [-6.55, -19], [-12, -5], [-20, 3], [-8.55, 13]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-009",
+      "name": "Kitebreak",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 25.8], [6, 18.8], [17, 12], [22, -4], [14, -7], [18, -19], [6.45, -14.55], [0, -18], [-6, -14.55], [-18, -19], [-14, -7], [-22, -4], [-17, 12], [-6, 18.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-010",
+      "name": "Vesper",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 28.8], [5, 15], [19, 9], [13, 1], [20, -12.55], [7, -10], [0.45, -19], [-7, -10], [-20, -12.55], [-13, 1], [-19, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-011",
+      "name": "Lanceback",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 30], [3, 15], [7, 2], [16, -16], [5, -14.1], [0, -19], [-4.1, -14.1], [-16, -16], [-7, 2], [-2.1, 15]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-012",
+      "name": "Sunstreak",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 28.6], [6, 12], [21, 5], [17, -3], [7, -8], [14, -19], [0.9, -15.1], [-14, -19], [-7, -8], [-17, -3], [-21, 5], [-6, 12]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-013",
+      "name": "Harrier",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 30], [9, 13], [21, 3], [13, -5], [7, -19], [0, -12], [-6.1, -19], [-13, -5], [-21, 3], [-8.1, 13]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-014",
+      "name": "Talons",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 26.6], [6, 19.6], [18, 12], [22, -4], [15, -7], [19, -19], [6.9, -15.1], [0, -18], [-6, -15.1], [-19, -19], [-15, -7], [-22, -4], [-18, 12], [-6, 19.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-015",
+      "name": "Pinwheel",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 29.6], [5, 15], [20, 9], [14, 1], [21, -13.1], [7, -10], [0.9, -19], [-7, -10], [-21, -13.1], [-14, 1], [-20, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-016",
+      "name": "Gyroflash",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [3, 15], [7, 2], [17, -16], [5, -14.65], [0, -19], [-3.65, -14.65], [-17, -16], [-7, 2], [-1.65, 15]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-017",
+      "name": "Twinflare",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 29.4], [6, 12], [22, 5], [18, -3], [7, -8], [15, -19], [1.35, -15.65], [-15, -19], [-7, -8], [-18, -3], [-22, 5], [-6, 12]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-018",
+      "name": "Railbird",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [9, 13], [22, 3], [14, -5], [7, -19], [0, -12], [-5.65, -19], [-14, -5], [-22, 3], [-7.65, 13]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-019",
+      "name": "Sickle",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 27.4], [6, 20.4], [19, 12], [22, -4], [16, -7], [20, -19], [7.35, -15.65], [0, -18], [-6, -15.65], [-20, -19], [-16, -7], [-22, -4], [-19, 12], [-6, 20.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-020",
+      "name": "Voltscythe",
+      "role": "Interceptor / racer",
+      "blurb": "A fast, tournament-ready silhouette.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [5, 15], [21, 9], [15, 1], [22, -13.65], [7, -10], [1.35, -19], [-7, -10], [-22, -13.65], [-15, 1], [-21, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-021",
+      "name": "Dock Mule",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-9, 25], [9, 25], [14, 13], [12, 0], [19, -5], [19, -18], [8, -18], [5, -10], [-5, -10], [-8, -18], [-19, -18], [-19, -5], [-12, 0], [-14, 13]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-022",
+      "name": "Pallet Jack",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 26], [9, 20], [16, 8], [21, 0], [17, -9], [10, -6], [8, -19], [0, -15], [-8, -19], [-10, -6], [-17, -9], [-21, 0], [-16, 8], [-9, 20]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-023",
+      "name": "Towline",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-5, 27], [5, 27], [10, 15], [8, -2], [16, -9], [16, -19], [7, -19], [0, -10], [-7, -19], [-16, -19], [-16, -9], [-8, -2], [-10, 15]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-024",
+      "name": "Porter",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 24], [12, 17], [18, 5], [16, -4], [21, -11], [13, -19], [5, -12], [0, -16], [-5, -12], [-13, -19], [-21, -11], [-16, -4], [-18, 5], [-12, 17]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-025",
+      "name": "Brickbird",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 23], [10, 19], [19, 8], [18, -3], [12, -8], [17, -17], [7, -19], [0, -12], [-7, -19], [-17, -17], [-12, -8], [-18, -3], [-19, 8], [-10, 19]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-026",
+      "name": "Hearth",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-8.55, 25.8], [9, 25.8], [15, 13], [13, 0], [20, -5], [20, -18], [8.45, -18.55], [5, -10], [-5, -10], [-7.55, -18], [-20, -18.55], [-20, -5], [-13, 0], [-15, 13]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-027",
+      "name": "Waystation",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 26.8], [9, 20.8], [17, 8], [22, 0], [18, -9], [10, -6], [8.45, -19], [0, -15], [-8, -19], [-9.55, -6], [-18, -9], [-22, 0], [-17, 8], [-9, 20.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-028",
+      "name": "Habitat",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-4.55, 27.8], [5, 27.8], [10, 15], [8.45, -2], [17, -9], [17, -19], [7.45, -19], [0, -10], [-7, -19], [-17, -19], [-17, -9], [-8, -2], [-9.55, 15]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-029",
+      "name": "Freight Kite",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 24.8], [13, 17.8], [19, 5], [17, -4], [22, -11.55], [14, -19], [5.45, -12.55], [0, -16], [-5, -12.55], [-14, -19], [-22, -11.55], [-17, -4], [-19, 5], [-13, 17.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-030",
+      "name": "Lifeboat",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 23.8], [10, 19.8], [20, 8], [19, -3], [13, -8], [18, -17], [7.45, -19], [0, -12], [-7, -19], [-18, -17], [-13, -8], [-19, -3], [-20, 8], [-10, 19.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-031",
+      "name": "Railcar",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-8.1, 26.6], [9, 26.6], [16, 13], [14, 0], [21, -5], [21, -18], [8.9, -19], [5, -10], [-5, -10], [-7.1, -18], [-21, -19], [-21, -5], [-14, 0], [-16, 13]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-032",
+      "name": "Pipe Dream",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 27.6], [9, 21.6], [18, 8], [22, 0], [19, -9], [10, -6], [8.9, -19], [0, -15], [-8, -19], [-9.1, -6], [-19, -9], [-22, 0], [-18, 8], [-9, 21.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-033",
+      "name": "Switchyard",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-4.1, 28.6], [5, 28.6], [10, 15], [8.9, -2], [18, -9], [18, -19], [7.9, -19], [0, -10], [-7, -19], [-18, -19], [-18, -9], [-8, -2], [-9.1, 15]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-034",
+      "name": "Lantern",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 25.6], [14, 18.6], [20, 5], [18, -4], [22, -12.1], [15, -19], [5.9, -13.1], [0, -16], [-5, -13.1], [-15, -19], [-22, -12.1], [-18, -4], [-20, 5], [-14, 18.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-035",
+      "name": "Surveyor",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 24.6], [10, 20.6], [21, 8], [20, -3], [14, -8], [19, -17], [7.9, -19], [0, -12], [-7, -19], [-19, -17], [-14, -8], [-20, -3], [-21, 8], [-10, 20.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-036",
+      "name": "Cratewing",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-7.65, 27.4], [9, 27.4], [17, 13], [15, 0], [22, -5], [22, -18], [9.35, -19], [5, -10], [-5, -10], [-6.65, -18], [-22, -19], [-22, -5], [-15, 0], [-17, 13]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-037",
+      "name": "Moontruck",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 28.4], [9, 22.4], [19, 8], [22, 0], [20, -9], [10, -6], [9.35, -19], [0, -15], [-8, -19], [-8.65, -6], [-20, -9], [-22, 0], [-19, 8], [-9, 22.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-038",
+      "name": "Tanker",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[-3.65, 29.4], [5, 29.4], [10, 15], [9.35, -2], [19, -9], [19, -19], [8.35, -19], [0, -10], [-7, -19], [-19, -19], [-19, -9], [-8, -2], [-8.65, 15]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-039",
+      "name": "Beacon",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 26.4], [15, 19.4], [21, 5], [19, -4], [22, -12.65], [16, -19], [6.35, -13.65], [0, -16], [-5, -13.65], [-16, -19], [-22, -12.65], [-19, -4], [-21, 5], [-15, 19.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-040",
+      "name": "Skylift",
+      "role": "Utility / freighter",
+      "blurb": "A hard-working ship with a completely different outline.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 25.4], [10, 21.4], [22, 8], [21, -3], [15, -8], [20, -17], [8.35, -19], [0, -12], [-7, -19], [-20, -17], [-15, -8], [-21, -3], [-22, 8], [-10, 21.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-041",
+      "name": "Manta Bloom",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 25], [7, 19], [21, 3], [20, -8], [12, -11], [6, -19], [0, -13], [-6, -19], [-12, -11], [-20, -8], [-21, 3], [-7, 19]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-042",
+      "name": "Night Ray",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 28], [8, 20], [17, 8], [19, -4], [13, -13], [5, -16], [0, -19], [-5, -16], [-13, -13], [-19, -4], [-17, 8], [-8, 20]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-043",
+      "name": "Tidewing",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 24], [7, 17], [18, 12], [14, 3], [20, -5], [10, -8], [8, -19], [0, -12], [-8, -19], [-10, -8], [-20, -5], [-14, 3], [-18, 12], [-7, 17]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-044",
+      "name": "Velvet Ray",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 27], [11, 17], [19, 4], [14, -2], [20, -13], [10, -15], [0, -19], [-10, -15], [-20, -13], [-14, -2], [-19, 4], [-11, 17]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-045",
+      "name": "Scarab",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 29], [6, 18], [17, 13], [18, 0], [11, -5], [15, -16], [5, -12], [0, -18], [-5, -12], [-15, -16], [-11, -5], [-18, 0], [-17, 13], [-6, 18]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-046",
+      "name": "Stag Beetle",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 25.8], [7, 19.8], [22, 3], [21, -8], [13, -11.55], [6, -19], [0.45, -13.55], [-6, -19], [-13, -11.55], [-21, -8], [-22, 3], [-7, 19.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-047",
+      "name": "Firebug",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 28.8], [8, 20.8], [18, 8], [20, -4], [14, -13.55], [5, -16], [0.45, -19], [-5, -16], [-14, -13.55], [-20, -4], [-18, 8], [-8, 20.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-048",
+      "name": "Shellback",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 24.8], [7, 17.8], [19, 12], [15, 3], [21, -5], [10, -8], [8.45, -19], [0, -12], [-8, -19], [-9.55, -8], [-21, -5], [-15, 3], [-19, 12], [-7, 17.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-049",
+      "name": "Petalship",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 27.8], [12, 17.8], [20, 4], [15, -2], [21, -13.55], [10, -15], [0.45, -19], [-10, -15], [-21, -13.55], [-15, -2], [-20, 4], [-12, 17.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-050",
+      "name": "Orchid",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 29.8], [6, 18.8], [18, 13], [19, 0], [12, -5], [16, -16], [5.45, -12.55], [0, -18], [-5, -12.55], [-16, -16], [-12, -5], [-19, 0], [-18, 13], [-6, 18.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-051",
+      "name": "Lotus",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 26.6], [7, 20.6], [22, 3], [22, -8], [14, -12.1], [6, -19], [0.9, -14.1], [-6, -19], [-14, -12.1], [-22, -8], [-22, 3], [-7, 20.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-052",
+      "name": "Thornflower",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 29.6], [8, 21.6], [19, 8], [21, -4], [15, -14.1], [5, -16], [0.9, -19], [-5, -16], [-15, -14.1], [-21, -4], [-19, 8], [-8, 21.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-053",
+      "name": "Spore",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 25.6], [7, 18.6], [20, 12], [16, 3], [22, -5], [10, -8], [8.9, -19], [0, -12], [-8, -19], [-9.1, -8], [-22, -5], [-16, 3], [-20, 12], [-7, 18.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-054",
+      "name": "Puffball",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 28.6], [13, 18.6], [21, 4], [16, -2], [22, -14.1], [10, -15], [0.9, -19], [-10, -15], [-22, -14.1], [-16, -2], [-21, 4], [-13, 18.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-055",
+      "name": "Jellyknife",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 30], [6, 19.6], [19, 13], [20, 0], [13, -5], [17, -16], [5.9, -13.1], [0, -18], [-5, -13.1], [-17, -16], [-13, -5], [-20, 0], [-19, 13], [-6, 19.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-056",
+      "name": "Lanternfish",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 27.4], [7, 21.4], [22, 3], [22, -8], [15, -12.65], [6, -19], [1.35, -14.65], [-6, -19], [-15, -12.65], [-22, -8], [-22, 3], [-7, 21.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-057",
+      "name": "Wyrm",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [8, 22.4], [20, 8], [22, -4], [16, -14.65], [5, -16], [1.35, -19], [-5, -16], [-16, -14.65], [-22, -4], [-20, 8], [-8, 22.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-058",
+      "name": "Cobra Coil",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 26.4], [7, 19.4], [21, 12], [17, 3], [22, -5], [10, -8], [9.35, -19], [0, -12], [-8, -19], [-8.65, -8], [-22, -5], [-17, 3], [-21, 12], [-7, 19.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-059",
+      "name": "Kestrel Moth",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 29.4], [14, 19.4], [22, 4], [17, -2], [22, -14.65], [10, -15], [1.35, -19], [-10, -15], [-22, -14.65], [-17, -2], [-22, 4], [-14, 19.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-060",
+      "name": "Cicada",
+      "role": "Alien / bioform",
+      "blurb": "An organic silhouette designed to look grown rather than built.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [6, 20.4], [20, 13], [21, 0], [14, -5], [18, -16], [6.35, -13.65], [0, -18], [-5, -13.65], [-18, -16], [-14, -5], [-21, 0], [-20, 13], [-6, 20.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-061",
+      "name": "Orbit Saucer",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 25], [12, 20], [20, 9], [21, -2], [14, -12], [6, -18], [0, -19], [-6, -18], [-14, -12], [-21, -2], [-20, 9], [-12, 20]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-062",
+      "name": "Bubbletop",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 30], [6, 18], [17, 3], [10, -5], [13, -19], [4, -13], [0, -18], [-4, -13], [-13, -19], [-10, -5], [-17, 3], [-6, 18]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-063",
+      "name": "Saturnette",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 28], [7, 17], [13, 5], [21, -4], [13, -9], [15, -19], [6, -16], [0, -10], [-6, -16], [-15, -19], [-13, -9], [-21, -4], [-13, 5], [-7, 17]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-064",
+      "name": "Tin Comet",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 23], [12, 19], [21, 8], [16, -1], [8, -5], [12, -17], [0, -12], [-12, -17], [-8, -5], [-16, -1], [-21, 8], [-12, 19]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-065",
+      "name": "Bottle Rocket",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 26], [8, 17], [18, 7], [19, -5], [10, -10], [7, -19], [0, -15], [-7, -19], [-10, -10], [-19, -5], [-18, 7], [-8, 17]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-066",
+      "name": "Astro Sled",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 25.8], [13, 20.8], [21, 9], [22, -2], [15, -12.55], [6, -18], [0.45, -19], [-6, -18], [-15, -12.55], [-22, -2], [-21, 9], [-13, 20.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-067",
+      "name": "Raygun",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 30], [6, 18.8], [18, 3], [10.45, -5], [14, -19], [4, -13], [0.45, -18.55], [-4, -13], [-14, -19], [-9.55, -5], [-18, 3], [-6, 18.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-068",
+      "name": "Nova Pop",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 28.8], [7, 17.8], [14, 5], [22, -4], [14, -9], [16, -19], [6.45, -16.55], [0, -10], [-6, -16.55], [-16, -19], [-14, -9], [-22, -4], [-14, 5], [-7, 17.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-069",
+      "name": "Lunar Lander",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 23.8], [13, 19.8], [22, 8], [17, -1], [8, -5], [13, -17], [0.45, -12.55], [-13, -17], [-8, -5], [-17, -1], [-22, 8], [-13, 19.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-070",
+      "name": "Tripod",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 26.8], [8, 17.8], [19, 7], [20, -5], [10, -10], [7, -19], [0.45, -15.55], [-7, -19], [-10, -10], [-20, -5], [-19, 7], [-8, 17.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-071",
+      "name": "Survey Hopper",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 26.6], [14, 21.6], [22, 9], [22, -2], [16, -13.1], [6, -18], [0.9, -19], [-6, -18], [-16, -13.1], [-22, -2], [-22, 9], [-14, 21.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-072",
+      "name": "Dust Devil",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 30], [6, 19.6], [19, 3], [10.9, -5], [15, -19], [4, -13], [0.9, -19], [-4, -13], [-15, -19], [-9.1, -5], [-19, 3], [-6, 19.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-073",
+      "name": "Boomerang",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 29.6], [7, 18.6], [15, 5], [22, -4], [15, -9], [17, -19], [6.9, -17.1], [0, -10], [-6, -17.1], [-17, -19], [-15, -9], [-22, -4], [-15, 5], [-7, 18.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-074",
+      "name": "Space Banana",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 24.6], [14, 20.6], [22, 8], [18, -1], [8, -5], [14, -17], [0.9, -13.1], [-14, -17], [-8, -5], [-18, -1], [-22, 8], [-14, 20.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-075",
+      "name": "Cosmic V",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 27.6], [8, 18.6], [20, 7], [21, -5], [10, -10], [7, -19], [0.9, -16.1], [-7, -19], [-10, -10], [-21, -5], [-20, 7], [-8, 18.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-076",
+      "name": "Lucky Horseshoe",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 27.4], [15, 22.4], [22, 9], [22, -2], [17, -13.65], [6, -18], [1.35, -19], [-6, -18], [-17, -13.65], [-22, -2], [-22, 9], [-15, 22.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-077",
+      "name": "Capsule",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [6, 20.4], [20, 3], [11.35, -5], [16, -19], [4, -13], [1.35, -19], [-4, -13], [-16, -19], [-8.65, -5], [-20, 3], [-6, 20.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-078",
+      "name": "Dartboard",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [7, 19.4], [16, 5], [22, -4], [16, -9], [18, -19], [7.35, -17.65], [0, -10], [-6, -17.65], [-18, -19], [-16, -9], [-22, -4], [-16, 5], [-7, 19.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-079",
+      "name": "Chrome Egg",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 25.4], [15, 21.4], [22, 8], [19, -1], [8, -5], [15, -17], [1.35, -13.65], [-15, -17], [-8, -5], [-19, -1], [-22, 8], [-15, 21.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-080",
+      "name": "Atomic Wedge",
+      "role": "Retro-future craft",
+      "blurb": "A playful future imagined by old arcade cabinets and pulp covers.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 28.4], [8, 19.4], [21, 7], [22, -5], [10, -10], [7, -19], [1.35, -16.65], [-7, -19], [-10, -10], [-22, -5], [-21, 7], [-8, 19.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-081",
+      "name": "Trench Runner",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 30], [5, 15], [16, 9], [13, 2], [21, -7], [12, -12], [8, -19], [0, -14], [-8, -19], [-12, -12], [-21, -7], [-13, 2], [-16, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-082",
+      "name": "Sunlance",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 27], [9, 18], [20, 4], [14, -1], [17, -15], [7, -12], [0, -19], [-7, -12], [-17, -15], [-14, -1], [-20, 4], [-9, 18]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-083",
+      "name": "Void Viper",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 25], [7, 17], [18, 10], [20, -2], [11, -6], [14, -19], [4, -14], [0, -18], [-4, -14], [-14, -19], [-11, -6], [-20, -2], [-18, 10], [-7, 17]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-084",
+      "name": "Rebel Kite",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 29], [10, 16], [17, 3], [11, -3], [20, -12], [9, -11], [6, -19], [0, -13], [-6, -19], [-9, -11], [-20, -12], [-11, -3], [-17, 3], [-10, 16]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-085",
+      "name": "Mecha Sparrow",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0, 24], [11, 18], [21, 5], [16, -3], [9, -7], [13, -18], [4, -13], [0, -19], [-4, -13], [-13, -18], [-9, -7], [-16, -3], [-21, 5], [-11, 18]],
+        "details": [
+          {"points": [[0, 20], [0, -7]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-086",
+      "name": "Comet Frame",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 30], [5, 15], [17, 9], [14, 2], [22, -7], [13, -12], [8.45, -19], [0, -14], [-8, -19], [-13, -12], [-22, -7], [-14, 2], [-17, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-087",
+      "name": "Iron Petrel",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 27.8], [9, 18.8], [21, 4], [15, -1], [18, -15.55], [7, -12], [0.45, -19], [-7, -12], [-18, -15.55], [-15, -1], [-21, 4], [-9, 18.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-088",
+      "name": "Star Ronin",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 25.8], [7, 17.8], [19, 10], [21, -2], [12, -6], [15, -19], [4.45, -14.55], [0, -18], [-4, -14.55], [-15, -19], [-12, -6], [-21, -2], [-19, 10], [-7, 17.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-089",
+      "name": "Pulp Pursuit",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 29.8], [10, 16.8], [18, 3], [12, -3], [21, -12.55], [9, -11], [6.45, -19], [0, -13], [-6, -19], [-8.55, -11], [-21, -12.55], [-12, -3], [-18, 3], [-10, 16.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-090",
+      "name": "Silver Scout",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.45, 24.8], [12, 18.8], [22, 5], [17, -3], [9, -7], [14, -18], [4.45, -13.55], [0, -19], [-4, -13.55], [-14, -18], [-9, -7], [-17, -3], [-22, 5], [-12, 18.8]],
+        "details": [
+          {"points": [[0, 21], [0, -8]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-091",
+      "name": "Planetary Surveyor",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 30], [5, 15], [18, 9], [15, 2], [22, -7], [14, -12], [8.9, -19], [0, -14], [-8, -19], [-14, -12], [-22, -7], [-15, 2], [-18, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-092",
+      "name": "Rocket Detective",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 28.6], [9, 19.6], [22, 4], [16, -1], [19, -16.1], [7, -12], [0.9, -19], [-7, -12], [-19, -16.1], [-16, -1], [-22, 4], [-9, 19.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-093",
+      "name": "Arcade Ace",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 26.6], [7, 18.6], [20, 10], [22, -2], [13, -6], [16, -19], [4.9, -15.1], [0, -18], [-4, -15.1], [-16, -19], [-13, -6], [-22, -2], [-20, 10], [-7, 18.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.22, 0.2],
+        "secondary": [0.75, 0.8, 0.88],
+        "flame": [1, 0.3, 0.15],
+        "flameCore": [1, 0.75, 0.6],
+        "smoke": [0.17, 0.17, 0.19],
+        "bolt": "block",
+        "beam": "heavy",
+        "smokeStyle": "soot",
+        "smokeSize": 1.5,
+        "smokeLife": 1.2,
+        "smokeOpacity": 1.4,
+        "smokeAmount": 1,
+        "flameLength": 0.85,
+        "flicker": 0.12,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-094",
+      "name": "Pixel Raider",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 30], [10, 17.6], [19, 3], [13, -3], [22, -13.1], [9, -11], [6.9, -19], [0, -13], [-6, -19], [-8.1, -11], [-22, -13.1], [-13, -3], [-19, 3], [-10, 17.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 0.38, 1],
+        "secondary": [1, 0.35, 0.85],
+        "flame": [0.6, 0.3, 1],
+        "flameCore": [0.95, 0.8, 1],
+        "smoke": [0.3, 0.2, 0.4],
+        "bolt": "shard",
+        "beam": "glitch",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.8,
+        "smokeLife": 0.55,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 0.95,
+        "flicker": 0.4,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-095",
+      "name": "Boss Beetle",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[0.9, 25.6], [13, 19.6], [22, 5], [18, -3], [9, -7], [15, -18], [4.9, -14.1], [0, -19], [-4, -14.1], [-15, -18], [-9, -7], [-18, -3], [-22, 5], [-13, 19.6]],
+        "details": [
+          {"points": [[0, 22], [0, -9]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.72, 1, 0.2],
+        "secondary": [1, 0.95, 0.2],
+        "flame": [0.75, 1, 0.25],
+        "flameCore": [0.95, 1, 0.8],
+        "smoke": [0.5, 0.55, 0.4],
+        "bolt": "twin",
+        "beam": "twin",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1.05,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-096",
+      "name": "Neon Courier",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [5, 15], [19, 9], [16, 2], [22, -7], [15, -12], [9.35, -19], [0, -14], [-8, -19], [-15, -12], [-22, -7], [-16, 2], [-19, 9], [-5, 15]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.42, 0.8],
+        "secondary": [1, 1, 1],
+        "flame": [1, 0.5, 0.85],
+        "flameCore": [1, 0.9, 0.97],
+        "smoke": [1, 0.6, 0.9],
+        "bolt": "orb",
+        "beam": "sparkle",
+        "smokeStyle": "glitter",
+        "smokeSize": 0.8,
+        "smokeLife": 1,
+        "smokeOpacity": 0.7,
+        "smokeAmount": 1,
+        "flameLength": 1.1,
+        "flicker": 0.2,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-097",
+      "name": "Laser Taxi",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 29.4], [9, 20.4], [22, 4], [17, -1], [20, -16.65], [7, -12], [1.35, -19], [-7, -12], [-20, -16.65], [-17, -1], [-22, 4], [-9, 20.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.35, 0.75, 1],
+        "secondary": [0.9, 0.97, 1],
+        "flame": [0.45, 0.7, 1],
+        "flameCore": [0.92, 0.97, 1],
+        "smoke": [0.72, 0.8, 0.92],
+        "bolt": "needle",
+        "beam": "dashes",
+        "smokeStyle": "vapour",
+        "smokeSize": 0.7,
+        "smokeLife": 0.8,
+        "smokeOpacity": 0.6,
+        "smokeAmount": 1,
+        "flameLength": 1.25,
+        "flicker": 0.1,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-098",
+      "name": "Midnight Chaser",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 27.4], [7, 19.4], [21, 10], [22, -2], [14, -6], [17, -19], [5.35, -15.65], [0, -18], [-4, -15.65], [-17, -19], [-14, -6], [-22, -2], [-21, 10], [-7, 19.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.45, 0.12],
+        "secondary": [1, 0.85, 0.3],
+        "flame": [1, 0.5, 0.12],
+        "flameCore": [1, 0.88, 0.55],
+        "smoke": [0.26, 0.24, 0.24],
+        "bolt": "slug",
+        "beam": "pulses",
+        "smokeStyle": "soot",
+        "smokeSize": 1.35,
+        "smokeLife": 1.3,
+        "smokeOpacity": 1.3,
+        "smokeAmount": 1,
+        "flameLength": 0.9,
+        "flicker": 0.25,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-099",
+      "name": "Moon Palace",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 30], [10, 18.4], [20, 3], [14, -3], [22, -13.65], [9, -11], [7.35, -19], [0, -13], [-6, -19], [-7.65, -11], [-22, -13.65], [-14, -3], [-20, 3], [-10, 18.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [0.15, 1, 0.75],
+        "secondary": [0.2, 0.45, 1],
+        "flame": [0.2, 0.9, 0.85],
+        "flameCore": [0.8, 1, 0.95],
+        "smoke": [0.45, 0.75, 0.8],
+        "bolt": "wave",
+        "beam": "ripples",
+        "smokeStyle": "bubbles",
+        "smokeSize": 0.9,
+        "smokeLife": 1.1,
+        "smokeOpacity": 0.9,
+        "smokeAmount": 1,
+        "flameLength": 1,
+        "flicker": 0.15,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    },
+    {
+      "id": "concept-100",
+      "name": "Dream Skiff",
+      "role": "Original genre homage",
+      "blurb": "An original silhouette that nods to space opera, animation, and arcade fiction without copying a named craft.",
+      "exhaustWidth": 1,
+      "outline": {
+        "silhouette": [[1.35, 26.4], [14, 20.4], [22, 5], [19, -3], [9, -7], [16, -18], [5.35, -14.65], [0, -19], [-4, -14.65], [-16, -18], [-9, -7], [-19, -3], [-22, 5], [-14, 20.4]],
+        "details": [
+          {"points": [[0, 23], [0, -10]], "closed": false}
+        ]
+      },
+      "look": {
+        "primary": [1, 0.8, 0.25],
+        "secondary": [1, 0.97, 0.85],
+        "flame": [1, 0.72, 0.2],
+        "flameCore": [1, 0.95, 0.75],
+        "smoke": [0.62, 0.58, 0.5],
+        "bolt": "chevron",
+        "beam": "chevrons",
+        "smokeStyle": "wisps",
+        "smokeSize": 0.75,
+        "smokeLife": 0.7,
+        "smokeOpacity": 0.8,
+        "smokeAmount": 1,
+        "flameLength": 1.15,
+        "flicker": 0.35,
+        "nozzles": 1,
+        "nozzleSpacing": 0,
+        "nozzleY": -16
+      }
+    }
+  ]
+}

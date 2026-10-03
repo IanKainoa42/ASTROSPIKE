@@ -1713,15 +1713,16 @@ final class ArenaScene: SKScene {
         let flicker = CGFloat(look.flicker)
         for core in fireCores[seat] ?? [] {
             core.isHidden = !thrusting || state.isDestroyed
-            core.xScale = look.twinNozzles ? hullWidth * 0.5 : hullWidth
+            core.xScale = look.nozzles > 1 ? hullWidth * 0.5 : hullWidth
             core.yScale = CGFloat(look.flameLength) * (reduceMotion ? 1 : .random(in: (1 - flicker) ... (1 + flicker)))
         }
         if !state.isDestroyed {
             let fx = labScale
-            let nozzle = worldNode.convert(CGPoint(x: 0, y: -16), from: shipNode)
+            let nozzleY = CGFloat(look.nozzleY)
+            let nozzle = worldNode.convert(CGPoint(x: 0, y: nozzleY), from: shipNode)
             let flame = Self.color(look.flame)
             if thrusting {
-                let glow = worldNode.convert(CGPoint(x: 0, y: -38), from: shipNode)
+                let glow = worldNode.convert(CGPoint(x: 0, y: nozzleY - 22), from: shipNode)
                 lights.append(FloorLight(position: glow, radius: 120 * fx, color: flame, intensity: 0.9))
             } else {
                 lights.append(FloorLight(position: nozzle, radius: 40 * fx, color: flame, intensity: 0.35))
@@ -1971,14 +1972,14 @@ final class ArenaScene: SKScene {
         let texture: SKTexture = look.smokeStyle == .bubbles ? Self.ringTexture : Self.smokeTexture
         // Bubbles keep their ring instead of swelling into a blur.
         let swell: CGFloat = look.smokeStyle == .bubbles ? 0.5 : 1
-        var budget = (smokeBudgets[seat] ?? 0) + dt * (thrusting ? 26 : 3 * density)
-        let nozzles: [CGFloat] = look.twinNozzles ? [-Self.twinNozzleX, Self.twinNozzleX] : [0]
+        var budget = (smokeBudgets[seat] ?? 0) + dt * (thrusting ? 26 : 3 * density) * look.smokeAmount
+        let nozzles = look.nozzleOffsets.map { CGFloat($0) }
         let back = CGVector(dx: -cos(state.angle), dy: -sin(state.angle))
         let pointsPerUnit = pointsPerWorldUnit
         let carried = CGVector(dx: CGFloat(state.velocity.x) * pointsPerUnit, dy: CGFloat(state.velocity.y) * pointsPerUnit)
         while budget >= 1 {
             budget -= 1
-            let nozzle = worldNode.convert(CGPoint(x: nozzles.randomElement() ?? 0, y: -16), from: shipNode)
+            let nozzle = worldNode.convert(CGPoint(x: nozzles.randomElement() ?? 0, y: CGFloat(look.nozzleY)), from: shipNode)
             if thrusting {
                 let push = CGFloat.random(in: 60 ... 110) * fx
                 let at = CGPoint(
@@ -2266,6 +2267,7 @@ final class ArenaScene: SKScene {
         exhaustWidths[seat] = CGFloat(hull.spec.exhaustWidth)
         exhaust.xScale = CGFloat(hull.spec.exhaustWidth)
         let look = hull.look
+        exhaust.position = CGPoint(x: 0, y: look.nozzleY)
         looks[seat] = look
         beamRigs[seat]?.apply(look)
         buildFireCores(for: seat, ship: ship, look: look)
@@ -2284,7 +2286,7 @@ final class ArenaScene: SKScene {
     /// A twin-boom hull burns at the foot of each boom.
     private func buildFireCores(for seat: Seat, ship: SKShapeNode, look: HullLook) {
         for core in fireCores[seat] ?? [] { core.removeFromParent() }
-        let nozzles: [CGFloat] = look.twinNozzles ? [-Self.twinNozzleX, Self.twinNozzleX] : [0]
+        let nozzles = look.nozzleOffsets.map { CGFloat($0) }
         let outer = look.flame * 0.65 + look.flameCore * 0.35
         fireCores[seat] = nozzles.flatMap { x in
             [
@@ -2293,7 +2295,7 @@ final class ArenaScene: SKScene {
             ].map { color, size, alpha in
                 let core = SKSpriteNode(texture: ArenaScene.puffTexture, size: size)
                 core.anchorPoint = CGPoint(x: 0.5, y: 1)
-                core.position = CGPoint(x: x, y: -16)
+                core.position = CGPoint(x: x, y: CGFloat(look.nozzleY))
                 core.color = color
                 core.colorBlendFactor = 1
                 core.blendMode = .add
@@ -2305,9 +2307,6 @@ final class ArenaScene: SKScene {
             }
         }
     }
-
-    /// Where the Hornet's booms end, in outline units either side of the keel.
-    private static let twinNozzleX: CGFloat = 17
 
     /// Mostly aspect-fit, blended toward stretch-to-fill (the old iPhone
     /// look) so the court still fills more of a tall/wide view instead of

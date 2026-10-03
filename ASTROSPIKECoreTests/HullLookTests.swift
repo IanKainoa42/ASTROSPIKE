@@ -23,15 +23,35 @@ struct HullLookTests {
         }
     }
 
-    @Test("Every colour is a colour and every scale is positive")
+    /// Ships.json is edited by hand in the Ship Workshop; anything it
+    /// exports must stay inside HullLook.limits.
+    @Test("Every hull and concept look stays inside the workshop's limits")
     func valuesInRange() {
-        for hull in Hull.allCases {
-            let look = hull.look
+        let limits = HullLook.limits
+        let designs = Hull.allCases.map { ShipDesigns.design(for: $0) } + ShipDesigns.file.concepts
+        for design in designs {
+            let look = design.look
             for rgb in [look.primary, look.secondary, look.flame, look.flameCore, look.smoke] {
-                #expect(rgb.min() >= 0 && rgb.max() <= 1, "\(hull)")
+                #expect(rgb.min() >= 0 && rgb.max() <= 1, "\(design.id)")
             }
-            #expect(look.smokeSize > 0 && look.smokeLife > 0 && look.smokeOpacity > 0 && look.flameLength > 0)
-            #expect((0 ... 0.5).contains(look.flicker), "\(hull) flicker")
+            #expect(limits.smokeSize.contains(look.smokeSize), "\(design.id) smokeSize")
+            #expect(limits.smokeLife.contains(look.smokeLife), "\(design.id) smokeLife")
+            #expect(limits.smokeOpacity.contains(look.smokeOpacity), "\(design.id) smokeOpacity")
+            #expect(limits.smokeAmount.contains(look.smokeAmount), "\(design.id) smokeAmount")
+            #expect(limits.flameLength.contains(look.flameLength), "\(design.id) flameLength")
+            #expect(limits.flicker.contains(look.flicker), "\(design.id) flicker")
+            #expect(limits.nozzles.contains(look.nozzles), "\(design.id) nozzles")
+            #expect(limits.nozzleSpacing.contains(look.nozzleSpacing), "\(design.id) nozzleSpacing")
+            #expect(limits.nozzleY.contains(look.nozzleY), "\(design.id) nozzleY")
+            #expect(limits.exhaustWidth.contains(design.exhaustWidth), "\(design.id) exhaustWidth")
+        }
+    }
+
+    @Test("Hornet keeps its twin nozzles; every other hull has one on the keel")
+    func nozzles() {
+        #expect(Hull.hornet.look.nozzleOffsets == [-17, 17])
+        for hull in Hull.allCases where hull != .hornet {
+            #expect(hull.look.nozzleOffsets == [0], "\(hull)")
         }
     }
 

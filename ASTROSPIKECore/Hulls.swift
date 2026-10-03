@@ -42,7 +42,7 @@ public enum HullAvailability: Equatable, Sendable {
     }
 }
 
-public struct HullDetail: Equatable, Sendable {
+public struct HullDetail: Codable, Equatable, Sendable {
     public var points: [SIMD2<Double>]
     public var closed: Bool
 
@@ -54,7 +54,7 @@ public struct HullDetail: Equatable, Sendable {
 
 /// Ship-frame geometry, +y toward the nose, in the same units the two
 /// original hulls used so nothing else in the renderer needs to move.
-public struct HullOutline: Equatable, Sendable {
+public struct HullOutline: Codable, Equatable, Sendable {
     public var silhouette: [SIMD2<Double>]
     public var details: [HullDetail]
 
@@ -219,134 +219,28 @@ public enum HullCatalog {
         "com.iankainoa.ASTROSPIKE.hull.\(hull.rawValue)"
     }
 
+    /// Names, outlines and flame widths come from `Ships.json`; who may fly
+    /// a hull stays here, so the workshop can never make a premium hull free.
     public static func spec(for hull: Hull) -> HullSpec {
-        switch hull {
-        case .lancet:
-            HullSpec(
-                hull: hull, name: "Lancet", role: "Interceptor",
-                blurb: "Raked needle nose, swept wings hooked forward at the tips, split tail. The original.",
-                availability: .free, exhaustWidth: 0.75, outline: lancet
-            )
-        case .anvil:
-            HullSpec(
-                hull: hull, name: "Anvil", role: "Heavy lander",
-                blurb: "Blunt chisel nose, boxy shoulders and two outboard engine pods hanging wide off the hull.",
-                availability: .free, exhaustWidth: 1.9, outline: anvil
-            )
-        case .manta:
-            HullSpec(
-                hull: hull, name: "Manta", role: "Delta wing",
-                blurb: "One broad blended wing with a notched trailing edge. Reads wide on the screen, flies the same.",
-                availability: .free, exhaustWidth: 1.3, outline: manta
-            )
-        case .kestrel:
-            HullSpec(
-                hull: hull, name: "Kestrel", role: "Forward-swept",
-                blurb: "Wings that sweep the wrong way, rooted at the tail and reaching for the nose.",
-                availability: .free, exhaustWidth: 0.9, outline: kestrel
-            )
-        case .bulwark:
-            HullSpec(
-                hull: hull, name: "Bulwark", role: "Armoured brick",
-                blurb: "A shield plate for a nose, welded seams down the hull and skids for engines.",
-                availability: .premium(productID: productID(for: hull)), exhaustWidth: 2.1, outline: bulwark
-            )
-        case .wraith:
-            HullSpec(
-                hull: hull, name: "Wraith", role: "Stealth kite",
-                blurb: "Faceted diamond planform with a chevron canopy. Nothing on it is a curve.",
-                availability: .premium(productID: productID(for: hull)), exhaustWidth: 1.0, outline: wraith
-            )
-        case .hornet:
-            HullSpec(
-                hull: hull, name: "Hornet", role: "Twin boom",
-                blurb: "A short central pod slung between two long engine booms with a porthole up front.",
-                availability: .premium(productID: productID(for: hull)), exhaustWidth: 1.6, outline: hornet
-            )
-        case .comet:
-            HullSpec(
-                hull: hull, name: "Comet", role: "Pod racer",
-                blurb: "Round pressure pod on three raked fins. The friendliest silhouette in the hangar.",
-                availability: .premium(productID: productID(for: hull)), exhaustWidth: 1.2, outline: comet
-            )
-        }
+        guard let spec = specs[hull] else { fatalError("No spec for \(hull)") }
+        return spec
     }
 
-    // MARK: Outlines
+    private static let specs: [Hull: HullSpec] = Dictionary(uniqueKeysWithValues: Hull.allCases.map { hull in
+        let design = ShipDesigns.design(for: hull)
+        let spec = HullSpec(
+            hull: hull, name: design.name, role: design.role, blurb: design.blurb,
+            availability: availability(for: hull), exhaustWidth: design.exhaustWidth, outline: design.outline
+        )
+        return (hull, spec)
+    })
 
-    private static func p(_ x: Double, _ y: Double) -> SIMD2<Double> { SIMD2(x, y) }
-
-    /// Cyan original: narrow interceptor.
-    static let lancet = HullOutline(
-        silhouette: [
-            p(0, 30), p(3.5, 14), p(7, 1), p(21, -16), p(14, -19), p(6, -11), p(0, -15),
-            p(-6, -11), p(-14, -19), p(-21, -16), p(-7, 1), p(-3.5, 14),
-        ],
-        details: [HullDetail([p(0, 16), p(0, 4)], closed: false)]
-    )
-
-    /// Orange original: heavy lander.
-    static let anvil = HullOutline(
-        silhouette: [
-            p(-7, 26), p(7, 26), p(13, 12), p(11, -2), p(21, -4), p(22, -19), p(12, -19), p(9, -9),
-            p(-9, -9), p(-12, -19), p(-22, -19), p(-21, -4), p(-11, -2), p(-13, 12),
-        ],
-        details: [HullDetail([p(0, 18), p(6, 13), p(6, 5), p(0, 0), p(-6, 5), p(-6, 13)], closed: true)]
-    )
-
-    static let manta = HullOutline(
-        silhouette: [
-            p(0, 24), p(5, 14), p(22, -10), p(22, -15), p(12, -13), p(6, -17), p(0, -11),
-            p(-6, -17), p(-12, -13), p(-22, -15), p(-22, -10), p(-5, 14),
-        ],
-        details: [HullDetail([p(0, 15), p(3, 8), p(0, 1), p(-3, 8)], closed: true)]
-    )
-
-    static let kestrel = HullOutline(
-        silhouette: [
-            p(0, 30), p(4, 18), p(5, -2), p(21, 6), p(22, 0), p(6, -14), p(9, -19), p(0, -15),
-            p(-9, -19), p(-6, -14), p(-22, 0), p(-21, 6), p(-5, -2), p(-4, 18),
-        ],
-        details: [HullDetail([p(0, 20), p(0, 8)], closed: false)]
-    )
-
-    static let bulwark = HullOutline(
-        silhouette: [
-            p(-11, 26), p(11, 26), p(15, 20), p(16, -4), p(20, -8), p(20, -19), p(10, -19), p(8, -12),
-            p(-8, -12), p(-10, -19), p(-20, -19), p(-20, -8), p(-16, -4), p(-15, 20),
-        ],
-        details: [
-            HullDetail([p(-4, 17), p(4, 17), p(4, 10), p(-4, 10)], closed: true),
-            HullDetail([p(-8, 22), p(-8, -6)], closed: false),
-            HullDetail([p(8, 22), p(8, -6)], closed: false),
-        ]
-    )
-
-    static let wraith = HullOutline(
-        silhouette: [
-            p(0, 30), p(6, 14), p(19, 2), p(21, -6), p(10, -9), p(7, -19), p(0, -13),
-            p(-7, -19), p(-10, -9), p(-21, -6), p(-19, 2), p(-6, 14),
-        ],
-        details: [HullDetail([p(-7, 5), p(0, 12), p(7, 5)], closed: false)]
-    )
-
-    static let hornet = HullOutline(
-        silhouette: [
-            p(0, 26), p(6, 14), p(7, 2), p(13, 4), p(21, 2), p(21, -19), p(13, -19), p(13, -6),
-            p(7, -8), p(4, -13), p(0, -10), p(-4, -13), p(-7, -8), p(-13, -6), p(-13, -19),
-            p(-21, -19), p(-21, 2), p(-13, 4), p(-7, 2), p(-6, 14),
-        ],
-        details: [HullDetail([p(0, 16), p(3.5, 14), p(3.5, 10), p(0, 8), p(-3.5, 10), p(-3.5, 14)], closed: true)]
-    )
-
-    static let comet = HullOutline(
-        silhouette: [
-            p(0, 24), p(8, 21), p(13, 15), p(15, 9), p(13, 2), p(10, -3), p(20, -19), p(11, -19),
-            p(5, -12), p(3, -14), p(0, -19), p(-3, -14), p(-5, -12), p(-11, -19), p(-20, -19),
-            p(-10, -3), p(-13, 2), p(-15, 9), p(-13, 15), p(-8, 21),
-        ],
-        details: [HullDetail([p(0, 16), p(3.5, 14.5), p(5, 11), p(3.5, 7.5), p(0, 6), p(-3.5, 7.5), p(-5, 11), p(-3.5, 14.5)], closed: true)]
-    )
+    private static func availability(for hull: Hull) -> HullAvailability {
+        switch hull {
+        case .lancet, .anvil, .manta, .kestrel: .free
+        case .bulwark, .wraith, .hornet, .comet: .premium(productID: productID(for: hull))
+        }
+    }
 }
 
 // MARK: - Persistence

@@ -17,6 +17,29 @@ struct HullCatalogTests {
         #expect(outlineSignatures.count == 100)
     }
 
+    @Test("Ships.json holds the eight hulls in game order, then the hundred concepts")
+    func shipsFileOrder() {
+        let file = ShipDesigns.file
+        #expect(file.schema == ShipDesignFile.schemaName)
+        #expect(file.hulls.map(\.id) == Hull.allCases.map(\.rawValue))
+        #expect(file.concepts.map(\.id) == (1 ... 100).map { String(format: "concept-%03d", $0) })
+    }
+
+    /// Lancet's outline is the hitbox every ship uses online, so a workshop
+    /// edit to it changes the physics both peers run. If this fails, the
+    /// change is a wire bump: raise WireEnvelope.currentVersion and re-pin.
+    @Test("Lancet's silhouette is the shared hitbox and is pinned to the wire version")
+    func lancetHitboxPinned() {
+        let signature = HullCatalog.spec(for: .lancet).outline.silhouette
+            .map { "\(Self.trim($0.x)),\(Self.trim($0.y))" }.joined(separator: ";")
+        #expect(signature == "0,30;3.5,14;7,1;21,-16;14,-19;6,-11;0,-15;-6,-11;-14,-19;-21,-16;-7,1;-3.5,14")
+        #expect(WireEnvelope.currentVersion == 35)
+    }
+
+    private static func trim(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(value)
+    }
+
     @Test("Eight hulls, each with a unique name")
     func rosterSize() {
         #expect(Hull.allCases.count == 8)
