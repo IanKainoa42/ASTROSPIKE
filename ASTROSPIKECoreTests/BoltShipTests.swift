@@ -7,8 +7,11 @@ import Testing
 /// enemy bolts. Never your own side's.
 @Suite("Bolts and beams on ships")
 struct BoltShipTests {
-    private func playing(doubles: Bool = false) -> SimulationEngine {
+    private func playing(doubles: Bool = false, hit: BoltHit = .shove) -> SimulationEngine {
         var engine = SimulationEngine.testing()
+        var configuration = engine.configuration
+        configuration.boltHit = hit
+        engine.updateConfiguration(configuration)
         if doubles { engine.configureRoster(Seat.doubles) }
         engine.beginPlay()
         // The ball well out of every test's way.
@@ -163,5 +166,87 @@ struct BoltShipTests {
         #expect(engine.state.bolts.isEmpty, "the bolt dies on the nose")
         let struck = run(&baseline, steps: 20)
         #expect(zapped(struck, .cyan), "with the beam off the same bolt zaps")
+    }
+
+    // MARK: Build 125: what a hit does besides the shove
+
+    /// An orange bolt fired straight at cyan's hull from its right, `lift`
+    /// above its middle (the hull is nose-up, so lift is toward the nose).
+    private func struck(_ hit: BoltHit, lift: Double = 0) -> SimulationEngine {
+        var engine = playing(hit: hit)
+        let ship = engine.state.ships[.cyan]!
+        engine.state.bolts = [bolt(.orange, at: ship.position + .init(0.12, lift), heading: .init(-1, 0))]
+        return engine
+    }
+
+    @Test("Spin: a hit knocks the hull round, then the knock bleeds away")
+    func spinRedirects() {
+        var engine = struck(.spin, lift: 0.02)
+        var baseline = playing(hit: .spin)
+        let events = run(&engine, steps: 100)
+        _ = run(&baseline, steps: 100)
+        #expect(zapped(events, .cyan))
+        let turned = abs(engine.state.ships[.cyan]!.angle - baseline.state.ships[.cyan]!.angle)
+        #expect(turned > 15 * .pi / 180 && turned < 60 * .pi / 180, "turned \(turned * 180 / .pi) degrees")
+        #expect(engine.state.ships[.cyan]!.knockSpin == 0, "the knock is spent inside a second")
+    }
+
+    @Test("Spin: a hit either side of the middle turns the hull opposite ways")
+    func spinFollowsTheLever() {
+        var above = struck(.spin, lift: 0.02)
+        var below = struck(.spin, lift: -0.02)
+        _ = run(&above, steps: 30)
+        _ = run(&below, steps: 30)
+        let up = above.state.ships[.cyan]!.angle - .pi / 2
+        let down = below.state.ships[.cyan]!.angle - .pi / 2
+        #expect(up * down < 0, "above \(up), below \(down)")
+    }
+
+    @Test("Stun: the stick is dead for a moment, then the pilot has it back")
+    func stunBreaksRhythm() {
+        var engine = struck(.stun)
+        // Run the bolt in with no input, then hold thrust.
+        while engine.state.ships[.cyan]!.stunTicks == 0, engine.state.tick < 30 {
+            engine.step(inputs: [.cyan: .idle(tick: engine.state.tick)])
+        }
+        let stun = engine.state.ships[.cyan]!.stunTicks
+        #expect(stun > 30, "stunned \(stun) ticks")
+        for _ in 0 ..< 10 {
+            engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 1, thrust: true, fire: true)])
+        }
+        #expect(engine.state.ships[.cyan]!.thrustLevel == 0, "no thrust while stunned")
+        #expect(engine.state.bolts.isEmpty, "no trigger while stunned")
+        for _ in 0 ..< Int(stun) {
+            engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: true)])
+        }
+        #expect(engine.state.ships[.cyan]!.thrustLevel > 0, "thrust back once the stun lifts")
+    }
+
+    @Test("Stun: a stream of bolts cannot hold a pilot down")
+    func stunCannotChain() {
+        var engine = playing(hit: .stun)
+        var stunnedTicks = 0
+        let total = 360
+        for tick in 0 ..< total {
+            // A fresh bolt every cooldown, from both enemy seats' worth of fire.
+            if tick % 27 == 0 {
+                let ship = engine.state.ships[.cyan]!
+                engine.state.bolts.append(BoltState(id: UInt64(1000 + tick), owner: .orange,
+                                                    position: ship.position + .init(0.08, 0),
+                                                    velocity: .init(-2.6, 0), ticksRemaining: 60))
+            }
+            engine.step(inputs: [.cyan: .idle(tick: UInt64(tick))])
+            if engine.state.ships[.cyan]!.stunTicks > 0 { stunnedTicks += 1 }
+        }
+        #expect(stunnedTicks < total / 2, "stunned \(stunnedTicks) of \(total) ticks")
+    }
+
+    @Test("Shove alone leaves the stick live and the nose where it was")
+    func shoveOnly() {
+        var engine = struck(.shove, lift: 0.02)
+        _ = run(&engine, steps: 30)
+        #expect(engine.state.ships[.cyan]!.stunTicks == 0)
+        #expect(engine.state.ships[.cyan]!.knockSpin == 0)
+        #expect(abs(engine.state.ships[.cyan]!.angle - .pi / 2) < 1e-9)
     }
 }

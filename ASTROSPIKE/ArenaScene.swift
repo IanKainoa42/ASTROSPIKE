@@ -1684,6 +1684,9 @@ final class ArenaScene: SKScene {
         }
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
+        // Stunned: the hull stutters dim and bright until the controls come
+        // back, so a dead stick reads as a hit, not as broken controls.
+        shipNode.alpha = state.stunTicks > 0 && (state.stunTicks / 5) % 2 == 0 ? 0.3 : 1
         // Drawn at the scale the ball's hitbox is built at (`ShipHitbox`).
         shipNode.setScale(CGFloat(ShipHitbox.worldPerOutlineUnit) * pointsPerWorldUnit)
         shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)

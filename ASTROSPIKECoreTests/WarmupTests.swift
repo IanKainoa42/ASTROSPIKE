@@ -79,11 +79,11 @@ struct WarmupTests {
         #expect(bay == .online)
     }
 
-    @Test("Past the hump the trigger is holstered, as in a match")
+    @Test("Past the MAX CROSS line the trigger is holstered, as in a match")
     func triggerHolsteredOnTheFarHalf() {
         var engine = bay()
         engine.state.ball.position = .init(-0.6, 0.4)
-        engine.state.ships[.cyan]!.position = .init(0.5, 0)
+        engine.state.ships[.cyan]!.position = .init(engine.arena.opponentCrossingLimit + 0.03, 0)
         engine.state.ships[.cyan]!.angle = 0
         engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
         #expect(engine.state.bolts.isEmpty)

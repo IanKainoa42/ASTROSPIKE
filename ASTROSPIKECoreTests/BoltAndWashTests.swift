@@ -323,21 +323,22 @@ struct BoltAndWashTests {
         #expect(configuration.boltSpeed * configuration.boltLifetime >= 2 * arena.halfWidth)
     }
 
-    @Test("The trigger is dead once the ship is past the base of the hump")
-    func noFiringFromTheOpponentsHalf() {
-        // The reach is home plus a short push over the line, out to where the
-        // hump starts. Past that the nose still rams but the cannon is
-        // holstered.
+    @Test("The trigger works up to the MAX CROSS line and is dead past it")
+    func noFiringPastTheCrossingLine() {
+        // Since build 125 the reach runs to the line the push-back starts
+        // at -- the one drawn on the court. Past it the nose still rams but
+        // the cannon is holstered.
         let arena = ArenaGeometry()
         var engine = playing()
         engine.state.ball.position = .init(0.8, 0.4)
-        engine.state.ships[.cyan]!.position = .init(arena.humpBaseX + 0.05, 0)
+        engine.state.ships[.cyan]!.position = .init(arena.opponentCrossingLimit + 0.03, 0)
         engine.state.ships[.cyan]!.angle = 0
         engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
         #expect(engine.state.bolts.isEmpty)
         #expect(engine.state.nextBoltID == 0)
-        // A short way over the line is still inside the reach.
-        engine.state.ships[.cyan]!.position = .init(0.2, 0)
+        // Past the hump but short of the line: live.
+        #expect(arena.humpBaseX + 0.05 < arena.opponentCrossingLimit - 0.03)
+        engine.state.ships[.cyan]!.position = .init(arena.opponentCrossingLimit - 0.03, 0)
         engine.step(inputs: [.cyan: PlayerInput(tick: 1, torque: 0, thrust: false, fire: true)])
         #expect(engine.state.bolts.count == 1)
     }

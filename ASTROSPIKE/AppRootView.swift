@@ -1624,7 +1624,7 @@ private struct FlightTutorial: View {
                 VStack(spacing: 24) {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
-                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court but you can only fire from your own half, and they never hurt a ship.")
+                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court, and you can fire from anywhere short of the MAX CROSS line. A bolt that hits an enemy hull knocks it about: shoved, stunned or spun, as the host picks.")
                     TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Touch it as often as you like; three bounces on your floor between touches, and the fourth is theirs.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
@@ -1721,7 +1721,13 @@ private struct SettingsView: View {
                         )
                         .accessibilityIdentifier("peg-pull")
                     }
-                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena and peg pull apply to solo and doubles matches and to any online match you host.")
+                    Picker("Bolt hit", selection: $tuning.boltHit) {
+                        ForEach(BoltHit.allCases, id: \.self) { hit in
+                            Text(hit.title).tag(hit)
+                        }
+                    }
+                    .accessibilityIdentifier("bolt-hit")
+                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena, peg pull and bolt hit apply to solo and doubles matches and to any online match you host. Bolt hit is what an enemy bolt does to a hull: shove it, stun its controls for a moment, or spin it round.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

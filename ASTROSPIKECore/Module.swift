@@ -227,6 +227,18 @@ public struct ShipState: Codable, Equatable, Sendable {
     /// physics still fires each time, but only the first of a burst is
     /// scored, so a rattle costs one touch instead of the whole allowance.
     public var ballTouchCooldownTicks: UInt64
+    /// Ticks left on an enemy bolt's stun: the controls are dead (no turn,
+    /// no thrust, no trigger, no beam) and the hull drifts on what it had.
+    public var stunTicks: UInt64
+    /// Ticks until another bolt can stun this hull again. Set with the stun
+    /// and longer than it, so a stream of bolts breaks a pilot's rhythm once
+    /// and then shoves them like any other hit, never locks them out.
+    public var stunGuardTicks: UInt64
+    /// Yaw, in radians a second, an enemy bolt knocked into the hull. Rides
+    /// on top of the pilot's own turn and bleeds away in a fraction of a
+    /// second; the turn rate itself is set from input every step, so the
+    /// knock has to live here or it would be gone the next tick.
+    public var knockSpin: Double
 
     public init(
         position: SIMD2<Double>,
@@ -238,7 +250,10 @@ public struct ShipState: Codable, Equatable, Sendable {
         homeSide: Team? = nil,
         fireCooldownTicks: UInt64 = 0,
         tractorActive: Bool = false,
-        ballTouchCooldownTicks: UInt64 = 0
+        ballTouchCooldownTicks: UInt64 = 0,
+        stunTicks: UInt64 = 0,
+        stunGuardTicks: UInt64 = 0,
+        knockSpin: Double = 0
     ) {
         self.position = position
         self.velocity = velocity
@@ -250,13 +265,36 @@ public struct ShipState: Codable, Equatable, Sendable {
         self.fireCooldownTicks = fireCooldownTicks
         self.tractorActive = tractorActive
         self.ballTouchCooldownTicks = ballTouchCooldownTicks
+        self.stunTicks = stunTicks
+        self.stunGuardTicks = stunGuardTicks
+        self.knockSpin = knockSpin
+    }
+}
+
+/// What an enemy bolt does to the hull it hits, on top of the shove every
+/// hit gives. A host match rule, so it rides the wire with the tuning.
+public enum BoltHit: String, Codable, CaseIterable, Sendable {
+    /// The shove alone (builds 116-124).
+    case shove
+    /// Controls dead for a moment: breaks the pilot's rhythm.
+    case stun
+    /// The hull is knocked round, so the hit redirects it.
+    case spin
+
+    public var title: String {
+        switch self {
+        case .shove: "Shove"
+        case .stun: "Stun"
+        case .spin: "Spin"
+        }
     }
 }
 
 /// A bolt from a ship's nose. It flies the whole court and plays the ball;
 /// since build 116 it also shoves an enemy hull it hits (its own side's
 /// hulls fly through it), and an enemy beam bends it. The gate is on the
-/// trigger, not the bolt: a ship can only fire from its own half.
+/// trigger, not the bolt: a ship can fire from anywhere short of the MAX
+/// CROSS line on the far half.
 public struct BoltState: Codable, Equatable, Sendable {
     /// Thin enough that a pilot can clip the edge of the ball on purpose.
     public static let radius = 0.007
@@ -453,6 +491,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// never award a point, and a goal re-serves to the pilot -- counted only
     /// if it went in the far face, as in a match. Flight is a match's.
     public var sandbox: Bool
+    /// What an enemy bolt does to a hull besides shove it.
+    public var boltHit: BoltHit = .spin
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -530,7 +570,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
     }
 
     /// The warm-up bay and practice: the pilot's own sliders, flown exactly
-    /// as a match flies them -- MAX CROSS push-back, own-half trigger, serve
+    /// as a match flies them -- MAX CROSS push-back and trigger line, serve
     /// timing. Only the rulebook differs: nothing is a fault. Until build 123
     /// the bay also switched off the push-back and let the trigger work
     /// anywhere, which made warming up a different game from the one waited for.
@@ -789,9 +829,16 @@ public struct SimulationEngine: Sendable {
         let previousShipPositions = state.ships.mapValues(\.position)
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed else { continue }
-            let input = inputs[seat] ?? .idle(tick: state.tick)
-            ship.angularVelocity = input.torque * configuration.torqueAcceleration
+            // A stunned hull flies with its hands off the stick.
+            let input = ship.stunTicks > 0 ? .idle(tick: state.tick) : inputs[seat] ?? .idle(tick: state.tick)
+            if ship.stunTicks > 0 { ship.stunTicks -= 1 }
+            if ship.stunGuardTicks > 0 { ship.stunGuardTicks -= 1 }
+            ship.angularVelocity = input.torque * configuration.torqueAcceleration + ship.knockSpin
             ship.angle += ship.angularVelocity * dt
+            if ship.knockSpin != 0 {
+                ship.knockSpin *= exp(-dt / Self.knockSpinDecay)
+                if abs(ship.knockSpin) < 0.05 { ship.knockSpin = 0 }
+            }
             var acceleration = configuration.gravity
             if input.thrust {
                 ship.thrustLevel = ship.thrustLevel > 0
@@ -824,12 +871,13 @@ public struct SimulationEngine: Sendable {
             )
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
             if ship.ballTouchCooldownTicks > 0 { ship.ballTouchCooldownTicks -= 1 }
-            // The trigger works from a ship's own half plus a short reach past
-            // center, out to the base of the hump — past that the nose is
-            // live for ramming but the bolts stay holstered.
+            // The trigger works anywhere short of the MAX CROSS line, the
+            // same line the push-back starts at. Past it the nose is live
+            // for ramming but the bolts stay holstered. (Until build 125 it
+            // stopped at the base of the hump.)
             let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-            let onOwnHalf = ship.position.x * homeSign >= -arena.humpBaseX
-            if input.fire, onOwnHalf, ship.fireCooldownTicks == 0, state.match.phase == .playing {
+            let shortOfTheLine = ship.position.x * homeSign >= -arena.opponentCrossingLimit
+            if input.fire, shortOfTheLine, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, seat: seat)
             }
             // Unlike the cannon, the beam works anywhere on the court — a
@@ -1379,10 +1427,19 @@ public struct SimulationEngine: Sendable {
     }
 
     /// What an enemy bolt does to a hull: a shove down the bolt's line, in
-    /// world units a second. No spin and no turn -- the nose stays where the
-    /// pilot aimed it -- and no touch, no point. A ship holding the bolt in
-    /// its own beam catches it instead: the bolt dies on the nose.
+    /// world units a second, plus whatever `BoltHit` the host picked. No
+    /// touch, no point. A ship holding the bolt in its own beam catches it
+    /// instead: the bolt dies on the nose.
     static let boltShipKick = 0.45
+    /// `BoltHit.stun`: how long the controls are dead, and how long after a
+    /// stun starts before another one can land (stun plus a clear window).
+    static let stunSeconds = 0.4
+    static let stunGuardSeconds = 1.0
+    /// `BoltHit.spin`: the yaw a hit on the very tip of the hull knocks in,
+    /// radians a second, and how fast it bleeds away. The total turn is
+    /// about kick x decay: ~40 degrees off the tip, half that dead centre.
+    static let knockSpinKick = 5.0
+    static let knockSpinDecay = 0.14
 
     private mutating func advanceBolts(
         previousShipPositions: [Seat: SIMD2<Double>],
@@ -1452,6 +1509,27 @@ public struct SimulationEngine: Sendable {
                     let speed = simd_length(bolt.velocity)
                     let travel = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
                     ship.velocity += travel * Self.boltShipKick
+                    switch configuration.boltHit {
+                    case .shove:
+                        break
+                    case .stun:
+                        if ship.stunGuardTicks == 0 {
+                            ship.stunTicks = UInt64((Self.stunSeconds / dt).rounded())
+                            ship.stunGuardTicks = UInt64((Self.stunGuardSeconds / dt).rounded())
+                        }
+                    case .spin:
+                        // Turned the way the bolt's line pushes the point it
+                        // struck: a hit forward of the middle swings the nose
+                        // away from the shooter's side. Dead centre still
+                        // turns, half as hard, the way the owner's side
+                        // decides -- never a coin toss, or two boards differ.
+                        let arm = touch - ship.position
+                        let cross = arm.x * travel.y - arm.y * travel.x
+                        let tip = max(0.000_001, ShipHitbox.shared.reach)
+                        let lever = min(1, abs(cross) / tip)
+                        let sign = abs(cross) > 0.000_001 ? (cross > 0 ? 1.0 : -1.0) : (bolt.owner == .cyan ? 1.0 : -1.0)
+                        ship.knockSpin = sign * Self.knockSpinKick * (0.5 + 0.5 * lever)
+                    }
                     state.ships[shipHit.seat] = ship
                     effects.append(.shipZapped(seat: shipHit.seat, position: touch))
                     playsThisStep.append(.zap(bolt.seat))

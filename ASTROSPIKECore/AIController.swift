@@ -427,8 +427,9 @@ public struct AIController: InputSource, Sendable {
         let distance = simd_length(toBall)
         let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
         guard distance > 0.16, distance < reach else { return false }
-        // The trigger only works from home ground; the ball may be anywhere.
-        guard ship.position.x * homeSign > 0.02 else { return false }
+        // The trigger works up to the MAX CROSS line; the ball may be
+        // anywhere. A hair of margin so the bot never pulls it on the line.
+        guard ship.position.x * homeSign > -(arena.opponentCrossingLimit - 0.02) else { return false }
         guard simd_dot(toBall / distance, nose) > 0.985 else { return false }
         return simd_dot(nose, plannedShot) > alignment
     }

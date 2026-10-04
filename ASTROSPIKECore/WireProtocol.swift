@@ -128,7 +128,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     a build 120 board decodes neither the snapshot nor the event.
     //     Sets also play to 5 (ceiling 11) and the set break runs 6s, so a
     //     build 120 guest would call set point at the wrong score.
-    public static let currentVersion: UInt16 = 36
+    // 37: the trigger works up to the MAX CROSS line, and the host's tuning
+    //     carries `boltHit` (shove / stun / spin); ShipState gained stun and
+    //     knock-spin. A build 124 board would holster the trigger at the
+    //     hump and decode neither the tuning nor the ships.
+    public static let currentVersion: UInt16 = 37
 
     public var version: UInt16
     public var sequence: UInt64
