@@ -330,8 +330,9 @@ public extension MatchRules {
     static let setTarget = 5
     /// The set cannot run past this. At `setCeiling - 1` all the way up the
     /// next point takes it, which is the one score where the two-clear rule
-    /// does not hold.
-    static let setCeiling = 7
+    /// does not hold. Briefly 7 in build 121; back to 11 in 122 so a close
+    /// set gets to run.
+    static let setCeiling = 11
 
     /// The single win condition for a set. The HUD asks the same question of
     /// a hypothetical `score + 1` to decide whether a side is at set point,

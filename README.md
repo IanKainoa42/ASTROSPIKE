@@ -38,7 +38,7 @@ SpriteKit only renders immutable `WorldState` snapshots. It does not own physics
 - A goal, or one floor bounce too many since the last hit, awards one point. Those are the only two ways to score. There is no touch limit: a hull may play the ball as often as it likes, on either half.
 - Each ship hit refreshes the bounce allowance, so keeping the ball up on your own hull is always legal; only letting it drop is a fault.
 - Crossing the center plane resets the entered side's bounce count and ends the possession for both sides.
-- First to 5 wins with a two-point lead; 7 is the hard cap.
+- First to 5 wins with a two-point lead; 11 is the hard cap.
 - After every non-winning point, only the ball respawns high over the middle, nudged slightly toward the conceding side. Both ships keep flying under live input during the prototype's 1.35-second serve hold, then the ball drops immediately with no reset or countdown.
 
 ## Build and test

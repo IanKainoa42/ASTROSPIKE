@@ -126,7 +126,7 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 36: the stat book. WorldState carries `stats`, BallState carries the
     //     last play and beam hold, and SimulationEvent gained goalScored --
     //     a build 120 board decodes neither the snapshot nor the event.
-    //     Sets also play to 5 (ceiling 7) and the set break runs 6s, so a
+    //     Sets also play to 5 (ceiling 11) and the set break runs 6s, so a
     //     build 120 guest would call set point at the wrong score.
     public static let currentVersion: UInt16 = 36
 
