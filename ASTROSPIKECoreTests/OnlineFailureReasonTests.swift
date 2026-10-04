@@ -34,6 +34,10 @@ struct OnlineFailureReasonTests {
         #expect(OnlineFailureReason.noMatchReturned.message == "Couldn't start the match. Try again.")
         #expect(OnlineFailureReason.connectTimeout.message == "No one joined. Try inviting again.")
         #expect(OnlineFailureReason.handshakeTimeout.message == "Opponent connected but didn't respond")
+        #expect(OnlineFailureReason.acceptedNeverConnected(pilotName: "Wren").message
+            == "Accepted, but couldn't connect to Wren. Turn off any VPN, restart both phones, and try again.")
+        #expect(OnlineTimeouts.acceptedLinkSeconds < OnlineTimeouts.acceptedConnectSeconds)
+        #expect(OnlineTimeouts.acceptedLinkSeconds < OnlineTimeouts.inviteeConnectSeconds)
     }
     
     // MARK: - Invite Response Failures
@@ -151,6 +155,7 @@ struct OnlineFailureReasonTests {
             .noMatchReturned,
             .connectTimeout,
             .handshakeTimeout,
+            .acceptedNeverConnected(pilotName: "Test"),
             .inviteDeclined(pilotName: "Test"),
             .inviteFailed(pilotName: "Test"),
             .inviteIncompatibleRemote(pilotName: "Test"),

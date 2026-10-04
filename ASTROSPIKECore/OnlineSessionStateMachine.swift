@@ -460,6 +460,11 @@ public enum OnlineTimeouts {
     /// How long an invitee waits for Game Center to hand back the match it
     /// accepted before saying so, instead of JOINING forever.
     public static let joinAnswerSeconds = 20
+    /// A pilot said yes but the two phones never linked. GameKit connects an
+    /// accepted invite in seconds; past this it is the network (a VPN, or
+    /// Game Center holding a dead match), so stop and say what fixes it.
+    /// Shorter than every door, so this message wins over the generic one.
+    public static let acceptedLinkSeconds = 30
 
     public static func connectSeconds(role: OnlineMatchRole) -> Int {
         switch role {

@@ -74,6 +74,11 @@ public enum PlayerNetworkCopy {
             "JOINING \(name.uppercased())…"
         }
 
+        /// Accepted; waiting for the link to the other phone to come up.
+        public static func connecting(_ name: String) -> String {
+            "CONNECTING TO \(name.uppercased())…"
+        }
+
         public static func rejoining(_ name: String) -> String {
             "REJOINING \(name.uppercased())…"
         }

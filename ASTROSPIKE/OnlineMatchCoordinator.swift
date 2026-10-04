@@ -420,6 +420,8 @@ final class OnlineMatchCoordinator: NSObject,
     private var invitesAllAccepted = false
     /// Gives up on a `match(for: invite)` that never calls back.
     private var joinWatchdog: Task<Void, Never>?
+    /// Runs from an accepted invite until the other phone is on the link.
+    private var acceptedLinkTask: Task<Void, Never>?
     /// The team that walked out, so the forfeit goes to the other side.
     private var pendingForfeitWinner: Team?
     /// Who the current hold is for. When it runs out and their side still
@@ -851,6 +853,7 @@ final class OnlineMatchCoordinator: NSObject,
                 )
                 self.inviteNotice = notice.message
                 guard response != .accepted else {
+                    self.watchAcceptedLink(to: player.displayName)
                     // A one-pilot invite that was accepted is waiting on the
                     // link, not a locked phone: close the door in under a
                     // minute instead of five, so a link that never forms
@@ -1010,6 +1013,7 @@ final class OnlineMatchCoordinator: NSObject,
         request.recipientResponseHandler = { [weak self] player, response in
             Task { @MainActor in
                 self?.note("INVITE → \(player.displayName): \(Self.describe(response))")
+                if response == .accepted { self?.watchAcceptedLink(to: player.displayName) }
             }
         }
         guard let controller = GKMatchmakerViewController(matchRequest: request) else {
@@ -1141,6 +1145,37 @@ final class OnlineMatchCoordinator: NSObject,
             self.note("CONNECT TIMED OUT AFTER \(window)s: PILOT NEVER JOINED")
             self.status = .failed(reason: .connectTimeout)
             self.leaveMatch(preservingStatus: true)
+        }
+    }
+
+    /// An accepted invite links in seconds. One that has not after
+    /// `acceptedLinkSeconds` never will -- a VPN, or Game Center holding a
+    /// dead match -- and both phones used to sit on JOINING with nothing
+    /// said (10-03). Say who we are waiting on, then fail with what fixed it.
+    private func watchAcceptedLink(to name: String) {
+        acceptedLinkTask?.cancel()
+        let generation = matchmakingGeneration
+        let since = Date.now
+        let before = matchmakingHeadlineText
+        let connecting = PlayerNetworkCopy.Matchmaking.connecting(name)
+        matchmakingHeadlineText = connecting
+        acceptedLinkTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled, generation == self.matchmakingGeneration,
+                      case .matching = self.status else { return }
+                if !(self.match?.players.isEmpty ?? true) {
+                    if self.matchmakingHeadlineText == connecting { self.matchmakingHeadlineText = before }
+                    return
+                }
+                let waited = Int(Date.now.timeIntervalSince(since))
+                if waited >= OnlineTimeouts.acceptedLinkSeconds {
+                    self.note("ACCEPTED BUT \(name) NEVER CONNECTED AFTER \(waited)s")
+                    self.status = .failed(reason: .acceptedNeverConnected(pilotName: name))
+                    self.leaveMatch(preservingStatus: true)
+                    return
+                }
+            }
         }
     }
 
@@ -2332,6 +2367,7 @@ final class OnlineMatchCoordinator: NSObject,
             ? PlayerNetworkCopy.Matchmaking.rejoining(senderDisplayName)
             : PlayerNetworkCopy.Matchmaking.joining(senderDisplayName)
         status = .matching
+        watchAcceptedLink(to: senderDisplayName)
         joinWatchdog?.cancel()
         joinWatchdog = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(OnlineTimeouts.joinAnswerSeconds))
@@ -2429,6 +2465,8 @@ final class OnlineMatchCoordinator: NSObject,
         finishTask = nil
         handshakeTask?.cancel()
         handshakeTask = nil
+        acceptedLinkTask?.cancel()
+        acceptedLinkTask = nil
         doorSecondsRemaining = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil

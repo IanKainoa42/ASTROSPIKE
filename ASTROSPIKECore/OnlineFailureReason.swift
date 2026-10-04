@@ -41,6 +41,8 @@ public enum OnlineFailureReason: Equatable, Sendable {
     case connectTimeout
     /// The peer never sent a ready handshake (20s timeout).
     case handshakeTimeout
+    /// The invite was accepted but the two phones never linked.
+    case acceptedNeverConnected(pilotName: String)
     
     // MARK: - Invite Responses
     
@@ -155,6 +157,8 @@ extension OnlineFailureReason {
             return "No one joined. Try inviting again."
         case .handshakeTimeout:
             return "Opponent connected but didn't respond"
+        case .acceptedNeverConnected(let name):
+            return "Accepted, but couldn't connect to \(name). Turn off any VPN, restart both phones, and try again."
             
         // Invite responses
         case .inviteDeclined(let name):
