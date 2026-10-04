@@ -123,7 +123,12 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 35: BoltState gained `seat`, the hull that fired it, so a guest draws
     //     each bolt in its shooter's hull look. A build 116 snapshot has no
     //     seat on its bolts and would not decode.
-    public static let currentVersion: UInt16 = 35
+    // 36: the stat book. WorldState carries `stats`, BallState carries the
+    //     last play and beam hold, and SimulationEvent gained goalScored --
+    //     a build 120 board decodes neither the snapshot nor the event.
+    //     Sets also play to 5 (ceiling 7) and the set break runs 6s, so a
+    //     build 120 guest would call set point at the wrong score.
+    public static let currentVersion: UInt16 = 36
 
     public var version: UInt16
     public var sequence: UInt64

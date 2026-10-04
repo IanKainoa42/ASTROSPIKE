@@ -186,7 +186,7 @@ struct RallyLifecycleTests {
                 .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
             ],
             ball: BallState(position: besideTheCyanFace, velocity: SIMD2(2, 0)),
-            match: MatchRuleState(score: Score(cyan: 0, orange: 6), phase: .playing, setsToWin: setsToWin)
+            match: MatchRuleState(score: Score(cyan: 0, orange: MatchRules.setTarget - 1), phase: .playing, setsToWin: setsToWin)
         ))
     }
 

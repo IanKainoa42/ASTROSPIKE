@@ -28,17 +28,27 @@ public struct BallState: Codable, Equatable, Sendable {
     /// surface it touches -- a wall, the floor, a hull -- grips it, trading
     /// slide for spin and spin for slide.
     public var spin: Double
+    /// Whose hull or bolt played the ball last, for the stat book. A fresh
+    /// ball -- a serve, a re-drop -- has nobody's.
+    public var lastPlay: BallPlay?
+    /// The last beam to grip the ball, so a bolt can tell a slam dunk from a
+    /// plain shot.
+    public var beamHold: BeamHold?
 
     public init(
         position: SIMD2<Double>,
         velocity: SIMD2<Double> = .zero,
         radius: Double = BallState.nominalRadius,
-        spin: Double = 0
+        spin: Double = 0,
+        lastPlay: BallPlay? = nil,
+        beamHold: BeamHold? = nil
     ) {
         self.position = position
         self.velocity = velocity
         self.radius = radius
         self.spin = spin
+        self.lastPlay = lastPlay
+        self.beamHold = beamHold
     }
 
     /// One step of flight under spin. The turn only rotates the velocity, so

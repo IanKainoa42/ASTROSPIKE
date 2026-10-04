@@ -199,6 +199,44 @@ final class ASTROSPIKEUITests: XCTestCase {
     }
 
     @MainActor
+    func testResultsCardShowsTheMatchStats() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--results-win", "--skip-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["YOU WIN"].waitForExistence(timeout: 5))
+        let line = app.descendants(matching: .any)["results-stats"]
+        XCTAssertTrue(line.exists, "stat line missing from the results card")
+        XCTAssertTrue(line.descendants(matching: .any)["Slams 1, new best"].exists)
+        XCTAssertTrue(line.descendants(matching: .any)["Rally 9"].exists)
+    }
+
+    @MainActor
+    func testSetBreakPutsUpTheStatBoard() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--skip-onboarding", "--demo", "--set-break-preview"]
+        app.launch()
+        // By label: the game screen's own identifier shadows the board's.
+        let board = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS 'SLAM DUNKS' AND label CONTAINS 'SWITCH SIDES'")).firstMatch
+        XCTAssertTrue(board.waitForExistence(timeout: 5), "no stat board on the set break")
+        // The board comes down when the next set serves.
+        let gone = NSPredicate(format: "exists == false")
+        expectation(for: gone, evaluatedWith: board)
+        waitForExpectations(timeout: 10)
+    }
+
+    @MainActor
+    func testStatsSheetListsBestsAndLeaderboards() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
+        app.launch()
+
+        app.buttons["stats"].tap()
+        XCTAssertTrue(app.navigationBars["Stats"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["stats-leaderboards"].waitForExistence(timeout: 3), "Game Center leaderboards button missing")
+    }
+
+    @MainActor
     func testResultsLoseRetriesTheSameRival() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--results-lose", "--skip-onboarding"]

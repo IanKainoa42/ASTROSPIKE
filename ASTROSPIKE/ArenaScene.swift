@@ -1567,7 +1567,7 @@ final class ArenaScene: SKScene {
                 zap(seat: seat, at: position)
             case .rallyReset, .setEnded:
                 ballTrails.removeAll()
-            case .matchEnded:
+            case .goalScored, .matchEnded:
                 break
             }
         }

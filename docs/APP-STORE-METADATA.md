@@ -22,7 +22,7 @@ Free arena game. Two ships, one ball, zero gravity. Spike it through the net to 
 Fly a momentum-driven lander in a sealed arena and spike a luminous ball through a hanging net — the only goal in the game.
 
 HOW IT WORKS
-Two ships face off across a single net suspended from the roof. The ball is fast, elastic, and never stops bouncing. Thrust into it nose-first to send it screaming toward your opponent's side. If it enters the net from their face, you score. First to 7 wins with a two-point lead; 11 is the hard cap.
+Two ships face off across a single net suspended from the roof. The ball is fast, elastic, and never stops bouncing. Thrust into it nose-first to send it screaming toward your opponent's side. If it enters the net from their face, you score. First to 5 wins with a two-point lead; 7 is the hard cap.
 
 CONTROLS
 Hold either side of the screen to steer toward it. Your ship thrusts forward automatically along its nose. Gravity pulls you down at all times. Momentum is everything — every turn, every boost, every collision changes your trajectory. There are no brakes.

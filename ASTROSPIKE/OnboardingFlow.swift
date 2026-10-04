@@ -123,7 +123,7 @@ struct OnboardingFlow: View {
             (Text("ASTRO").foregroundStyle(.cyan) + Text("SPIKE").foregroundStyle(.orange))
                 .font(.system(size: 56, weight: .black, design: .rounded))
                 .minimumScaleFactor(0.6).lineLimit(1)
-            Text("Zero-G volleyball with rockets. Two ships, one ball, one goal hanging from the roof. No brakes, no wrecks, first to seven.")
+            Text("Zero-G volleyball with rockets. Two ships, one ball, one goal hanging from the roof. No brakes, no wrecks, first to five.")
                 .font(.title3).foregroundStyle(.white.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
         } side: {

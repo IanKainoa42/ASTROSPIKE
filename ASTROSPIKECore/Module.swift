@@ -333,6 +333,9 @@ public struct WorldState: Codable, Equatable, Sendable {
     /// Where each of the layout's sprung pegs has been shoved to, one entry
     /// per arena obstacle. Empty on a court with nothing sprung.
     public var bumpers: [BumperState]
+    /// The match's goals, slams, zaps and longest rally, per pilot. Kept by
+    /// the rulebook's keeper and carried on every snapshot.
+    public var stats: MatchStats
 
     public init(
         tick: UInt64 = 0,
@@ -347,7 +350,8 @@ public struct WorldState: Codable, Equatable, Sendable {
         bolts: [BoltState] = [],
         nextBoltID: UInt64 = 0,
         lastBallToucher: Team? = nil,
-        bumpers: [BumperState] = []
+        bumpers: [BumperState] = [],
+        stats: MatchStats = MatchStats()
     ) {
         self.tick = tick
         self.ships = ships
@@ -361,6 +365,7 @@ public struct WorldState: Codable, Equatable, Sendable {
         self.nextBoltID = nextBoltID
         self.lastBallToucher = lastBallToucher
         self.bumpers = bumpers
+        self.stats = stats
     }
 
     /// The team whose half of the court `x` is on.
@@ -582,6 +587,17 @@ public struct SimulationEngine: Sendable {
     /// Which balls went into a goal this step, and whose goal it was, so a
     /// two-ball rally that plays on can put just those balls back up.
     private var goalsThisStep: [Int: Team] = [:]
+    /// What the physics saw this step that the stat book wants. Physics runs
+    /// on every board, the guest's roll-forward and the warm-up bay
+    /// included, so it only buffers here: the book is written on the
+    /// rulebook's path alone, or a guest replaying ticks would count every
+    /// hit twice.
+    private var playsThisStep: [StatPlay] = []
+    private enum StatPlay {
+        case hit(Seat)
+        case boltHit(Seat)
+        case zap(Seat)
+    }
 
     public init(
         state: WorldState,
@@ -730,6 +746,7 @@ public struct SimulationEngine: Sendable {
         state.bolts.removeAll()
         state.nextBoltID = 0
         state.lastBallToucher = nil
+        state.stats = MatchStats()
         configureRoster(Set(state.ships.keys))
     }
 
@@ -769,6 +786,7 @@ public struct SimulationEngine: Sendable {
         let dt = configuration.stepDuration
         var contacts: [RuleContact] = []
         var collisionEffects: [SimulationEvent] = []
+        playsThisStep.removeAll()
         let previousShipPositions = state.ships.mapValues(\.position)
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed else { continue }
@@ -905,7 +923,9 @@ public struct SimulationEngine: Sendable {
             return
         }
 
-        let ruleEvents = rules.resolve(contacts, goalsKeepPlaying: state.balls.count > 1)
+        let wasPlaying = rules.state.phase == .playing
+        var ruleEvents = rules.resolve(contacts, goalsKeepPlaying: state.balls.count > 1)
+        if wasPlaying { ruleEvents = bookStats(contacts: contacts, ruleEvents: ruleEvents) }
         lastEvents = ruleEvents + collisionEffects
         state.match = rules.state
         if state.match.phase == .playing {
@@ -929,9 +949,50 @@ public struct SimulationEngine: Sendable {
         state.tick += 1
     }
 
+    /// Writes the step's plays into the stat book and credits each goal the
+    /// rulebook actually awarded -- one ball only scores once a step, and a
+    /// set point stops the second -- to the last play on that ball. Returns
+    /// the rule events with a `goalScored` slotted in after each goal's
+    /// point, so every board names the shot alongside the score.
+    private mutating func bookStats(contacts: [RuleContact], ruleEvents: [SimulationEvent]) -> [SimulationEvent] {
+        for play in playsThisStep {
+            switch play {
+            case let .hit(seat): state.stats[seat].hits += 1
+            case let .boltHit(seat): state.stats[seat].boltHits += 1
+            case let .zap(seat): state.stats[seat].zaps += 1
+            }
+        }
+        for contact in contacts {
+            if case .ballCrossedCenter = contact { state.stats.ballCrossedCenter() }
+        }
+        // Read before anything re-drops or re-stages the ball.
+        var goals = goalsThisStep.sorted { $0.key < $1.key }.makeIterator()
+        var events: [SimulationEvent] = []
+        for event in ruleEvents {
+            events.append(event)
+            switch event {
+            case let .point(_, reason):
+                if reason == .goal, let goal = goals.next(),
+                   let credit = state.stats.creditGoal(
+                       lastPlay: state.balls[goal.key].lastPlay,
+                       defending: goal.value
+                   ) {
+                    events.append(.goalScored(seat: credit.seat, style: credit.style))
+                }
+                state.stats.pointEnded()
+            case .rallyReset:
+                state.stats.pointEnded()
+            default:
+                break
+            }
+        }
+        return events
+    }
+
     /// Seconds between the set point and the next set's serve: long enough
-    /// to count down 3, 2, 1 while the ships settle on their new ends.
-    public static let setBreakDuration = 3.0
+    /// to read the stat board and catch a breath while the ships settle on
+    /// their new ends. Was 3 until build 121.
+    public static let setBreakDuration = 6.0
 
     /// Between sets the teams change ends, colours and all, so each plays
     /// both halves in a match. Every hull starts the next set from its seat's
@@ -1202,6 +1263,14 @@ public struct SimulationEngine: Sendable {
     /// this ratio, which is what makes the grab conserve momentum.
     static let tractorMassRatio = ballMass / shipMass
 
+    /// A beam has the ball, for a slam dunk, once its grip is at least this
+    /// -- a ball grazing the edge of the cone is not being held.
+    static let slamGrip = 0.15
+    /// How long after the beam lets go a bolt still counts as a slam: long
+    /// enough to release and fire, short enough that the ball is still
+    /// sitting where the beam left it.
+    public static let slamWindow = 0.6
+
     private mutating func applyTractorBeam(dt: Double, ballIndex: Int) {
         let range = configuration.tractorRange
         guard range > 0, configuration.tractorStrength > 0 else { return }
@@ -1233,6 +1302,9 @@ public struct SimulationEngine: Sendable {
             let bleed = (state.balls[ballIndex].velocity - ship.velocity) * damp
             state.balls[ballIndex].velocity -= bleed
             ship.velocity += bleed * Self.tractorMassRatio
+            if grip >= Self.slamGrip {
+                state.balls[ballIndex].beamHold = BeamHold(seat: seat, tick: state.tick)
+            }
             state.ships[seat] = ship
         }
     }
@@ -1381,6 +1453,7 @@ public struct SimulationEngine: Sendable {
                     ship.velocity += travel * Self.boltShipKick
                     state.ships[shipHit.seat] = ship
                     effects.append(.shipZapped(seat: shipHit.seat, position: touch))
+                    playsThisStep.append(.zap(bolt.seat))
                 }
                 continue
             }
@@ -1412,6 +1485,12 @@ public struct SimulationEngine: Sendable {
                 // own half could keep a rally alive forever. It still marks who
                 // played the ball last.
                 state.lastBallToucher = bolt.owner
+                let windowTicks = UInt64((Self.slamWindow / configuration.stepDuration).rounded())
+                let slam = state.balls[ballIndex].beamHold.map {
+                    $0.seat.team == bolt.owner && state.tick &- $0.tick <= windowTicks
+                } ?? false
+                state.balls[ballIndex].lastPlay = BallPlay(seat: bolt.seat, kind: slam ? .slamDunk : .bolt)
+                playsThisStep.append(.boltHit(bolt.seat))
                 effects.append(.collisionEffect(
                     position: state.balls[ballIndex].position,
                     intensity: configuration.boltPunch
@@ -2245,6 +2324,10 @@ public struct SimulationEngine: Sendable {
         let counted = fresh && (usesEngineRules || ballSide == ship.homeSide)
         state.ships[hit.seat] = ship
         contacts.append(.ballTouchedShip(team: hit.seat.team, counted: counted))
+        // Any hull contact played the ball, counted or not: a deflection off
+        // the far half still sends it where it goes.
+        state.balls[ballIndex].lastPlay = BallPlay(seat: hit.seat, kind: .hull)
+        if counted { playsThisStep.append(.hit(hit.seat)) }
         effects.append(.collisionEffect(
             position: state.balls[ballIndex].position,
             intensity: abs(inwardSpeed)

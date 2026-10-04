@@ -78,7 +78,15 @@ enum GameMode: Hashable {
 @MainActor
 @Observable
 final class GameSession {
-    private(set) var state: WorldState
+    private(set) var state: WorldState {
+        didSet { reportStatsIfFinished(previous: oldValue.match.phase) }
+    }
+    /// The boards the local pilot set a personal best on in the match just
+    /// finished. Empty until it finishes.
+    private(set) var newBests: Set<StatBoard> = []
+    /// `--results-win` / `--results-lose`: a staged finish whose sample book
+    /// must not be recorded as the pilot's bests or sent to Game Center.
+    private var isResultsPreview = false
     private(set) var events: [SimulationEvent] = []
     private(set) var countdown = 3
     private(set) var lastPointText: String?
@@ -217,6 +225,30 @@ final class GameSession {
         } else if let online {
             initialEngine.setMatchFormat(setsToWin: online.hostSetsToWin)
         }
+        // `--set-break-preview`: cyan one step from taking the first set of a
+        // best of three, so the simulator shows the set-break board without
+        // anyone having to fly the set.
+        if mode.isOffline, ProcessInfo.processInfo.arguments.contains("--set-break-preview") {
+            var staged = initialEngine.state
+            staged.match = MatchRuleState(
+                score: Score(cyan: MatchRules.setTarget - 1, orange: 2), phase: .playing, setsToWin: 2
+            )
+            staged.stats = MatchStats(
+                pilots: [
+                    .cyan: PilotStats(goals: 3, boltGoals: 2, slamDunks: 1, zaps: 2),
+                    .orange: PilotStats(goals: 2, boltGoals: 1, zaps: 5),
+                ],
+                longestRally: 7
+            )
+            let arena = initialEngine.arena
+            staged.ball = BallState(
+                position: SIMD2(arena.netHalfWidth + BallState.nominalRadius + 0.004, (arena.netBottomY + arena.portalMouthTopY) / 2),
+                velocity: SIMD2(-2, 0),
+                radius: BallState.nominalRadius,
+                lastPlay: BallPlay(seat: .cyan, kind: .slamDunk)
+            )
+            initialEngine = SimulationEngine(state: staged, configuration: initialEngine.configuration, arena: arena)
+        }
         engine = initialEngine
         state = initialEngine.state
         for (seat, difficulty) in botSeats {
@@ -235,8 +267,15 @@ final class GameSession {
         scene.localSeat = mode == .warmup || isSpectator ? nil : localSeat
         if mode == .warmup { scene.rings = rings.rings }
         if let winner = finishedAs {
+            isResultsPreview = true
             engine.finishByForfeit(winner: winner)
+            // A sample book, so the preview shows the stat line filled in.
+            engine.state.stats = MatchStats(
+                pilots: [localSeat: PilotStats(goals: 6, boltGoals: 3, slamDunks: 1, zaps: 4)],
+                longestRally: 9
+            )
             state = engine.state
+            newBests = [.goals, .slamDunks]
             scene.snapshot = state
         }
         for seat in Seat.allCases {
@@ -572,6 +611,10 @@ final class GameSession {
             if case let .point(team, reason) = point {
                 FeedbackCenter.shared.point(team: team, reason: reason)
             }
+            if let shot = events.first(where: { if case .goalScored = $0 { true } else { false } }),
+               let text = shot.goalLabel(localSeat: flownSeat) {
+                lastPointText = text
+            }
         } else if presentsLocalEvents, events.contains(.rallyReset) {
             lastPointText = nil
         }
@@ -601,6 +644,31 @@ final class GameSession {
                     online?.finishCompletedMatch(winner: winner)
                 }
             }
+        }
+    }
+
+    /// Once per finished match, on the edge into `.finished`: the local
+    /// pilot's numbers go to Game Center and the personal bests are marked
+    /// for the results card. Driven off the state rather than the
+    /// `matchEnded` event so a guest reads the host's final book from the
+    /// same snapshot that finished the match. Real matches only -- not the
+    /// warm-up bay, the parked side modes, or the bench.
+    private func reportStatsIfFinished(previous: MatchPhase) {
+        if state.match.phase != .finished {
+            if previous == .finished { newBests = [] }
+            return
+        }
+        guard previous != .finished, state.match.winner != nil, keepsStats, !isResultsPreview else { return }
+        newBests = StatsReporter.report(state.stats, for: localSeat)
+    }
+
+    /// Whether this board has a pilot whose match counts: a real match --
+    /// not the warm-up bay or the parked side modes -- flown, not watched.
+    var keepsStats: Bool {
+        guard flownSeat != nil else { return false }
+        return switch mode {
+        case .solo, .doubles, .online: true
+        case .warmup, .volleyball, .basketball: false
         }
     }
 
@@ -765,6 +833,8 @@ final class GameSession {
                     bounceAllowance: self.engine.configuration.allowedFloorBounces
                 )
                 FeedbackCenter.shared.point(team: team, reason: reason)
+            case .goalScored:
+                if let text = event.goalLabel(localSeat: self.flownSeat) { self.lastPointText = text }
             case .rallyReset:
                 self.lastPointText = nil
             case .setEnded:
@@ -865,6 +935,19 @@ private extension SimulationEvent {
         case .crash: return "CRASH — \(scorer)"
         case .netContact: return "NET / CROSS — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"
+        }
+    }
+
+    /// The call for how a goal went in. Nil for a plain hull goal: the
+    /// point's own "CYAN GOAL" already says it.
+    func goalLabel(localSeat: Seat?) -> String? {
+        guard case let .goalScored(seat, style) = self else { return nil }
+        let who = seat == localSeat ? "YOU" : (seat.team == .cyan ? "CYAN" : "ORANGE")
+        return switch style {
+        case .hull: nil
+        case .bolt: "BOLT GOAL — \(who)"
+        case .slamDunk: "SLAM DUNK — \(who)"
+        case .ownGoal: "OWN GOAL — \(seat.team.opponent == .cyan ? "CYAN" : "ORANGE")"
         }
     }
 }

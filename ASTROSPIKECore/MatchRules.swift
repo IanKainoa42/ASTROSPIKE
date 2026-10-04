@@ -157,6 +157,9 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
     case collisionEffect(position: SIMD2<Double>, intensity: Double)
     /// An enemy bolt hit `seat`'s hull at `position` and shoved it.
     case shipZapped(seat: Seat, position: SIMD2<Double>)
+    /// Who put the goal just scored in, and how. Follows the goal's `point`
+    /// directly. Never sent for a ball nobody had played.
+    case goalScored(seat: Seat, style: GoalStyle)
     case rallyReset
     /// A set went to `winner` and the next one starts from love; `sets` is
     /// the tally after it. Never sent for the set that ends the match.
@@ -322,12 +325,13 @@ public struct MatchRules: Sendable {
 }
 
 public extension MatchRules {
-    /// First to this many points, if they are two clear.
-    static let setTarget = 7
+    /// First to this many points, if they are two clear. Was 7 until build
+    /// 121: matches ran long with no let-up, so sets are shorter now.
+    static let setTarget = 5
     /// The set cannot run past this. At `setCeiling - 1` all the way up the
     /// next point takes it, which is the one score where the two-clear rule
     /// does not hold.
-    static let setCeiling = 11
+    static let setCeiling = 7
 
     /// The single win condition for a set. The HUD asks the same question of
     /// a hypothetical `score + 1` to decide whether a side is at set point,

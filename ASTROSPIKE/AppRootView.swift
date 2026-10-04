@@ -245,6 +245,9 @@ struct AppRootView: View {
             case .tableInvite:
                 InviteSheet(online: online, format: .addToTable) { _ in }
                     .presentationDetents([.medium, .large])
+            case .stats:
+                StatsSheet()
+                    .presentationDetents([.medium, .large])
             case .invite:
                 InviteSheet(online: online) { teamUp in
                     sheet = nil
@@ -287,7 +290,7 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, doubles, tutorial, settings, hangar, invite, tableInvite, lobby, modes
+    case difficulty, doubles, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
     var id: String { rawValue }
 }
 
@@ -587,6 +590,7 @@ private struct HomeView: View {
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
                         SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
                         SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
+                        SmallMenuButton(title: "STATS", icon: "trophy") { sheet = .stats }
                     }
                 }
                 .frame(maxWidth: 430)
@@ -824,7 +828,12 @@ private struct GameView: View {
             }
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
             if let seconds = session.setBreakCountdown {
-                CountdownView(value: seconds, title: session.lastPointText, caption: "SWITCH SIDES")
+                SetBreakBoard(
+                    title: session.lastPointText,
+                    stats: session.state.stats,
+                    localTeam: isSpectating ? nil : localTeam,
+                    seconds: seconds
+                )
             } else if session.state.match.phase == .serve {
                 VStack(spacing: 8) {
                     if let text = session.lastPointText {
@@ -865,6 +874,8 @@ private struct GameView: View {
                     notice: linkFailure,
                     canRematch: mode == .online && online.canRematch && table == nil,
                     rematchOpponentNames: online.lastMatchOpponents.map(\.displayName),
+                    statSeat: session.keepsStats ? session.localSeat : nil,
+                    newBests: session.newBests,
                     playAgain: playAgain,
                     challenge: challengeNext,
                     rematch: rematchOpponent,
@@ -1343,9 +1354,9 @@ private struct MatchHUD: View {
 
     private var formatLabel: String {
         switch state.match.setsToWin {
-        case 2: "BEST OF 3 • SETS TO 7"
-        case 3: "BEST OF 5 • SETS TO 7"
-        default: "FIRST TO 7 • WIN BY 2"
+        case 2: "BEST OF 3 • SETS TO \(MatchRules.setTarget)"
+        case 3: "BEST OF 5 • SETS TO \(MatchRules.setTarget)"
+        default: "FIRST TO \(MatchRules.setTarget) • WIN BY 2"
         }
     }
 
@@ -1833,6 +1844,10 @@ private struct ResultsOverlay: View {
     var canRematch = false
     /// The opponent names for the rematch button subtitle.
     var rematchOpponentNames: [String] = []
+    /// Whose numbers the stat line shows; nil hides it (the bench, the bay).
+    var statSeat: Seat? = nil
+    /// Boards this match set a personal best on.
+    var newBests: Set<StatBoard> = []
     let playAgain: () -> Void
     let challenge: () -> Void
     var rematch: () -> Void = {}
@@ -1866,6 +1881,9 @@ private struct ResultsOverlay: View {
                 scoreLine(state.match.score)
                 Text(sidesLabel)
                     .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(.secondary)
+            }
+            if let statSeat {
+                MatchStatLine(stats: state.stats, seat: statSeat, newBests: newBests)
             }
             if let notice {
                 Text(notice.uppercased())
