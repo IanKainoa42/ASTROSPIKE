@@ -32,21 +32,46 @@ enum StatsReporter {
             forKey: bestsKey
         )
 
-        guard GKLocalPlayer.local.isAuthenticated else { return beaten }
-        // One call per board: submitScore hands the same value to every id
-        // in its list. Game Center keeps the best for each board itself.
-        for (board, value) in submissions {
-            let id = board.rawValue
-            Task {
-                do {
-                    try await GKLeaderboard.submitScore(
-                        value, context: 0, player: GKLocalPlayer.local, leaderboardIDs: [id]
-                    )
-                } catch {
-                    print("STATS: \(id) submit failed: \(error.localizedDescription)")
-                }
+        for (board, value) in submissions { submit(value, to: board.rawValue) }
+        return beaten
+    }
+
+    private static let practiceBestsKey = "practiceBests"
+
+    /// The pilot's best keep-up and best stay in the bay, on this device.
+    static var practiceBests: [PracticeBoard: Int] {
+        let raw = UserDefaults.standard.dictionary(forKey: practiceBestsKey) as? [String: Int] ?? [:]
+        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, value in
+            PracticeBoard(rawValue: key).map { ($0, value) }
+        })
+    }
+
+    /// Records a stay in the warm-up bay or practice as the pilot leaves it.
+    static func reportPractice(keepUp: Int, hoops: Int) {
+        let submissions = PracticeBoard.submissions(keepUp: keepUp, hoops: hoops)
+        var bests = practiceBests
+        for (board, value) in submissions where value > bests[board, default: 0] {
+            bests[board] = value
+        }
+        UserDefaults.standard.set(
+            Dictionary(uniqueKeysWithValues: bests.map { ($0.key.rawValue, $0.value) }),
+            forKey: practiceBestsKey
+        )
+        for (board, value) in submissions { submit(value, to: board.rawValue) }
+    }
+
+    /// One call per board: submitScore hands the same value to every id in
+    /// its list. Game Center keeps the best for each board itself.
+    private static func submit(_ value: Int, to id: String) {
+        guard GKLocalPlayer.local.isAuthenticated else { return }
+        Task {
+            do {
+                try await GKLeaderboard.submitScore(
+                    value, context: 0, player: GKLocalPlayer.local, leaderboardIDs: [id]
+                )
+            } catch {
+                print("STATS: \(id) submit failed: \(error.localizedDescription)")
             }
         }
-        return beaten
     }
 }

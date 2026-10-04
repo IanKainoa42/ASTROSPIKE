@@ -450,8 +450,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// it settles toward the ship instead of slingshotting past.
     public var tractorDrag: Double
     /// Warm-up bay: nothing is a fault. Touches and bounces are tallied but
-    /// never award a point, a goal simply re-serves, and the trigger works
-    /// anywhere. There is no opponent, so there is nothing to defend.
+    /// never award a point, and a goal re-serves to the pilot -- counted only
+    /// if it went in the far face, as in a match. Flight is a match's.
     public var sandbox: Bool
 
     public init(
@@ -529,14 +529,13 @@ public struct SimulationConfiguration: Equatable, Sendable {
         return configuration
     }
 
-    /// The warm-up bay: the pilot's own sliders with the halfway treacle
-    /// switched off and nothing counted as a fault, so a lone pilot can roam
-    /// the whole court while the invite is out.
+    /// The warm-up bay and practice: the pilot's own sliders, flown exactly
+    /// as a match flies them -- MAX CROSS push-back, own-half trigger, serve
+    /// timing. Only the rulebook differs: nothing is a fault. Until build 123
+    /// the bay also switched off the push-back and let the trigger work
+    /// anywhere, which made warming up a different game from the one waited for.
     public static func warmup(from base: SimulationConfiguration) -> SimulationConfiguration {
         var configuration = base
-        configuration.serveDelay = 0.9
-        configuration.crossingPushBack = 0
-        configuration.crossingDrag = 0
         configuration.sandbox = true
         return configuration
     }
@@ -829,15 +828,13 @@ public struct SimulationEngine: Sendable {
             // center, out to the base of the hump — past that the nose is
             // live for ramming but the bolts stay holstered.
             let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-            let onOwnHalf = configuration.sandbox
-                || ship.position.x * homeSign >= -arena.humpBaseX
+            let onOwnHalf = ship.position.x * homeSign >= -arena.humpBaseX
             if input.fire, onOwnHalf, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, seat: seat)
             }
             // Unlike the cannon, the beam works anywhere on the court — a
             // pilot can reach into the far half and reel the ball back out.
-            ship.tractorActive = input.tractor
-                && (state.match.phase == .playing || configuration.sandbox)
+            ship.tractorActive = input.tractor && state.match.phase == .playing
             state.ships[seat] = ship
         }
         applyTractorToShips(dt: dt)
@@ -1141,12 +1138,16 @@ public struct SimulationEngine: Sendable {
                 state.match.shipTouches = SideCounts()
             case .ballEnteredHoop:
                 break
-            case .ballEnteredGoal:
+            case let .ballEnteredGoal(defending):
+                // A match only pays for the far face. Either way the next
+                // ball drifts back to the lone pilot's half.
                 let pilot = state.ships.keys.min()?.team ?? .cyan
-                if pilot == .cyan { state.match.score.cyan += 1 } else { state.match.score.orange += 1 }
-                events.append(.point(scoringTeam: pilot, reason: .goal))
+                if defending != pilot {
+                    state.match.score[pilot] += 1
+                    events.append(.point(scoringTeam: pilot, reason: .goal))
+                }
                 state.match.phase = .serve
-                stageServe(on: nil)
+                stageServe(on: pilot)
             case .ballCrossedCenter, .shipDestroyed:
                 break
             }

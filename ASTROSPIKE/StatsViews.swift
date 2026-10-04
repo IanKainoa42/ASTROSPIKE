@@ -130,6 +130,7 @@ struct SetBreakBoard: View {
 /// this device, and the way into the Game Center leaderboards.
 struct StatsSheet: View {
     @State private var bests = StatsReporter.bests
+    @State private var practiceBests = StatsReporter.practiceBests
     private var signedIn: Bool { GKLocalPlayer.local.isAuthenticated }
 
     var body: some View {
@@ -170,7 +171,23 @@ struct StatsSheet: View {
                 } header: {
                     Text("YOUR BEST MATCH")
                 } footer: {
-                    Text("Solo, doubles and online matches count. The warm-up bay does not.")
+                    Text("Solo, doubles and online matches count. Practice and the warm-up bay do not.")
+                }
+                Section {
+                    ForEach(PracticeBoard.allCases, id: \.self) { board in
+                        HStack(spacing: 12) {
+                            Text(board.title.uppercased())
+                                .font(.caption.monospaced().weight(.bold))
+                            Spacer()
+                            Text(practiceBests[board].map { $0.formatted() } ?? "—")
+                                .font(.title3.monospacedDigit().weight(.black))
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                } header: {
+                    Text("YOUR BEST PRACTICE")
+                } footer: {
+                    Text("Practice and the warm-up bay post when you leave.")
                 }
             }
             .navigationTitle("Stats")

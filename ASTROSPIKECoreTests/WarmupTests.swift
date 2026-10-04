@@ -71,6 +71,64 @@ struct WarmupTests {
         #expect(engine.state.bolts.first!.position.x > 0)
     }
 
+    @Test("The bay flies a match's physics: only the rulebook is the sandbox's")
+    func bayFliesTheMatch() {
+        var bay = SimulationConfiguration.warmup(from: .online)
+        #expect(bay.sandbox)
+        bay.sandbox = false
+        #expect(bay == .online)
+    }
+
+    @Test("Past the hump the trigger is holstered, as in a match")
+    func triggerHolsteredOnTheFarHalf() {
+        var engine = bay()
+        engine.state.ball.position = .init(-0.6, 0.4)
+        engine.state.ships[.cyan]!.position = .init(0.5, 0)
+        engine.state.ships[.cyan]!.angle = 0
+        engine.step(inputs: [.cyan: PlayerInput(tick: 0, torque: 0, thrust: false, fire: true)])
+        #expect(engine.state.bolts.isEmpty)
+    }
+
+    /// Fires the ball into one face of the goal: +1 is the face on orange's
+    /// half, -1 the pilot's own.
+    private func goal(face sign: Double) -> SimulationEngine {
+        var engine = bay()
+        let arena = engine.arena
+        engine.state.ball = BallState(
+            position: .init(sign * (arena.netHalfWidth + BallState.nominalRadius + 0.004),
+                            (arena.netBottomY + arena.portalMouthTopY) / 2),
+            velocity: .init(-sign * 2, 0)
+        )
+        for tick in 0 ..< 60 where engine.state.match.phase == .playing {
+            engine.step(inputs: [.cyan: .idle(tick: UInt64(tick))])
+        }
+        return engine
+    }
+
+    @Test("A goal through the far face counts and the next ball comes to the pilot")
+    func farFaceCounts() {
+        let engine = goal(face: 1)
+        #expect(engine.state.match.phase == .serve)
+        #expect(engine.state.match.score == Score(cyan: 1))
+        #expect(engine.state.serveDriftSign == engine.state.halfSign(of: .cyan))
+    }
+
+    @Test("A goal through the pilot's own face re-serves without counting")
+    func ownFaceDoesNotCount() {
+        let engine = goal(face: -1)
+        #expect(engine.state.match.phase == .serve)
+        #expect(engine.state.match.score == Score())
+        #expect(engine.state.serveDriftSign == engine.state.halfSign(of: .cyan))
+    }
+
+    @Test("Practice posts only what the pilot actually did")
+    func practiceSubmissionsSkipZeros() {
+        #expect(PracticeBoard.submissions(keepUp: 0, hoops: 0).isEmpty)
+        let sent = PracticeBoard.submissions(keepUp: 7, hoops: 0)
+        #expect(sent.map(\.board) == [.keepUp])
+        #expect(sent.map(\.value) == [7])
+    }
+
     @Test("The ball pops a hoop, which comes back somewhere else")
     func ballPopsHoop() {
         var rings = WarmupRings()

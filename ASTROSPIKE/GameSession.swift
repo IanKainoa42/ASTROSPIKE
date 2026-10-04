@@ -11,6 +11,8 @@ enum GameMode: Hashable {
     /// The warm-up bay: a lone pilot, the same court, hoops to pop and a
     /// keep-up streak, while a Game Center invite is out.
     case warmup
+    /// The same bay with no invite behind it, for as long as the pilot likes.
+    case practice
     /// The net comes off the roof and stands up out of the floor, covering
     /// the bottom half of the arena. Play it over the top; the floor is live.
     case volleyball(AIDifficulty)
@@ -22,10 +24,14 @@ enum GameMode: Hashable {
     /// own tuning applies.
     var isOffline: Bool {
         switch self {
-        case .solo, .doubles, .volleyball, .basketball: true
+        case .solo, .doubles, .volleyball, .basketball, .practice: true
         case .online, .warmup: false
         }
     }
+
+    /// The bay: one pilot, no rival, hoops and a keep-up streak. Warm-up
+    /// waits on an invite; practice waits on nothing.
+    var isBay: Bool { self == .warmup || self == .practice }
 
     /// The court this mode is played on. The arena carries the whole of what
     /// makes a mode different -- the hump, the net, the hoop -- so the engine
@@ -37,7 +43,7 @@ enum GameMode: Hashable {
         switch self {
         case .volleyball: .volleyball
         case .basketball: .basketball(ballRadius: ballRadius)
-        case .solo, .doubles, .online, .warmup: .standard(ballRadius: ballRadius)
+        case .solo, .doubles, .online, .warmup, .practice: .standard(ballRadius: ballRadius)
         }
     }
 
@@ -48,6 +54,7 @@ enum GameMode: Hashable {
         case .doubles: "DOUBLES"
         case .online: "ONLINE DUEL"
         case .warmup: "WARM-UP BAY"
+        case .practice: "PRACTICE"
         case .volleyball: "VOLLEYBALL"
         case .basketball: "BASKETBALL"
         }
@@ -59,7 +66,7 @@ enum GameMode: Hashable {
         case let .solo(difficulty), let .doubles(difficulty),
              let .volleyball(difficulty), let .basketball(difficulty):
             difficulty
-        case .online, .warmup:
+        case .online, .warmup, .practice:
             nil
         }
     }
@@ -70,7 +77,7 @@ enum GameMode: Hashable {
         case .doubles: .doubles(difficulty)
         case .volleyball: .volleyball(difficulty)
         case .basketball: .basketball(difficulty)
-        case .online, .warmup: self
+        case .online, .warmup, .practice: self
         }
     }
 }
@@ -192,7 +199,7 @@ final class GameSession {
         case let .volleyball(difficulty), let .basketball(difficulty):
             roster = Seat.singles
             botSeats[.orange] = difficulty
-        case .warmup:
+        case .warmup, .practice:
             // Nobody to defend against, and no ceremony before the first serve.
             roster = [.cyan]
             countdown = 1
@@ -263,9 +270,11 @@ final class GameSession {
         scene.boltPunch = engine.configuration.boltPunch
         scene.snapshot = state
         // After the snapshot: the goal calls are drawn for the ends in it.
-        scene.localTeam = mode == .warmup || isSpectator ? nil : localSeat.team
-        scene.localSeat = mode == .warmup || isSpectator ? nil : localSeat
-        if mode == .warmup { scene.rings = rings.rings }
+        // The bay keeps the court calls: SCORE and DEFEND read the same as in
+        // the match it is warming up for.
+        scene.localTeam = isSpectator ? nil : localSeat.team
+        scene.localSeat = mode.isBay || isSpectator ? nil : localSeat
+        if mode.isBay { scene.rings = rings.rings }
         if let winner = finishedAs {
             isResultsPreview = true
             engine.finishByForfeit(winner: winner)
@@ -322,6 +331,7 @@ final class GameSession {
         // must not leave it droning under the menu.
         SoundBank.shared.stopEverything()
         Soundscape.shared.end()
+        if mode.isBay { StatsReporter.reportPractice(keepUp: bestKeepUp, hoops: ringsPopped) }
         thrustingTeams = []
         thrustCenter = [:]
         offsideLastFrame = []
@@ -409,7 +419,7 @@ final class GameSession {
         state = engine.state
         scene.snapshot = state
         Soundscape.shared.begin()
-        countdown = mode == .warmup ? 1 : 3
+        countdown = mode.isBay ? 1 : 3
         countdownAccumulator = 0
         accumulator = 0
         lastPointText = nil
@@ -561,7 +571,7 @@ final class GameSession {
         }
 
         switch mode {
-        case .solo, .doubles, .warmup, .volleyball, .basketball:
+        case .solo, .doubles, .warmup, .practice, .volleyball, .basketball:
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
@@ -588,7 +598,7 @@ final class GameSession {
         announceStakes()
         events = engine.lastEvents
         announceShipCues(inputs: inputs)
-        if mode == .warmup {
+        if mode.isBay {
             bestKeepUp = max(bestKeepUp, state.match.shipTouches.cyan)
             let burst = rings.observe(state)
             if !burst.isEmpty {
@@ -599,7 +609,7 @@ final class GameSession {
             }
         }
         let presentsLocalEvents = switch mode {
-        case .solo, .doubles, .warmup, .volleyball, .basketball: true
+        case .solo, .doubles, .warmup, .practice, .volleyball, .basketball: true
         case .online: online?.isAuthoritative == true
         }
         if presentsLocalEvents, !events.isEmpty { scene.present(events) }
@@ -668,7 +678,7 @@ final class GameSession {
         guard flownSeat != nil else { return false }
         return switch mode {
         case .solo, .doubles, .online: true
-        case .warmup, .volleyball, .basketball: false
+        case .warmup, .practice, .volleyball, .basketball: false
         }
     }
 

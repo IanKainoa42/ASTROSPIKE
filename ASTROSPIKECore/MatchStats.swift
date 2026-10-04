@@ -197,3 +197,31 @@ public enum StatBoard: String, CaseIterable, Sendable {
         }
     }
 }
+
+/// The bay's two Game Center boards, fed from warm-up and practice rather
+/// than from a match: the longest keep-up streak, and the most hoops popped
+/// in one stay. Kept apart from `StatBoard` so a match never sends to them.
+public enum PracticeBoard: String, CaseIterable, Sendable {
+    case keepUp = "astrospike.practice.keepups"
+    case hoops = "astrospike.practice.hoops"
+
+    public var title: String {
+        switch self {
+        case .keepUp: "Longest Keep-Up"
+        case .hoops: "Most Hoops in One Practice"
+        }
+    }
+
+    public var unit: (singular: String, plural: String) {
+        switch self {
+        case .keepUp: ("touch", "touches")
+        case .hoops: ("hoop", "hoops")
+        }
+    }
+
+    /// What to send when the pilot leaves the bay. A zero is never sent.
+    public static func submissions(keepUp: Int, hoops: Int) -> [(board: PracticeBoard, value: Int)] {
+        let all: [(board: PracticeBoard, value: Int)] = [(.keepUp, keepUp), (.hoops, hoops)]
+        return all.filter { $0.value > 0 }
+    }
+}

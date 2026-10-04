@@ -65,6 +65,7 @@ struct AppRootView: View {
             _tuning = State(initialValue: store)
         }
         let warmupMode = arguments.contains("--warmup")
+        let practiceMode = arguments.contains("--practice")
         _resultsPreviewWinner = State(
             initialValue: arguments.contains("--results-win") ? .cyan
                 : arguments.contains("--results-lose") ? .orange
@@ -72,6 +73,7 @@ struct AppRootView: View {
         )
         _gameMode = State(initialValue: diagnosticsPreviewMode ? .online
             : warmupMode ? .warmup
+            : practiceMode ? .practice
             : resultsPreview ? .solo(.rookie)
             : doublesMode ? .doubles(.pilot)
             : demoMode ? .solo(.pilot) : nil)
@@ -82,7 +84,7 @@ struct AppRootView: View {
         // `--warmup` drops into the bay: the simulator cannot work a sheet.
         let trackMode = arguments.contains("--track")
         _showTrack = State(initialValue: trackMode)
-        let bypass = demoMode || warmupMode || diagnosticsPreviewMode || lobbyMode || trackMode
+        let bypass = demoMode || warmupMode || practiceMode || diagnosticsPreviewMode || lobbyMode || trackMode
             || resultsPreview
             || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
@@ -268,7 +270,7 @@ struct AppRootView: View {
         let activity: PilotActivity = switch gameMode {
         case .online: .playing
         case .warmup: .matching
-        case .solo, .doubles, .volleyball, .basketball: .solo
+        case .solo, .doubles, .practice, .volleyball, .basketball: .solo
         case nil: if case .matching = online.status { .matching } else { .idle }
         }
         lobby.setActivity(activity, matchID: activity == .playing ? lobby.hostedDuel?.id : nil)
@@ -586,7 +588,10 @@ private struct HomeView: View {
                     MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
                     // Volleyball, basketball and the circuit are parked (Ian may spin them into
                     // their own game); `sheet = .modes` still opens them if ever wanted back.
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
+                    // One row: a second row of tiles ran off the bottom of an
+                    // iPhone in landscape (SETTINGS and STATS were half cut).
+                    HStack(spacing: 8) {
+                        SmallMenuButton(title: "PRACTICE", icon: "scope") { startGame(.practice) }
                         SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
                         SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
                         SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
@@ -598,7 +603,6 @@ private struct HomeView: View {
             .padding(.horizontal, max(36, geometry.size.width * 0.07))
             .padding(.vertical, max(24, geometry.size.height * 0.08))
         }
-        .accessibilityIdentifier("home-screen")
     }
 
     private var statusColor: Color {
@@ -681,7 +685,7 @@ private struct GameView: View {
         // The host's sliders reach the guest with the seating plan; the host
         // seeded them from its own store, so both read the same numbers.
         case .online: online.hostTuning.configuration
-        case .warmup: SimulationConfiguration.warmup(from: tuning.configuration)
+        case .warmup, .practice: SimulationConfiguration.warmup(from: tuning.configuration)
         }
         _session = State(initialValue: GameSession(
             mode: mode,
@@ -712,8 +716,8 @@ private struct GameView: View {
             SpriteView(scene: session.scene, options: [.ignoresSiblingOrder])
                 .ignoresSafeArea().accessibilityHidden(true)
             VStack(spacing: 0) {
-                if mode == .warmup {
-                    WarmupHUD(session: session, online: online) { showLeaveConfirmation = true }
+                if mode.isBay {
+                    WarmupHUD(session: session, online: mode == .warmup ? online : nil) { showLeaveConfirmation = true }
                 } else {
                     MatchHUD(
                         state: session.state,
@@ -771,7 +775,7 @@ private struct GameView: View {
                     .padding(.top, 6)
                     .accessibilityIdentifier("reinvite-button")
                 }
-                if mode != .warmup {
+                if !mode.isBay {
                     let left = session.state.team(onHalfAt: -1)
                     let right = left.opponent
                     let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
@@ -904,7 +908,7 @@ private struct GameView: View {
             titleVisibility: .visible
         ) {
             Button(leaveButton, role: .destructive, action: leaveGame)
-            Button(mode == .warmup ? "Keep Warming Up" : isSpectating ? "Keep Watching" : "Keep Playing", role: .cancel) {}
+            Button(mode == .warmup ? "Keep Warming Up" : mode == .practice ? "Keep Practising" : isSpectating ? "Keep Watching" : "Keep Playing", role: .cancel) {}
         } message: {
             Text(leaveMessage)
         }
@@ -965,7 +969,7 @@ private struct GameView: View {
     }
 
     private var showsEmoteButton: Bool {
-        mode != .warmup && !isSpectating && session.canEmote
+        !mode.isBay && !isSpectating && session.canEmote
             && session.state.match.phase != .finished
     }
 
@@ -1055,18 +1059,21 @@ private struct GameView: View {
 
     private var leaveTitle: String {
         if mode == .warmup { return "Leave the Bay?" }
+        if mode == .practice { return "Leave Practice?" }
         if table != nil { return online.isTableHost ? "Close the Table?" : "Leave the Table?" }
         return "Leave Match?"
     }
 
     private var leaveButton: String {
         if mode == .warmup { return "Cancel Invite" }
+        if mode == .practice { return "Leave" }
         if table != nil { return online.isTableHost ? "Close Table" : "Leave Table" }
         return "Leave Match"
     }
 
     private var leaveMessage: String {
         if mode == .warmup { return "Leaving withdraws the invite or search." }
+        if mode == .practice { return "Your longest keep-up and hoops post to Game Center." }
         if table != nil {
             if online.isTableHost { return "Closing the table ends it for everyone sitting at it." }
             return isSpectating || session.state.match.phase == .finished
@@ -1082,7 +1089,7 @@ private struct GameView: View {
         // Volleyball's floor is live and the hoop court has no faults at all;
         // both come off `SimulationConfiguration`, not the pilot's sliders.
         case .volleyball: 0
-        case .basketball, .online, .warmup: 3
+        case .basketball, .online, .warmup, .practice: 3
         }
     }
 
@@ -1126,7 +1133,7 @@ private struct GameView: View {
             lobby.hostDuelAbandoned()
             online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
-        case .solo, .doubles, .volleyball, .basketball: break
+        case .solo, .doubles, .practice, .volleyball, .basketball: break
         }
         exit()
     }
@@ -1164,10 +1171,9 @@ private struct GameView: View {
 /// the state of the invite in the middle where the match rules would be.
 private struct WarmupHUD: View {
     let session: GameSession
-    let online: OnlineMatchCoordinator
+    /// Nil in practice: no invite is out, so there is no link to report.
+    let online: OnlineMatchCoordinator?
     let leave: () -> Void
-
-    @State private var isShowingLog = false
 
     var body: some View {
         HStack {
@@ -1175,81 +1181,20 @@ private struct WarmupHUD: View {
                  detail: "BEST \(session.bestKeepUp)", tint: .cyan)
             Spacer()
             VStack(spacing: 3) {
-                Text("WARM-UP BAY").font(.caption2.monospaced().weight(.bold)).tracking(2)
+                Text(online == nil ? "PRACTICE" : "WARM-UP BAY").font(.caption2.monospaced().weight(.bold)).tracking(2)
                     .foregroundStyle(.white.opacity(0.55))
-                if let headline = online.matchmakingHeadline {
-                    // Who they are waiting on, big enough to read mid-hoop.
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small).tint(.yellow)
-                        Text(headline).font(.subheadline.monospaced().weight(.black)).tracking(1)
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                    }
-                    .foregroundStyle(.yellow)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .overlay(Capsule().stroke(.yellow.opacity(0.75), lineWidth: 1.5))
-                    .accessibilityIdentifier("matchmaking-headline")
-                } else {
-                    Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption2.weight(.bold)).foregroundStyle(statusColor)
-                        .lineLimit(1).minimumScaleFactor(0.6)
-                }
-                // The newest line of the link log, live, where the waiting
-                // actually happens. A pilot sitting on JOINING MAYA… for a
-                // minute should be able to see that the invite went out,
-                // that she accepted, and what the app is waiting on now --
-                // without the match having to fail first. Tapping opens the
-                // whole transcript, which is the thing worth sending back
-                // when something goes wrong on hardware.
-                if let latest = online.eventLog.last {
-                    Button { isShowingLog = true } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "list.bullet.rectangle").font(.system(size: 9))
-                            Text(latest)
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .lineLimit(1).minimumScaleFactor(0.6)
-                        }
-                        .foregroundStyle(.white.opacity(0.66))
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .frame(maxWidth: 360)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Latest link event: \(latest). Open link log")
-                    .accessibilityIdentifier("warmup-link-event")
-                }
-                if let notice = online.inviteNotice {
-                    // Why nothing is happening, not a footnote about it. A
-                    // build mismatch used to arrive here as one clipped
-                    // yellow line between two scoreboards, which is the same
-                    // as not saying it at all -- so it wraps, and it is
-                    // boxed like the headline above it.
-                    Text(notice)
-                        .font(.caption2.monospaced().weight(.bold))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3).minimumScaleFactor(0.7)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 12).padding(.vertical, 5)
-                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.orange.opacity(0.7), lineWidth: 1))
-                        .frame(maxWidth: 340)
-                        .accessibilityIdentifier("invite-notice")
-                }
+                if let online { BayLinkStatus(online: online) }
             }
             // A container, not one combined element: the log button inside
             // it has to stay reachable.
             .accessibilityElement(children: .contain)
-            .sheet(isPresented: $isShowingLog) {
-                LinkLogView(transcript: online.linkTranscript(), events: online.eventLog)
-            }
             Spacer()
             stat(title: "HOOPS", value: session.ringsPopped,
                  detail: "GOALS \(session.state.match.score.cyan)", tint: .yellow)
             Button(action: leave) {
                 Image(systemName: "xmark").frame(width: 42, height: 42).background(.black.opacity(0.45), in: Circle())
             }
-            .accessibilityLabel("Leave warm-up bay").accessibilityIdentifier("match-action-button")
+            .accessibilityLabel(online == nil ? "Leave practice" : "Leave warm-up bay").accessibilityIdentifier("match-action-button")
         }
         .padding(.horizontal, 24).padding(.top, 10)
         .accessibilityIdentifier("warmup-hud")
@@ -1265,6 +1210,80 @@ private struct WarmupHUD: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The invite's progress, under the bay's title while a friend is answering.
+private struct BayLinkStatus: View {
+    let online: OnlineMatchCoordinator
+
+    @State private var isShowingLog = false
+
+    var body: some View {
+        Group {
+            if let headline = online.matchmakingHeadline {
+                // Who they are waiting on, big enough to read mid-hoop.
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).tint(.yellow)
+                    Text(headline).font(.subheadline.monospaced().weight(.black)).tracking(1)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+                .foregroundStyle(.yellow)
+                .padding(.horizontal, 14).padding(.vertical, 6)
+                .background(.black.opacity(0.55), in: Capsule())
+                .overlay(Capsule().stroke(.yellow.opacity(0.75), lineWidth: 1.5))
+                .accessibilityIdentifier("matchmaking-headline")
+            } else {
+                Label(online.status.label, systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption2.weight(.bold)).foregroundStyle(statusColor)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            // The newest line of the link log, live, where the waiting
+            // actually happens. A pilot sitting on JOINING MAYA… for a
+            // minute should be able to see that the invite went out,
+            // that she accepted, and what the app is waiting on now --
+            // without the match having to fail first. Tapping opens the
+            // whole transcript, which is the thing worth sending back
+            // when something goes wrong on hardware.
+            if let latest = online.eventLog.last {
+                Button { isShowingLog = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle").font(.system(size: 9))
+                        Text(latest)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                    }
+                    .foregroundStyle(.white.opacity(0.66))
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .frame(maxWidth: 360)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Latest link event: \(latest). Open link log")
+                .accessibilityIdentifier("warmup-link-event")
+            }
+            if let notice = online.inviteNotice {
+                // Why nothing is happening, not a footnote about it. A
+                // build mismatch used to arrive here as one clipped
+                // yellow line between two scoreboards, which is the same
+                // as not saying it at all -- so it wraps, and it is
+                // boxed like the headline above it.
+                Text(notice)
+                    .font(.caption2.monospaced().weight(.bold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3).minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.orange.opacity(0.7), lineWidth: 1))
+                    .frame(maxWidth: 340)
+                    .accessibilityIdentifier("invite-notice")
+            }
+        }
+        .sheet(isPresented: $isShowingLog) {
+            LinkLogView(transcript: online.linkTranscript(), events: online.eventLog)
+        }
     }
 
     private var statusColor: Color {
@@ -2051,8 +2070,26 @@ private struct SmallMenuButton: View {
     let title: String, icon: String
     let action: () -> Void
     var body: some View {
-        Button(action: action) { Label(title, systemImage: icon).font(.caption.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 6).frame(maxWidth: .infinity, minHeight: 44).background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 13)) }
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .labelStyle(TileLabelStyle())
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 13))
+                .contentShape(Rectangle())
+        }
             .buttonStyle(.plain).accessibilityIdentifier(title.lowercased().replacingOccurrences(of: " ", with: "-"))
+    }
+}
+
+/// Icon over title, so five tiles fit one row on an iPhone in landscape.
+/// A Label (not a bare VStack) keeps the button's identifier visible to UI tests.
+private struct TileLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 4) {
+            configuration.icon.font(.body.weight(.semibold)).frame(height: 22)
+            configuration.title.font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.8)
+        }
     }
 }
 

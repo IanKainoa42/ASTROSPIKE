@@ -1,6 +1,6 @@
 """Register the per-match Game Center leaderboards on App Store Connect.
 
-One classic leaderboard per StatBoard case (ASTROSPIKECore/MatchStats.swift):
+One classic leaderboard per StatBoard and PracticeBoard case (ASTROSPIKECore/MatchStats.swift):
 integer, best score kept, highest first, with an en-US name and unit. The
 vendor ids here must match StatBoard's raw values exactly -- a score sent to
 an id ASC does not know just goes nowhere.
@@ -23,6 +23,9 @@ BOARDS = [
     ("astrospike.match.slamdunks", "Most Slam Dunks in a Match", "slam dunk", "slam dunks"),
     ("astrospike.match.zaps", "Most Zaps in a Match", "zap", "zaps"),
     ("astrospike.match.longestrally", "Longest Rally", "crossing", "crossings"),
+    # PracticeBoard: posted from warm-up and practice, never from a match.
+    ("astrospike.practice.keepups", "Longest Keep-Up", "touch", "touches"),
+    ("astrospike.practice.hoops", "Most Hoops in One Practice", "hoop", "hoops"),
 ]
 
 

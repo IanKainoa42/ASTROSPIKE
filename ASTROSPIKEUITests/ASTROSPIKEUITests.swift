@@ -237,6 +237,21 @@ final class ASTROSPIKEUITests: XCTestCase {
     }
 
     @MainActor
+    func testPracticeOpensTheBayWithNoInvite() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("--skip-onboarding")
+        app.launch()
+
+        app.buttons["practice"].tap()
+        // By label: the game screen's own identifier shadows the HUD's.
+        XCTAssertTrue(app.staticTexts["PRACTICE"].waitForExistence(timeout: 5), "practice bay did not open")
+        XCTAssertFalse(app.descendants(matching: .any)["matchmaking-headline"].exists)
+        app.buttons["Leave practice"].tap()
+        app.buttons["Leave"].tap()
+        XCTAssertTrue(app.buttons["practice"].waitForExistence(timeout: 5), "leaving practice did not return home")
+    }
+
+    @MainActor
     func testResultsLoseRetriesTheSameRival() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--results-lose", "--skip-onboarding"]
