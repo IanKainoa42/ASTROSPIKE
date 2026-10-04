@@ -570,7 +570,7 @@ final class LobbyService {
                 await self.publishActivity(.matching, matchID: ask.rendezvousTag)
                 guard await self.openStandingInvite(ask) != nil else { return }
                 self.note("IN-GAME INVITE → \(name.uppercased()) · BOTH IN THE APP")
-                online.meetInGame(group: group, with: name, hostTag: ask.rendezvousTag)
+                online.meetInGame(group: group, with: pilotID, name: name, hostTag: ask.rendezvousTag)
                 return
             }
             if let ask { await self.openStandingInvite(ask) }
@@ -692,7 +692,7 @@ final class LobbyService {
         // written once the phones have paired, so a meeting that falls
         // through puts the row back to try again.
         if accept, case let .inGame(group) = InviteRouting.join(invite, host: presence(of: invite.hostID), at: .now) {
-            online.meetInGame(group: group, with: invite.hostName, hostTag: nil) { [weak self] paired in
+            online.meetInGame(group: group, with: invite.hostID, name: invite.hostName, hostTag: nil) { [weak self] paired in
                 guard let self else { return }
                 if paired {
                     Task { await self.publishReply(to: invite, accepted: true) }

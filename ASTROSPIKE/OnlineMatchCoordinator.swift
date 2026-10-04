@@ -675,8 +675,8 @@ final class OnlineMatchCoordinator: NSObject,
     /// invitation always arrives as Apple's banner, however the sender sent
     /// it. The host waits in the bay under `hostTag`; the guest gives the
     /// pool `meetingJoinSeconds` and then hears `paired(false)`.
-    func meetInGame(group: Int, with name: String, hostTag: String?, paired: ((Bool) -> Void)? = nil) {
-        startMatchmaking(recipients: nil, teamUp: false, playerGroup: group, meeting: (name, hostTag))
+    func meetInGame(group: Int, with pilotID: String, name: String, hostTag: String?, paired: ((Bool) -> Void)? = nil) {
+        startMatchmaking(recipients: nil, teamUp: false, playerGroup: group, meeting: (pilotID, name, hostTag))
         guard hostTag == nil else { return }
         guard case .matching = status else {
             paired?(false)
@@ -874,7 +874,7 @@ final class OnlineMatchCoordinator: NSObject,
         teamUp: Bool,
         asOpenTable: Bool = false,
         playerGroup: Int = 0,
-        meeting: (name: String, hostTag: String?)? = nil
+        meeting: (pilotID: String, name: String, hostTag: String?)? = nil
     ) {
         // Whatever in-game join was out is over: this search replaces it.
         finishMeeting(paired: false)
@@ -1022,6 +1022,18 @@ final class OnlineMatchCoordinator: NSObject,
                 guard let match else {
                     self.finishMeeting(paired: false)
                     self.status = .failed(reason: .noMatchReturned)
+                    return
+                }
+                // The pool number can be worked out by anyone who reads the
+                // public lobby, so pair only with the pilot who was asked.
+                if let meeting, !match.players.contains(where: { $0.gamePlayerID == meeting.pilotID }) {
+                    self.note("IN-GAME MEETING: A STRANGER TOOK THE SEAT · DROPPED")
+                    match.disconnect()
+                    self.finishMeeting(paired: false)
+                    self.meetingTag = nil
+                    self.status = .failed(reason: .inviteJoinFailed(
+                        underlyingMessage: "Couldn't meet \(meeting.name). Try again."
+                    ))
                     return
                 }
                 self.finishMeeting(paired: true)
