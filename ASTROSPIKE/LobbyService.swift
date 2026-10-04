@@ -63,6 +63,23 @@ final class LobbyService {
     /// Standing invites this pilot has answered on this device, so a reply
     /// that has not round-tripped through CloudKit yet still clears the row.
     private var answeredLocally: Set<String> = []
+    /// `--invite-preview` asks: a simulator is never signed in to Game
+    /// Center, so this is the only way the banner and INVITES get drawn.
+    private var previewInbox: [StandingInvite] = []
+
+    init() {}
+
+    #if DEBUG
+    init(previewInvites: Bool) {
+        guard previewInvites else { return }
+        let now = Date.now
+        previewInbox = [StandingInvite(
+            id: "preview", hostID: "preview-host", hostName: "Maya", hostHull: .lancet,
+            guestID: "preview-guest", guestName: "You",
+            createdAt: now, expiresAt: now.addingTimeInterval(6 * 3600)
+        )]
+    }
+    #endif
 
     /// The duel this pilot is hosting, mirrored to CloudKit as the score moves.
     private(set) var hostedDuel: LiveMatch?
@@ -533,22 +550,75 @@ final class LobbyService {
         // keeps is the one Ian asked for -- it must not have its message
         // overwritten by the optimistic invite that may not have been
         // wanted anyway.
+        //
+        // When the pilot asked is looking at the app right now, there is no
+        // Game Center invitation at all: the host waits in the bay in the
+        // invite's own automatch pool, its presence says so, and the row
+        // that lands on the guest's screen is the whole of the handshake.
         Task { [weak self] in
-            await self?.openStandingInvite(pilotID: pilotID, name: name)
-            self?.invite(pilotID: pilotID, name: name, using: online)
+            guard let self else { return }
+            // Who is here decides the route, so look again rather than trust
+            // a poll that may be several seconds old.
+            await self.refresh()
+            let guest = self.snapshot.pilots.first { $0.id == pilotID }
+            let now = Date.now
+            let ask = self.draftInvite(pilotID: pilotID, name: name, at: now)
+            if let ask, case let .inGame(group) = InviteRouting.send(ask, guest: guest, at: now) {
+                // Presence first: a guest who taps JOIN the moment the row
+                // arrives has to find the host already in the pool, or they
+                // ring its phone instead.
+                await self.publishActivity(.matching, matchID: ask.rendezvousTag)
+                guard await self.openStandingInvite(ask) != nil else { return }
+                self.note("IN-GAME INVITE → \(name.uppercased()) · BOTH IN THE APP")
+                online.meetInGame(group: group, with: name, hostTag: ask.rendezvousTag)
+                return
+            }
+            if let ask { await self.openStandingInvite(ask) }
+            self.invite(pilotID: pilotID, name: name, using: online)
         }
+    }
+
+    /// Publishes a change of activity and waits for it to land.
+    func publishActivity(_ activity: PilotActivity, matchID: String?) async {
+        self.activity = activity
+        currentMatchID = matchID
+        await publishPresence()
+    }
+
+    /// The pilot's own presence as the lobby last read it, or nil.
+    func presence(of pilotID: String) -> PilotPresence? {
+        snapshot.pilots.first { $0.id == pilotID }
+    }
+
+    /// The host's half of an in-game invite: the other pilot said no from
+    /// their screen, so stop waiting in the pool for them.
+    func watchInGameInvite(using online: OnlineMatchCoordinator) {
+        guard let tag = online.meetingTag,
+              let ask = inviteBook.invites.first(where: { $0.rendezvousTag == tag }),
+              inviteBook.status(of: ask, at: .now) == .declined else { return }
+        online.inGameInviteDeclined(tag: tag, by: ask.guestName)
     }
 
     /// Writes (or refreshes) the durable ask. The record name is fixed per
     /// pair, so asking twice moves the clock forward instead of stacking a
     /// second row on the other pilot's screen.
-    func openStandingInvite(pilotID: String, name: String) async {
+    @discardableResult
+    func openStandingInvite(pilotID: String, name: String) async -> StandingInvite? {
+        guard let invite = draftInvite(pilotID: pilotID, name: name, at: .now) else { return nil }
+        return await openStandingInvite(invite)
+    }
+
+    /// The ask as it will be written, or nil when this pilot cannot publish.
+    /// Whole seconds: both phones hash `createdAt` into the invite's
+    /// automatch pool, and CloudKit is not promised to hand back the
+    /// fraction it was given.
+    private func draftInvite(pilotID: String, name: String, at date: Date) -> StandingInvite? {
         guard canPublish, let localID else {
             note("STANDING INVITE: NOT PUBLISHED · \(availability.label)")
-            return
+            return nil
         }
-        let now = Date.now
-        let invite = StandingInvite(
+        let now = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
+        return StandingInvite(
             id: StandingInvite.id(hostID: localID, guestID: pilotID),
             hostID: localID,
             hostName: localName,
@@ -558,6 +628,11 @@ final class LobbyService {
             createdAt: now,
             expiresAt: inviteBook.expiry(from: now)
         )
+    }
+
+    @discardableResult
+    private func openStandingInvite(_ invite: StandingInvite) async -> StandingInvite? {
+        let name = invite.guestName
         let record = CKRecord(recordType: Records.standingInvite, recordID: CKRecord.ID(recordName: invite.id))
         Records.write(invite, into: record)
         do {
@@ -567,10 +642,12 @@ final class LobbyService {
             // drop the stale reply rather than leaving the row pre-declined.
             answeredLocally.remove(invite.id)
             await refresh()
+            return invite
         } catch {
             let detail = describe(error)
             note("STANDING INVITE FAILED: \(detail)")
             notice = playerFacing(error)
+            return nil
         }
     }
 
@@ -604,11 +681,27 @@ final class LobbyService {
         accept: Bool,
         using online: OnlineMatchCoordinator
     ) {
+        if invite.id == "preview" { answeredLocally.insert(invite.id); return }
         guard let localID, invite.guestID == localID else { return }
         // Clear the row now. The write below may be slow or may fail on a
         // read-only lobby, and either way the pilot has answered.
         answeredLocally.insert(invite.id)
         note("STANDING INVITE \(accept ? "ACCEPTED" : "DECLINED") · \(invite.hostName.uppercased())")
+        // The host is in the bay waiting on this very ask: meet it in the
+        // pool, no Game Center banner on either phone. The answer is only
+        // written once the phones have paired, so a meeting that falls
+        // through puts the row back to try again.
+        if accept, case let .inGame(group) = InviteRouting.join(invite, host: presence(of: invite.hostID), at: .now) {
+            online.meetInGame(group: group, with: invite.hostName, hostTag: nil) { [weak self] paired in
+                guard let self else { return }
+                if paired {
+                    Task { await self.publishReply(to: invite, accepted: true) }
+                } else {
+                    self.answeredLocally.remove(invite.id)
+                }
+            }
+            return
+        }
         if accept { self.invite(pilotID: invite.hostID, name: invite.hostName, using: online) }
         Task { await publishReply(to: invite, accepted: accept) }
     }
@@ -637,7 +730,7 @@ final class LobbyService {
 
     /// Asks pointed at this pilot that still want an answer.
     var standingInviteInbox: [StandingInvite] {
-        guard let localID else { return [] }
+        guard let localID else { return previewInbox.filter { !answeredLocally.contains($0.id) } }
         return inviteBook.inbox(for: localID, at: .now)
             .filter { !answeredLocally.contains($0.id) }
     }

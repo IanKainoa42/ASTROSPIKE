@@ -158,7 +158,10 @@ public struct StandingInviteBook: Equatable, Sendable {
     /// clock, so an invite accepted a minute before it aged out still reads
     /// as accepted rather than silently becoming expired.
     public func status(of invite: StandingInvite, at now: Date) -> StandingInviteStatus {
-        if let reply = replies[invite.id] {
+        // The record name is fixed per pair, so the reply to the last ask
+        // is still sitting there when the host asks again. It answered that
+        // ask, not this one.
+        if let reply = replies[invite.id], reply.repliedAt >= invite.createdAt {
             return reply.accepted ? .accepted : .declined
         }
         if invite.withdrawn { return .withdrawn }
@@ -192,5 +195,74 @@ public struct StandingInviteBook: Equatable, Sendable {
             .filter { $0.hostID == localID }
             .map { ($0, status(of: $0, at: now)) }
             .filter { $0.1 == .accepted || $0.1 == .declined }
+    }
+}
+
+// MARK: - Meeting in game
+
+/// How a duel ask reaches the other pilot.
+///
+/// A Game Center invitation always lands as Apple's banner, on both ends:
+/// the guest taps it to accept, and a standing invite's JOIN sends one back
+/// that the host has to tap in turn. When both pilots already have the app
+/// open there is a way round that: each searches a private automatch pool
+/// that only this invite knows the number of, and GameKit pairs them with no
+/// sheet or banner on either phone. The invite's row in the app is the
+/// whole of the handshake.
+public enum InviteRoute: Equatable, Sendable {
+    /// Both in the app. They meet in automatch pool `group`.
+    case inGame(group: Int)
+    /// A Game Center invitation, delivered as a push.
+    case gameCenter
+}
+
+extension StandingInvite {
+    /// The private automatch pool this ask meets in. Both phones compute it
+    /// from the record alone, so it is a stable hash -- `hashValue` is seeded
+    /// per process and would put them in different pools -- and it is never
+    /// 0, the pool every quick match searches.
+    public var rendezvousGroup: Int {
+        var hash: UInt32 = 2_166_136_261
+        for byte in "\(id)|\(Int(createdAt.timeIntervalSince1970.rounded(.down)))".utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 16_777_619
+        }
+        let group = Int(hash & 0x7FFF_FFFF)
+        return group == 0 ? 1 : group
+    }
+
+    /// What the host's presence says while it waits in that pool, so the
+    /// guest knows to meet it there rather than ring its phone.
+    public var rendezvousTag: String { "rv:\(id)" }
+}
+
+public enum InviteRouting {
+    /// A presence older than this is a phone that may be in a pocket. The
+    /// heartbeat beats every 30 seconds while the app is open and stops when
+    /// it is not, so anything fresher means the app was up a moment ago.
+    public static let presenceWindow: TimeInterval = 45
+
+    /// The host sending: meet in game when the guest is looking at the
+    /// app's menus, and ring their phone otherwise -- a pilot in the bay,
+    /// mid-game against a bot, or away, needs the push.
+    public static func send(_ invite: StandingInvite, guest: PilotPresence?, at now: Date) -> InviteRoute {
+        guard let guest, guest.id == invite.guestID,
+              now.timeIntervalSince(guest.updatedAt) <= presenceWindow,
+              // Only the menus show the in-game banner. A pilot in the
+              // warm-up bay reads `.matching` but would never see the ask,
+              // so they get Apple's push like anyone else who is busy.
+              guest.activity == .idle else { return .gameCenter }
+        return .inGame(group: invite.rendezvousGroup)
+    }
+
+    /// The guest answering: meet in game only when the host is still in the
+    /// pool for this very ask. Otherwise the host has moved on, and JOIN
+    /// sends the invitation back to them as a push.
+    public static func join(_ invite: StandingInvite, host: PilotPresence?, at now: Date) -> InviteRoute {
+        guard let host, host.id == invite.hostID,
+              now.timeIntervalSince(host.updatedAt) <= presenceWindow,
+              host.activity == .matching,
+              host.matchID == invite.rendezvousTag else { return .gameCenter }
+        return .inGame(group: invite.rendezvousGroup)
     }
 }

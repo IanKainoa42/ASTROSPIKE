@@ -246,7 +246,7 @@ struct LobbyView: View {
 
 // MARK: - Rows
 
-private struct PilotRow: View {
+struct PilotRow: View {
     let pilot: PilotPresence
     let isFriend: Bool
     let duel: LiveMatch?
@@ -299,7 +299,7 @@ private struct PilotRow: View {
 }
 
 /// One standing invite, from whichever end is looking at it.
-private struct StandingInviteRow: View {
+struct StandingInviteRow: View {
     let invite: StandingInvite
     let isWaitingOnMe: Bool
     let accept: () -> Void

@@ -91,6 +91,36 @@ struct MatchStatsTests {
         }
     }
 
+    @Test("A goal the attacker's beam is pulling in is their slam dunk, bolt or no bolt")
+    func beamPulledGoalIsASlam() {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        ballIntoCyanGoal(&engine, lastPlay: nil)
+        engine.state.ball.beamHold = BeamHold(seat: .orange, tick: engine.state.tick)
+        engine.step(inputs: [:])
+        #expect(engine.state.match.score.orange == 1)
+        #expect(engine.state.stats[.orange] == PilotStats(goals: 1, slamDunks: 1))
+        #expect(goalScored(engine.lastEvents)?.style == .slamDunk)
+    }
+
+    @Test("A beam that let go long ago, or a defender's beam, makes no slam")
+    func staleOrDefendingBeamIsNoSlam() {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        ballIntoCyanGoal(&engine, lastPlay: BallPlay(seat: .orange, kind: .hull))
+        engine.state.ball.beamHold = BeamHold(seat: .orange, tick: engine.state.tick &- 60)
+        engine.step(inputs: [:])
+        #expect(goalScored(engine.lastEvents)?.style == .hull)
+
+        var defended = SimulationEngine.testing()
+        defended.beginPlay()
+        ballIntoCyanGoal(&defended, lastPlay: BallPlay(seat: .orange, kind: .hull))
+        defended.state.ball.beamHold = BeamHold(seat: .cyan, tick: defended.state.tick)
+        defended.step(inputs: [:])
+        #expect(goalScored(defended.lastEvents)?.style == .hull)
+        #expect(defended.state.stats[.cyan].slamDunks == 0)
+    }
+
     @Test("Hulls and own goals through the engine")
     func hullAndOwnGoal() {
         var engine = SimulationEngine.testing()

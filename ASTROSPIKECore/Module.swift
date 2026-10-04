@@ -1056,6 +1056,7 @@ public struct SimulationEngine: Sendable {
                 if reason == .goal, let goal = goals.next(),
                    let credit = state.stats.creditGoal(
                        lastPlay: state.balls[goal.key].lastPlay,
+                       pulledBy: beamPuller(of: goal.key),
                        defending: goal.value
                    ) {
                     events.append(.goalScored(seat: credit.seat, style: credit.style))
@@ -1434,6 +1435,17 @@ public struct SimulationEngine: Sendable {
     /// enough to release and fire, short enough that the ball is still
     /// sitting where the beam left it.
     public static let slamWindow = 0.6
+    /// A goal still counts as beamed in for this long after the grip lapses:
+    /// the ball leaving the cone on its way through the face is still the
+    /// beam's goal.
+    public static let slamPullGrace = 0.1
+
+    /// The pilot whose beam has this ball right now, or had it a moment ago.
+    private func beamPuller(of ballIndex: Int) -> Seat? {
+        guard state.balls.indices.contains(ballIndex), let hold = state.balls[ballIndex].beamHold else { return nil }
+        let grace = UInt64((Self.slamPullGrace / configuration.stepDuration).rounded())
+        return state.tick &- hold.tick <= grace ? hold.seat : nil
+    }
 
     private mutating func applyTractorBeam(dt: Double, ballIndex: Int) {
         let range = configuration.tractorRange

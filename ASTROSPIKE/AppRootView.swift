@@ -24,6 +24,9 @@ struct AppRootView: View {
     /// Consumed by the first GameView; cleared on appear so Challenge does not
     /// inherit `--results-win` / `--results-lose`.
     @State private var resultsPreviewWinner: Team?
+    /// Incoming invites whose banner the pilot closed. They stay in INVITES;
+    /// only the banner goes.
+    @State private var shelvedInvites: Set<String> = []
     @Environment(\.scenePhase) private var scenePhase
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
@@ -90,6 +93,11 @@ struct AppRootView: View {
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
         // `--lobby` opens the board straight away; the simulator cannot tap it.
         _sheet = State(initialValue: lobbyMode ? .lobby : nil)
+        #if DEBUG
+        // `--invite-preview` puts a sample ask in the inbox: no simulator can
+        // receive one, and the banner and INVITES both need screenshots.
+        if arguments.contains("--invite-preview") { _lobby = State(initialValue: LobbyService(previewInvites: true)) }
+        #endif
     }
 
     var body: some View {
@@ -135,12 +143,36 @@ struct AppRootView: View {
                 }
                 .transition(.opacity)
             } else {
-                HomeView(online: online, profile: profile, sheet: $sheet) { mode in
+                HomeView(online: online, profile: profile, invitesWaiting: lobby.standingInviteInbox.count, sheet: $sheet) { mode in
                     withAnimation(.easeOut(duration: 0.25)) { gameMode = mode }
                 }
                 .transition(.opacity)
             }
+            if let invite = bannerInvite {
+                IncomingInviteBanner(invite: invite) {
+                    shelvedInvites.insert(invite.id)
+                    lobby.answerStandingInvite(invite, accept: true, using: online)
+                } later: {
+                    withAnimation(.easeOut(duration: 0.2)) { _ = shelvedInvites.insert(invite.id) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
+        .animation(.easeOut(duration: 0.25), value: bannerInvite?.id)
+        // Invites arrive in the app, not only as Apple's banner: while the
+        // pilot is on the menus or in the bay, look for new asks and for an
+        // answer to the one this pilot is waiting on.
+        .task(id: isWatchingInvites) {
+            guard isWatchingInvites else { return }
+            while !Task.isCancelled {
+                await lobby.refresh()
+                lobby.watchInGameInvite(using: online)
+                try? await Task.sleep(for: .seconds(LobbyService.pollSeconds))
+            }
+        }
+        .onChange(of: online.meetingTag) { _, _ in syncLobbyActivity() }
         .preferredColorScheme(.dark)
         .task {
             online.localHull = profile.selectedHull
@@ -245,13 +277,13 @@ struct AppRootView: View {
                 }
                 .presentationDetents([.large])
             case .tableInvite:
-                InviteSheet(online: online, format: .addToTable) { _ in }
+                InviteSheet(online: online, lobby: lobby, format: .addToTable) { _ in }
                     .presentationDetents([.medium, .large])
             case .stats:
                 StatsSheet()
                     .presentationDetents([.medium, .large])
             case .invite:
-                InviteSheet(online: online) { teamUp in
+                InviteSheet(online: online, lobby: lobby) { teamUp in
                     sheet = nil
                     // Let the sheet finish dismissing before Game Center's own
                     // picker takes the top of the stack.
@@ -273,7 +305,22 @@ struct AppRootView: View {
         case .solo, .doubles, .practice, .volleyball, .basketball: .solo
         case nil: if case .matching = online.status { .matching } else { .idle }
         }
-        lobby.setActivity(activity, matchID: activity == .playing ? lobby.hostedDuel?.id : nil)
+        // While hosting an in-game invite, the presence names it: that is
+        // how the guest's JOIN knows to meet this pilot in the pool.
+        lobby.setActivity(activity, matchID: activity == .playing ? lobby.hostedDuel?.id
+                          : activity == .matching ? online.meetingTag : nil)
+    }
+
+    private var isWatchingInvites: Bool {
+        scenePhase == .active && !showTrack && (gameMode == nil || gameMode == .warmup)
+    }
+
+    /// The newest ask the pilot has not closed, while they are on the home
+    /// screen with nothing over it.
+    private var bannerInvite: StandingInvite? {
+        guard gameMode == nil, sheet == nil, !showOnboarding, !showTrack else { return nil }
+        if case .matching = online.status { return nil }
+        return lobby.standingInviteInbox.first { !shelvedInvites.contains($0.id) }
     }
 
     /// The host puts the duel on the lobby's board as soon as the table is
@@ -371,13 +418,17 @@ private enum InviteFormat: Hashable {
 
 private struct InviteSheet: View {
     let online: OnlineMatchCoordinator
+    /// The INVITES hub: asks waiting on this pilot, asks out, and who is in
+    /// the app now. Nil for team-up, which only sends.
+    var lobby: LobbyService?
     let openPicker: (_ teamUp: Bool) -> Void
     @State private var format: InviteFormat
     @State private var picked: Set<String> = []
     @Environment(\.dismiss) private var dismiss
 
-    init(online: OnlineMatchCoordinator, format: InviteFormat = .duel, openPicker: @escaping (_ teamUp: Bool) -> Void) {
+    init(online: OnlineMatchCoordinator, lobby: LobbyService? = nil, format: InviteFormat = .duel, openPicker: @escaping (_ teamUp: Bool) -> Void) {
         self.online = online
+        self.lobby = lobby
         self.openPicker = openPicker
         _format = State(initialValue: format)
     }
@@ -396,7 +447,7 @@ private struct InviteSheet: View {
 
     private var guidance: String {
         switch format {
-        case .duel: "Pick a pilot. You fly in the warm-up bay while they answer."
+        case .duel: "Pick a pilot. If they are in the app it rings in game; if not, the ask keeps for a day and Game Center taps them."
         case .teamUp: "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
         case .openTable: "Pick up to five. The first to join starts a duel with you; anyone after watches the game in progress, then everyone flies the next: three is two against one and a bot, four is two a side. Past four, winners stay on."
         case .addToTable: "They watch the game in progress and fly the next one. Past four pilots, they wait their turn on the bench."
@@ -405,7 +456,7 @@ private struct InviteSheet: View {
 
     private var title: String {
         switch format {
-        case .duel: "INVITE A PILOT"
+        case .duel: lobby == nil ? "INVITE A PILOT" : "INVITES"
         case .teamUp: "TEAM UP"
         case .openTable: "OPEN TABLE"
         case .addToTable: "INVITE TO THE TABLE"
@@ -429,6 +480,9 @@ private struct InviteSheet: View {
                     Text(guidance)
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                if let lobby, format != .addToTable {
+                    InviteHubSections(lobby: lobby, online: online)
+                }
                 Section("RECENT PILOTS AND FRIENDS") {
                     if candidates.isEmpty {
                         if online.isLoadingInvitees {
@@ -443,7 +497,16 @@ private struct InviteSheet: View {
                     ForEach(candidates, id: \.gamePlayerID) { player in
                         let isPicked = picked.contains(player.gamePlayerID)
                         Button {
-                            guard isPicking else { online.invite([player]); return }
+                            guard isPicking else {
+                                // Through the lobby, so a pilot who is in the
+                                // app gets it in game, not as Apple's banner.
+                                if let lobby {
+                                    lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, using: online)
+                                } else {
+                                    online.invite([player])
+                                }
+                                return
+                            }
                             if isPicked {
                                 picked.remove(player.gamePlayerID)
                             } else if picked.count < pickLimit {
@@ -525,9 +588,100 @@ private struct InviteSheet: View {
     }
 }
 
+/// The in-game half of INVITES: answer what is waiting, see what is out,
+/// and ask whoever is in the app right now.
+private struct InviteHubSections: View {
+    let lobby: LobbyService
+    let online: OnlineMatchCoordinator
+
+    var body: some View {
+        let inbox = lobby.standingInviteInbox
+        let outbox = lobby.standingInviteOutbox
+        let localID = lobby.localID ?? ""
+        let pilots = lobby.snapshot.onlinePilots(at: .now, friends: lobby.friends, excluding: localID)
+        if !inbox.isEmpty {
+            Section("WAITING ON YOU · \(inbox.count)") {
+                ForEach(inbox) { invite in
+                    StandingInviteRow(invite: invite, isWaitingOnMe: true) {
+                        lobby.answerStandingInvite(invite, accept: true, using: online)
+                    } decline: {
+                        lobby.answerStandingInvite(invite, accept: false, using: online)
+                    }
+                }
+            }
+            .accessibilityIdentifier("invites-incoming")
+        }
+        if !outbox.isEmpty {
+            Section("SENT · \(outbox.count)") {
+                ForEach(outbox) { invite in
+                    StandingInviteRow(invite: invite, isWaitingOnMe: false) {} decline: {
+                        Task { await lobby.withdrawStandingInvite(invite) }
+                    }
+                }
+            }
+            .accessibilityIdentifier("invites-sent")
+        }
+        if !pilots.isEmpty {
+            Section("IN THE APP NOW · \(pilots.count)") {
+                ForEach(pilots) { pilot in
+                    PilotRow(
+                        pilot: pilot,
+                        isFriend: lobby.friends.contains(pilot.id),
+                        duel: lobby.snapshot.liveMatches(at: .now).first { $0.involves(pilot.id) },
+                        isInvited: lobby.hasStandingInvite(to: pilot.id)
+                    ) {
+                        lobby.inviteAnytime(pilotID: pilot.id, name: pilot.name, using: online)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An ask that arrived while the pilot was on the home screen. JOIN answers
+/// it; the X only puts the banner away, and the ask stays in INVITES.
+private struct IncomingInviteBanner: View {
+    let invite: StandingInvite
+    let join: () -> Void
+    let later: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            HullBadge(hull: invite.hostHull, team: .orange).frame(width: 34, height: 38)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(invite.hostName.uppercased()).font(.headline.weight(.black))
+                Text("WANTS A DUEL").font(.caption2.monospaced().weight(.bold)).foregroundStyle(.white.opacity(0.6))
+            }
+            Spacer(minLength: 12)
+            Button(action: join) {
+                Label("JOIN", systemImage: "bolt.horizontal.fill").font(.callout.weight(.bold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderedProminent).tint(.cyan)
+            .accessibilityIdentifier("invite-banner-join")
+            Button(action: later) {
+                Image(systemName: "xmark").font(.callout.weight(.bold)).frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.bordered).tint(.secondary)
+            .accessibilityLabel("Not now")
+            .accessibilityIdentifier("invite-banner-later")
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: 460)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.cyan.opacity(0.45)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("invite-banner")
+    }
+}
+
 private struct HomeView: View {
     let online: OnlineMatchCoordinator
     let profile: PilotProfileStore
+    /// Asks waiting on this pilot, shown on the INVITES tile.
+    var invitesWaiting = 0
     @Binding var sheet: MenuSheet?
     let startGame: (GameMode) -> Void
 
@@ -576,7 +730,13 @@ private struct HomeView: View {
                         MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND ON YOUR WING", icon: "person.2.fill", compact: true) { sheet = .doubles }
                     }
                     // Friend-first: invite and rematch above automatch.
-                    MenuButton(title: "INVITE FRIEND", subtitle: "DUEL A FRIEND OR RECENT OPPONENT", icon: "person.2.wave.2.fill") { sheet = .invite }
+                    MenuButton(
+                        title: "INVITES",
+                        subtitle: invitesWaiting > 0
+                            ? "\(invitesWaiting) WAITING ON YOU · ANSWER OR ASK"
+                            : "ASK A FRIEND · ANSWER IN GAME",
+                        icon: invitesWaiting > 0 ? "envelope.badge.fill" : "person.2.wave.2.fill"
+                    ) { sheet = .invite }
                     if online.canRematch {
                         MenuButton(
                             title: "REMATCH",

@@ -138,8 +138,18 @@ public struct MatchStats: Codable, Equatable, Sendable {
 
     /// Books a goal against the last play on the ball. Nil when nobody had
     /// played it -- a ball that falls in off the serve is nobody's goal.
+    ///
+    /// A ball an attacker's beam is pulling as it goes in is that pilot's
+    /// slam dunk, whoever touched it last: reeling it into the net is the
+    /// play. A defender's beam on it is no slam -- that is a save that failed.
     @discardableResult
-    public mutating func creditGoal(lastPlay: BallPlay?, defending: Team) -> (seat: Seat, style: GoalStyle)? {
+    public mutating func creditGoal(lastPlay: BallPlay?, pulledBy: Seat? = nil, defending: Team) -> (seat: Seat, style: GoalStyle)? {
+        if let puller = pulledBy, puller.team != defending {
+            self[puller].goals += 1
+            self[puller].slamDunks += 1
+            if let play = lastPlay, play.seat == puller, play.kind != .hull { self[puller].boltGoals += 1 }
+            return (puller, .slamDunk)
+        }
         guard let play = lastPlay else { return nil }
         if play.seat.team == defending {
             self[play.seat].ownGoals += 1
