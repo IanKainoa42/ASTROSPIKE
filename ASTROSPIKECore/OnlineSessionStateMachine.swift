@@ -450,11 +450,22 @@ public enum OnlineTimeouts {
     /// An invitee whose host dropped before seating them waits this long for
     /// the host's automatic re-invite, not the full invite window.
     public static let relinkSeconds = 60
+    /// An invitee has already answered: the host sent the invite and is in
+    /// the bay. If its phone has not connected in this long it is not
+    /// coming, and five minutes under JOINING read as a hang.
+    public static let inviteeConnectSeconds = 45
+    /// Every invited pilot has said yes, so the inviter is no longer waiting
+    /// on a person -- only on the link. The door shrinks to this.
+    public static let acceptedConnectSeconds = 45
+    /// How long an invitee waits for Game Center to hand back the match it
+    /// accepted before saying so, instead of JOINING forever.
+    public static let joinAnswerSeconds = 20
 
     public static func connectSeconds(role: OnlineMatchRole) -> Int {
         switch role {
         case .automatch: automatchConnectSeconds
-        case .inviter, .invitee: inviteConnectSeconds
+        case .inviter: inviteConnectSeconds
+        case .invitee: inviteeConnectSeconds
         }
     }
 }

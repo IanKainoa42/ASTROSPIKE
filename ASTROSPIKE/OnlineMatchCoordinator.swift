@@ -409,6 +409,17 @@ final class OnlineMatchCoordinator: NSObject,
     /// Invited pilots who said no (or never answered): seats that will stay
     /// empty, so the match can start without waiting for them.
     private var declinedInvites = 0
+    /// The generation of our own `findMatch` while GameKit still owes us its
+    /// completion -- the only thing `GKMatchmaker.cancel()` is safe to aim at.
+    /// Once the match is back, a cancel lands on whatever is pending next:
+    /// with crossed invites that was the join, and the accepter sat under
+    /// JOINING with no answer ever coming.
+    private var findMatchGeneration: Int?
+    /// Every pilot we invited said yes, so the door is only waiting on the
+    /// link now, not on a person.
+    private var invitesAllAccepted = false
+    /// Gives up on a `match(for: invite)` that never calls back.
+    private var joinWatchdog: Task<Void, Never>?
     /// The team that walked out, so the forfeit goes to the other side.
     private var pendingForfeitWinner: Team?
     /// Who the current hold is for. When it runs out and their side still
@@ -430,7 +441,10 @@ final class OnlineMatchCoordinator: NSObject,
     /// How long a table gets to fill, by how it was called. An automatch is
     /// a server search; an invitation is a person who has to be pushed,
     /// unlocked and cold-started. See `OnlineTimeouts`.
-    private var connectTimeoutSeconds: Int { OnlineTimeouts.connectSeconds(role: role) }
+    private var connectTimeoutSeconds: Int {
+        role == .inviter && invitesAllAccepted ? OnlineTimeouts.acceptedConnectSeconds
+            : OnlineTimeouts.connectSeconds(role: role)
+    }
     private var lastAuthoritativeState: WorldState?
     private var pendingResync: WorldState?
     /// Game Center ID of whoever runs the rules. A guest that outlives the
@@ -756,6 +770,8 @@ final class OnlineMatchCoordinator: NSObject,
     func cancelMatchmaking() {
         matchmakingGeneration += 1
         GKMatchmaker.shared().cancel()
+        findMatchGeneration = nil
+        joinWatchdog?.cancel()
         if case .matching = status {
             note("MATCHMAKING: CANCELLED BY PILOT")
             status = .ready(playerName: GKLocalPlayer.local.displayName)
@@ -821,6 +837,7 @@ final class OnlineMatchCoordinator: NSObject,
         let recipientCount = recipients?.count ?? 0
         role = recipients != nil ? .inviter : .automatch
         declinedInvites = 0
+        invitesAllAccepted = false
         matchmakingGeneration += 1
         let generation = matchmakingGeneration
         request.recipientResponseHandler = { [weak self] player, response in
@@ -833,7 +850,19 @@ final class OnlineMatchCoordinator: NSObject,
                     kind: Self.inviteKind(response)
                 )
                 self.inviteNotice = notice.message
-                guard response != .accepted else { return }
+                guard response != .accepted else {
+                    // A one-pilot invite that was accepted is waiting on the
+                    // link, not a locked phone: close the door in under a
+                    // minute instead of five, so a link that never forms
+                    // says so.
+                    guard recipientCount == 1 else { return }
+                    self.invitesAllAccepted = true
+                    if self.lifecycle.phase == .configuring,
+                       (self.doorSecondsRemaining ?? 0) > OnlineTimeouts.acceptedConnectSeconds {
+                        self.beginConnectWait()
+                    }
+                    return
+                }
                 let refusalReason = OnlineFailureReason.refusalReason(from: Self.inviteKind(response))
                 // Game Center giving up on delivery is not the pilot saying no.
                 // The invitation is still sitting on their phone, so hold the
@@ -861,6 +890,7 @@ final class OnlineMatchCoordinator: NSObject,
                     self.note("EVERY INVITE REFUSED · CALLING IT")
                     self.matchmakingGeneration += 1
                     GKMatchmaker.shared().cancel()
+                    self.findMatchGeneration = nil
                     self.status = .failed(reason: .allInvitesRefused(
                         lastPilotName: player.displayName,
                         lastReason: refusalReason
@@ -884,10 +914,13 @@ final class OnlineMatchCoordinator: NSObject,
             note("QUICK MATCH: SEARCHING")
         }
         status = .matching
+        findMatchGeneration = generation
         GKMatchmaker.shared().findMatch(for: request) { [weak self] match, error in
             nonisolated(unsafe) let match = match
             Task { @MainActor in
-                guard let self, generation == self.matchmakingGeneration,
+                guard let self else { return }
+                if self.findMatchGeneration == generation { self.findMatchGeneration = nil }
+                guard generation == self.matchmakingGeneration,
                       case .matching = self.status else { return }
                 if let error {
                     let detail = self.describe(error)
@@ -990,6 +1023,7 @@ final class OnlineMatchCoordinator: NSObject,
         role = inviteOnly ? .inviter : .automatch
         openTableRequested = false
         declinedInvites = 0
+        invitesAllAccepted = false
         matchmakingGeneration += 1
         matchmakingHeadlineText = nil
         note(inviteOnly ? "MATCHMAKER: INVITE PICKER OPEN" : "MATCHMAKER: QUICK MATCH SEARCHING")
@@ -2282,10 +2316,11 @@ final class OnlineMatchCoordinator: NSObject,
         // asynchronously, and with nothing of ours pending it can land on
         // the join below instead: the host sees us connect and drop in the
         // same second, and we sit in the bay on a dead match.
-        let ownSearchIsOut = status == .matching && role != .invitee
+        let ownSearchIsOut = findMatchGeneration != nil
         matchmakingGeneration += 1
         let generation = matchmakingGeneration
         if ownSearchIsOut { GKMatchmaker.shared().cancel() }
+        findMatchGeneration = nil
         role = .invitee
         declinedInvites = 0
         openTableRequested = false
@@ -2297,11 +2332,30 @@ final class OnlineMatchCoordinator: NSObject,
             ? PlayerNetworkCopy.Matchmaking.rejoining(senderDisplayName)
             : PlayerNetworkCopy.Matchmaking.joining(senderDisplayName)
         status = .matching
+        joinWatchdog?.cancel()
+        joinWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(OnlineTimeouts.joinAnswerSeconds))
+            guard let self, !Task.isCancelled, generation == self.matchmakingGeneration,
+                  case .matching = self.status else { return }
+            self.note("INVITE JOIN TIMED OUT: GAME CENTER NEVER ANSWERED IN \(OnlineTimeouts.joinAnswerSeconds)s")
+            // A late answer belongs to a join we have already given up on.
+            self.matchmakingGeneration += 1
+            self.status = .failed(reason: .inviteJoinFailed(
+                underlyingMessage: "Couldn't reach \(senderDisplayName). Ask them to invite you again."
+            ))
+        }
         GKMatchmaker.shared().match(for: invite) { [weak self] match, error in
             nonisolated(unsafe) let match = match
             Task { @MainActor in
-                guard let self, generation == self.matchmakingGeneration,
-                      case .matching = self.status else { return }
+                guard let self else { return }
+                guard generation == self.matchmakingGeneration,
+                      case .matching = self.status else {
+                    // Given up on, or superseded: don't leave its link open
+                    // and pointed at the host.
+                    if let match, match !== self.match { match.disconnect() }
+                    return
+                }
+                self.joinWatchdog?.cancel()
                 if let error {
                     let detail = self.describe(error)
                     self.note("INVITE JOIN FAILED: \(detail)")
@@ -2394,6 +2448,7 @@ final class OnlineMatchCoordinator: NSObject,
         readyPeers = []
         role = .automatch
         declinedInvites = 0
+        invitesAllAccepted = false
         pendingForfeitWinner = nil
         droppedPilots = []
         teamUp = false

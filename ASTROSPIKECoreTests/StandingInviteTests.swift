@@ -153,8 +153,17 @@ private func invite(
     @Test func aPersonGetsLongerThanAMatchmakingServer() {
         #expect(OnlineTimeouts.connectSeconds(role: .automatch) == OnlineTimeouts.automatchConnectSeconds)
         #expect(OnlineTimeouts.connectSeconds(role: .inviter) == OnlineTimeouts.inviteConnectSeconds)
-        #expect(OnlineTimeouts.connectSeconds(role: .invitee) == OnlineTimeouts.inviteConnectSeconds)
         // The whole point: an invite must outlast a locked phone.
         #expect(OnlineTimeouts.inviteConnectSeconds > OnlineTimeouts.automatchConnectSeconds * 2)
+    }
+
+    @Test func anInviteeWhoAnsweredDoesNotWaitOutALockedPhone() {
+        // The invitee already said yes and the host is in the bay: no person
+        // is left to wait for, so JOINING must give up in under a minute.
+        #expect(OnlineTimeouts.connectSeconds(role: .invitee) == OnlineTimeouts.inviteeConnectSeconds)
+        #expect(OnlineTimeouts.inviteeConnectSeconds <= 60)
+        #expect(OnlineTimeouts.acceptedConnectSeconds < OnlineTimeouts.inviteConnectSeconds)
+        // Game Center's answer comes well inside the connect window.
+        #expect(OnlineTimeouts.joinAnswerSeconds < OnlineTimeouts.inviteeConnectSeconds)
     }
 }
