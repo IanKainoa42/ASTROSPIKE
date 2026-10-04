@@ -1,4 +1,5 @@
 import ASTROSPIKECore
+import GameKit
 import Observation
 import QuartzCore
 import SwiftUI
@@ -97,6 +98,11 @@ final class GameSession {
     private(set) var events: [SimulationEvent] = []
     private(set) var countdown = 3
     private(set) var lastPointText: String?
+    /// Plays called by name while the rally runs -- zaps, slams, saves --
+    /// newest last, each for a couple of seconds.
+    private(set) var callouts: [PlayCallout] = []
+    private var calloutSerial = 0
+    static let calloutLife: CFTimeInterval = 2.4
     /// What the last cue said, so the sound fires on the way up and not on
     /// every frame the score sits there.
     private var announcedStakes: (cyan: Stake, orange: Stake) = (.none, .none)
@@ -242,7 +248,7 @@ final class GameSession {
             )
             staged.stats = MatchStats(
                 pilots: [
-                    .cyan: PilotStats(goals: 3, boltGoals: 2, slamDunks: 1, zaps: 2),
+                    .cyan: PilotStats(goals: 3, boltGoals: 2, slamDunks: 1, zaps: 2, saves: 3, closeSaves: 1, beamSaves: 1),
                     .orange: PilotStats(goals: 2, boltGoals: 1, zaps: 5),
                 ],
                 longestRally: 7
@@ -280,7 +286,7 @@ final class GameSession {
             engine.finishByForfeit(winner: winner)
             // A sample book, so the preview shows the stat line filled in.
             engine.state.stats = MatchStats(
-                pilots: [localSeat: PilotStats(goals: 6, boltGoals: 3, slamDunks: 1, zaps: 4)],
+                pilots: [localSeat: PilotStats(goals: 6, boltGoals: 3, slamDunks: 1, zaps: 4, saves: 2, closeSaves: 1, boltSaves: 1)],
                 longestRally: 9
             )
             state = engine.state
@@ -423,6 +429,7 @@ final class GameSession {
         countdownAccumulator = 0
         accumulator = 0
         lastPointText = nil
+        callouts = []
         announcedStakes = (.none, .none)
         isPaused = false
         torque = 0
@@ -475,6 +482,9 @@ final class GameSession {
         }
         let elapsed = min(timestamp - previousTimestamp, 0.1)
         self.previousTimestamp = timestamp
+        if let oldest = callouts.first, timestamp - oldest.born > Self.calloutLife {
+            callouts.removeAll { timestamp - $0.born > Self.calloutLife }
+        }
         // Ahead of the pause guard on purpose. A pause with the throttle down
         // has to let the bed coast to silence rather than freeze mid-swell.
         driveThrusterBed(dt: elapsed)
@@ -622,7 +632,7 @@ final class GameSession {
                 FeedbackCenter.shared.point(team: team, reason: reason)
             }
             if let shot = events.first(where: { if case .goalScored = $0 { true } else { false } }),
-               let text = shot.goalLabel(localSeat: flownSeat) {
+               let text = shot.goalLabel(name: callSign) {
                 lastPointText = text
             }
         } else if presentsLocalEvents, events.contains(.rallyReset) {
@@ -630,9 +640,11 @@ final class GameSession {
         }
         if presentsLocalEvents,
            let set = events.first(where: { if case .setEnded = $0 { true } else { false } }) {
+            callouts = []
             lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces)
         }
         for event in events where presentsLocalEvents {
+            callOut(event)
             if case .collisionEffect = event { FeedbackCenter.shared.impactHaptic() }
             if case let .shipZapped(seat, _) = event, seat == flownSeat { FeedbackCenter.shared.impact() }
             if case let .matchEnded(winner) = event, !isSpectator {
@@ -670,6 +682,45 @@ final class GameSession {
         }
         guard previous != .finished, state.match.winner != nil, keepsStats, !isResultsPreview else { return }
         newBests = StatsReporter.report(state.stats, for: localSeat)
+    }
+
+    /// The name a call goes out under: the pilot's Game Center name online,
+    /// yours on this phone when you are signed in, CPU for every seat a bot
+    /// flies. The callout's colour says which side.
+    func callSign(_ seat: Seat) -> String {
+        if case .online = mode, let online,
+           let id = online.seating.first(where: { $0.value == seat })?.key {
+            return online.pilotName(id).uppercased()
+        }
+        if seat == flownSeat {
+            return GKLocalPlayer.local.isAuthenticated ? GKLocalPlayer.local.displayName.uppercased() : "YOU"
+        }
+        return "CPU"
+    }
+
+    /// Puts a `.play` event on the feed. A repeat of a call still on screen
+    /// replaces it rather than stacking, so a burst of zaps reads as one.
+    private func callOut(_ event: SimulationEvent) {
+        guard case let .play(seat, call) = event else { return }
+        let name = callSign(seat)
+        let text: String
+        switch call {
+        case let .zap(victim):
+            text = "ZAP  \(name) → \(callSign(victim))"
+        case .slam:
+            text = "SLAM  \(name)"
+        case let .save(kind, close):
+            let what = switch kind {
+            case .hull: "SAVE"
+            case .bolt: "BOLT SAVE"
+            case .beam: "BEAM SAVE"
+            }
+            text = (close ? "CLOSE " : "") + what + "  \(name)"
+        }
+        callouts.removeAll { $0.text == text }
+        calloutSerial += 1
+        callouts.append(PlayCallout(id: calloutSerial, text: text, team: seat.team, born: CACurrentMediaTime()))
+        if callouts.count > 3 { callouts.removeFirst(callouts.count - 3) }
     }
 
     /// Whether this board has a pilot whose match counts: a real match --
@@ -844,10 +895,13 @@ final class GameSession {
                 )
                 FeedbackCenter.shared.point(team: team, reason: reason)
             case .goalScored:
-                if let text = event.goalLabel(localSeat: self.flownSeat) { self.lastPointText = text }
+                if let text = event.goalLabel(name: self.callSign) { self.lastPointText = text }
+            case .play:
+                self.callOut(event)
             case .rallyReset:
                 self.lastPointText = nil
             case .setEnded:
+                self.callouts = []
                 self.lastPointText = event.label(
                     bounceAllowance: self.engine.configuration.allowedFloorBounces
                 )
@@ -948,16 +1002,23 @@ private extension SimulationEvent {
         }
     }
 
-    /// The call for how a goal went in. Nil for a plain hull goal: the
-    /// point's own "CYAN GOAL" already says it.
-    func goalLabel(localSeat: Seat?) -> String? {
+    /// The call for how a goal went in, under the scorer's name.
+    func goalLabel(name: (Seat) -> String) -> String? {
         guard case let .goalScored(seat, style) = self else { return nil }
-        let who = seat == localSeat ? "YOU" : (seat.team == .cyan ? "CYAN" : "ORANGE")
+        let who = name(seat)
         return switch style {
-        case .hull: nil
+        case .hull: "GOAL — \(who)"
         case .bolt: "BOLT GOAL — \(who)"
         case .slamDunk: "SLAM DUNK — \(who)"
-        case .ownGoal: "OWN GOAL — \(seat.team.opponent == .cyan ? "CYAN" : "ORANGE")"
+        case .ownGoal: "OWN GOAL — \(who)"
         }
     }
+}
+
+/// One play on the call feed.
+struct PlayCallout: Identifiable, Equatable {
+    let id: Int
+    let text: String
+    let team: Team
+    let born: CFTimeInterval
 }

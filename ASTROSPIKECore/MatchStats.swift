@@ -13,6 +13,25 @@ public enum GoalStyle: String, Codable, Equatable, Sendable {
     case ownGoal
 }
 
+/// What stopped a ball that was going in.
+public enum SaveKind: String, Codable, Equatable, Sendable {
+    case hull
+    case bolt
+    case beam
+}
+
+/// A play called out by name while the rally runs.
+public enum PlayCall: Codable, Equatable, Sendable {
+    /// A bolt landed on `victim`'s hull.
+    case zap(victim: Seat)
+    /// A bolt hit a ball the shooter's side had in its beam a moment
+    /// before. If that ball goes in, it is a slam dunk.
+    case slam
+    /// The ball was going in and this play kept it out. Close: it was
+    /// under a third of a second from the goal.
+    case save(SaveKind, close: Bool)
+}
+
 /// The last thing to play a ball: whose hull or bolt, and whether that bolt
 /// was a slam. Walls, the floor and the other ball do not change it -- a
 /// shot that banks in is still the shooter's.
@@ -58,6 +77,15 @@ public struct PilotStats: Codable, Equatable, Sendable {
     public var boltHits: Int
     /// Bolts that landed on an enemy hull.
     public var zaps: Int
+    /// Balls that were going into your goal and didn't, because you played
+    /// them: every kind below included.
+    public var saves: Int
+    /// Saves on a ball under a third of a second from going in.
+    public var closeSaves: Int
+    /// Saves off one of your bolts.
+    public var boltSaves: Int
+    /// Saves your tractor beam made.
+    public var beamSaves: Int
 
     public init(
         goals: Int = 0,
@@ -66,7 +94,11 @@ public struct PilotStats: Codable, Equatable, Sendable {
         ownGoals: Int = 0,
         hits: Int = 0,
         boltHits: Int = 0,
-        zaps: Int = 0
+        zaps: Int = 0,
+        saves: Int = 0,
+        closeSaves: Int = 0,
+        boltSaves: Int = 0,
+        beamSaves: Int = 0
     ) {
         self.goals = goals
         self.boltGoals = boltGoals
@@ -75,6 +107,10 @@ public struct PilotStats: Codable, Equatable, Sendable {
         self.hits = hits
         self.boltHits = boltHits
         self.zaps = zaps
+        self.saves = saves
+        self.closeSaves = closeSaves
+        self.boltSaves = boltSaves
+        self.beamSaves = beamSaves
     }
 }
 
@@ -133,6 +169,10 @@ public struct MatchStats: Codable, Equatable, Sendable {
             sum.hits += pilot.hits
             sum.boltHits += pilot.boltHits
             sum.zaps += pilot.zaps
+            sum.saves += pilot.saves
+            sum.closeSaves += pilot.closeSaves
+            sum.boltSaves += pilot.boltSaves
+            sum.beamSaves += pilot.beamSaves
         }
     }
 

@@ -215,3 +215,134 @@ struct MatchStatsTests {
         }
     }
 }
+
+/// Build 126: saves. A save is a defender's play on a ball that, left
+/// alone, was going into their goal -- and the ball then stayed out. Every
+/// scenario here has a control: the same ball with nobody playing it goes in.
+@Suite("Saves")
+struct SaveTests {
+    /// Ships parked out of the way; the ball `gap` short of the cyan face,
+    /// at mid-mouth, flying in at `speed`.
+    private func ballBoundForCyan(gap: Double, speed: Double) -> SimulationEngine {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        engine.state.ships[.cyan]!.position = .init(-0.75, -0.40)
+        engine.state.ships[.orange]!.position = .init(0.75, -0.40)
+        let arena = engine.arena
+        let mouthY = (arena.netBottomY + arena.portalMouthTopY) / 2
+        engine.state.ball = BallState(
+            position: SIMD2(-(arena.netHalfWidth + BallState.nominalRadius + gap), mouthY),
+            velocity: SIMD2(speed, 0),
+            radius: BallState.nominalRadius,
+            lastPlay: BallPlay(seat: .orange, kind: .hull)
+        )
+        return engine
+    }
+
+    /// Steps `count` times and returns every event seen.
+    private func run(
+        _ engine: inout SimulationEngine,
+        _ count: Int,
+        cyan: (UInt64) -> PlayerInput = { .idle(tick: $0) }
+    ) -> [SimulationEvent] {
+        var events: [SimulationEvent] = []
+        for tick in UInt64(0) ..< UInt64(count) {
+            engine.step(inputs: [.cyan: cyan(tick)])
+            events += engine.lastEvents
+            if engine.state.match.phase != .playing { break }
+        }
+        return events
+    }
+
+    private func saves(_ events: [SimulationEvent]) -> [PlayCall] {
+        events.compactMap { if case let .play(_, call) = $0, case .save = call { call } else { nil } }
+    }
+
+    @Test("Control: the ball left alone goes in")
+    func controlGoesIn() {
+        var engine = ballBoundForCyan(gap: 0.15, speed: 1.0)
+        _ = run(&engine, 120)
+        #expect(engine.state.match.score.orange == 1)
+    }
+
+    @Test("A bolt knocking a ball out of the mouth is a close bolt save")
+    func boltSave() {
+        var engine = ballBoundForCyan(gap: 0.15, speed: 1.0)
+        engine.state.bolts = [BoltState(
+            id: 900, owner: .cyan, position: engine.state.ball.position + .init(0.02, -0.10),
+            velocity: .init(0, 2.6), ticksRemaining: 60
+        )]
+        let events = run(&engine, 240)
+        #expect(engine.state.match.score.orange == 0, "the bolt kept it out")
+        #expect(engine.state.stats[.cyan].saves == 1)
+        #expect(engine.state.stats[.cyan].boltSaves == 1)
+        #expect(engine.state.stats[.cyan].closeSaves == 1)
+        #expect(saves(events) == [.save(.bolt, close: true)])
+    }
+
+    @Test("A bolt that drives the ball in anyway is no save")
+    func boltThatScoresIsNoSave() {
+        var engine = ballBoundForCyan(gap: 0.15, speed: 1.0)
+        engine.state.bolts = [BoltState(
+            id: 900, owner: .cyan, position: engine.state.ball.position + .init(-0.10, 0),
+            velocity: .init(2.6, 0), ticksRemaining: 60
+        )]
+        let events = run(&engine, 240)
+        #expect(engine.state.match.score.orange == 1)
+        #expect(engine.state.stats[.cyan].saves == 0)
+        #expect(saves(events).isEmpty)
+    }
+
+    @Test("Playing a ball that was going nowhere near the goal is no save")
+    func awayIsNoSave() {
+        var engine = ballBoundForCyan(gap: 0.15, speed: -0.6)
+        engine.state.bolts = [BoltState(
+            id: 900, owner: .cyan, position: engine.state.ball.position + .init(0.02, -0.10),
+            velocity: .init(0, 2.6), ticksRemaining: 60
+        )]
+        let events = run(&engine, 240)
+        #expect(engine.state.stats[.cyan].boltHits == 1)
+        #expect(engine.state.stats[.cyan].saves == 0)
+        #expect(saves(events).isEmpty)
+    }
+
+    @Test("The tractor beam hauling a ball back out of the mouth is a beam save")
+    func beamSave() {
+        var engine = ballBoundForCyan(gap: 0.12, speed: 0.4)
+        let ball = engine.state.ball.position
+        engine.state.ships[.cyan]!.position = ball - .init(0.20, 0)
+        engine.state.ships[.cyan]!.velocity = .zero
+        engine.state.ships[.cyan]!.angle = 0
+        let events = run(&engine, 240) { PlayerInput(tick: $0, torque: 0, thrust: false, tractor: true) }
+        #expect(engine.state.match.score.orange == 0, "the beam kept it out")
+        #expect(engine.state.stats[.cyan].beamSaves == 1)
+        #expect(saves(events).count == 1)
+    }
+
+    @Test("A guest's board books no saves")
+    func guestBooksNoSaves() {
+        var engine = ballBoundForCyan(gap: 0.15, speed: 1.0)
+        engine.followsHost = true
+        engine.state.bolts = [BoltState(
+            id: 900, owner: .cyan, position: engine.state.ball.position + .init(0.02, -0.10),
+            velocity: .init(0, 2.6), ticksRemaining: 60
+        )]
+        _ = run(&engine, 240)
+        #expect(engine.state.stats[.cyan].saves == 0)
+    }
+
+    @Test("A zap is called with shooter and victim; a slam bolt is called")
+    func zapAndSlamCalls() {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        engine.state.ball.position = .init(0.6, 0.45)
+        engine.state.ball.velocity = .zero
+        let target = engine.state.ships[.cyan]!.position
+        engine.state.bolts = [BoltState(
+            id: 900, owner: .orange, position: target + .init(0.15, 0),
+            velocity: .init(-2.6, 0), ticksRemaining: 60
+        )]
+        let events = run(&engine, 10)
+        #expect(events.contains(.play(seat: .orange, call: .zap(victim: .cyan))))
+    }
+}

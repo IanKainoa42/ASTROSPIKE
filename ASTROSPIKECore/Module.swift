@@ -492,7 +492,7 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// if it went in the far face, as in a match. Flight is a match's.
     public var sandbox: Bool
     /// What an enemy bolt does to a hull besides shove it.
-    public var boltHit: BoltHit = .spin
+    public var boltHit: BoltHit = .stun
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -634,9 +634,29 @@ public struct SimulationEngine: Sendable {
     private var playsThisStep: [StatPlay] = []
     private enum StatPlay {
         case hit(Seat)
-        case boltHit(Seat)
-        case zap(Seat)
+        case boltHit(Seat, slam: Bool)
+        case zap(Seat, victim: Seat)
     }
+    /// Every hull, bolt and beam grab that played a ball this step, in the
+    /// order the physics saw them: the candidates for a save.
+    private var defencePlays: [(ball: Int, seat: Seat, kind: SaveKind)] = []
+    /// Saves waiting on the ball: booked once the moment the ghost said it
+    /// would have gone in has passed with the ball still out. Host only, like
+    /// the rest of the book.
+    private var pendingSaves: [PendingSave] = []
+    private struct PendingSave {
+        var ball: Int
+        var seat: Seat
+        var kind: SaveKind
+        var close: Bool
+        var deadline: UInt64
+    }
+    /// No new save on a ball until this tick, so a ball pinned against a
+    /// hull near the goal cannot farm them.
+    private var saveGuardUntil: [Int: UInt64] = [:]
+    /// A throwaway copy rolled forward to ask "would that have gone in?".
+    /// It never looks for saves itself.
+    private var isGhost = false
 
     public init(
         state: WorldState,
@@ -826,6 +846,7 @@ public struct SimulationEngine: Sendable {
         var contacts: [RuleContact] = []
         var collisionEffects: [SimulationEvent] = []
         playsThisStep.removeAll()
+        defencePlays.removeAll()
         let previousShipPositions = state.ships.mapValues(\.position)
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed else { continue }
@@ -906,6 +927,10 @@ public struct SimulationEngine: Sendable {
             return
         }
 
+        // The board as it stood before the ball moved, for the save ghost.
+        // Only the rulebook's board keeps the book, so only it pays for one.
+        let beforeBall: SimulationEngine? = isGhost || followsHost || configuration.sandbox || arena.hoop != nil
+            ? nil : self
         let previousBallPositions = state.balls.map(\.position)
         goalsThisStep.removeAll()
         for ballIndex in state.balls.indices {
@@ -970,7 +995,7 @@ public struct SimulationEngine: Sendable {
 
         let wasPlaying = rules.state.phase == .playing
         var ruleEvents = rules.resolve(contacts, goalsKeepPlaying: state.balls.count > 1)
-        if wasPlaying { ruleEvents = bookStats(contacts: contacts, ruleEvents: ruleEvents) }
+        if wasPlaying { ruleEvents = bookStats(contacts: contacts, ruleEvents: ruleEvents, before: beforeBall) }
         lastEvents = ruleEvents + collisionEffects
         state.match = rules.state
         if state.match.phase == .playing {
@@ -999,14 +1024,25 @@ public struct SimulationEngine: Sendable {
     /// set point stops the second -- to the last play on that ball. Returns
     /// the rule events with a `goalScored` slotted in after each goal's
     /// point, so every board names the shot alongside the score.
-    private mutating func bookStats(contacts: [RuleContact], ruleEvents: [SimulationEvent]) -> [SimulationEvent] {
+    private mutating func bookStats(
+        contacts: [RuleContact],
+        ruleEvents: [SimulationEvent],
+        before: SimulationEngine?
+    ) -> [SimulationEvent] {
+        var calls: [SimulationEvent] = []
         for play in playsThisStep {
             switch play {
-            case let .hit(seat): state.stats[seat].hits += 1
-            case let .boltHit(seat): state.stats[seat].boltHits += 1
-            case let .zap(seat): state.stats[seat].zaps += 1
+            case let .hit(seat):
+                state.stats[seat].hits += 1
+            case let .boltHit(seat, slam):
+                state.stats[seat].boltHits += 1
+                if slam { calls.append(.play(seat: seat, call: .slam)) }
+            case let .zap(seat, victim):
+                state.stats[seat].zaps += 1
+                calls.append(.play(seat: seat, call: .zap(victim: victim)))
             }
         }
+        calls += bookSaves(before: before)
         for contact in contacts {
             if case .ballCrossedCenter = contact { state.stats.ballCrossedCenter() }
         }
@@ -1031,8 +1067,87 @@ public struct SimulationEngine: Sendable {
                 break
             }
         }
-        return events
+        if state.match.phase != .playing { pendingSaves.removeAll() }
+        return calls + events
     }
+
+    /// A save is a play by the defending side on a ball that, left alone,
+    /// was going in. "Left alone" is asked of a ghost: the board from before
+    /// the ball moved this step, with every ship and bolt lifted off it,
+    /// rolled forward until the ball scores, bounces or runs out of time.
+    /// The save is only booked once the ball has stayed out past the moment
+    /// the ghost said it would go in -- a beam takes a while to turn a ball,
+    /// and a touch that still lets it in was no save at all.
+    private mutating func bookSaves(before: SimulationEngine?) -> [SimulationEvent] {
+        var calls: [SimulationEvent] = []
+        for (ballIndex, defending) in goalsThisStep {
+            pendingSaves.removeAll { $0.ball == ballIndex && $0.seat.team == defending }
+        }
+        let due = pendingSaves.filter { $0.deadline <= state.tick }
+        pendingSaves.removeAll { $0.deadline <= state.tick }
+        for save in due {
+            state.stats[save.seat].saves += 1
+            if save.close { state.stats[save.seat].closeSaves += 1 }
+            switch save.kind {
+            case .hull: break
+            case .bolt: state.stats[save.seat].boltSaves += 1
+            case .beam: state.stats[save.seat].beamSaves += 1
+            }
+            calls.append(.play(seat: save.seat, call: .save(save.kind, close: save.close)))
+        }
+        guard let before else { return calls }
+        let dt = configuration.stepDuration
+        let horizon = Int((Self.saveHorizon / dt).rounded())
+        var seen: Set<Int> = []
+        for play in defencePlays where seen.insert(play.ball).inserted {
+            guard play.ball < before.state.balls.count,
+                  state.tick >= saveGuardUntil[play.ball] ?? 0,
+                  !pendingSaves.contains(where: { $0.ball == play.ball }),
+                  goalsThisStep[play.ball] == nil,
+                  state.team(onHalfAt: before.state.balls[play.ball].position.x) == play.seat.team,
+                  let ticks = before.ghostGoal(ball: play.ball, against: play.seat.team, horizon: horizon)
+            else { continue }
+            let deadline = state.tick + UInt64(ticks) + UInt64((Self.saveGrace / dt).rounded())
+            pendingSaves.append(PendingSave(
+                ball: play.ball,
+                seat: play.seat,
+                kind: play.kind,
+                close: Double(ticks) * dt <= Self.closeSaveWindow,
+                deadline: deadline
+            ))
+            saveGuardUntil[play.ball] = deadline + UInt64((Self.saveGrace / dt).rounded())
+        }
+        return calls
+    }
+
+    /// Steps the ball alone -- no ships, no bolts -- and returns how many
+    /// steps until it goes into `team`'s goal. Nil if it goes in elsewhere,
+    /// touches the floor first, or is still out at the horizon.
+    private func ghostGoal(ball index: Int, against team: Team, horizon: Int) -> Int? {
+        var ghost = self
+        ghost.isGhost = true
+        ghost.followsHost = false
+        ghost.configuration.sandbox = true
+        ghost.state.ships = [:]
+        ghost.state.bolts = []
+        ghost.state.balls = [state.balls[index]]
+        ghost.state.match.phase = .playing
+        ghost.pendingSaves = []
+        let floor = ghost.state.match.floorContacts
+        for step in 1 ... max(1, horizon) {
+            ghost.step(inputs: [:])
+            if let defending = ghost.goalsThisStep[0] { return defending == team ? step : nil }
+            if ghost.state.match.floorContacts != floor { return nil }
+        }
+        return nil
+    }
+
+    /// How far ahead the ghost looks for the goal a save stopped.
+    static let saveHorizon = 1.0
+    /// A save the ghost had going in within this long is a close one.
+    static let closeSaveWindow = 0.3
+    /// How long past the ghost's goal the ball must stay out to book it.
+    static let saveGrace = 0.3
 
     /// Seconds between the set point and the next set's serve: long enough
     /// to read the stat board and catch a breath while the ships settle on
@@ -1352,6 +1467,10 @@ public struct SimulationEngine: Sendable {
             state.balls[ballIndex].velocity -= bleed
             ship.velocity += bleed * Self.tractorMassRatio
             if grip >= Self.slamGrip {
+                let held = state.balls[ballIndex].beamHold
+                if held?.seat != seat || state.tick &- (held?.tick ?? 0) > 1 {
+                    defencePlays.append((ballIndex, seat, .beam))
+                }
                 state.balls[ballIndex].beamHold = BeamHold(seat: seat, tick: state.tick)
             }
             state.ships[seat] = ship
@@ -1433,8 +1552,8 @@ public struct SimulationEngine: Sendable {
     static let boltShipKick = 0.45
     /// `BoltHit.stun`: how long the controls are dead, and how long after a
     /// stun starts before another one can land (stun plus a clear window).
-    static let stunSeconds = 0.4
-    static let stunGuardSeconds = 1.0
+    static let stunSeconds = 0.75
+    static let stunGuardSeconds = 1.6
     /// `BoltHit.spin`: the yaw a hit on the very tip of the hull knocks in,
     /// radians a second, and how fast it bleeds away. The total turn is
     /// about kick x decay: ~40 degrees off the tip, half that dead centre.
@@ -1532,7 +1651,7 @@ public struct SimulationEngine: Sendable {
                     }
                     state.ships[shipHit.seat] = ship
                     effects.append(.shipZapped(seat: shipHit.seat, position: touch))
-                    playsThisStep.append(.zap(bolt.seat))
+                    playsThisStep.append(.zap(bolt.seat, victim: shipHit.seat))
                 }
                 continue
             }
@@ -1569,7 +1688,8 @@ public struct SimulationEngine: Sendable {
                     $0.seat.team == bolt.owner && state.tick &- $0.tick <= windowTicks
                 } ?? false
                 state.balls[ballIndex].lastPlay = BallPlay(seat: bolt.seat, kind: slam ? .slamDunk : .bolt)
-                playsThisStep.append(.boltHit(bolt.seat))
+                playsThisStep.append(.boltHit(bolt.seat, slam: slam))
+                defencePlays.append((ballIndex, bolt.seat, .bolt))
                 effects.append(.collisionEffect(
                     position: state.balls[ballIndex].position,
                     intensity: configuration.boltPunch
@@ -2407,6 +2527,7 @@ public struct SimulationEngine: Sendable {
         // the far half still sends it where it goes.
         state.balls[ballIndex].lastPlay = BallPlay(seat: hit.seat, kind: .hull)
         if counted { playsThisStep.append(.hit(hit.seat)) }
+        if fresh { defencePlays.append((ballIndex, hit.seat, .hull)) }
         effects.append(.collisionEffect(
             position: state.balls[ballIndex].position,
             intensity: abs(inwardSpeed)

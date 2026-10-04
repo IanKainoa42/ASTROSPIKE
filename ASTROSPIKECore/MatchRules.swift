@@ -160,6 +160,9 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
     /// Who put the goal just scored in, and how. Follows the goal's `point`
     /// directly. Never sent for a ball nobody had played.
     case goalScored(seat: Seat, style: GoalStyle)
+    /// A play worth calling out by name while the rally runs: a zap, a
+    /// slam, a save. Only the host's board sends these.
+    case play(seat: Seat, call: PlayCall)
     case rallyReset
     /// A set went to `winner` and the next one starts from love; `sets` is
     /// the tally after it. Never sent for the set that ends the match.

@@ -831,6 +831,11 @@ private struct GameView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .topTrailing)))
             }
             if session.state.match.phase == .countdown { CountdownView(value: session.countdown) }
+            if !session.callouts.isEmpty, session.setBreakCountdown == nil {
+                PlayFeed(callouts: session.callouts)
+                    .padding(.top, 64)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
             if let seconds = session.setBreakCountdown {
                 SetBreakBoard(
                     title: session.lastPointText,

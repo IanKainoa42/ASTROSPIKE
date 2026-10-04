@@ -31,7 +31,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     public static let pegPullRange: ClosedRange<Double> = 0.25 ... 2.5
     /// What an enemy bolt does to a hull. A match rule: the host's pick
     /// rides the wire.
-    public var boltHit: BoltHit = .spin
+    public var boltHit: BoltHit = .stun
 
     /// The one baseline every mode flies. The online preset and the warm-up
     /// bay are built from these same numbers, so a quick game against a bot

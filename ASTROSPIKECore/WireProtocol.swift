@@ -132,7 +132,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     carries `boltHit` (shove / stun / spin); ShipState gained stun and
     //     knock-spin. A build 124 board would holster the trigger at the
     //     hump and decode neither the tuning nor the ships.
-    public static let currentVersion: UInt16 = 37
+    // 38: SimulationEvent gained play (zap / slam / save calls by name);
+    //     PilotStats gained saves, close, bolt and beam saves.
+    public static let currentVersion: UInt16 = 38
 
     public var version: UInt16
     public var sequence: UInt64

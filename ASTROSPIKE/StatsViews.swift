@@ -2,7 +2,7 @@ import ASTROSPIKECore
 import GameKit
 import SwiftUI
 
-/// The local pilot's match in five numbers, under the score on the results
+/// The local pilot's match in six numbers, under the score on the results
 /// card. A number that beat the pilot's best is lit and tagged BEST.
 struct MatchStatLine: View {
     let stats: MatchStats
@@ -31,6 +31,18 @@ struct MatchStatLine: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(board.shortLabel.capitalized) \(value)\(isBest ? ", new best" : "")")
             }
+            // Saves have no leaderboard (yet), so no BEST tag: just the count.
+            let saves = stats[seat].saves
+            VStack(spacing: 2) {
+                Text(saves.formatted())
+                    .font(.title3.monospacedDigit().weight(.black))
+                    .foregroundStyle(saves > 0 ? .white : .secondary)
+                Text("SAVES")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Saves \(saves)")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("results-stats")
@@ -76,6 +88,8 @@ struct SetBreakBoard: View {
         ("BOLT GOALS", \.boltGoals),
         ("SLAM DUNKS", \.slamDunks),
         ("ZAPS", \.zaps),
+        ("SAVES", \.saves),
+        ("CLOSE SAVES", \.closeSaves),
     ]
 
     var body: some View {
@@ -102,7 +116,7 @@ struct SetBreakBoard: View {
                     .font(.system(size: 17, weight: .black, design: .rounded).monospacedDigit())
                 }
             }
-            Text("LONGEST RALLY \(stats.longestRally)")
+            Text("LONGEST RALLY \(stats.longestRally) CROSSINGS")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(.secondary)
 
@@ -193,5 +207,28 @@ struct StatsSheet: View {
             .navigationTitle("Stats")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+/// The plays being called right now, top centre over the court. Each
+/// capsule is the colour of the side that made the play.
+struct PlayFeed: View {
+    let callouts: [PlayCallout]
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(callouts) { callout in
+                Text(callout.text)
+                    .font(.system(size: 13, weight: .black, design: .monospaced)).tracking(1.2)
+                    .lineLimit(1)
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(callout.team == .cyan ? Color.cyan : Color.orange, in: Capsule())
+                    .accessibilityIdentifier("play-call")
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: callouts)
+        .allowsHitTesting(false)
     }
 }
