@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Ships.json <-> Ship Workshop.
 
-    python3 scripts/ships.py import ~/Downloads/Ships.json   check an export, write it into the game, rebuild the workshop
+    python3 scripts/ships.py import ~/Downloads/Ships.json   check an export, write it into both games, rebuild the workshop
     python3 scripts/ships.py build                           rebuild the workshop from the game's Ships.json
-    python3 scripts/ships.py check                           check the game's Ships.json is valid and canonical
+    python3 scripts/ships.py check                           check Ships.json is valid, canonical and the same in both games
 
 ASTROSPIKECore/Ships.json is the one source of truth for every ship's drawing:
 the eight hulls, then the hundred concepts. The workshop page is generated
 from tools/ship-workshop/src (Codex's workshop, untouched, plus game-link.js)
 with that file baked in, so it opens by double-click with no server.
+
+AstroCross (~/Projects/WARBLE) flies the same eight hulls and keeps a copy at
+WARBLECore/Ships.json. Import writes both; never edit the copy by hand.
 """
 import json
 import pathlib
@@ -19,6 +22,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SHIPS = ROOT / "ASTROSPIKECore" / "Ships.json"
 SRC = ROOT / "tools" / "ship-workshop" / "src"
 OUT = ROOT / "tools" / "ship-workshop" / "ASTROSPIKE Ship Workshop.html"
+ASTROCROSS = ROOT.parent / "WARBLE" / "WARBLECore" / "Ships.json"
 
 HULLS = ["lancet", "anvil", "manta", "kestrel", "bulwark", "wraith", "hornet", "comet"]
 CONCEPT_GROUPS = ["Racing", "Utility", "Bioforms", "Retro", "Cinema"]
@@ -194,9 +198,13 @@ def main():
         data = json.loads(pathlib.Path(sys.argv[2]).expanduser().read_text())
         check(data)
         text = canonical(data)
-        changed = not SHIPS.exists() or SHIPS.read_text() != text
-        SHIPS.write_text(text)
-        print("Ships.json updated" if changed else "Ships.json unchanged")
+        for game, path in [("ASTROSPIKE", SHIPS), ("AstroCross", ASTROCROSS)]:
+            if not path.parent.is_dir():
+                sys.exit(f"{game} is not at {path.parent}; nothing written")
+        for game, path in [("ASTROSPIKE", SHIPS), ("AstroCross", ASTROCROSS)]:
+            changed = not path.exists() or path.read_text() != text
+            path.write_text(text)
+            print(f"{game} Ships.json {'updated' if changed else 'unchanged'}")
         build()
     elif command == "build":
         build()
@@ -205,7 +213,9 @@ def main():
         check(data)
         if SHIPS.read_text() != canonical(data):
             sys.exit("Ships.json is valid but not in canonical layout; run ships.py import on it")
-        print("Ships.json OK")
+        if not ASTROCROSS.exists() or ASTROCROSS.read_text() != SHIPS.read_text():
+            sys.exit(f"AstroCross's copy differs: run ships.py import {SHIPS.relative_to(ROOT)}")
+        print("Ships.json OK in both games")
     else:
         sys.exit(__doc__)
 

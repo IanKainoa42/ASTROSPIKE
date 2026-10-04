@@ -203,8 +203,9 @@
     slotNote.textContent = slot < 0
       ? 'Pick the game slot this ship replaces. Nothing reaches the game until you Save to game slot, then Download for game.'
       : (slot === 0 ? 'Lancet\'s outline is the hitbox every ship uses online. Changing its shape changes online physics; the game\'s tests will ask for a wire bump. ' : '')
-        + `Slot now holds “${current(slot).name}”${differs(slot) ? ' (edited here)' : ' (as in the game)'}.`;
-    gameStatus.textContent = `${edited} of ${SLOTS.length} ships differ from the game. Download for game saves Ships.json; then run python3 scripts/ships.py import ~/Downloads/Ships.json in the ASTROSPIKE folder (or ask Claude to import it).`;
+        + `Slot now holds “${current(slot).name}”${differs(slot) ? ' (edited here)' : ' (as in the game)'}.`
+        + (slot >= 0 && slot < HULL_COUNT ? ' This hull flies in AstroCross too: same shape, flame and bolt colour.' : '');
+    gameStatus.textContent = `${edited} of ${SLOTS.length} ships differ from the game. Download for game saves Ships.json; then run python3 scripts/ships.py import ~/Downloads/Ships.json in the ASTROSPIKE folder (or ask Claude to import it). Import writes both ASTROSPIKE and AstroCross.`;
     saveSlot.disabled = resetSlot.disabled = openSlot.disabled = slot < 0;
   }
 
