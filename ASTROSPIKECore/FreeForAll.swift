@@ -84,10 +84,9 @@ public struct FreeForAllState: Codable, Equatable, Sendable {
 ///
 /// Known gap: it defends weakly. It clears a ball close in front of its own
 /// mouth but keeps no goal, so its misses that rebound off the fins and rim
-/// still go into its own net -- about a quarter of the lives lost in an
-/// all-bot game. Alone against idle hulls (80-minute samples) it takes about
-/// 1.25 rival lives a minute and gives up 0.6 of its own at three pilots, and
-/// takes 2.2 and gives up 0.45 at four.
+/// can still go into its own net. On the slow-motion table, alone against
+/// idle hulls (two-hour samples), it takes about 0.9 rival lives a minute at
+/// three pilots and 0.6 at four, and almost never gives one up.
 public struct FreeForAllPilot: Sendable {
     /// How much nearer the ball a new net must be before the bot gives up
     /// the one it is working on, so a ball midway between two does not make
@@ -154,7 +153,7 @@ public struct FreeForAllPilot: Sendable {
         let spot = ball.position + ball.velocity * lead
 
         var aim: SIMD2<Double>
-        var speed = Self.ringNudgeSpeed
+        var speed = min(Self.ringNudgeSpeed, configuration.ringTopSpeed * 0.55)
         if let own, threatens(spot, net: own, ring: ring) {
             // Clear: go round to the mouth side and knock it straight away.
             let mouth = ring.mouthCentre(own)
@@ -166,9 +165,9 @@ public struct FreeForAllPilot: Sendable {
             targetGoal = goal
             if inFront(ring.toLocal(spot, net: goal), ring: ring) {
                 aim = ring.toWorld(SIMD2(0, ring.goalLineY - ring.ballRadius), net: goal)
-                speed = difficulty.strikeSpeed * 0.6
+                speed = min(difficulty.strikeSpeed * 0.6, configuration.ringTopSpeed * 0.9)
             } else if simd_length(spot) > ring.rimRadius - ring.ballRadius - Self.ringRimBand {
-                // On the rim: roll it along to the nearest fin, which lobs
+                // On the rim: run it along to the nearest fin, which turns
                 // it back in. Nothing can get under it to push.
                 let bearing = atan2(spot.y, spot.x)
                 let fin = ring.finBearings.min {
@@ -268,13 +267,19 @@ public struct FreeForAllPilot: Sendable {
         let up = -out
         let error = target - ship.position
         let range = simd_length(error)
+        // The hull glides on drag toward its top speed, so the bot cruises
+        // a little under it and brakes on most of the motor.
+        let motor = configuration.ringThrust
         var desired = closing
         if range > 0.000_001 {
-            desired += error / range * min(2.6, (2 * 2.0 * max(0, range - 0.015)).squareRoot())
+            desired += error / range * min(
+                configuration.ringTopSpeed * 0.9,
+                (2 * 0.75 * motor * max(0, range - 0.015)).squareRoot()
+            )
         }
         let clearance = ring.rimRadius - simd_length(ship.position) - 0.05
         let fall = simd_dot(desired, out)
-        let fallLimit = (2 * 2.6 * max(0, clearance - 0.04)).squareRoot()
+        let fallLimit = (2 * motor * max(0, clearance - 0.04)).squareRoot()
         if fall > fallLimit { desired -= out * (fall - fallLimit) }
 
         let weight = simd_length(ring.gravity(
@@ -282,12 +287,13 @@ public struct FreeForAllPilot: Sendable {
             rim: simd_length(configuration.gravity) * configuration.ringGravity
         ))
         var need = (desired - ship.velocity) * 3.5 + up * weight
+            + ship.velocity * SimulationConfiguration.ringShipDrag
         // Ring gravity is a small fraction of the thrust, so the nose goes
         // wherever the demand points -- outward too, which every shot at a
         // mouth needs. Only just over the rim does it insist on lift.
         let clearanceShare = min(1, max(0, clearance / 0.33))
-        if clearanceShare < 0.25, simd_dot(need, up) < 1.5 {
-            need += up * (1.5 - simd_dot(need, up))
+        if clearanceShare < 0.25, simd_dot(need, up) < motor * 0.55 {
+            need += up * (motor * 0.55 - simd_dot(need, up))
         }
 
         let angleError = remainder(atan2(need.y, need.x) - ship.angle, 2 * .pi)
@@ -295,7 +301,7 @@ public struct FreeForAllPilot: Sendable {
         let torque = abs(turn) < 0.06 ? 0 : max(-1, min(1, turn))
         let nose = SIMD2(cos(ship.angle), sin(ship.angle))
         let thrust = cos(angleError) > 0.7
-            && simd_dot(need, nose) > configuration.maximumThrustAcceleration * 0.34
+            && simd_dot(need, nose) > motor * 0.34
         return PlayerInput(tick: tick, torque: torque, thrust: thrust)
     }
 }

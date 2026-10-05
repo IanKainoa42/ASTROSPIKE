@@ -505,9 +505,27 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// duel's: on the ring the rim is down in every direction, so full
     /// weight drags everything to the edge.
     public var ringGravity: Double = Self.ringGravityDefault
-    public static let ringGravityDefault = 0.3
-    public static let ringGravityRange = 0.1 ... 1.5
+    /// Flat, like an air-hockey table. The slider can still tilt it.
+    public static let ringGravityDefault = 0.0
+    public static let ringGravityRange = 0.0 ... 1.5
     public static let ringGravityKey = "ringGravity"
+    /// Free-for-all ring only: the ring flies like slow-motion air hockey.
+    /// The motor pushes at this share of the Thrust slider, and the hull
+    /// glides on drag, so held thrust builds speed along 1 - e^(-t / tau)
+    /// toward `ringTopSpeed` -- about a second to half of it and six to
+    /// all of it -- and a hull let go coasts to a stop in a few seconds
+    /// rather than sliding forever. Constants, not sliders: the ring is
+    /// offline only, so none of this rides the wire.
+    public static let ringThrustShare = 0.3
+    /// Velocity bled off a ring hull each second.
+    public static let ringShipDrag = 0.5
+    /// Velocity bled off the ball each second on the ring: a puck on air,
+    /// well under the hull's, so a struck ball glides across the table.
+    public static let ringBallDrag = 0.15
+    /// What the motor pushes a ring hull with.
+    public var ringThrust: Double { maximumThrustAcceleration * Self.ringThrustShare }
+    /// The speed a ring hull settles at with the motor held.
+    public var ringTopSpeed: Double { ringThrust / Self.ringShipDrag }
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -643,9 +661,6 @@ public struct SimulationEngine: Sendable {
     private var goalsThisStep: [Int: Team] = [:]
     /// Free-for-all's goals this step: ball index to goal index.
     private var freeForAllGoalsThisStep: [Int: Int] = [:]
-    /// Ring only: the net each ball came in the back of and has not yet
-    /// cleared, by ball index. Such a ball cannot score in that net.
-    private var ringBackDoor: [Int: Int] = [:]
     /// What the physics saw this step that the stat book wants. Physics runs
     /// on every board, the guest's roll-forward and the warm-up bay
     /// included, so it only buffers here: the book is written on the
@@ -802,13 +817,18 @@ public struct SimulationEngine: Sendable {
 
     private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
-            return ring.toWorld(SIMD2(0, -(ring.rimRadius - ring.netBackRadius) / 2), net: bay)
+            return ring.toWorld(SIMD2(ring.netHalfWidth + Self.ringSpawnBeside, ring.netDepth), net: bay)
         }
         if let bay = state.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
             return Self.freeForAllSpawn(goalCentre: arena.goalCentres[bay])
         }
         return Self.spawnPosition(for: seat, mirrored: mirrored, arena: arena)
     }
+
+    /// How far beside their own net, past the post, a ring pilot starts,
+    /// nose to the middle: off the mouth, so an idle hull is not a keeper
+    /// parked in it from the first second.
+    static let ringSpawnBeside = 0.14
 
     /// Where a free-for-all pilot starts: beside their own goal, on the side
     /// nearer the wall, clear of the ball that drops from under it.
@@ -938,8 +958,12 @@ public struct SimulationEngine: Sendable {
                     )
                     : configuration.initialThrustAcceleration
                 acceleration += SIMD2(cos(ship.angle), sin(ship.angle)) * ship.thrustLevel
+                    * (arena.ring == nil ? 1 : SimulationConfiguration.ringThrustShare)
             } else {
                 ship.thrustLevel = 0
+            }
+            if arena.ring != nil {
+                acceleration -= ship.velocity * SimulationConfiguration.ringShipDrag
             }
             // The halfway marker is a wall of treacle rather than a tripwire: the
             // deeper a pilot pushes into the far half, the harder the arena shoves
@@ -1020,6 +1044,9 @@ public struct SimulationEngine: Sendable {
             )
             applyExhaustWash(dt: dt, ballIndex: ballIndex)
             applyTractorBeam(dt: dt, ballIndex: ballIndex)
+            if arena.ring != nil {
+                state.balls[ballIndex].velocity *= exp(-SimulationConfiguration.ringBallDrag * dt)
+            }
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
         advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects)
@@ -1263,7 +1290,7 @@ public struct SimulationEngine: Sendable {
     static let ringServeOffset = 0.04
     /// How far the face-off drift is turned off the fin's centre line, as a
     /// share of half the gap between nets. Straight down the line, a fin
-    /// lobs the ball back through the middle along the same line -- and
+    /// sends the ball back through the middle along the same line -- and
     /// with three nets that line ends in a mouth, so every untouched serve
     /// scored. Anywhere from 0.05 to 0.3 of a half-gap off it, none did.
     static let ringServeSkew = 0.2
@@ -1306,10 +1333,10 @@ public struct SimulationEngine: Sendable {
                 sign * Self.serveDriftSpeed * serveDraw(salt + 1, in: Self.serveDriftRange),
                 -configuration.ballDropSpeed * serveDraw(salt + 2, in: Self.serveDropRange)
             )
-            // On the ring the serve is a face-off in the weightless middle,
+            // On the ring the serve is a face-off in the open middle,
             // drifting out through the gap beside the net that just conceded
             // -- never at a mouth, which all face the middle -- toward the
-            // fin there, which lobs it back in.
+            // fin there, which turns it back in.
             if let ring = arena.ring, let bay = state.freeForAll?.serveBay, ring.finBearings.indices.contains(bay) {
                 let out = SIMD2(cos(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)), sin(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)))
                 let across = SIMD2(-out.y, out.x)
@@ -1567,7 +1594,9 @@ public struct SimulationEngine: Sendable {
             guard along > Self.exhaustWashCone else { continue }
             let falloff = 1 - distance / range
             let centring = (along - Self.exhaustWashCone) / (1 - Self.exhaustWashCone)
-            let push = ship.thrustLevel * configuration.exhaustWashStrength * falloff * centring
+            // On the ring the wash is the motor's: as soft as the push.
+            let motor = ship.thrustLevel * (arena.ring == nil ? 1 : SimulationConfiguration.ringThrustShare)
+            let push = motor * configuration.exhaustWashStrength * falloff * centring
             state.balls[ballIndex].velocity += tail * (push * dt)
         }
     }
@@ -2335,20 +2364,11 @@ public struct SimulationEngine: Sendable {
             from = state.balls[ballIndex].position
         }
 
-        // Only a ball that came in the mouth scores. One that came through
-        // the back is marked for that net until it is clear of it, so it can
-        // roll out the mouth, or hang and drop back, without counting.
-        let position = state.balls[ballIndex].position
-        let cameInBack = ringBackDoor[ballIndex]
-        if let goal = ring.goalCrossing(from: previousPosition, to: position),
-           goal != cameInBack,
+        // The frame is shut all round but the mouth, so a ball can only
+        // reach the goal line by coming in it.
+        if let goal = ring.goalCrossing(from: previousPosition, to: state.balls[ballIndex].position),
            !(field?.isSolid(goal: goal) ?? false) {
             freeForAllGoalsThisStep[ballIndex] = goal
-        } else if let pocket = ring.backPocket(holding: position) {
-            ringBackDoor[ballIndex] = pocket
-        }
-        if let net = ringBackDoor[ballIndex], ring.isClear(of: net, position) {
-            ringBackDoor[ballIndex] = nil
         }
     }
 

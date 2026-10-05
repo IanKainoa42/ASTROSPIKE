@@ -449,7 +449,7 @@ private struct FreeForAllSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("FREE-FOR-ALL").font(.title.bold())
-            Text("One round arena, a net each standing round the open middle with its mouth turned in, gravity pulling out to the rim. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+            Text("One round arena, a net each standing round the open middle with its mouth turned in, on a slow air-hockey table. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
                 .font(.footnote).foregroundStyle(.secondary)
             Picker("Pilots", selection: $pilots) {
                 Text("3 PILOTS").tag(3)
@@ -2228,7 +2228,7 @@ private struct SettingsView: View {
                 } header: {
                     Text("Free-for-all")
                 } footer: {
-                    Text("How hard the ring pulls at its rim, against the duel's full weight. Gravity grows from nothing at the centre to this at the rim. Takes effect next match.")
+                    Text("The ring is a flat air-hockey table at 0%. Raise it to tilt the table out toward the rim: gravity grows from nothing at the centre to this share of the duel's weight at the rim. Takes effect next match.")
                 }
                 if let replayIntro {
                     Section("Intro") {

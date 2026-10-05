@@ -1,27 +1,28 @@
 import Foundation
 import simd
 
-/// The free-for-all field: a round arena with gravity pulling out to the
-/// rim. Every pilot's goal is a hockey net standing round the middle with
-/// its mouth turned in toward the centre, so a shot comes in from the open
-/// middle, and there is room to fly and roll the ball behind every net. Between neighbouring nets a fin rises off the rim, its
-/// flanks curving up from the floor like the duel's corners, so a ball
-/// rolling round the rim rides up it and is lobbed back into the middle.
+/// The free-for-all field: a round air-hockey table. Every pilot's goal is
+/// a net tucked into the rim with its mouth turned in toward the centre, so
+/// a shot comes in from the open middle, which is the whole table. Between
+/// neighbouring nets a fin rises off the rim, its flanks curving up from the
+/// floor like the duel's corners, so a ball running round the rim is turned
+/// back into the middle.
 ///
 /// Each net is drawn and collided in its own frame: x across the mouth, y
 /// pointing in from the back of the net toward the centre. The nets and fins
 /// are all `ArenaObstacle` capsules. Hulls and bolts fly through a live
 /// net, front or back, as they fly through the duel's goal, and meet only
-/// the fins; the ball meets a live net's posts and nothing else.
+/// the fins; the ball meets a live net's whole frame, so it only gets in
+/// through the mouth.
 public struct RingField: Equatable, Sendable {
     /// Centre to rim. The field is the size the old hub-and-spoke ring was,
     /// so nothing on screen shrank; the hub's room is now open play.
     public static let rimRadius = 1.52
-    /// Centre to every net's mouth: about a third of the way out, so the
-    /// nets ring the middle and the open court behind them runs out to the
-    /// rim. Fixed, not cut from the ball, so the gaps between neighbouring
-    /// posts stay wider than the biggest ball with four nets.
-    public static let mouthRadius = 0.46
+    /// The gap between the back of every net and the rim: narrower than the
+    /// smallest ball, so nothing gets round behind a net. The net is hung
+    /// from here inward, so a bigger ball's deeper net reaches further in
+    /// and never pokes through the rim.
+    public static let backGap = 0.03
     /// Thickness of a net's frame, as a capsule radius.
     public static let netWall = 0.014
     /// Thickness of a fin's flank.
@@ -42,9 +43,7 @@ public struct RingField: Equatable, Sendable {
     public var netHalfWidth: Double
     /// Back of the net to the mouth, along the frame's centreline.
     public var netDepth: Double
-    /// What the ball meets in a live net: its two posts only. The back is
-    /// open to the ball -- it can come through from behind and out the
-    /// mouth -- and only a ball that comes in the mouth scores.
+    /// Each net's two sides, mouth to the rounded corners.
     public var posts: [ArenaObstacle]
     /// Each net's back, post to post round the rounded corners.
     public var backs: [[ArenaObstacle]]
@@ -68,11 +67,10 @@ public struct RingField: Equatable, Sendable {
         for index in spokeAngles.indices { fins += fin(at: spokeAngles[index] + .pi / Double(count)) }
     }
 
-    /// What the ball meets: fins, posts, and the whole frame and mouth of
-    /// every net in `solid` (a knocked-out pilot's net is shut all round, so
-    /// a ball let in the back could never get out).
+    /// What the ball meets: fins, every net's frame, and the mouth of every
+    /// net in `solid` (a knocked-out pilot's net is shut all round).
     public func ballWalls(solid: (Int) -> Bool) -> [ArenaObstacle] {
-        fins + posts + closedNets(solid)
+        fins + posts + backs.flatMap { $0 } + spokeAngles.indices.filter(solid).map(mouthBar)
     }
 
     /// Every net in `solid`, shut all round: frame and mouth. A hull meets
@@ -88,8 +86,11 @@ public struct RingField: Equatable, Sendable {
     /// Straight out from the centre at `bearing`.
     static func outward(_ bearing: Double) -> SIMD2<Double> { SIMD2(cos(bearing), sin(bearing)) }
 
-    /// Distance from the centre to the back of every net.
-    public var netBackRadius: Double { Self.mouthRadius + netDepth }
+    /// Distance from the centre to the back of every net's frame.
+    public var netBackRadius: Double { rimRadius - Self.backGap - Self.netWall }
+
+    /// Distance from the centre to every net's mouth.
+    public var mouthRadius: Double { netBackRadius - netDepth }
 
     /// Net `index`'s frame point `local` in the world.
     public func toWorld(_ local: SIMD2<Double>, net index: Int) -> SIMD2<Double> {
@@ -174,20 +175,12 @@ public struct RingField: Equatable, Sendable {
     }
 
     /// The net whose back pocket -- inside the posts, behind the goal line --
-    /// holds `point`, if any. A ball found there without having scored came
-    /// in through the back.
+    /// holds `point`, if any.
     public func backPocket(holding point: SIMD2<Double>) -> Int? {
         spokeAngles.indices.first { index in
             let local = toLocal(point, net: index)
             return local.y < goalLineY && local.y > -ballRadius && abs(local.x) < netHalfWidth
         }
-    }
-
-    /// True once `point` is clear of net `index` altogether: past the mouth,
-    /// out the back, or off either side.
-    public func isClear(of index: Int, _ point: SIMD2<Double>) -> Bool {
-        let local = toLocal(point, net: index)
-        return local.y > netDepth + ballRadius || local.y < -ballRadius || abs(local.x) > netHalfWidth + ballRadius
     }
 
     /// The net a ball went all the way into between `start` and `end`, if
