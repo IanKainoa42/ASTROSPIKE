@@ -543,54 +543,36 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(label)
     }
 
-    /// One hockey net on the ring: a dark pocket, the frame in its owner's
-    /// colour -- it is their net to defend -- and a faint goal line a ball's
-    /// width inside the mouth, which the whole ball has to cross. A net whose
-    /// pilot is out is drawn shut, grey, with a bar across the mouth.
+    /// One hockey net on the ring, mouth to the rim. A live net is only
+    /// netting -- the ball flows through its back and sides -- so it is drawn
+    /// as a faint pocket and a dashed frame in its owner's colour, with the
+    /// goal line a ball's width inside the mouth bright: that line, crossed
+    /// coming back off the rim, is the goal. A net whose pilot is out is
+    /// drawn shut, grey and solid, with a bar across the mouth.
     private func addRingNet(_ ring: RingField, index: Int, owner: Seat?, solid: Bool) {
         func point(_ local: SIMD2<Double>) -> CGPoint {
             let world = ring.toWorld(local, net: index)
             return self.point(world.x, world.y)
         }
         let outline = ring.netOutline
-        let pocket = CGMutablePath()
-        pocket.move(to: point(outline[0]))
-        for sample in outline.dropFirst() { pocket.addLine(to: point(sample)) }
+        let frame = CGMutablePath()
+        frame.move(to: point(outline[0]))
+        for sample in outline.dropFirst() { frame.addLine(to: point(sample)) }
+        let pocket = frame.mutableCopy()!
         pocket.closeSubpath()
         let pocketNode = SKShapeNode(path: pocket)
-        pocketNode.fillColor = solid ? SKColor(white: 0.16, alpha: 1) : SKColor(white: 0, alpha: 0.85)
+        pocketNode.fillColor = solid ? SKColor(white: 0.16, alpha: 1) : SKColor(white: 0, alpha: 0.4)
         pocketNode.strokeColor = .clear
         pocketNode.zPosition = -1
         arenaLayer.addChild(pocketNode)
 
         let color = owner.map { solid ? SKColor(white: 0.55, alpha: 1) : seatColor($0) } ?? .white
-        // A live net's back is open to the ball, so it is drawn as netting:
-        // the posts solid, the back a fainter dashed line. A knocked-out
-        // net is shut all round and drawn solid.
-        let last = outline.count - 1
-        let posts = CGMutablePath()
-        posts.move(to: point(outline[0]))
-        posts.addLine(to: point(outline[1]))
-        posts.move(to: point(outline[last - 1]))
-        posts.addLine(to: point(outline[last]))
-        let back = CGMutablePath()
-        back.move(to: point(outline[1]))
-        for sample in outline[2 ... last - 1] { back.addLine(to: point(sample)) }
-        if solid { posts.addPath(back) }
-        let postNode = SKShapeNode(path: posts)
-        postNode.strokeColor = color.withAlphaComponent(0.9)
-        postNode.lineWidth = solid ? 3 : 4
-        postNode.glowWidth = solid ? 0 : 4
-        postNode.lineCap = .round
-        postNode.lineJoin = .round
-        arenaLayer.addChild(postNode)
-        if !solid {
-            let backNode = SKShapeNode(path: back.copy(dashingWithPhase: 0, lengths: [5, 5]))
-            backNode.strokeColor = color.withAlphaComponent(0.55)
-            backNode.lineWidth = 2
-            backNode.lineCap = .round
-            arenaLayer.addChild(backNode)
-        }
+        let frameNode = SKShapeNode(path: solid ? frame : frame.copy(dashingWithPhase: 0, lengths: [5, 5]))
+        frameNode.strokeColor = color.withAlphaComponent(solid ? 0.9 : 0.6)
+        frameNode.lineWidth = solid ? 3 : 2
+        frameNode.lineCap = .round
+        frameNode.lineJoin = .round
+        arenaLayer.addChild(frameNode)
 
         let line = CGMutablePath()
         if solid {
@@ -601,8 +583,10 @@ final class ArenaScene: SKScene {
             line.addLine(to: point(SIMD2(ring.netInnerHalfWidth, ring.goalLineY)))
         }
         let lineNode = SKShapeNode(path: line)
-        lineNode.strokeColor = solid ? SKColor(white: 0.55, alpha: 1) : color.withAlphaComponent(0.35)
-        lineNode.lineWidth = solid ? 4 : 1.5
+        lineNode.strokeColor = solid ? SKColor(white: 0.55, alpha: 1) : color
+        lineNode.lineWidth = 4
+        lineNode.glowWidth = solid ? 0 : 4
+        lineNode.lineCap = .round
         arenaLayer.addChild(lineNode)
     }
 

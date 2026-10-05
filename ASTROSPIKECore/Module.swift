@@ -797,7 +797,7 @@ public struct SimulationEngine: Sendable {
 
     private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
-            return ring.toWorld(SIMD2(ring.netHalfWidth + Self.ringSpawnBeside, ring.netDepth), net: bay)
+            return ring.toWorld(SIMD2(ring.netHalfWidth + Self.ringSpawnBeside, 0), net: bay)
         }
         if let bay = state.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
             return Self.freeForAllSpawn(goalCentre: arena.goalCentres[bay])
@@ -806,8 +806,9 @@ public struct SimulationEngine: Sendable {
     }
 
     /// How far beside their own net, past the post, a ring pilot starts,
-    /// nose to the middle: off the mouth, so an idle hull is not a keeper
-    /// parked in it from the first second.
+    /// level with its back and nose to the middle: out of the lane between
+    /// the mouth and the rim, so an idle hull is not a keeper parked in it
+    /// from the first second.
     static let ringSpawnBeside = 0.14
 
     /// Where a free-for-all pilot starts: beside their own goal, on the side
@@ -817,7 +818,7 @@ public struct SimulationEngine: Sendable {
     }
 
     /// A fresh hull points up, away from the floor -- on the ring it starts
-    /// behind its own net, halfway to the rim, pointing in at the middle.
+    /// beside its own net, pointing in at the middle.
     private func spawnAngle(for seat: Seat) -> Double {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
             return ring.spokeAngles[bay] + .pi
@@ -1341,8 +1342,7 @@ public struct SimulationEngine: Sendable {
             )
             // On the ring the serve is a face-off in the open middle,
             // drifting out through the gap beside the net that just conceded
-            // -- never at a mouth, which all face the middle -- toward the
-            // fin there, which turns it back in.
+            // toward the fin there, which turns it back in.
             if let ring = arena.ring, let bay = state.freeForAll?.serveBay, ring.finBearings.indices.contains(bay) {
                 let out = SIMD2(cos(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)), sin(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)))
                 let across = SIMD2(-out.y, out.x)
@@ -2370,8 +2370,8 @@ public struct SimulationEngine: Sendable {
             from = state.balls[ballIndex].position
         }
 
-        // The frame is shut all round but the mouth, so a ball can only
-        // reach the goal line by coming in it.
+        // A live net's frame is open to the ball; only crossing the goal
+        // line coming back in from the mouth counts.
         if let goal = ring.goalCrossing(from: previousPosition, to: state.balls[ballIndex].position),
            !(field?.isSolid(goal: goal) ?? false) {
             freeForAllGoalsThisStep[ballIndex] = goal

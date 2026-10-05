@@ -4,8 +4,9 @@ import Testing
 @testable import ASTROSPIKECore
 
 /// Free-for-all: three or four pilots on a round air-hockey table, a net
-/// each standing off the rim with its mouth turned in, a MAX CROSS line
-/// round every pilot's ground, five lives, last pilot flying wins.
+/// each standing in from the rim with its mouth turned out to it, banked
+/// goals, a MAX CROSS line round every pilot's ground, five lives, last
+/// pilot flying wins.
 @Suite("Free-for-all")
 struct FreeForAllTests {
     private func field(pilots: Int) -> (engine: SimulationEngine, arena: ArenaGeometry) {
@@ -24,8 +25,8 @@ struct FreeForAllTests {
         ring.toWorld(local, net: net) - ring.toWorld(.zero, net: net)
     }
 
-    /// Drives the ball straight into net `net`'s mouth from the middle,
-    /// `across` off its centre line, and steps until the rally ends or a
+    /// Drives the ball straight into net `net`'s mouth from the lane between
+    /// it and the rim, `across` off its centre line, and steps until the rally ends or a
     /// second has gone.
     private func shoot(
         _ engine: inout SimulationEngine,
@@ -55,7 +56,7 @@ struct FreeForAllTests {
         events.compactMap { if case let .lifeLost(seat, _, _) = $0 { seat } else { nil } }
     }
 
-    @Test("The field is a ring: a net per pilot evenly round the rim, standing off it with the mouth turned in, the fins clear between them")
+    @Test("The field is a ring: a net per pilot evenly round it, standing in from the rim with the mouth turned out to it, the fins clear between them")
     func fieldLayout() {
         let ballRadius = SimulationConfiguration.online.ballRadius
         let smallestBall = BallState.nominalRadius
@@ -72,18 +73,21 @@ struct FreeForAllTests {
                 let point = SIMD2(0.3, -0.2)
                 #expect(simd_length(ring.toLocal(ring.toWorld(point, net: net), net: net) - point) < 1e-9)
                 #expect(abs(simd_length(ring.mouthCentre(net)) - ring.mouthRadius) < 1e-9)
-                #expect(ring.toLocal(.zero, net: net).y > ring.netDepth, "the middle is in front of every mouth")
+                #expect(ring.toLocal(.zero, net: net).y < 0, "the middle is behind every net")
+                #expect(ring.rimLineY > ring.netDepth, "the mouth faces the rim")
                 #expect(ring.spokeIndex(nearest: ring.mouthCentre(net)) == net)
             }
-            // Every ball size: the ball rolls round behind every net, between
-            // its back and the rim, with room to spare; the mouth stays well
-            // out from the middle, and the MAX CROSS line well short of it.
+            // Every ball size: a wide lane between every mouth and the rim
+            // for a banked ball to come back through; the nets pulled well
+            // in from the rim but clear of the middle, and the MAX CROSS
+            // line well short of them.
             for radius in [smallestBall, ballRadius, biggestBall] {
                 let sized = RingField(pilots: pilots, ballRadius: radius)
-                let behind = sized.rimRadius - sized.netBackRadius - RingField.netWall
-                #expect(behind > 2 * radius + 0.05, "\(pilots) pilots, ball \(radius): \(behind) behind the nets")
-                #expect(sized.mouthRadius > 0.5 * sized.rimRadius, "\(pilots) pilots, ball \(radius): mouth at \(sized.mouthRadius)")
-                #expect(sized.mouthRadius - sized.maxCrossRadius > 0.3, "\(pilots) pilots, ball \(radius): line at \(sized.maxCrossRadius)")
+                let lane = sized.rimRadius - sized.mouthRadius
+                #expect(lane > 2 * radius + 0.3, "\(pilots) pilots, ball \(radius): \(lane) between mouth and rim")
+                #expect(sized.mouthRadius < 0.72 * sized.rimRadius, "\(pilots) pilots, ball \(radius): mouth at \(sized.mouthRadius)")
+                #expect(sized.netBackRadius > 0.3, "\(pilots) pilots, ball \(radius): back at \(sized.netBackRadius)")
+                #expect(sized.netBackRadius - sized.maxCrossRadius > 0.15, "\(pilots) pilots, ball \(radius): line at \(sized.maxCrossRadius)")
             }
             // The biggest ball and a hull still pass between a net and the
             // fin beside it.
@@ -171,7 +175,7 @@ struct FreeForAllTests {
         #expect(abs(pull(at: 0.8, bearing: fin, setting: 0.15) / far - 0.5) < 0.02, "the setting scales it")
     }
 
-    @Test("Three pilots take the ends and one wing; four take every seat; everyone starts beside their own net, off the mouth, facing in")
+    @Test("Three pilots take the ends and one wing; four take every seat; everyone starts beside their own net, level with its back, facing in")
     func seats() {
         #expect(FreeForAllState(seats: FreeForAllState.seats(pilots: 3)).bays == [.cyan, .cyanWing, .orange])
         #expect(FreeForAllState(seats: FreeForAllState.seats(pilots: 4)).bays == [.cyan, .cyanWing, .orangeWing, .orange])
@@ -180,7 +184,7 @@ struct FreeForAllTests {
         for (bay, seat) in engine.state.freeForAll!.bays.enumerated() {
             let ship = engine.state.ships[seat]!
             let local = ring.toLocal(ship.position, net: bay)
-            #expect(local.x > ring.netHalfWidth + 0.1 && abs(local.y - ring.netDepth) < 1e-9, "\(seat) starts beside its own net")
+            #expect(local.x > ring.netHalfWidth + 0.1 && abs(local.y) < 1e-9, "\(seat) starts beside its own net")
             #expect(simd_length(ship.position) < ring.rimRadius)
             #expect(cos(ship.angle - ring.spokeAngles[bay] - .pi) > 0.999, "\(seat) points in at the middle")
             #expect(engine.state.freeForAll!.lives[seat] == FreeForAllState.startingLives)
@@ -240,73 +244,82 @@ struct FreeForAllTests {
         #expect(abs(coasting / (released * exp(-3 * k)) - 1) < 0.02, "three seconds' glide: \(coasting)")
     }
 
-    /// The frame is shut all round but the mouth. Along the rim is the way
-    /// round behind a net, so that is where a gap in the back would let a
-    /// ball in. A fast ball rolls on round to the next fin and may score in
-    /// a rival's mouth; only this net's owner must never lose a life.
-    @Test("A net's frame is a wall to the ball: run along the rim it rolls on round behind the net, into a side it bounces off; it never gets in and never scores there")
-    func frameIsAWall() {
+    /// A live net is only netting: the ball flows through its back and its
+    /// sides untouched. Run out through it from the middle, it crosses the
+    /// goal line going the wrong way, which does not count -- but straight
+    /// down the net's line it comes back off the rim, in the mouth, and that
+    /// is a goal: the bank shot.
+    @Test("A live net is see-through: in its back and out its mouth, or in one side and out the other, the ball never bends; run straight out it banks off the rim back into the mouth and scores")
+    func netIsSeeThrough() {
         for pilots in [3, 4] {
             let (start, arena) = field(pilots: pilots)
             let ring = arena.ring!
             for net in ring.spokeAngles.indices {
-                let spoke = ring.spokeAngles[net]
-                var shots: [(position: SIMD2<Double>, velocity: SIMD2<Double>)] = []
-                for side in [1.0, -1.0] {
-                    for speed in [0.3, 1.0, 2.4] {
-                        // Along the rim, round toward the net.
-                        let bearing = spoke + side * 0.36
-                        let out = SIMD2(cos(bearing), sin(bearing))
-                        shots.append((out * (ring.rimRadius - ring.ballRadius - 0.002), SIMD2(out.y, -out.x) * side * speed))
-                        // Straight in at a side.
-                        for depth in [0.5, 0.8] {
-                            let from = SIMD2(side * (ring.netHalfWidth + ring.ballRadius + 0.12), ring.netDepth * depth)
-                            shots.append((ring.toWorld(from, net: net), worldVector(SIMD2(-side * speed, 0), ring: ring, net: net)))
+                let owner = start.state.freeForAll!.bays[net]
+                for across in [-0.08, 0.0, 0.08] {
+                    for speed in [0.6, 1.4] {
+                        var engine = start
+                        for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+                        let velocity = worldVector(SIMD2(0, speed), ring: ring, net: net)
+                        engine.state.ball = BallState(position: ring.toWorld(SIMD2(across, -0.15), net: net), velocity: velocity, radius: ring.ballRadius)
+                        engine.state.serveTicksRemaining = 0
+                        var events: [SimulationEvent] = []
+                        // Out through the back and the mouth, short of the rim.
+                        for _ in 0 ..< 120 * 2 where ring.toLocal(engine.state.ball.position, net: net).y < ring.netDepth + ring.ballRadius {
+                            engine.step(inputs: [:])
+                            events += engine.lastEvents
                         }
+                        #expect(livesLost(events).isEmpty, "\(pilots) pilots, net \(net): out the mouth is no goal")
+                        #expect(simd_distance(simd_normalize(engine.state.ball.velocity), simd_normalize(velocity)) < 1e-6, "\(pilots) pilots, net \(net): bent going through")
+                        for _ in 0 ..< 120 * 6 where engine.state.match.phase == .playing {
+                            engine.step(inputs: [:])
+                            events += engine.lastEvents
+                        }
+                        #expect(livesLost(events) == [owner], "\(pilots) pilots, net \(net), \(across) across, speed \(speed): banked back in")
                     }
                 }
-                for (index, shot) in shots.enumerated() {
-                    var engine = start
-                    for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
-                    engine.state.ball = BallState(position: shot.position, velocity: shot.velocity, radius: ring.ballRadius)
-                    engine.state.serveTicksRemaining = 0
-                    var inside = false
-                    var behind = false
-                    var events: [SimulationEvent] = []
-                    for _ in 0 ..< 120 * 2 {
-                        engine.step(inputs: [:])
-                        events += engine.lastEvents
-                        let ball = engine.state.ball.position
-                        if ring.backPocket(holding: ball) != nil { inside = true }
-                        if simd_length(ball) > ring.netBackRadius + ring.ballRadius,
-                           abs(remainder(atan2(ball.y, ball.x) - spoke, 2 * .pi)) < 0.15 { behind = true }
+                // In one side and out the other, both ways, below the goal
+                // line and across it.
+                for side in [1.0, -1.0] {
+                    for depth in [0.3, 0.9] {
+                        var engine = start
+                        for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+                        let wide = ring.netHalfWidth + ring.ballRadius + 0.05
+                        let velocity = worldVector(SIMD2(-side * 1.0, 0), ring: ring, net: net)
+                        engine.state.ball = BallState(position: ring.toWorld(SIMD2(side * wide, ring.netDepth * depth), net: net), velocity: velocity, radius: ring.ballRadius)
+                        engine.state.serveTicksRemaining = 0
+                        var events: [SimulationEvent] = []
+                        for _ in 0 ..< 120 * 2 where side * ring.toLocal(engine.state.ball.position, net: net).x > -wide {
+                            engine.step(inputs: [:])
+                            events += engine.lastEvents
+                        }
+                        #expect(livesLost(events).isEmpty, "\(pilots) pilots, net \(net), side \(side), depth \(depth)")
+                        #expect(simd_distance(simd_normalize(engine.state.ball.velocity), simd_normalize(velocity)) < 1e-6, "\(pilots) pilots, net \(net): bent crossing")
                     }
-                    let owner = start.state.freeForAll!.bays[net]
-                    #expect(!inside, "\(pilots) pilots, net \(net), shot \(index): got inside")
-                    #expect(!livesLost(events).contains(owner), "\(pilots) pilots, net \(net), shot \(index)")
-                    if index % 3 == 0 { #expect(behind, "\(pilots) pilots, net \(net), shot \(index): rolled round behind") }
                 }
             }
         }
     }
 
-    @Test("A knocked-out pilot's net is shut: the ball bounces off its mouth")
+    @Test("A knocked-out pilot's net is shut all round: the ball bounces off its mouth and off its back")
     func solidNet() {
         let (start, arena) = field(pilots: 3)
         let ring = arena.ring!
         var engine = start
         engine.state.freeForAll!.lives[.cyanWing] = 0
         engine.state.ships[.cyanWing] = nil
-        var pocketed = false
         let events = shoot(&engine, arena: arena, net: 1)
         #expect(livesLost(events).isEmpty)
         #expect(engine.state.match.phase == .playing)
-        for _ in 0 ..< 60 {
-            engine.step(inputs: [:])
-            if ring.backPocket(holding: engine.state.ball.position) == 1 { pocketed = true }
-        }
-        #expect(!pocketed, "never inside")
         #expect(ring.toLocal(engine.state.ball.position, net: 1).y > ring.netDepth, "came back off the mouth")
+
+        engine = start
+        engine.state.freeForAll!.lives[.cyanWing] = 0
+        for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+        engine.state.ball = BallState(position: ring.toWorld(SIMD2(0, -0.2), net: 1), velocity: worldVector(SIMD2(0, 1.0), ring: ring, net: 1), radius: ring.ballRadius)
+        engine.state.serveTicksRemaining = 0
+        for _ in 0 ..< 60 { engine.step(inputs: [:]) }
+        #expect(ring.toLocal(engine.state.ball.position, net: 1).y < 0, "came back off the back")
     }
 
     @Test("Hulls fly through a live net, in the mouth or across it, and a knocked-out pilot's net stops them")
@@ -476,17 +489,17 @@ struct FreeForAllTests {
         }
     }
 
-    @Test("The ring sliders reach the field: the line and the gap behind the nets move with them, a slack line lets a rival through, and stored settings clamp to their sliders")
+    @Test("The ring sliders reach the field: the line and the nets move with them, a slack line lets a rival through, and stored settings clamp to their sliders")
     func ringTuning() {
         var tuning = RingTuning()
         let ballRadius = SimulationConfiguration.online.ballRadius
         let base = RingField(pilots: 4, ballRadius: ballRadius)
         tuning.lineShare = 0.9
-        tuning.netGap = 0.2
+        tuning.rimRoom = 0.53
         let moved = RingField(pilots: 4, ballRadius: ballRadius, tuning: tuning)
-        #expect(abs(moved.maxCrossRadius / moved.mouthRadius - 0.9) < 1e-9)
-        #expect(abs(moved.backGap - base.backGap - 0.13) < 1e-9)
-        #expect(abs(base.netBackRadius - moved.netBackRadius - 0.13) < 1e-9, "the nets move in with the gap")
+        #expect(abs(moved.maxCrossRadius / moved.netBackRadius - 0.9) < 1e-9)
+        #expect(abs(moved.rimGap - base.rimGap - 0.13) < 1e-9)
+        #expect(abs(base.netBackRadius - moved.netBackRadius - 0.13) < 1e-9, "the nets move in with the room")
 
         // No push and no brake: a rival flies straight up to the mouth.
         var (engine, arena) = field(pilots: 3)
@@ -550,11 +563,13 @@ struct FreeForAllTests {
                     engine.state.ships[field.bays[0]] = nil
                 }
                 let seat = owner ? field.bays[0] : field.bays[1]
-                let mouth = ring.mouthCentre(0)
+                // A knocked-out net is solid to hulls and stands between the
+                // middle and its mouth, so that run aims at its back.
+                let mouth = knockedOut ? ring.toWorld(SIMD2(0, -0.15), net: 0) : ring.mouthCentre(0)
                 let straight = run(&engine, seat: seat, from: .zero, at: mouth)
                 if owner || knockedOut {
                     #expect(straight.offside == 0)
-                    #expect(straight.nearest < 0.1, "\(pilots)p owner \(owner) out \(knockedOut): \(straight.nearest) from the mouth")
+                    #expect(straight.nearest < 0.1, "\(pilots)p owner \(owner) out \(knockedOut): \(straight.nearest) from the target")
                 } else {
                     #expect(straight.offside > 0, "the run reaches the line")
                     #expect(straight.offside < 0.36, "\(pilots)p: \(straight.offside) past the line")
@@ -623,7 +638,7 @@ struct FreeForAllTests {
                 if engine.state.match.phase == .finished { break }
             }
         }
-        #expect(rival >= (pilots == 3 ? 10 : 15), "only \(rival) rival lives in 20 minutes")
+        #expect(rival >= (pilots == 3 ? 18 : 26), "only \(rival) rival lives in 20 minutes")
         #expect(Double(rival) > 1.3 * Double(own), "rival \(rival), own \(own)")
     }
 }
