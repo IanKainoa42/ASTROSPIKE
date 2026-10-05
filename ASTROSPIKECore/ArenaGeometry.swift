@@ -189,6 +189,14 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// goal's own centre, and a body meets whichever goal is nearest it.
     public var goalCentres: [Double] = [0]
 
+    /// Set on the round free-for-all field, which replaces the rectangle:
+    /// the walls, floor and roof are the rim and the hub, and the goals hang
+    /// from the hub in their own frames. Nil on every other court.
+    public var ring: RingField?
+
+    /// How many goals the field hangs.
+    public var goalCount: Int { ring?.spokeAngles.count ?? goalCentres.count }
+
     public init(
         halfWidth: Double = 0.96,
         floorY: Double = -0.64,
@@ -393,21 +401,20 @@ public struct ArenaGeometry: Equatable, Sendable {
         goalCentres.isEmpty ? 0 : goalCentres[goalIndex(nearest: x)]
     }
 
-    /// Room between neighbouring goals in free-for-all: their humps leave
-    /// about as much flat roof between them as the duel court leaves between
-    /// its hump and a corner.
-    public static let freeForAllGoalSpacing = 1.0
-    /// Wall to the nearest goal at either end of the free-for-all field:
-    /// just enough flat roof that the end hump never runs into the corner.
-    public static let freeForAllEndRoom = 0.70
-
-    /// The free-for-all field: the duel court's height and goal, one goal per
-    /// pilot, the field as long as it takes to hang them a bay apart.
+    /// The free-for-all field: the round one, a goal per pilot hanging from
+    /// the hub. The rectangle it carries is only the box the ring fits in,
+    /// for drawing and for bolts; nothing in it is solid, and with no net
+    /// style the duel's hump, lips and portal stay out of the world frame.
     public static func freeForAll(pilots: Int, ballRadius: Double) -> ArenaGeometry {
-        let count = max(2, pilots)
-        let length = 2 * freeForAllEndRoom + Double(count - 1) * freeForAllGoalSpacing
-        var court = ArenaGeometry(halfWidth: length / 2, ballRadius: ballRadius)
-        court.goalCentres = (0 ..< count).map { -length / 2 + freeForAllEndRoom + Double($0) * freeForAllGoalSpacing }
+        let ring = RingField(pilots: pilots, ballRadius: ballRadius)
+        var court = ArenaGeometry(
+            halfWidth: ring.rimRadius,
+            floorY: -ring.rimRadius,
+            ceilingY: ring.rimRadius,
+            ballRadius: ballRadius,
+            netStyle: .none
+        )
+        court.ring = ring
         return court
     }
 

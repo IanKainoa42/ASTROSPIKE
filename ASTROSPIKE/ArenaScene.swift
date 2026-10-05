@@ -105,7 +105,7 @@ final class ArenaScene: SKScene {
             buildArena()
         }
     }
-    private var isFreeForAllField: Bool { arena.goalCentres.count > 1 }
+    private var isFreeForAllField: Bool { arena.goalCount > 1 }
     /// The pilot's own team, so the court can say which goal is theirs to
     /// score in and which to defend. Nil in the warm-up bay.
     var localTeam: Team? {
@@ -420,6 +420,12 @@ final class ArenaScene: SKScene {
             arenaLayer.addChild(star)
         }
 
+        drawnSolidGoals = (0 ..< arena.goalCount).map { snapshot?.freeForAll?.isSolid(goal: $0) ?? false }
+        if let ring = arena.ring {
+            addRing(ring)
+            return
+        }
+
         let wall = SKShapeNode(path: boundsPath())
         wall.strokeColor = SKColor(white: 0.8, alpha: 0.45)
         wall.lineWidth = 3
@@ -435,7 +441,6 @@ final class ArenaScene: SKScene {
         floorNode.glowWidth = 1
         arenaLayer.addChild(floorNode)
 
-        drawnSolidGoals = arena.goalCentres.indices.map { snapshot?.freeForAll?.isSolid(goal: $0) ?? false }
         if arena.hasHump { for centre in arena.goalCentres { addHump(at: centre) } }
         addObstacles()
         switch arena.netStyle {
@@ -445,6 +450,41 @@ final class ArenaScene: SKScene {
             }
         case .floorWall: addStandingNet()
         case .none: addHoop()
+        }
+    }
+
+    /// The free-for-all ring: the rim the ball rolls round, the hub in the
+    /// middle, and every pilot's goal hanging out from the hub toward the rim.
+    private func addRing(_ ring: RingField) {
+        func circle(_ radius: Double) -> CGPath {
+            let path = CGMutablePath()
+            let steps = 96
+            for step in 0 ... steps {
+                let angle = Double(step) / Double(steps) * 2 * .pi
+                let screen = point(radius * cos(angle), radius * sin(angle))
+                if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
+            }
+            path.closeSubpath()
+            return path
+        }
+        let rim = SKShapeNode(path: circle(ring.rimRadius))
+        rim.strokeColor = .white.withAlphaComponent(0.55)
+        rim.lineWidth = 4
+        rim.glowWidth = 1
+        arenaLayer.addChild(rim)
+
+        let hub = SKShapeNode(path: circle(ring.hubRadius))
+        hub.fillColor = SKColor(white: 0.16, alpha: 1)
+        hub.strokeColor = .white.withAlphaComponent(0.85)
+        hub.lineWidth = 3
+        arenaLayer.addChild(hub)
+
+        for index in ring.spokeAngles.indices {
+            addPortalNet(
+                spoke: (ring, index),
+                owner: snapshot?.freeForAll?.owner(ofGoal: index),
+                solid: drawnSolidGoals[index]
+            )
         }
     }
 
@@ -724,10 +764,18 @@ final class ArenaScene: SKScene {
     /// On the free-for-all field there is one per pilot at `centre`, both
     /// faces in the owner's colour -- it is their goal from either side --
     /// and a knocked-out pilot's goal is drawn shut.
-    private func addPortalNet(at centre: Double = 0, owner: Seat? = nil, solid: Bool = false) {
+    ///
+    /// On the ring the goal is drawn in its own frame, `spoke`, turned out
+    /// from the hub.
+    private func addPortalNet(at centre: Double = 0, spoke: (ring: RingField, index: Int)? = nil, owner: Seat? = nil, solid: Bool = false) {
+        let arena = spoke?.ring.spoke ?? self.arena
         let half = arena.netHalfWidth
         let collarBottom = arena.portalMouthTopY
-        func point(_ x: Double, _ y: Double) -> CGPoint { self.point(centre + x, y) }
+        func point(_ x: Double, _ y: Double) -> CGPoint {
+            guard let spoke else { return self.point(centre + x, y) }
+            let world = spoke.ring.toWorld(SIMD2(x, y), spoke: spoke.index)
+            return self.point(world.x, world.y)
+        }
 
         // The collar: the part of the slab hanging from the hump, above the
         // mouth. Solid and neutral, like the cap.
@@ -932,7 +980,7 @@ final class ArenaScene: SKScene {
             didBuild = false
         }
         if let field = snapshot.freeForAll,
-           arena.goalCentres.indices.map(field.isSolid(goal:)) != drawnSolidGoals {
+           (0 ..< arena.goalCount).map(field.isSolid(goal:)) != drawnSolidGoals {
             didBuild = false
         }
         if !didBuild { buildArena() }
@@ -1022,6 +1070,11 @@ final class ArenaScene: SKScene {
         let step = 24 * frame.width / 904
         let image = UIGraphicsImageRenderer(size: frame.size).image { context in
             let cg = context.cgContext
+            // The ring fills its square edge to edge: the grid stops at the rim.
+            if arena.ring != nil {
+                cg.addEllipse(in: CGRect(origin: .zero, size: frame.size))
+                cg.clip()
+            }
             cg.setStrokeColor(UIColor.white.cgColor)
             cg.setLineWidth(1)
             var x: CGFloat = 0.5
@@ -1629,11 +1682,10 @@ final class ArenaScene: SKScene {
             case let .lifeLost(seat, _, _):
                 ballTrails.removeAll()
                 // The goal that conceded: its owner's, wherever it hangs.
-                if let bay = snapshot?.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
-                    goalBurst(
-                        at: point(arena.goalCentres[bay], (arena.portalMouthTopY + arena.netBottomY) / 2),
-                        color: seatColor(seat)
-                    )
+                if let bay = snapshot?.freeForAll?.bay(of: seat), bay < arena.goalCount {
+                    let mouth = arena.ring?.mouthCentre(bay)
+                        ?? SIMD2(arena.goalCentres[bay], (arena.portalMouthTopY + arena.netBottomY) / 2)
+                    goalBurst(at: point(mouth.x, mouth.y), color: seatColor(seat))
                 }
             case let .pilotOut(seat):
                 if let ship = snapshot?.ships[seat] {
@@ -2407,18 +2459,12 @@ final class ArenaScene: SKScene {
         // without ever having to cross the court's edge.
         let landscape = size.width > size.height
         let sideInset = landscape ? max(inset, size.width * controlMarginFraction) : inset
-        // The long free-for-all field fills the width between the pads and
-        // takes the duel court's stretch on this screen, so its goals look
-        // like the duel's goal. Blending toward the screen's own shape, as
-        // the duel does, would pull a field this long twice as tall as wide.
-        if arena.goalCentres.count > 1 {
-            let duel = arenaRect(in: size, arena: .standard)
-            let standardHeight = ArenaGeometry.standard.ceilingY - ArenaGeometry.standard.floorY
-            let stretch = (duel.height / CGFloat(standardHeight)) / (duel.width / CGFloat(ArenaGeometry.standard.halfWidth * 2))
-            let scaleX = min((size.width - sideInset * 2) / CGFloat(worldWidth), scaleY / stretch)
-            let width = CGFloat(worldWidth) * scaleX
-            let height = CGFloat(worldHeight) * scaleX * stretch
-            return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
+        // The ring is drawn round: one scale both ways, as big as fits
+        // between the pads. Stretched, the rim would be an ellipse the ball
+        // visibly leaves.
+        if arena.ring != nil {
+            let side = min(size.width - sideInset * 2, availableHeight)
+            return CGRect(x: -side / 2, y: -side / 2, width: side, height: side)
         }
         let stretchAmount: CGFloat = 0.6
         let blendedScaleX = uniform + (scaleX - uniform) * stretchAmount

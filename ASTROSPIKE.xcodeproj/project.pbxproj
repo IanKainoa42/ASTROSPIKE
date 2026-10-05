@@ -13,6 +13,7 @@
 		0B193428AC54E680033CB925 /* thrusterOrange.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */; };
 		0E4F35B9E15BE39946916228 /* HullCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */; };
 		0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */; };
+		1345336A015360BD3B2A33A1 /* RingField.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48AF2492F3DF8A459623E54 /* RingField.swift */; };
 		15FB0F19392BF65EE8A502AB /* TrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2140A496C623DA691A00885F /* TrackView.swift */; };
 		187691FC059EF69BB380EE10 /* ShipHitboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF08260D34E017255668BDB7 /* ShipHitboxTests.swift */; };
 		189E924BA0E92160B9785093 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD95C0514B3196435647AEC /* WireProtocol.swift */; };
@@ -284,6 +285,7 @@
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
 		F157410DAE452AAC1E251B9B /* SeatReturnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeatReturnTests.swift; sourceTree = "<group>"; };
+		F48AF2492F3DF8A459623E54 /* RingField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingField.swift; sourceTree = "<group>"; };
 		F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyDisclosureTests.swift; sourceTree = "<group>"; };
 		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -352,6 +354,7 @@
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
 				9A61EBE7A32C3AF4322C50CE /* OpenTable.swift */,
 				079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */,
+				F48AF2492F3DF8A459623E54 /* RingField.swift */,
 				6A89AE44E2F19595442A144C /* SeatReturn.swift */,
 				1D0AED08F5A123283EB23CBF /* ShipConceptCatalog.swift */,
 				645D1FA24033CE1191F24341 /* ShipDesigns.swift */,
@@ -666,6 +669,7 @@
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
 				BF3640FAEB076CBC170019A1 /* OpenTable.swift in Sources */,
 				8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */,
+				1345336A015360BD3B2A33A1 /* RingField.swift in Sources */,
 				7B0DB149601D478832101925 /* SeatReturn.swift in Sources */,
 				86D5CF5361D7F2585D97096D /* ShipConceptCatalog.swift in Sources */,
 				694B4410F85276442F78FF96 /* ShipDesigns.swift in Sources */,
@@ -909,7 +913,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 131;
+				CURRENT_PROJECT_VERSION = 132;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -969,7 +973,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 131;
+				CURRENT_PROJECT_VERSION = 132;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

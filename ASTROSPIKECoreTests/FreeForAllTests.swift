@@ -3,8 +3,9 @@ import simd
 import Testing
 @testable import ASTROSPIKECore
 
-/// Free-for-all: three or four pilots, one goal each down a long field, five
-/// lives, last pilot flying wins.
+/// Free-for-all: three or four pilots on the round field, one goal each
+/// hanging from the hub, gravity out to the rim, five lives, last pilot
+/// flying wins.
 @Suite("Free-for-all")
 struct FreeForAllTests {
     private func field(pilots: Int) -> (engine: SimulationEngine, arena: ArenaGeometry) {
@@ -19,11 +20,15 @@ struct FreeForAllTests {
     }
 
     /// Drives the ball flat into goal `goal` through the face on the `sign`
-    /// side, mid-mouth, and steps until the rally ends or it plainly missed.
+    /// side of its own frame, mid-mouth, and steps until the rally ends or it
+    /// plainly missed.
     private func shoot(_ engine: inout SimulationEngine, arena: ArenaGeometry, goal: Int, from sign: Double) -> [SimulationEvent] {
-        let centre = arena.goalCentres[goal]
-        let y = (arena.netBottomY + arena.portalMouthTopY) / 2
-        engine.state.ball = BallState(position: SIMD2(centre + sign * 0.2, y), velocity: SIMD2(-sign * 1.6, 0.4))
+        let ring = arena.ring!
+        let y = (ring.spoke.netBottomY + ring.spoke.portalMouthTopY) / 2
+        engine.state.ball = BallState(
+            position: ring.toWorld(SIMD2(sign * 0.2, y), spoke: goal),
+            velocity: ring.vectorToWorld(SIMD2(-sign * 1.6, 0.4), spoke: goal)
+        )
         var events: [SimulationEvent] = []
         for _ in 0 ..< 40 {
             engine.step(inputs: [:])
@@ -37,34 +42,55 @@ struct FreeForAllTests {
         events.compactMap { if case let .lifeLost(seat, _, _) = $0 { seat } else { nil } }
     }
 
-    @Test("The field is one goal per pilot, evenly spaced, centred, with room at the ends")
+    @Test("The field is a ring: one goal per pilot evenly round the hub, the duel's drop under each")
     func fieldLayout() {
+        let ballRadius = SimulationConfiguration.online.ballRadius
+        let duel = ArenaGeometry.standard(ballRadius: ballRadius)
         for pilots in [3, 4] {
-            let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: SimulationConfiguration.online.ballRadius)
-            #expect(arena.goalCentres.count == pilots)
-            #expect(abs(arena.goalCentres.reduce(0, +)) < 1e-9, "centred")
-            for (a, b) in zip(arena.goalCentres, arena.goalCentres.dropFirst()) {
-                #expect(abs(b - a - ArenaGeometry.freeForAllGoalSpacing) < 1e-9)
-                // Flat roof between neighbouring humps, so a ball can ride
-                // from one goal toward the next.
-                #expect(b - a > 2 * arena.humpBaseX, "humps overlap at \(pilots) pilots")
+            let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: ballRadius)
+            let ring = arena.ring!
+            #expect(arena.goalCount == pilots)
+            #expect(abs(ring.spokeAngles[0] + .pi / 2) < 1e-9, "goal 0 hangs straight down")
+            for (a, b) in zip(ring.spokeAngles, ring.spokeAngles.dropFirst()) {
+                #expect(abs(b - a - 2 * .pi / Double(pilots)) < 1e-9, "evenly spaced")
             }
-            // The end humps meet the roof before the corner arc begins.
-            #expect(arena.goalCentres.last! + arena.humpBaseX < arena.cornerTangentX)
-            #expect(arena.goalCentres.first! - arena.humpBaseX > -arena.cornerTangentX)
+            #expect(abs(ring.rimRadius - ring.hubRadius - (duel.humpUndersideY - duel.floorY)) < 1e-9)
+            for goal in ring.spokeAngles.indices {
+                // Every goal's own frame is the duel court round its net.
+                let point = SIMD2(0.3, -0.2)
+                #expect(simd_length(ring.toLocal(ring.toWorld(point, spoke: goal), spoke: goal) - point) < 1e-9)
+                let floor = ring.toWorld(SIMD2(0, duel.floorY), spoke: goal)
+                #expect(abs(simd_length(floor) - ring.rimRadius) < 1e-9, "the duel floor is the rim")
+                #expect(ring.spokeIndex(nearest: ring.mouthCentre(goal)) == goal)
+            }
         }
-        // The duel court keeps its one goal in the middle.
-        #expect(ArenaGeometry.standard.goalCentres == [0])
+        #expect(ArenaGeometry.standard.ring == nil, "the duel court stays a rectangle")
     }
 
-    @Test("Three pilots take the ends and one wing; four take every seat")
+    @Test("Gravity pulls out to the rim: a ball let go anywhere lands on it")
+    func gravityPullsOut() {
+        let (start, arena) = field(pilots: 4)
+        let ring = arena.ring!
+        // Between the goals, so the drop misses every lip and cap.
+        for bearing in stride(from: Double.pi / 8, to: 2 * .pi, by: .pi / 4) {
+            var engine = start
+            for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+            let out = SIMD2(cos(bearing), sin(bearing))
+            engine.state.ball = BallState(position: out * (ring.hubRadius + 0.3), velocity: .zero)
+            engine.state.serveTicksRemaining = 0
+            for _ in 0 ..< 1200 { engine.step(inputs: [:]) }
+            #expect(abs(simd_length(engine.state.ball.position) - (ring.rimRadius - ring.ballRadius)) < 0.01, "bearing \(bearing)")
+        }
+    }
+
+    @Test("Three pilots take the ends and one wing; four take every seat; everyone starts under their own goal")
     func seats() {
         #expect(FreeForAllState(seats: FreeForAllState.seats(pilots: 3)).bays == [.cyan, .cyanWing, .orange])
         #expect(FreeForAllState(seats: FreeForAllState.seats(pilots: 4)).bays == [.cyan, .cyanWing, .orangeWing, .orange])
         let (engine, arena) = field(pilots: 4)
         for (bay, seat) in engine.state.freeForAll!.bays.enumerated() {
             let ship = engine.state.ships[seat]!
-            #expect(abs(ship.position.x - arena.goalCentres[bay]) < 0.5, "\(seat) starts by its own goal")
+            #expect(arena.ring!.spokeIndex(nearest: ship.position) == bay, "\(seat) starts by its own goal")
             #expect(engine.state.freeForAll!.lives[seat] == FreeForAllState.startingLives)
         }
     }
@@ -74,7 +100,7 @@ struct FreeForAllTests {
         for pilots in [3, 4] {
             let (start, arena) = field(pilots: pilots)
             let bays = start.state.freeForAll!.bays
-            for goal in arena.goalCentres.indices {
+            for goal in 0 ..< arena.goalCount {
                 for sign in [-1.0, 1.0] {
                     var engine = start
                     let events = shoot(&engine, arena: arena, goal: goal, from: sign)
@@ -95,8 +121,9 @@ struct FreeForAllTests {
         let events = shoot(&engine, arena: arena, goal: 1, from: -1)
         #expect(livesLost(events).isEmpty)
         #expect(engine.state.match.phase == .playing)
-        #expect(engine.state.ball.velocity.x < 0, "came back off the face")
-        #expect(engine.state.ball.position.x < arena.goalCentres[1])
+        let ring = arena.ring!
+        #expect(ring.vectorToLocal(engine.state.ball.velocity, spoke: 1).x < 0, "came back off the face")
+        #expect(ring.toLocal(engine.state.ball.position, spoke: 1).x < 0)
     }
 
     @Test("The last life knocks a pilot out; the next serve drops from the nearest goal still open")
@@ -143,20 +170,23 @@ struct FreeForAllTests {
         #expect(Set(engine.state.ships.keys) == [.cyanWing, .orangeWing, .orange], "the knocked-out pilot stays out")
         #expect(engine.state.freeForAll!.lives == lives)
         for (bay, seat) in engine.state.freeForAll!.bays.enumerated() where seat != .cyan {
-            #expect(abs(engine.state.ships[seat]!.position.x - arena.goalCentres[bay]) < 0.5, "\(seat) by its own goal")
+            #expect(arena.ring!.spokeIndex(nearest: engine.state.ships[seat]!.position) == bay, "\(seat) by its own goal")
         }
         let serveBay = engine.state.freeForAll!.serveBay
-        #expect(abs(engine.state.ball.position.x - arena.goalCentres[serveBay]) < 0.05, "drops from the serving goal")
+        #expect(abs(arena.ring!.toLocal(engine.state.ball.position, spoke: serveBay).x) < 0.05, "drops from the serving goal")
     }
 
     @Test("Every other hull is a rival: a lead's bolt hits the seat that is its wing in doubles")
     func boltHitsFormerTeammate() {
-        var (engine, _) = field(pilots: 3)
-        engine.state.ball.position = .init(1.0, 0.45)
-        engine.state.ball.velocity = .zero
+        var (engine, arena) = field(pilots: 3)
         let wing = engine.state.ships[.cyanWing]!
-        engine.state.bolts = [BoltState(id: 900, owner: .cyan, seat: .cyan, position: wing.position + .init(0.15, 0),
-                                        velocity: .init(-2.6, 0), ticksRemaining: 60)]
+        // Fired straight out at the wing from the hub side, the ball across
+        // the ring out of the way.
+        let out = arena.ring!.outward(at: wing.position)
+        engine.state.ball.position = -out * 1.0
+        engine.state.ball.velocity = .zero
+        engine.state.bolts = [BoltState(id: 900, owner: .cyan, seat: .cyan, position: wing.position - out * 0.15,
+                                        velocity: out * 2.6, ticksRemaining: 60)]
         var events: [SimulationEvent] = []
         for _ in 0 ..< 10 {
             engine.step(inputs: [:])
@@ -176,15 +206,18 @@ struct FreeForAllTests {
     }
 
     /// The bot is chaotic, so judge it over several starts rather than one.
+    /// Alone against idle hulls it averages about 0.4 lives a minute at three
+    /// pilots and 0.7 at four (200-minute samples): on the ring it carries the
+    /// ball a third of the way round to the next goal on its own.
     @Test("The bot takes rivals' lives far more often than it gives up its own", arguments: [3, 4])
     func botScores(pilots: Int) {
         var rival = 0
         var own = 0
-        for offset in [0, 37, 91, 150, 233] {
+        for offset in [0, 37, 91, 150, 233, 311, 389, 467, 541, 613] {
             var (engine, arena) = field(pilots: pilots)
             for _ in 0 ..< offset { engine.step(inputs: [:]) }
             var bot = FreeForAllPilot(difficulty: .ace, configuration: .online)
-            for _ in 0 ..< 60 * 120 {
+            for _ in 0 ..< 120 * 120 {
                 let input = bot.input(for: engine.state, seat: .cyanWing, arena: arena, tick: engine.state.tick)
                 engine.step(inputs: [.cyanWing: input])
                 for case let .lifeLost(seat, _, _) in engine.lastEvents {
@@ -193,7 +226,7 @@ struct FreeForAllTests {
                 if engine.state.match.phase == .finished { break }
             }
         }
-        #expect(rival >= 6, "only \(rival) rival lives in 10 minutes")
+        #expect(rival >= 5, "only \(rival) rival lives in 20 minutes")
         #expect(rival >= 2 * own, "rival \(rival), own \(own)")
     }
 }

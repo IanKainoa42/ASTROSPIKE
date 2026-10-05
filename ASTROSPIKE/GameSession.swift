@@ -20,7 +20,7 @@ enum GameMode: Hashable {
     /// One rim at centre court that both halves shoot at. First ball through
     /// it takes the match, for whoever touched it last.
     case basketball(AIDifficulty)
-    /// Three or four pilots down one long field, a goal each, five lives,
+    /// Three or four pilots round one ring, a goal each, five lives,
     /// last one flying wins. Bots fill every seat but yours.
     case freeForAll(pilots: Int, AIDifficulty)
 
@@ -138,7 +138,7 @@ final class GameSession {
     /// runs bots, and only for a seat nobody took.
     private var pilots: [Seat: AIController] = [:]
     /// The free-for-all field's bots, one per seat but yours. They fly a
-    /// long field with a goal each, which the duel bot alone cannot read.
+    /// ring with a goal each, which the duel bot alone cannot read.
     private var fieldPilots: [Seat: FreeForAllPilot] = [:]
     /// Free-for-all pilots in the order they were knocked out, first out
     /// first. The results card ranks the field from it.
@@ -241,7 +241,7 @@ final class GameSession {
             }
         }
         // Four free-for-all pilots fill the same seats as doubles, but it is
-        // not doubles: one ball, one long field, no teams.
+        // not doubles: one ball, one ring, no teams.
         let isDoubles = !mode.isFreeForAll && roster == Seat.doubles
         self.isDoubles = isDoubles
         let configuration = Self.resolved(configuration, mode: mode, isDoubles: isDoubles)
@@ -419,7 +419,7 @@ final class GameSession {
     ) -> ArenaGeometry {
         let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
             : mode.court(ballRadius: configuration.ballRadius)
-        // The layouts are cut for the duel court; the long field has none.
+        // The layouts are cut for the duel court; the ring has none.
         guard court.netStyle == .roofPortal, !mode.isFreeForAll else { return court }
         return court.laidOut(configuration.arenaLayout)
     }
@@ -431,7 +431,7 @@ final class GameSession {
     }
 
     /// Free-for-all plays one ball whatever the slider says: a second one
-    /// would be a serve nobody saw coming at the far end of a long field.
+    /// would be a serve nobody saw coming on the far side of the ring.
     private static func resolved(
         _ configuration: SimulationConfiguration,
         mode: GameMode,

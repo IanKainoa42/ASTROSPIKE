@@ -116,6 +116,12 @@ public struct AIController: InputSource, Sendable {
     /// Free-for-all: how near the goal the ball must be before the bot lobs
     /// it at the mouth rather than driving it in.
     private static let freeForAllLobRange = 0.55
+    /// Ring set-up pass: where it drops the ball, out from and below the goal.
+    private static let ringSetUpX = 0.20
+    private static let ringSetUpDrop = 0.10
+    private static func ringSetUp(homeSign: Double, arena: ArenaGeometry) -> SIMD2<Double> {
+        SIMD2(homeSign * ringSetUpX, arena.netBottomY - ringSetUpDrop)
+    }
     /// Seconds a plan assumes the ship spends turning before it can move.
     private static let turnLatency = 0.25
     /// Contact ticks after which the ball is swatted clear no matter what.
@@ -150,6 +156,21 @@ public struct AIController: InputSource, Sendable {
     /// count, so every shot is lobbed at the mouth instead of driven across
     /// to bounce in the far half.
     public var freeRoam = false
+    /// Free-for-all on the ring, seen from one goal: gravity points out from
+    /// `centre` and the floor is the rim, a circle about it, with the hub
+    /// inside -- no flat deck, no walls. Nil everywhere else.
+    public struct Bowl: Sendable {
+        public var centre: SIMD2<Double>
+        public var rim: Double
+        public var hub: Double
+
+        public init(centre: SIMD2<Double>, rim: Double, hub: Double) {
+            self.centre = centre
+            self.rim = rim
+            self.hub = hub
+        }
+    }
+    public var bowl: Bowl?
 
     public init(
         difficulty: AIDifficulty,
@@ -276,7 +297,7 @@ public struct AIController: InputSource, Sendable {
             closingVelocity = .zero
         }
         if recovering {
-            target = SIMD2(ship.position.x, arena.floorY + 0.21)
+            target = SIMD2(ship.position.x, deck(at: ship.position.x) + 0.21)
             closingVelocity = .zero
         }
 
@@ -293,21 +314,21 @@ public struct AIController: InputSource, Sendable {
         // Never ask for a descent that cannot be arrested, allowing for the turn.
         // Landing is allowed now, so this only stops the ship arriving so fast it
         // bounces away from a ball it meant to play.
-        let headroom = max(0, ship.position.y - (arena.floorY + 0.065))
+        let headroom = max(0, ship.position.y - (deck(at: ship.position.x) + 0.065))
         desiredVelocity.y = max(
             desiredVelocity.y,
             -(2 * 2.6 * max(0, headroom - 0.04)).squareRoot()
         )
 
         var need = (desiredVelocity - ship.velocity) * Self.accelerationGain
-            - configuration.gravity
+            - gravity(at: ship.position)
         if crossingDanger {
             need.x = homeSign * (7 + abs(ship.velocity.x) * 2)
         }
         // Keep the nose inside a lift cone that tightens as the ship descends. A
         // lander pointed at the horizon has no vertical support and is half a
         // second of turning away from being able to save itself.
-        let altitudeMargin = min(1, max(0, (ship.position.y - (arena.floorY + 0.05)) / 0.33))
+        let altitudeMargin = min(1, max(0, (ship.position.y - (deck(at: ship.position.x) + 0.05)) / 0.33))
         var minimumPitch = 0.42 + 0.30 * (1 - altitudeMargin)
         // The goal hangs from the roof, so the run-up is under the ball and
         // the ship spends its life needing to get low. Inside the cone every
@@ -459,7 +480,7 @@ public struct AIController: InputSource, Sendable {
         let brakingDistance = descentAfterTurn > 0
             ? descentAfterTurn * descentAfterTurn / (2 * netLift)
             : 0
-        return ship.position.y - dropWhileTurning - brakingDistance < arena.floorY + 0.033
+        return ship.position.y - dropWhileTurning - brakingDistance < deck(at: ship.position.x) + 0.033
     }
 
     /// Rolls the ball forward through the arena and takes the first strike point
@@ -502,40 +523,64 @@ public struct AIController: InputSource, Sendable {
 
         for step in 1 ... Self.predictionSteps {
             let previous = position
-            velocity.y += ballGravity * Self.predictionStep
+            if bowl == nil {
+                velocity.y += ballGravity * Self.predictionStep
+            } else {
+                velocity += gravity(at: position, scale: configuration.ballGravityMultiplier) * Self.predictionStep
+            }
             (velocity, spin) = BallState.curved(velocity, spin: spin, over: Self.predictionStep)
             position += velocity * Self.predictionStep
-            if position.x - radius <= -arena.halfWidth {
-                let incoming = velocity
-                position.x = -arena.halfWidth + radius
-                velocity.x = abs(velocity.x) * SimulationEngine.ballRestitution
-                grip(SIMD2(1, 0), from: incoming)
-            }
-            if position.x + radius >= arena.halfWidth {
-                let incoming = velocity
-                position.x = arena.halfWidth - radius
-                velocity.x = -abs(velocity.x) * SimulationEngine.ballRestitution
-                grip(SIMD2(-1, 0), from: incoming)
-            }
-            if position.y + radius >= arena.ceilingY {
-                let incoming = velocity
-                position.y = arena.ceilingY - radius
-                velocity.y = -abs(velocity.y) * SimulationEngine.ballRestitution
-                grip(SIMD2(0, -1), from: incoming)
-            }
-            if position.y - radius <= arena.floorY {
-                let incoming = velocity
-                position.y = arena.floorY + radius
-                velocity.y = abs(velocity.y) * SimulationEngine.floorRestitution
-                grip(SIMD2(0, 1), from: incoming)
-            }
-            if let hump = arena.humpContact(position: position, radius: radius) {
-                position = hump.position
-                let inward = simd_dot(velocity, hump.normal)
-                if inward < 0 {
+            if let bowl {
+                // The rim and the hub, and nothing else round the ring.
+                let offset = position - bowl.centre
+                let distance = simd_length(offset)
+                let out = distance > 0.000_001 ? offset / distance : SIMD2(0, -1)
+                if distance + radius >= bowl.rim {
                     let incoming = velocity
-                    velocity -= hump.normal * ((1 + SimulationEngine.ballRestitution) * inward)
-                    grip(hump.normal, from: incoming)
+                    position = bowl.centre + out * (bowl.rim - radius)
+                    let outward = simd_dot(velocity, out)
+                    if outward > 0 { velocity -= out * ((1 + SimulationEngine.floorRestitution) * outward) }
+                    grip(-out, from: incoming)
+                } else if distance - radius <= bowl.hub {
+                    let incoming = velocity
+                    position = bowl.centre + out * (bowl.hub + radius)
+                    let inward = simd_dot(velocity, out)
+                    if inward < 0 { velocity -= out * ((1 + SimulationEngine.ballRestitution) * inward) }
+                    grip(out, from: incoming)
+                }
+            } else {
+                if position.x - radius <= -arena.halfWidth {
+                    let incoming = velocity
+                    position.x = -arena.halfWidth + radius
+                    velocity.x = abs(velocity.x) * SimulationEngine.ballRestitution
+                    grip(SIMD2(1, 0), from: incoming)
+                }
+                if position.x + radius >= arena.halfWidth {
+                    let incoming = velocity
+                    position.x = arena.halfWidth - radius
+                    velocity.x = -abs(velocity.x) * SimulationEngine.ballRestitution
+                    grip(SIMD2(-1, 0), from: incoming)
+                }
+                if position.y + radius >= arena.ceilingY {
+                    let incoming = velocity
+                    position.y = arena.ceilingY - radius
+                    velocity.y = -abs(velocity.y) * SimulationEngine.ballRestitution
+                    grip(SIMD2(0, -1), from: incoming)
+                }
+                if position.y - radius <= arena.floorY {
+                    let incoming = velocity
+                    position.y = arena.floorY + radius
+                    velocity.y = abs(velocity.y) * SimulationEngine.floorRestitution
+                    grip(SIMD2(0, 1), from: incoming)
+                }
+                if let hump = arena.humpContact(position: position, radius: radius) {
+                    position = hump.position
+                    let inward = simd_dot(velocity, hump.normal)
+                    if inward < 0 {
+                        let incoming = velocity
+                        velocity -= hump.normal * ((1 + SimulationEngine.ballRestitution) * inward)
+                        grip(hump.normal, from: incoming)
+                    }
                 }
             }
             if let obstacle = field.obstacleContact(from: previous, to: position, radius: radius) {
@@ -614,7 +659,8 @@ public struct AIController: InputSource, Sendable {
             if gone { break }
             guard position.x * homeSign > 0.06,
                   position.y <= ceiling,
-                  position.y >= floor else { continue }
+                  position.y >= (bowl == nil ? floor : deck(at: position.x) + (floor - arena.floorY)),
+                  bowl == nil || abs(position.x) < arena.halfWidth - 0.10 else { continue }
 
             let (shot, strike) = shotPlan(
                 from: position,
@@ -626,7 +672,7 @@ public struct AIController: InputSource, Sendable {
             // ground is survivable and `clamped` lifts the run-up off it --
             // as long as the contact itself is not down in the deck.
             let contact = position - shot * Self.strikeStandoff
-            guard contact.y >= arena.floorY + (arena.hoop == nil ? 0.10 : 0.045) else { continue }
+            guard contact.y >= deck(at: contact.x) + (arena.hoop == nil ? 0.10 : 0.045) else { continue }
             let runup = position - shot * (Self.strikeStandoff + Self.strikeRunup)
 
             let delay = Double(step) * Self.predictionStep
@@ -690,6 +736,12 @@ public struct AIController: InputSource, Sendable {
             )
             return lob(from: point, to: mouth, ballVelocity: ballVelocity)
         }
+        if bowl != nil, arena.hoop == nil {
+            // On the ring nothing stops a drive: it runs under the goal and
+            // on round the rim. So from out wide the ball is set up in close
+            // on this side, for the lob next touch.
+            return lob(from: point, to: Self.ringSetUp(homeSign: homeSign, arena: arena), ballVelocity: ballVelocity)
+        }
         guard let hoop = arena.hoop else {
             return (shotDirection(from: point, homeSign: homeSign), difficulty.strikeSpeed)
         }
@@ -727,7 +779,23 @@ public struct AIController: InputSource, Sendable {
         to target: SIMD2<Double>,
         ballVelocity: SIMD2<Double>
     ) -> (shot: SIMD2<Double>, strike: Double) {
-        let delta = target - point
+        guard let bowl else {
+            return drive(sending: ballVelocity, to: lobVelocity(target - point))
+        }
+        // In the bowl gravity points out from the centre, so solve the arc
+        // with "down" the way it pulls halfway along it.
+        let out = simd_normalize((point + target) / 2 - bowl.centre)
+        let tilt = atan2(out.x, -out.y)
+        func turned(_ v: SIMD2<Double>, by angle: Double) -> SIMD2<Double> {
+            SIMD2(v.x * cos(angle) - v.y * sin(angle), v.x * sin(angle) + v.y * cos(angle))
+        }
+        let wanted = turned(lobVelocity(turned(target - point, by: -tilt)), by: tilt)
+        return drive(sending: ballVelocity, to: wanted)
+    }
+
+    /// The launch velocity of the gentlest arc that covers `delta` under
+    /// gravity straight down.
+    private func lobVelocity(_ delta: SIMD2<Double>) -> SIMD2<Double> {
         let gravity = max(
             0.001,
             -configuration.gravity.y * configuration.ballGravityMultiplier
@@ -751,7 +819,7 @@ public struct AIController: InputSource, Sendable {
             direction = SIMD2(sign * cos(angle), sin(angle))
             launch = (gravity * (delta.y + span)).squareRoot() * 1.04
         }
-        return drive(sending: ballVelocity, to: direction * launch)
+        return direction * launch
     }
 
     /// Turns a wanted ball velocity into the drive that produces it: which way
@@ -820,9 +888,25 @@ public struct AIController: InputSource, Sendable {
         if abs(result.x) > arena.halfWidth - 0.10 {
             result.x = homeSign * (arena.halfWidth - 0.10)
         }
-        let deck = arena.floorY + (arena.hoop == nil ? 0.115 : 0.085)
+        let deck = deck(at: result.x) + (arena.hoop == nil ? 0.115 : 0.085)
         result.y = max(deck, min(arena.ceilingY - 0.082, result.y))
         return result
+    }
+
+    /// The floor under `x`: the flat deck, or the rim of the bowl.
+    private func deck(at x: Double) -> Double {
+        guard let bowl else { return arena.floorY }
+        let across = x - bowl.centre.x
+        return bowl.centre.y - max(0, bowl.rim * bowl.rim - across * across).squareRoot()
+    }
+
+    /// Gravity at `point`: straight down, or out from the bowl's centre.
+    private func gravity(at point: SIMD2<Double>, scale: Double = 1) -> SIMD2<Double> {
+        guard let bowl else { return configuration.gravity * scale }
+        let offset = point - bowl.centre
+        let distance = simd_length(offset)
+        let out = distance > 0.000_001 ? offset / distance : SIMD2(0, -1)
+        return out * (simd_length(configuration.gravity) * scale)
     }
 
     private func normalizedAngle(_ angle: Double) -> Double {

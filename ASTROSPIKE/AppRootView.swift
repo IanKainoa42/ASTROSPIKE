@@ -449,7 +449,7 @@ private struct FreeForAllSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("FREE-FOR-ALL").font(.title.bold())
-            Text("One long field, a goal each. A ball through either face of yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+            Text("One round arena, a goal each hanging from the middle, gravity pulling out to the rim. A ball through either face of yours costs a life. Lose all five and you're out. Last pilot flying wins.")
                 .font(.footnote).foregroundStyle(.secondary)
             Picker("Pilots", selection: $pilots) {
                 Text("3 PILOTS").tag(3)
@@ -470,7 +470,7 @@ private struct FreeForAllSheet: View {
     Color(uiColor: ArenaScene.freeForAllColor(for: seat))
 }
 
-/// One chip per pilot down the field, left to right: colour, name, lives.
+/// One chip per pilot, in seat order: colour, name, lives.
 private struct FreeForAllHUD: View {
     let state: WorldState
     let localSeat: Seat?
