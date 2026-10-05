@@ -168,6 +168,13 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
     /// the tally after it. Never sent for the set that ends the match.
     case setEnded(winner: Team, sets: Score)
     case matchEnded(winner: Team)
+    /// Free-for-all: a ball went through `seat`'s goal. `by` is whoever
+    /// played it last -- `seat` itself for an own goal, nil for nobody.
+    case lifeLost(seat: Seat, by: Seat?, livesLeft: Int)
+    /// Free-for-all: `seat` lost its last life and left the field.
+    case pilotOut(Seat)
+    /// Free-for-all: one pilot is left flying.
+    case lastPilotStanding(Seat)
 }
 
 public struct MatchRules: Sendable {

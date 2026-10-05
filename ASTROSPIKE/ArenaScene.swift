@@ -89,6 +89,23 @@ final class ArenaScene: SKScene {
     /// sets, so every half-coloured mark is drawn for whoever is on that half.
     private var drawnSidesSwapped = false
     private var leftTeam: Team { drawnSidesSwapped ? .orange : .cyan }
+    /// Which goals were solid when the free-for-all field was last drawn, so
+    /// a knockout redraws its goal closed.
+    private var drawnSolidGoals: [Bool] = []
+
+    /// Two teams, or four pilots each in a colour of their own.
+    enum SeatColors { case teams, freeForAll }
+    var seatColors: SeatColors = .teams {
+        didSet {
+            guard seatColors != oldValue else { return }
+            // Hulls take their colour every frame (applyEmote); the markers
+            // and the court are drawn once.
+            for (seat, marker) in markerNodes { marker.fontColor = seatColor(seat) }
+            didBuild = false
+            buildArena()
+        }
+    }
+    private var isFreeForAllField: Bool { arena.goalCentres.count > 1 }
     /// The pilot's own team, so the court can say which goal is theirs to
     /// score in and which to defend. Nil in the warm-up bay.
     var localTeam: Team? {
@@ -311,10 +328,34 @@ final class ArenaScene: SKScene {
         }
     }
 
+    /// Free-for-all colours: the two leads keep theirs and the wings, which
+    /// are a pale tint of their side in doubles, become a colour of their own.
+    static func freeForAllColor(for seat: Seat) -> SKColor {
+        switch seat {
+        case .cyan: hullColor(for: .cyan)
+        case .orange: hullColor(for: .orange)
+        case .cyanWing: SKColor(red: 0.35, green: 1.0, blue: 0.35, alpha: 1)
+        case .orangeWing: SKColor(red: 1.0, green: 0.30, blue: 0.75, alpha: 1)
+        }
+    }
+
+    static func freeForAllName(for seat: Seat) -> String {
+        switch seat {
+        case .cyan: "CYAN"
+        case .cyanWing: "GREEN"
+        case .orangeWing: "PINK"
+        case .orange: "ORANGE"
+        }
+    }
+
+    private func seatColor(_ seat: Seat) -> SKColor {
+        seatColors == .freeForAll ? Self.freeForAllColor(for: seat) : Self.hullColor(for: seat)
+    }
+
     private func configureActorNodes() {
         for seat in Seat.allCases {
             guard let ship = shipNodes[seat], let exhaust = exhaustNodes[seat] else { continue }
-            let color = Self.hullColor(for: seat)
+            let color = seatColor(seat)
             ship.fillColor = color
             ship.strokeColor = color
             ship.lineWidth = seat.isWing ? 2.5 : 2.0
@@ -341,6 +382,7 @@ final class ArenaScene: SKScene {
         let frame = arenaRect
         buildLighting(in: frame)
 
+        if !isFreeForAllField {
         let leftZone = SKShapeNode(rect: CGRect(
             x: frame.minX,
             y: frame.minY,
@@ -364,6 +406,7 @@ final class ArenaScene: SKScene {
         addSideLabel(for: leftTeam.opponent, at: point(0.72, 0.68))
         addCrossingLimit(for: leftTeam, onHalfAt: -1)
         addCrossingLimit(for: leftTeam.opponent, onHalfAt: 1)
+        }
 
         for index in 0..<56 {
             let seed = Double(index * 7919 % 101) / 101
@@ -392,10 +435,14 @@ final class ArenaScene: SKScene {
         floorNode.glowWidth = 1
         arenaLayer.addChild(floorNode)
 
-        if arena.hasHump { addHump() }
+        drawnSolidGoals = arena.goalCentres.indices.map { snapshot?.freeForAll?.isSolid(goal: $0) ?? false }
+        if arena.hasHump { for centre in arena.goalCentres { addHump(at: centre) } }
         addObstacles()
         switch arena.netStyle {
-        case .roofPortal: addPortalNet()
+        case .roofPortal:
+            for (index, centre) in arena.goalCentres.enumerated() {
+                addPortalNet(at: centre, owner: snapshot?.freeForAll?.owner(ofGoal: index), solid: drawnSolidGoals[index])
+            }
         case .floorWall: addStandingNet()
         case .none: addHoop()
         }
@@ -639,16 +686,16 @@ final class ArenaScene: SKScene {
     /// The hump the net hangs from: the corner fillet mirrored into the middle
     /// of the roof, walked from the same samples the simulation collides
     /// against so the drawn slope cannot drift from the one balls bounce off.
-    private func addHump() {
+    private func addHump(at centre: Double = 0) {
         let profile = arena.humpProfile
 
         let hill = CGMutablePath()
-        hill.move(to: point(-profile.last!.x, arena.ceilingY))
+        hill.move(to: point(centre - profile.last!.x, arena.ceilingY))
         for sample in profile.reversed() {
-            hill.addLine(to: point(-sample.x, sample.y))
+            hill.addLine(to: point(centre - sample.x, sample.y))
         }
         for sample in profile {
-            hill.addLine(to: point(sample.x, sample.y))
+            hill.addLine(to: point(centre + sample.x, sample.y))
         }
         hill.closeSubpath()
 
@@ -673,9 +720,14 @@ final class ArenaScene: SKScene {
     /// team coloured -- because clipping it rebounds rather than scoring. The
     /// lips either side of the cap are the one part of the goal that helps:
     /// they tilt in, and a ball that lands on one rolls into the mouth.
-    private func addPortalNet() {
+    ///
+    /// On the free-for-all field there is one per pilot at `centre`, both
+    /// faces in the owner's colour -- it is their goal from either side --
+    /// and a knocked-out pilot's goal is drawn shut.
+    private func addPortalNet(at centre: Double = 0, owner: Seat? = nil, solid: Bool = false) {
         let half = arena.netHalfWidth
         let collarBottom = arena.portalMouthTopY
+        func point(_ x: Double, _ y: Double) -> CGPoint { self.point(centre + x, y) }
 
         // The collar: the part of the slab hanging from the hump, above the
         // mouth. Solid and neutral, like the cap.
@@ -700,13 +752,14 @@ final class ArenaScene: SKScene {
         mouth.closeSubpath()
         let mouthNode = SKShapeNode(path: mouth)
         mouthNode.strokeColor = .clear
-        mouthNode.fillColor = SKColor(white: 0, alpha: 0.85)
+        mouthNode.fillColor = solid ? SKColor(white: 0.16, alpha: 1) : SKColor(white: 0, alpha: 0.85)
         mouthNode.zPosition = -1
         arenaLayer.addChild(mouthNode)
 
         for sign in [-1.0, 1.0] {
             // Coloured for the team that defends it: whoever is on that half.
-            let color = Self.color(sign < 0 ? leftTeam : leftTeam.opponent)
+            let color = owner.map { solid ? SKColor(white: 0.55, alpha: 1) : seatColor($0) }
+                ?? Self.color(sign < 0 ? leftTeam : leftTeam.opponent)
             let face = CGMutablePath()
             face.move(to: point(half * sign, collarBottom))
             face.addLine(to: point(half * sign, arena.netBottomY))
@@ -716,11 +769,11 @@ final class ArenaScene: SKScene {
             // Everything structural around them is hard. The colour says who
             // defends a face, not who aims at it -- the SCORE and DEFEND calls
             // beside them say that.
-            faceNode.lineWidth = 4
-            faceNode.glowWidth = 4
+            faceNode.lineWidth = solid ? 2 : 4
+            faceNode.glowWidth = solid ? 0 : 4
             arenaLayer.addChild(faceNode)
         }
-        addGoalCalls()
+        if owner == nil { addGoalCalls() }
 
         // The cap: solid, neutral, and the part of the net that bounces.
         let cap = CGMutablePath()
@@ -878,6 +931,10 @@ final class ArenaScene: SKScene {
             drawnSidesSwapped = snapshot.sidesSwapped
             didBuild = false
         }
+        if let field = snapshot.freeForAll,
+           arena.goalCentres.indices.map(field.isSolid(goal:)) != drawnSolidGoals {
+            didBuild = false
+        }
         if !didBuild { buildArena() }
         for (index, holder) in bumperNodes where index < snapshot.bumpers.count && index < arena.obstacles.count {
             // Through `point` at both ends, not one scale: the court is drawn
@@ -905,7 +962,9 @@ final class ArenaScene: SKScene {
         // draws still shows the turn it missed.
         let spunTicks = ballSpinTick.map { snapshot.tick > $0 ? Double(min(snapshot.tick - $0, 30)) : 0 } ?? 0
         ballSpinTick = snapshot.tick
-        let tint = snapshot.lastBallToucher.map { Self.color($0) }
+        let tint = snapshot.freeForAll != nil
+            ? snapshot.ball.lastPlay.map { seatColor($0.seat) }
+            : snapshot.lastBallToucher.map { Self.color($0) }
         let fx = labScale
         for (index, node) in balls.enumerated() {
             let ring = gripRings[index]
@@ -1481,7 +1540,7 @@ final class ArenaScene: SKScene {
     private func emoteBurst(_ emote: Emote, seat: Seat, index: Int) {
         guard let ship = shipNodes[seat], !ship.isHidden else { return }
         let at = ship.position
-        let team = Self.hullColor(for: seat)
+        let team = seatColor(seat)
         let fx = labScale
         switch emote {
         case .barrelRoll:
@@ -1511,7 +1570,7 @@ final class ArenaScene: SKScene {
     /// included, so an emote cut short by a rebuild or a match end can never
     /// leave a ship in the wrong team's colour.
     private func applyEmote(seat: Seat, ship: SKShapeNode, exhaust: SKSpriteNode) {
-        var color = Self.hullColor(for: seat)
+        var color = seatColor(seat)
         var flame = Self.color(hullLook(seat).flame)
         if let active = activeEmotes[seat] {
             let t = (CACurrentMediaTime() - active.start) / active.emote.duration
@@ -1567,7 +1626,20 @@ final class ArenaScene: SKScene {
                 zap(seat: seat, at: position)
             case .rallyReset, .setEnded:
                 ballTrails.removeAll()
-            case .goalScored, .play, .matchEnded:
+            case let .lifeLost(seat, _, _):
+                ballTrails.removeAll()
+                // The goal that conceded: its owner's, wherever it hangs.
+                if let bay = snapshot?.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
+                    goalBurst(
+                        at: point(arena.goalCentres[bay], (arena.portalMouthTopY + arena.netBottomY) / 2),
+                        color: seatColor(seat)
+                    )
+                }
+            case let .pilotOut(seat):
+                if let ship = snapshot?.ships[seat] {
+                    sparks(at: point(ship.position.x, ship.position.y), color: seatColor(seat))
+                }
+            case .goalScored, .play, .matchEnded, .lastPilotStanding:
                 break
             }
         }
@@ -1674,7 +1746,8 @@ final class ArenaScene: SKScene {
         if let marker {
             let doubles = (snapshot?.ships.count ?? 0) > 2
             let text: String? = !doubles || localSeat == nil ? nil
-                : seat == localSeat ? "YOU" : seat == localSeat?.partner ? "ALLY" : nil
+                : seat == localSeat ? "YOU"
+                : seatColors == .teams && seat == localSeat?.partner ? "ALLY" : nil
             marker.isHidden = text == nil || state.isDestroyed
             if let text {
                 marker.text = text
@@ -1807,7 +1880,7 @@ final class ArenaScene: SKScene {
         // An enemy hull in the cone is hauled too, and tethered the same way
         // when no ball is: otherwise holding a ship would look like nothing.
         for (other, ship) in snapshot.ships
-        where held == nil && other.team != seat.team && !ship.isDestroyed {
+        where held == nil && (snapshot.freeForAll != nil ? other != seat : other.team != seat.team) && !ship.isDestroyed {
             let offset = ship.position - tip
             let distance = simd_length(offset)
             guard distance > 0, distance < range else { continue }
@@ -2329,14 +2402,27 @@ final class ArenaScene: SKScene {
         let scaleX = availableWidth / CGFloat(worldWidth)
         let scaleY = availableHeight / CGFloat(worldHeight)
         let uniform = min(scaleX, scaleY)
-        let stretchAmount: CGFloat = 0.6
-        let blendedScaleX = uniform + (scaleX - uniform) * stretchAmount
-        let blendedScaleY = uniform + (scaleY - uniform) * stretchAmount
         // In landscape the outer strips are the thumb pads' home: the court
         // never grows into them, so a thumb in the corner reaches the pads
         // without ever having to cross the court's edge.
         let landscape = size.width > size.height
         let sideInset = landscape ? max(inset, size.width * controlMarginFraction) : inset
+        // The long free-for-all field fills the width between the pads and
+        // takes the duel court's stretch on this screen, so its goals look
+        // like the duel's goal. Blending toward the screen's own shape, as
+        // the duel does, would pull a field this long twice as tall as wide.
+        if arena.goalCentres.count > 1 {
+            let duel = arenaRect(in: size, arena: .standard)
+            let standardHeight = ArenaGeometry.standard.ceilingY - ArenaGeometry.standard.floorY
+            let stretch = (duel.height / CGFloat(standardHeight)) / (duel.width / CGFloat(ArenaGeometry.standard.halfWidth * 2))
+            let scaleX = min((size.width - sideInset * 2) / CGFloat(worldWidth), scaleY / stretch)
+            let width = CGFloat(worldWidth) * scaleX
+            let height = CGFloat(worldHeight) * scaleX * stretch
+            return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
+        }
+        let stretchAmount: CGFloat = 0.6
+        let blendedScaleX = uniform + (scaleX - uniform) * stretchAmount
+        let blendedScaleY = uniform + (scaleY - uniform) * stretchAmount
         let width = min(CGFloat(worldWidth) * blendedScaleX, size.width - sideInset * 2)
         let height = CGFloat(worldHeight) * blendedScaleY
         return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)

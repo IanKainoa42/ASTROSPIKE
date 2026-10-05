@@ -183,6 +183,11 @@ public struct ArenaGeometry: Equatable, Sendable {
     public var obstacles: [ArenaObstacle] = []
     /// Which layout `obstacles` came from, for the board to name.
     public var layout: ArenaLayout = .standard
+    /// Where each roof-hung goal hangs, left to right. Every court hangs one
+    /// in the middle but free-for-all, which hangs one per pilot down a
+    /// longer field. The hump, the lips and the mouth are all built about a
+    /// goal's own centre, and a body meets whichever goal is nearest it.
+    public var goalCentres: [Double] = [0]
 
     public init(
         halfWidth: Double = 0.96,
@@ -371,6 +376,41 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// one place in the arena a ball never wanders on its own.
     public var portalFaceHeight: Double { portalMouthTopY - netBottomY }
 
+    // MARK: - Goals down the field
+
+    /// The goal a body at `x` meets: the one whose centre is nearest.
+    public func goalIndex(nearest x: Double) -> Int {
+        guard goalCentres.count > 1 else { return 0 }
+        var best = 0
+        for index in goalCentres.indices where abs(goalCentres[index] - x) < abs(goalCentres[best] - x) {
+            best = index
+        }
+        return best
+    }
+
+    /// The centre of the goal a body at `x` meets.
+    public func goalCentre(nearest x: Double) -> Double {
+        goalCentres.isEmpty ? 0 : goalCentres[goalIndex(nearest: x)]
+    }
+
+    /// Room between neighbouring goals in free-for-all: their humps leave
+    /// about as much flat roof between them as the duel court leaves between
+    /// its hump and a corner.
+    public static let freeForAllGoalSpacing = 1.0
+    /// Wall to the nearest goal at either end of the free-for-all field:
+    /// just enough flat roof that the end hump never runs into the corner.
+    public static let freeForAllEndRoom = 0.70
+
+    /// The free-for-all field: the duel court's height and goal, one goal per
+    /// pilot, the field as long as it takes to hang them a bay apart.
+    public static func freeForAll(pilots: Int, ballRadius: Double) -> ArenaGeometry {
+        let count = max(2, pilots)
+        let length = 2 * freeForAllEndRoom + Double(count - 1) * freeForAllGoalSpacing
+        var court = ArenaGeometry(halfWidth: length / 2, ballRadius: ballRadius)
+        court.goalCentres = (0 ..< count).map { -length / 2 + freeForAllEndRoom + Double($0) * freeForAllGoalSpacing }
+        return court
+    }
+
     // MARK: - The lips
 
     /// Where the lip on the `sign` side meets the slab.
@@ -389,6 +429,17 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// top, where it rolls into the mouth, or underneath, where it is simply
     /// in the way. Both sides push straight away from the ledge.
     public func lipContact(
+        position: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let centre = goalCentre(nearest: position.x)
+        guard centre != 0 else { return localLipContact(position: position, radius: radius) }
+        let shift = SIMD2(centre, 0.0)
+        return localLipContact(position: position - shift, radius: radius).map { ($0.position + shift, $0.normal) }
+    }
+
+    /// `lipContact` against a goal hanging at x = 0.
+    private func localLipContact(
         position: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
@@ -427,11 +478,23 @@ public struct ArenaGeometry: Equatable, Sendable {
         to end: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let centre = goalCentre(nearest: start.x)
+        guard centre != 0 else { return localLipContact(from: start, to: end, radius: radius) }
+        let shift = SIMD2(centre, 0.0)
+        return localLipContact(from: start - shift, to: end - shift, radius: radius)
+            .map { ($0.position + shift, $0.normal) }
+    }
+
+    private func localLipContact(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
         let travel = simd_distance(start, end)
         let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
         for step in 1 ... steps {
             let sample = start + (end - start) * (Double(step) / Double(steps))
-            if let contact = lipContact(position: sample, radius: radius) {
+            if let contact = localLipContact(position: sample, radius: radius) {
                 // The lip is a line, so it has no inside to hold a centre that
                 // is already close. A ball that begins the tick wedged under it
                 // can have its centre over the top by the first sample, and
@@ -494,6 +557,17 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// ball radius, this arc would first touch a roof-riding ball at x = 0.05
     /// -- a wall in the middle of the court, not a ramp.
     public func humpContact(
+        position: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let centre = goalCentre(nearest: position.x)
+        guard centre != 0 else { return localHumpContact(position: position, radius: radius) }
+        let shift = SIMD2(centre, 0.0)
+        return localHumpContact(position: position - shift, radius: radius).map { ($0.position + shift, $0.normal) }
+    }
+
+    /// `humpContact` against the hump of a goal hanging at x = 0.
+    private func localHumpContact(
         position: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
@@ -560,11 +634,23 @@ public struct ArenaGeometry: Equatable, Sendable {
         to end: SIMD2<Double>,
         radius: Double
     ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        let centre = goalCentre(nearest: start.x)
+        guard centre != 0 else { return localHumpContact(from: start, to: end, radius: radius) }
+        let shift = SIMD2(centre, 0.0)
+        return localHumpContact(from: start - shift, to: end - shift, radius: radius)
+            .map { ($0.position + shift, $0.normal) }
+    }
+
+    private func localHumpContact(
+        from start: SIMD2<Double>,
+        to end: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
         let travel = simd_distance(start, end)
         let steps = max(1, min(32, Int((travel / max(radius * 0.5, 1e-4)).rounded(.up))))
         for step in 1 ... steps {
             let sample = start + (end - start) * (Double(step) / Double(steps))
-            if let contact = humpContact(position: sample, radius: radius) {
+            if let contact = localHumpContact(position: sample, radius: radius) {
                 return contact
             }
         }

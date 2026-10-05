@@ -374,6 +374,9 @@ public struct WorldState: Codable, Equatable, Sendable {
     /// The match's goals, slams, zaps and longest rally, per pilot. Kept by
     /// the rulebook's keeper and carried on every snapshot.
     public var stats: MatchStats
+    /// The free-for-all book: bays, lives, winner. Nil on every other court,
+    /// and nil is what keeps the duel and doubles exactly as they were.
+    public var freeForAll: FreeForAllState?
 
     public init(
         tick: UInt64 = 0,
@@ -389,7 +392,8 @@ public struct WorldState: Codable, Equatable, Sendable {
         nextBoltID: UInt64 = 0,
         lastBallToucher: Team? = nil,
         bumpers: [BumperState] = [],
-        stats: MatchStats = MatchStats()
+        stats: MatchStats = MatchStats(),
+        freeForAll: FreeForAllState? = nil
     ) {
         self.tick = tick
         self.ships = ships
@@ -404,6 +408,7 @@ public struct WorldState: Codable, Equatable, Sendable {
         self.lastBallToucher = lastBallToucher
         self.bumpers = bumpers
         self.stats = stats
+        self.freeForAll = freeForAll
     }
 
     /// The team whose half of the court `x` is on.
@@ -626,6 +631,8 @@ public struct SimulationEngine: Sendable {
     /// Which balls went into a goal this step, and whose goal it was, so a
     /// two-ball rally that plays on can put just those balls back up.
     private var goalsThisStep: [Int: Team] = [:]
+    /// Free-for-all's goals this step: ball index to goal index.
+    private var freeForAllGoalsThisStep: [Int: Int] = [:]
     /// What the physics saw this step that the stat book wants. Physics runs
     /// on every board, the guest's roll-forward and the warm-up bay
     /// included, so it only buffers here: the book is written on the
@@ -781,7 +788,34 @@ public struct SimulationEngine: Sendable {
     }
 
     private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
-        Self.spawnPosition(for: seat, mirrored: mirrored, arena: arena)
+        if let bay = state.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
+            return Self.freeForAllSpawn(goalCentre: arena.goalCentres[bay])
+        }
+        return Self.spawnPosition(for: seat, mirrored: mirrored, arena: arena)
+    }
+
+    /// Where a free-for-all pilot starts: beside their own goal, on the side
+    /// nearer the wall, clear of the ball that drops from under it.
+    public static func freeForAllSpawn(goalCentre: Double) -> SIMD2<Double> {
+        SIMD2(goalCentre + (goalCentre <= 0 ? -0.42 : 0.42), -0.45)
+    }
+
+    /// True on the free-for-all field: no halves, no teams, the engine
+    /// keeps the book.
+    public var isFreeForAll: Bool { state.freeForAll != nil }
+
+    /// Whether two seats are on opposite sides. In free-for-all everyone
+    /// else is.
+    private func rivals(_ a: Seat, _ b: Seat) -> Bool {
+        isFreeForAll ? a != b : a.team != b.team
+    }
+
+    /// Seats a free-for-all field: one pilot per bay, every one on full
+    /// lives. The arena must already be `ArenaGeometry.freeForAll` with a
+    /// goal per seat.
+    public mutating func configureFreeForAll(_ seats: Set<Seat>) {
+        state.freeForAll = FreeForAllState(seats: seats)
+        configureRoster(seats)
     }
 
     /// Replaces every ship with a fresh one in each of the given seats and
@@ -806,6 +840,12 @@ public struct SimulationEngine: Sendable {
         state.nextBoltID = 0
         state.lastBallToucher = nil
         state.stats = MatchStats()
+        if let field = state.freeForAll {
+            // Knocked-out pilots left the field; every one of them comes back.
+            state.freeForAll = FreeForAllState(seats: Set(field.bays))
+            configureRoster(Set(field.bays))
+            return
+        }
         configureRoster(Set(state.ships.keys))
     }
 
@@ -877,7 +917,7 @@ public struct SimulationEngine: Sendable {
             // back and the more speed it steals. Nothing here is lethal.
             let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
             let depth = ship.position.x * intrusionSign - arena.opponentCrossingLimit
-            if depth > 0 {
+            if depth > 0, !isFreeForAll {
                 acceleration.x -= intrusionSign * configuration.crossingPushBack * depth
                 acceleration -= ship.velocity
                     * (configuration.crossingDrag * min(1, depth / 0.20))
@@ -897,7 +937,7 @@ public struct SimulationEngine: Sendable {
             // for ramming but the bolts stay holstered. (Until build 125 it
             // stopped at the base of the hump.)
             let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-            let shortOfTheLine = ship.position.x * homeSign >= -arena.opponentCrossingLimit
+            let shortOfTheLine = isFreeForAll || ship.position.x * homeSign >= -arena.opponentCrossingLimit
             if input.fire, shortOfTheLine, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, seat: seat)
             }
@@ -930,9 +970,10 @@ public struct SimulationEngine: Sendable {
         // The board as it stood before the ball moved, for the save ghost.
         // Only the rulebook's board keeps the book, so only it pays for one.
         let beforeBall: SimulationEngine? = isGhost || followsHost || configuration.sandbox || arena.hoop != nil
-            ? nil : self
+            || isFreeForAll ? nil : self
         let previousBallPositions = state.balls.map(\.position)
         goalsThisStep.removeAll()
+        freeForAllGoalsThisStep.removeAll()
         for ballIndex in state.balls.indices {
             state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
             (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
@@ -989,6 +1030,12 @@ public struct SimulationEngine: Sendable {
             // until the next snapshot lands, and the effects are the one
             // thing it may show on its own.
             lastEvents = collisionEffects
+            state.tick += 1
+            return
+        }
+
+        if isFreeForAll {
+            resolveFreeForAll(effects: collisionEffects)
             state.tick += 1
             return
         }
@@ -1212,7 +1259,7 @@ public struct SimulationEngine: Sendable {
                 -configuration.ballDropSpeed * serveDraw(salt + 2, in: Self.serveDropRange)
             )
             return BallState(
-                position: SIMD2(spread, configuration.ballDropHeight),
+                position: SIMD2(serveCentreX + spread, configuration.ballDropHeight),
                 velocity: moving ? velocity : .zero,
                 radius: configuration.ballRadius
             )
@@ -1238,7 +1285,54 @@ public struct SimulationEngine: Sendable {
 
     /// True when the engine keeps its own book instead of handing contacts
     /// to `MatchRules`: the warm-up bay and the hoop court both do.
-    private var usesEngineRules: Bool { configuration.sandbox || arena.hoop != nil }
+    private var usesEngineRules: Bool { configuration.sandbox || arena.hoop != nil || isFreeForAll }
+
+    /// Where the serve drops from: under the goal, or in free-for-all under
+    /// the goal that just conceded.
+    private var serveCentreX: Double {
+        guard let bay = state.freeForAll?.serveBay, arena.goalCentres.indices.contains(bay) else { return 0 }
+        return arena.goalCentres[bay]
+    }
+
+    /// Free-for-all's rulebook. A goal costs its owner a life; the last life
+    /// takes their ship off the field and closes their goal; one pilot left
+    /// is the winner. Nothing else -- bounces, touches, crossings -- counts.
+    private mutating func resolveFreeForAll(effects: [SimulationEvent]) {
+        var events = effects
+        guard var field = state.freeForAll, state.match.phase == .playing else {
+            lastEvents = events
+            return
+        }
+        // One goal a step: a second ball in the same tick would be a serve
+        // nobody saw coming.
+        guard let (ballIndex, goal) = freeForAllGoalsThisStep.sorted(by: { $0.key < $1.key }).first,
+              let owner = field.owner(ofGoal: goal), !field.isOut(owner) else {
+            lastEvents = events
+            return
+        }
+        let scorer = state.balls[ballIndex].lastPlay?.seat
+        let left = max(0, (field.lives[owner] ?? 0) - 1)
+        field.lives[owner] = left
+        events.append(.lifeLost(seat: owner, by: scorer, livesLeft: left))
+        if left == 0 {
+            events.append(.pilotOut(owner))
+            state.ships[owner] = nil
+        }
+        let standing = field.standing
+        if standing.count <= 1 {
+            field.winner = standing.first
+            state.freeForAll = field
+            state.match.phase = .finished
+            if let winner = standing.first { events.append(.lastPilotStanding(winner)) }
+            lastEvents = events
+            return
+        }
+        field.serveBay = field.nearestOpenBay(to: goal)
+        state.freeForAll = field
+        state.match.phase = .serve
+        stageServe(on: nil)
+        lastEvents = events
+    }
 
     private mutating func stageServe(on team: Team?) {
         // The ball reappears dead centre, just under the cap of the goal, and
@@ -1517,7 +1611,7 @@ public struct SimulationEngine: Sendable {
     private mutating func applyTractorToShips(dt: Double) {
         for seat in Seat.allCases {
             guard var puller = state.ships[seat], puller.tractorActive, !puller.isDestroyed else { continue }
-            for target in Seat.allCases where target.team != seat.team {
+            for target in Seat.allCases where rivals(target, seat) {
                 guard var ship = state.ships[target], !ship.isDestroyed,
                       let hold = tractorGrip(of: puller, at: ship.position) else { continue }
                 let pull = hold.toward * (configuration.tractorStrength * Self.tractorShipPull * hold.grip * dt)
@@ -1541,7 +1635,7 @@ public struct SimulationEngine: Sendable {
     static let tractorBoltTurn = 9.0
 
     private func bendBolt(_ bolt: inout BoltState, dt: Double) {
-        for seat in Seat.allCases where seat.team != bolt.owner {
+        for seat in Seat.allCases where isFreeForAll ? seat != bolt.seat : seat.team != bolt.owner {
             guard let ship = state.ships[seat], let hold = tractorGrip(of: ship, at: bolt.position) else { continue }
             let speed = simd_length(bolt.velocity)
             guard speed > 0.000_001 else { continue }
@@ -1614,7 +1708,7 @@ public struct SimulationEngine: Sendable {
             // sweep runs in each ship's moving frame, like the ball's, so a
             // thin nose cannot slip between two steps.
             var shipHit: (seat: Seat, contact: Double)?
-            for seat in Seat.allCases where seat.team != bolt.owner {
+            for seat in Seat.allCases where isFreeForAll ? seat != bolt.seat : seat.team != bolt.owner {
                 guard let ship = state.ships[seat], !ship.isDestroyed else { continue }
                 let hitbox = shipHitboxes[seat] ?? .shared
                 let axis = SIMD2(cos(ship.angle), sin(ship.angle))
@@ -1697,7 +1791,8 @@ public struct SimulationEngine: Sendable {
                 state.lastBallToucher = bolt.owner
                 let windowTicks = UInt64((Self.slamWindow / configuration.stepDuration).rounded())
                 let slam = state.balls[ballIndex].beamHold.map {
-                    $0.seat.team == bolt.owner && state.tick &- $0.tick <= windowTicks
+                    (isFreeForAll ? $0.seat == bolt.seat : $0.seat.team == bolt.owner)
+                        && state.tick &- $0.tick <= windowTicks
                 } ?? false
                 state.balls[ballIndex].lastPlay = BallPlay(seat: bolt.seat, kind: slam ? .slamDunk : .bolt)
                 playsThisStep.append(.boltHit(bolt.seat, slam: slam))
@@ -2170,7 +2265,7 @@ public struct SimulationEngine: Sendable {
             from: previousPosition,
             to: state.balls[ballIndex].position,
             radius: r,
-            postCenterX: 0
+            postCenterX: arena.goalCentre(nearest: previousPosition.x)
         ) {
             state.balls[ballIndex].position = capHit.position
             let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, capHit.normal)
@@ -2185,9 +2280,19 @@ public struct SimulationEngine: Sendable {
             from: previousPosition,
             to: state.balls[ballIndex].position,
             radius: r,
-            postCenterX: 0
+            postCenterX: arena.goalCentre(nearest: previousPosition.x)
         ) {
-            if netHit.crossedFace, !blockedByLip, netHit.position.y <= arena.portalMouthTopY {
+            let goal = arena.goalIndex(nearest: previousPosition.x)
+            // A knocked-out pilot's goal is closed: the mouth is as solid as
+            // the collar above it.
+            let closed = state.freeForAll?.isSolid(goal: goal) ?? false
+            if netHit.crossedFace, !blockedByLip, !closed, netHit.position.y <= arena.portalMouthTopY,
+               isFreeForAll {
+                state.balls[ballIndex].position = netHit.position
+                freeForAllGoalsThisStep[ballIndex] = goal
+                return
+            }
+            if netHit.crossedFace, !blockedByLip, !closed, netHit.position.y <= arena.portalMouthTopY {
                 state.balls[ballIndex].position = netHit.position
                 // The face on your half is the one you defend.
                 let defending = state.team(onHalfAt: netHit.fromLeft ? -1 : 1)
@@ -2195,7 +2300,7 @@ public struct SimulationEngine: Sendable {
                 goalsThisStep[ballIndex] = defending
                 return
             }
-            if netHit.position.y > arena.portalMouthTopY {
+            if netHit.position.y > arena.portalMouthTopY || (closed && netHit.crossedFace) {
                 // Above the mouth the slab is a solid collar hanging from the
                 // hump. A ball that has ridden the roof down the slope arrives
                 // here, and it bounces off rather than sneaking in over the top.

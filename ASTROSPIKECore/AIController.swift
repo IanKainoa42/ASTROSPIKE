@@ -113,6 +113,9 @@ public struct AIController: InputSource, Sendable {
     /// is driven nearly flat, so the run-up is beside it rather than under
     /// it, and a high one is spiked down into the far half.
     private static let aimDepthUnderCap = 0.34
+    /// Free-for-all: how near the goal the ball must be before the bot lobs
+    /// it at the mouth rather than driving it in.
+    private static let freeForAllLobRange = 0.55
     /// Seconds a plan assumes the ship spends turning before it can move.
     private static let turnLatency = 0.25
     /// Contact ticks after which the ball is swatted clear no matter what.
@@ -142,6 +145,11 @@ public struct AIController: InputSource, Sendable {
     private var cachedAimError = 0.0
     private var cachedHomeSide: Team?
     private var carryTicks: UInt64 = 0
+    /// Free-for-all play. There is no MAX CROSS line, so the bot neither
+    /// bails out of the far side nor holds its fire there; and only goals
+    /// count, so every shot is lobbed at the mouth instead of driven across
+    /// to bounce in the far half.
+    public var freeRoam = false
 
     public init(
         difficulty: AIDifficulty,
@@ -175,7 +183,7 @@ public struct AIController: InputSource, Sendable {
         let supporting = supportsPartner(state: state, seat: seat, ship: ship)
 
         let projectedHomeDistance = (ship.position.x + ship.velocity.x * 1.20) * homeSign
-        let crossingDanger = projectedHomeDistance < -(arena.opponentCrossingLimit - 0.12)
+        let crossingDanger = !freeRoam && projectedHomeDistance < -(arena.opponentCrossingLimit - 0.12)
         let recovering = recoveryIsUrgent(for: ship)
         // The net never traps anyone -- hulls fly straight through it. What
         // can pin them is the hump above it, so the escape check keys off the
@@ -429,7 +437,7 @@ public struct AIController: InputSource, Sendable {
         guard distance > 0.16, distance < reach else { return false }
         // The trigger works up to the MAX CROSS line; the ball may be
         // anywhere. A hair of margin so the bot never pulls it on the line.
-        guard ship.position.x * homeSign > -(arena.opponentCrossingLimit - 0.02) else { return false }
+        guard freeRoam || ship.position.x * homeSign > -(arena.opponentCrossingLimit - 0.02) else { return false }
         guard simd_dot(toBall / distance, nose) > 0.985 else { return false }
         return simd_dot(nose, plannedShot) > alignment
     }
@@ -672,6 +680,16 @@ public struct AIController: InputSource, Sendable {
         ballVelocity: SIMD2<Double>,
         homeSign: Double
     ) -> (shot: SIMD2<Double>, strike: Double) {
+        if freeRoam, arena.hoop == nil, abs(point.x) <= Self.freeForAllLobRange {
+            // Close in, lob it at the face on this side: a ball through
+            // either face counts. From farther out the drive below carries
+            // it in low, under any goal on the way.
+            let mouth = SIMD2(
+                homeSign * arena.netHalfWidth,
+                (arena.netBottomY + arena.portalMouthTopY) / 2
+            )
+            return lob(from: point, to: mouth, ballVelocity: ballVelocity)
+        }
         guard let hoop = arena.hoop else {
             return (shotDirection(from: point, homeSign: homeSign), difficulty.strikeSpeed)
         }

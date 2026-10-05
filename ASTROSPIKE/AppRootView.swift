@@ -69,6 +69,9 @@ struct AppRootView: View {
         }
         let warmupMode = arguments.contains("--warmup")
         let practiceMode = arguments.contains("--practice")
+        // `--ffa 3` / `--ffa 4` drops onto the free-for-all field.
+        let freeForAllPilots = arguments.firstIndex(of: "--ffa")
+            .flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil }
         _resultsPreviewWinner = State(
             initialValue: arguments.contains("--results-win") ? .cyan
                 : arguments.contains("--results-lose") ? .orange
@@ -79,7 +82,8 @@ struct AppRootView: View {
             : practiceMode ? .practice
             : resultsPreview ? .solo(.rookie)
             : doublesMode ? .doubles(.pilot)
-            : demoMode ? .solo(.pilot) : nil)
+            : freeForAllPilots.map { GameMode.freeForAll(pilots: $0, .pilot) }
+            ?? (demoMode ? .solo(.pilot) : nil))
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
         let lobbyMode = arguments.contains("--lobby")
@@ -88,6 +92,7 @@ struct AppRootView: View {
         let trackMode = arguments.contains("--track")
         _showTrack = State(initialValue: trackMode)
         let bypass = demoMode || warmupMode || practiceMode || diagnosticsPreviewMode || lobbyMode || trackMode
+            || freeForAllPilots != nil
             || resultsPreview
             || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
@@ -281,6 +286,12 @@ struct AppRootView: View {
                     }
                 }
                 .presentationDetents([.large])
+            case .freeForAll:
+                FreeForAllSheet { pilots, difficulty in
+                    sheet = nil
+                    gameMode = .freeForAll(pilots: pilots, difficulty)
+                }
+                .presentationDetents([.large])
             case .tutorial:
                 FlightTutorial()
             case .settings:
@@ -328,7 +339,7 @@ struct AppRootView: View {
         let activity: PilotActivity = switch gameMode {
         case .online: .playing
         case .warmup: .matching
-        case .solo, .doubles, .practice, .volleyball, .basketball: .solo
+        case .solo, .doubles, .practice, .volleyball, .basketball, .freeForAll: .solo
         case nil: if case .matching = online.status { .matching } else { .idle }
         }
         // While hosting an in-game invite, the presence names it: that is
@@ -376,7 +387,7 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, doubles, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
+    case difficulty, doubles, freeForAll, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
     var id: String { rawValue }
 }
 
@@ -427,6 +438,162 @@ private struct DoublesSheet: View {
         }
         .buttonStyle(.bordered).tint(.cyan)
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// FREE-FOR-ALL asks how many pilots, then how good the bots are.
+private struct FreeForAllSheet: View {
+    let start: (_ pilots: Int, AIDifficulty) -> Void
+    @State private var pilots = 3
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("FREE-FOR-ALL").font(.title.bold())
+            Text("One long field, a goal each. A ball through either face of yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+                .font(.footnote).foregroundStyle(.secondary)
+            Picker("Pilots", selection: $pilots) {
+                Text("3 PILOTS").tag(3)
+                Text("4 PILOTS").tag(4)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("ffa-pilots")
+            DifficultyPicker(title: "CHOOSE THE BOTS") { start(pilots, $0) }
+                .padding(-28)
+                .padding(.top, 28)
+        }
+        .padding(28)
+    }
+}
+
+/// Free-for-all colours, as the court draws them.
+@MainActor private func freeForAllColor(_ seat: Seat) -> Color {
+    Color(uiColor: ArenaScene.freeForAllColor(for: seat))
+}
+
+/// One chip per pilot down the field, left to right: colour, name, lives.
+private struct FreeForAllHUD: View {
+    let state: WorldState
+    let localSeat: Seat?
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let field = state.freeForAll {
+                ForEach(field.bays, id: \.self) { seat in
+                    chip(seat, lives: field.lives[seat] ?? 0)
+                }
+            }
+            Spacer()
+            Button(action: action) {
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(width: 34, height: 34)
+                    .background(.black.opacity(0.45), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.25)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Pause match")
+            .accessibilityIdentifier("match-action-button")
+        }
+        .padding(.horizontal, 24).padding(.top, 10)
+    }
+
+    private func chip(_ seat: Seat, lives: Int) -> some View {
+        let color = freeForAllColor(seat)
+        let out = lives <= 0
+        return HStack(spacing: 5) {
+            Text(seat == localSeat ? "YOU" : ArenaScene.freeForAllName(for: seat))
+                .font(.system(size: 11, weight: .black, design: .monospaced))
+            if out {
+                Text("OUT").font(.system(size: 10, weight: .black, design: .monospaced))
+            } else {
+                HStack(spacing: 2) {
+                    ForEach(0 ..< FreeForAllState.startingLives, id: \.self) { index in
+                        Circle()
+                            .fill(index < lives ? color : .white.opacity(0.15))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+            }
+        }
+        .foregroundStyle(out ? .white.opacity(0.4) : color)
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(.black.opacity(0.5), in: Capsule())
+        .overlay(Capsule().stroke(color.opacity(out ? 0.2 : seat == localSeat ? 0.9 : 0.4), lineWidth: seat == localSeat ? 1.5 : 1))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(ArenaScene.freeForAllName(for: seat)), \(out ? "out" : "\(lives) lives")")
+    }
+}
+
+/// The free-for-all's last card: the field in finishing order. Also shown
+/// the moment the local pilot is knocked out, with WATCH to see the rest.
+private struct FreeForAllResults: View {
+    let state: WorldState
+    let localSeat: Seat?
+    /// First out first.
+    let knockedOut: [Seat]
+    let watch: (() -> Void)?
+    let playAgain: () -> Void
+    let exit: () -> Void
+
+    private var standings: [Seat] {
+        guard let field = state.freeForAll else { return [] }
+        let flying = field.standing
+        return flying + knockedOut.reversed().filter { !flying.contains($0) }
+    }
+
+    private var title: String {
+        if let winner = state.freeForAll?.winner {
+            return winner == localSeat ? "YOU WIN" : "\(ArenaScene.freeForAllName(for: winner)) WINS"
+        }
+        return "YOU'RE OUT"
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text(title)
+                .font(.system(size: 34, weight: .black, design: .rounded)).tracking(2)
+            VStack(spacing: 6) {
+                ForEach(Array(standings.enumerated()), id: \.element) { place, seat in
+                    HStack {
+                        Text(Self.ordinal(place + 1)).frame(width: 44, alignment: .leading)
+                        Text(seat == localSeat ? "YOU" : ArenaScene.freeForAllName(for: seat))
+                        Spacer()
+                        if state.freeForAll?.isOut(seat) == false, state.freeForAll?.winner == nil {
+                            Text("FLYING").foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.system(size: 15, weight: .black, design: .monospaced))
+                    .foregroundStyle(freeForAllColor(seat))
+                }
+            }
+            .frame(maxWidth: 280)
+            HStack(spacing: 12) {
+                if let watch {
+                    Button("WATCH", action: watch).buttonStyle(.bordered).tint(.white)
+                        .accessibilityIdentifier("ffa-watch")
+                }
+                Button("PLAY AGAIN", action: playAgain).buttonStyle(.borderedProminent).tint(.cyan)
+                    .accessibilityIdentifier("ffa-play-again")
+                Button("EXIT", action: exit).buttonStyle(.bordered).tint(.white)
+                    .accessibilityIdentifier("ffa-exit")
+            }
+            .font(.headline)
+        }
+        .padding(28)
+        .background(.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.2)))
+        .accessibilityIdentifier("ffa-results")
+    }
+
+    static func ordinal(_ n: Int) -> String {
+        switch n {
+        case 1: "1ST"
+        case 2: "2ND"
+        case 3: "3RD"
+        default: "\(n)TH"
+        }
     }
 }
 
@@ -811,7 +978,8 @@ private struct HomeView: View {
                     // of the menu off an iPhone in landscape.
                     HStack(spacing: 12) {
                         MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
-                        MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND ON YOUR WING", icon: "person.2.fill", compact: true) { sheet = .doubles }
+                        MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true) { sheet = .doubles }
+                        MenuButton(title: "FREE-FOR-ALL", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true) { sheet = .freeForAll }
                     }
                     // Friend-first: invite and rematch above automatch.
                     MenuButton(
@@ -884,6 +1052,8 @@ private struct GameView: View {
     /// old one going away must not take the match with it.
     @State private var builtGeneration: Int
     @State private var showPause = false
+    /// Knocked out of a free-for-all and chose to watch the rest.
+    @State private var watchingField = false
     @State private var showLeaveConfirmation = false
     /// `--emote-tray` opens it on arrival, for layout screenshots.
     @State private var emoteTrayOpen = ProcessInfo.processInfo.arguments.contains("--emote-tray")
@@ -923,7 +1093,7 @@ private struct GameView: View {
         self.exit = exit
         _builtGeneration = State(initialValue: online.seatingGeneration)
         let configuration = switch mode {
-        case .solo, .doubles: tuning.configuration
+        case .solo, .doubles, .freeForAll: tuning.configuration
         case .volleyball: SimulationConfiguration.volleyball(from: tuning.configuration)
         case .basketball: SimulationConfiguration.basketball(from: tuning.configuration)
         // The host's sliders reach the guest with the seating plan; the host
@@ -962,6 +1132,11 @@ private struct GameView: View {
             VStack(spacing: 0) {
                 if mode.isBay {
                     WarmupHUD(session: session, online: mode == .warmup ? online : nil) { showLeaveConfirmation = true }
+                } else if mode.isFreeForAll {
+                    FreeForAllHUD(state: session.state, localSeat: session.localSeat) {
+                        if !session.isPaused { session.togglePause() }
+                        showPause = true
+                    }
                 } else {
                     MatchHUD(
                         state: session.state,
@@ -1002,7 +1177,7 @@ private struct GameView: View {
                 if mode == .online, case .reconnecting = online.status {
                     holdButton
                 }
-                if !mode.isBay {
+                if !mode.isBay, !mode.isFreeForAll {
                     let left = session.state.team(onHalfAt: -1)
                     let right = left.opponent
                     let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
@@ -1079,6 +1254,7 @@ private struct GameView: View {
                             .background(.black.opacity(0.66), in: Capsule())
                             .overlay(Capsule().stroke(.white.opacity(0.35)))
                     }
+                    if !mode.isFreeForAll {
                     let servingSide = session.state.team(onHalfAt: session.state.serveDriftSign)
                     let isLocalServe = !isSpectating && servingSide == localTeam
                     let serveColor = servingSide == .cyan ? Color.cyan : Color.orange
@@ -1094,6 +1270,7 @@ private struct GameView: View {
                     .background(serveColor, in: Capsule())
                     .overlay(Capsule().stroke(.white.opacity(0.4), lineWidth: 1))
                     .accessibilityIdentifier("serve-banner")
+                    }
                 }
             }
             if let linkFailure, session.state.match.phase != .finished {
@@ -1103,7 +1280,23 @@ private struct GameView: View {
                     exit: leaveGame
                 )
             }
-            if session.state.match.phase == .finished {
+            if mode.isFreeForAll {
+                let finished = session.state.match.phase == .finished
+                let localOut = session.state.freeForAll?.isOut(session.localSeat) == true
+                if finished || (localOut && !watchingField) {
+                    FreeForAllResults(
+                        state: session.state,
+                        localSeat: session.localSeat,
+                        knockedOut: session.knockedOut,
+                        watch: finished ? nil : { watchingField = true },
+                        playAgain: {
+                            watchingField = false
+                            playAgain()
+                        },
+                        exit: leaveGame
+                    )
+                }
+            } else if session.state.match.phase == .finished {
                 ResultsOverlay(
                     state: session.state,
                     localTeam: localTeam,
@@ -1321,7 +1514,7 @@ private struct GameView: View {
 
     private var allowedBounces: Int {
         switch mode {
-        case .solo, .doubles: tuning.allowedBouncesPerHit
+        case .solo, .doubles, .freeForAll: tuning.allowedBouncesPerHit
         // Volleyball's floor is live and the hoop court has no faults at all;
         // both come off `SimulationConfiguration`, not the pilot's sliders.
         case .volleyball: 0
@@ -1422,7 +1615,7 @@ private struct GameView: View {
             if session.state.match.phase != .finished { online.stepAway() }
             online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
-        case .solo, .doubles, .practice, .volleyball, .basketball: break
+        case .solo, .doubles, .practice, .volleyball, .basketball, .freeForAll: break
         }
         exit()
     }
@@ -2350,26 +2543,44 @@ private struct OpenTableBanner: View {
 
 private struct MenuButton: View {
     let title: String, subtitle: String, icon: String
-    /// Half-width: no chevron, and the title shrinks before it truncates.
+    /// A third of the width: icon over title, no chevron, and the title
+    /// shrinks before it truncates.
     var compact = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            HStack(spacing: compact ? 10 : 16) {
-                Image(systemName: icon).font(.title2).frame(width: compact ? 28 : 34)
+            if compact {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline.weight(.black)).tracking(compact ? 0 : 1).lineLimit(1).minimumScaleFactor(0.6)
+                    Image(systemName: icon).font(.body.weight(.semibold)).frame(height: 20)
+                    Text(title).font(.headline.weight(.black)).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(subtitle).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.52)).lineLimit(1).minimumScaleFactor(0.6)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12).padding(.vertical, 8).frame(minHeight: 68)
+                .contentShape(RoundedRectangle(cornerRadius: 18))
+                .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
+            } else {
+                row
+            }
+        }
+        .buttonStyle(.plain).accessibilityIdentifier(title.lowercased().replacingOccurrences(of: " ", with: "-"))
+    }
+
+    private var row: some View {
+            HStack(spacing: 16) {
+                Image(systemName: icon).font(.title2).frame(width: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline.weight(.black)).tracking(1).lineLimit(1).minimumScaleFactor(0.6)
                     Text(subtitle).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.52)).lineLimit(1).minimumScaleFactor(0.7)
                 }
                 Spacer(minLength: 0)
-                if !compact { Image(systemName: "chevron.right") }
+                Image(systemName: "chevron.right")
             }
-            .padding(.horizontal, compact ? 14 : 20).frame(minHeight: 68)
+            .padding(.horizontal, 20).frame(minHeight: 68)
             .contentShape(RoundedRectangle(cornerRadius: 18))
             .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
-        }
-        .buttonStyle(.plain).accessibilityIdentifier(title.lowercased().replacingOccurrences(of: " ", with: "-"))
     }
 }
 
