@@ -2,69 +2,110 @@ import Foundation
 import simd
 
 /// The free-for-all field: a round arena with gravity pulling out to the
-/// rim, and a hub in the middle that every goal hangs from. Nobody has an end
-/// wall at their back, so nobody's goal is the corner the ball rolls into.
+/// rim. Every pilot's goal is a hockey net standing round the middle with
+/// its mouth turned in toward the centre, so a shot comes in from the open
+/// middle, and there is room to fly and roll the ball behind every net. Between neighbouring nets a fin rises off the rim, its
+/// flanks curving up from the floor like the duel's corners, so a ball
+/// rolling round the rim rides up it and is lobbed back into the middle.
 ///
-/// Each goal is the duel court's goal turned to point outward. Its own frame
-/// -- the goal at x = 0 hanging down from y = `spoke.humpUndersideY`, the rim
-/// directly below at `spoke.floorY` -- is exactly the duel court around its
-/// net, so the swept face, cap and lip tests run there unchanged. Only the
-/// hub and the rim are new, and they are circles.
+/// Each net is drawn and collided in its own frame: x across the mouth, y
+/// pointing in from the back of the net toward the centre. The nets and fins
+/// are all `ArenaObstacle` capsules. Hulls and bolts fly through a live
+/// net, front or back, as they fly through the duel's goal, and meet only
+/// the fins; the ball meets a live net's posts and nothing else.
 public struct RingField: Equatable, Sendable {
-    /// Room the goals hang from. Sized so four goals and their lips leave a
-    /// hull's width of open hub between them, and no bigger: every unit on
-    /// the radius makes the whole field smaller on screen.
-    public static let hubRadius = 0.40
+    /// Centre to rim. The field is the size the old hub-and-spoke ring was,
+    /// so nothing on screen shrank; the hub's room is now open play.
+    public static let rimRadius = 1.52
+    /// Centre to every net's mouth: about a third of the way out, so the
+    /// nets ring the middle and the open court behind them runs out to the
+    /// rim. Fixed, not cut from the ball, so the gaps between neighbouring
+    /// posts stay wider than the biggest ball with four nets.
+    public static let mouthRadius = 0.46
+    /// Thickness of a net's frame, as a capsule radius.
+    public static let netWall = 0.014
+    /// Thickness of a fin's flank.
+    public static let finWall = 0.014
+    /// Half the angle of rim a fin stands on, and how far its tip reaches
+    /// in. The flanks are arcs tangent to the rim, so the climb starts flat.
+    public static let finHalfAngle = 0.30
+    public static let finHeight = 0.36
 
-    public var hubRadius: Double
-    /// Hub to rim is the duel court's hump underside to floor, so the drop
-    /// under every goal is the duel's.
     public var rimRadius: Double
-    /// The way each goal points, out from the centre. Goal 0 points straight
-    /// down, so the bottom of the screen looks like a duel.
+    /// The way each net sits, out from the centre. Net 0 is at the bottom of
+    /// the screen, like the duel's floor.
     public var spokeAngles: [Double]
     public var ballRadius: Double
+
+    /// Half the net's mouth, out to the middle of each post: the ball plus a
+    /// tenth of the field either side, so a bigger ball keeps the same room.
+    public var netHalfWidth: Double
+    /// Back of the net to the mouth, along the frame's centreline.
+    public var netDepth: Double
+    /// What the ball meets in a live net: its two posts only. The back is
+    /// open to the ball -- it can come through from behind and out the
+    /// mouth -- and only a ball that comes in the mouth scores.
+    public var posts: [ArenaObstacle]
+    /// Each net's back, post to post round the rounded corners.
+    public var backs: [[ArenaObstacle]]
+    public var fins: [ArenaObstacle]
 
     public init(pilots: Int, ballRadius: Double) {
         let count = max(2, pilots)
         self.ballRadius = ballRadius
-        hubRadius = Self.hubRadius
-        let court = ArenaGeometry.standard(ballRadius: ballRadius)
-        rimRadius = Self.hubRadius + (court.humpUndersideY - court.floorY)
+        rimRadius = Self.rimRadius
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
+        netHalfWidth = ballRadius + 0.10 + Self.netWall
+        netDepth = 2 * ballRadius + 0.07 + Self.netWall
+        posts = []
+        backs = []
+        fins = []
+        for index in spokeAngles.indices {
+            let outline = Self.segments(netOutline.map { toWorld($0, net: index) }, radius: Self.netWall)
+            posts += [outline[0], outline[outline.count - 1]]
+            backs.append(Array(outline[1 ..< outline.count - 1]))
+        }
+        for index in spokeAngles.indices { fins += fin(at: spokeAngles[index] + .pi / Double(count)) }
     }
 
-    /// The duel court every goal is a copy of, in that goal's own frame.
-    public var spoke: ArenaGeometry { .standard(ballRadius: ballRadius) }
-
-    /// Where the hub's centre sits in a goal's own frame.
-    public var hubCentreY: Double { spoke.humpUndersideY + hubRadius }
-
-    private func turn(_ v: SIMD2<Double>, by angle: Double) -> SIMD2<Double> {
-        let (c, s) = (cos(angle), sin(angle))
-        return SIMD2(v.x * c - v.y * s, v.x * s + v.y * c)
+    /// What the ball meets: fins, posts, and the whole frame and mouth of
+    /// every net in `solid` (a knocked-out pilot's net is shut all round, so
+    /// a ball let in the back could never get out).
+    public func ballWalls(solid: (Int) -> Bool) -> [ArenaObstacle] {
+        fins + posts + closedNets(solid)
     }
 
-    /// How far goal `index`'s frame is turned from the world's.
-    public func frameAngle(_ index: Int) -> Double { spokeAngles[index] + .pi / 2 }
-
-    public func toLocal(_ point: SIMD2<Double>, spoke index: Int) -> SIMD2<Double> {
-        turn(point, by: -frameAngle(index)) + SIMD2(0, hubCentreY)
+    /// Every net in `solid`, shut all round: frame and mouth. A hull meets
+    /// these as well as the fins; a live net it flies straight through.
+    public func closedNets(_ solid: (Int) -> Bool) -> [ArenaObstacle] {
+        spokeAngles.indices.filter(solid).flatMap { index in
+            [posts[2 * index], posts[2 * index + 1], mouthBar(index)] + backs[index]
+        }
     }
 
-    public func toWorld(_ point: SIMD2<Double>, spoke index: Int) -> SIMD2<Double> {
-        turn(point - SIMD2(0, hubCentreY), by: frameAngle(index))
+    // MARK: - Frames
+
+    /// Straight out from the centre at `bearing`.
+    static func outward(_ bearing: Double) -> SIMD2<Double> { SIMD2(cos(bearing), sin(bearing)) }
+
+    /// Distance from the centre to the back of every net.
+    public var netBackRadius: Double { Self.mouthRadius + netDepth }
+
+    /// Net `index`'s frame point `local` in the world.
+    public func toWorld(_ local: SIMD2<Double>, net index: Int) -> SIMD2<Double> {
+        let out = Self.outward(spokeAngles[index])
+        let across = SIMD2(-out.y, out.x)
+        return out * (netBackRadius - local.y) + across * local.x
     }
 
-    public func vectorToLocal(_ vector: SIMD2<Double>, spoke index: Int) -> SIMD2<Double> {
-        turn(vector, by: -frameAngle(index))
+    /// A world point in net `index`'s frame.
+    public func toLocal(_ point: SIMD2<Double>, net index: Int) -> SIMD2<Double> {
+        let out = Self.outward(spokeAngles[index])
+        let across = SIMD2(-out.y, out.x)
+        return SIMD2(simd_dot(point, across), netBackRadius - simd_dot(point, out))
     }
 
-    public func vectorToWorld(_ vector: SIMD2<Double>, spoke index: Int) -> SIMD2<Double> {
-        turn(vector, by: frameAngle(index))
-    }
-
-    /// The goal whose direction is nearest `point`'s.
+    /// The net whose direction is nearest `point`'s.
     public func spokeIndex(nearest point: SIMD2<Double>) -> Int {
         let bearing = atan2(point.y, point.x)
         func gap(_ index: Int) -> Double { abs(remainder(bearing - spokeAngles[index], 2 * .pi)) }
@@ -78,15 +119,135 @@ public struct RingField: Equatable, Sendable {
     }
 
     /// Spin gravity at `point`: straight out, nothing at the centre, growing
-    /// in step with the distance to `rim` at the rim itself. The goals on the
-    /// hub sit in light air and only the rim pulls with full weight.
+    /// in step with the distance to `rim` at the rim itself. The middle is
+    /// light air and only the rim pulls with full weight.
     public func gravity(at point: SIMD2<Double>, rim strength: Double) -> SIMD2<Double> {
         point * (strength / rimRadius)
     }
 
-    /// The middle of goal `index`'s mouth, in the world.
+    // MARK: - Nets
+
+    /// The middle of net `index`'s mouth, in the world.
     public func mouthCentre(_ index: Int) -> SIMD2<Double> {
-        let court = spoke
-        return toWorld(SIMD2(0, (court.portalMouthTopY + court.netBottomY) / 2), spoke: index)
+        toWorld(SIMD2(0, netDepth), net: index)
+    }
+
+    /// The line a ball's centre must cross to be all the way in: a radius
+    /// inside the mouth, so the whole ball is over it.
+    public var goalLineY: Double { netDepth - ballRadius }
+
+    /// Half the open width inside the posts.
+    public var netInnerHalfWidth: Double { netHalfWidth - Self.netWall }
+
+    /// The net's frame, post to post round the back, in its own frame: two
+    /// straight sides and a rounded back, so the inside corners never pinch
+    /// the ball.
+    public var netOutline: [SIMD2<Double>] {
+        let w = netHalfWidth
+        let fillet = 0.6 * w
+        var points = [SIMD2(-w, netDepth), SIMD2(-w, fillet)]
+        let steps = 6
+        for step in 1 ... steps {
+            let angle = Double.pi + Double(step) / Double(steps) * (Double.pi / 2)
+            points.append(SIMD2(-w + fillet, fillet) + SIMD2(cos(angle), sin(angle)) * fillet)
+        }
+        for step in 0 ... steps {
+            let angle = 1.5 * Double.pi + Double(step) / Double(steps) * (Double.pi / 2)
+            points.append(SIMD2(w - fillet, fillet) + SIMD2(cos(angle), sin(angle)) * fillet)
+        }
+        points.append(SIMD2(w, netDepth))
+        return points
+    }
+
+    static func segments(_ points: [SIMD2<Double>], radius: Double) -> [ArenaObstacle] {
+        zip(points, points.dropFirst()).map { ArenaObstacle(start: $0, end: $1, radius: radius) }
+    }
+
+    /// A bar across net `index`'s mouth: shut to a knocked-out pilot's net,
+    /// and to every hull, so nobody parks inside their own net.
+    public func mouthBar(_ index: Int) -> ArenaObstacle {
+        ArenaObstacle(
+            start: toWorld(SIMD2(-netHalfWidth, netDepth), net: index),
+            end: toWorld(SIMD2(netHalfWidth, netDepth), net: index),
+            radius: Self.netWall
+        )
+    }
+
+    /// The net whose back pocket -- inside the posts, behind the goal line --
+    /// holds `point`, if any. A ball found there without having scored came
+    /// in through the back.
+    public func backPocket(holding point: SIMD2<Double>) -> Int? {
+        spokeAngles.indices.first { index in
+            let local = toLocal(point, net: index)
+            return local.y < goalLineY && local.y > -ballRadius && abs(local.x) < netHalfWidth
+        }
+    }
+
+    /// True once `point` is clear of net `index` altogether: past the mouth,
+    /// out the back, or off either side.
+    public func isClear(of index: Int, _ point: SIMD2<Double>) -> Bool {
+        let local = toLocal(point, net: index)
+        return local.y > netDepth + ballRadius || local.y < -ballRadius || abs(local.x) > netHalfWidth + ballRadius
+    }
+
+    /// The net a ball went all the way into between `start` and `end`, if
+    /// any: its centre crossed the goal line inside the posts, coming in.
+    public func goalCrossing(from start: SIMD2<Double>, to end: SIMD2<Double>) -> Int? {
+        for index in spokeAngles.indices {
+            let a = toLocal(start, net: index)
+            let b = toLocal(end, net: index)
+            guard a.y >= goalLineY, b.y < goalLineY else { continue }
+            let t = (a.y - goalLineY) / (a.y - b.y)
+            let x = a.x + (b.x - a.x) * t
+            if abs(x) < netInnerHalfWidth { return index }
+        }
+        return nil
+    }
+
+    // MARK: - Fins
+
+    /// One flank of the fin at `bearing`, rim to tip: an arc tangent to the
+    /// rim where it starts, curving up to meet the other flank at the tip.
+    /// `side` is +1 for the flank anticlockwise of the fin's centre line.
+    public func finFlank(at bearing: Double, side: Double) -> [SIMD2<Double>] {
+        let alpha = Self.finHalfAngle
+        let r = rimRadius
+        // The arc's radius is solved so its tip lands at `finHeight`: the
+        // circle is tangent to the rim at the base, so its centre sits on the
+        // base radius, `rho` in from the rim.
+        func tipDistance(_ rho: Double) -> Double {
+            let offset = (r - rho) * sin(alpha)
+            return (r - rho) * cos(alpha) + max(0, rho * rho - offset * offset).squareRoot()
+        }
+        var low = r * sin(alpha) / (1 + sin(alpha)) + 1e-9
+        var high = r
+        for _ in 0 ..< 60 {
+            let mid = (low + high) / 2
+            if tipDistance(mid) > r - Self.finHeight { high = mid } else { low = mid }
+        }
+        let rho = (low + high) / 2
+        let centre = SIMD2(cos(alpha), sin(alpha)) * (r - rho)
+        let tip = SIMD2(tipDistance(rho), 0.0)
+        let startAngle = alpha
+        let endAngle = atan2(tip.y - centre.y, tip.x - centre.x)
+        let steps = 10
+        let turn = SIMD2(cos(bearing), sin(bearing))
+        return (0 ... steps).map { step in
+            var sweep = endAngle - startAngle
+            sweep = remainder(sweep, 2 * .pi)
+            let angle = startAngle + sweep * Double(step) / Double(steps)
+            var p = centre + SIMD2(cos(angle), sin(angle)) * rho
+            p.y *= side
+            return SIMD2(p.x * turn.x - p.y * turn.y, p.x * turn.y + p.y * turn.x)
+        }
+    }
+
+    private func fin(at bearing: Double) -> [ArenaObstacle] {
+        [1.0, -1.0].flatMap { Self.segments(finFlank(at: bearing, side: $0), radius: Self.finWall) }
+    }
+
+    /// Where the fins stand, between each pair of nets.
+    public var finBearings: [Double] {
+        spokeAngles.map { $0 + .pi / Double(spokeAngles.count) }
     }
 }

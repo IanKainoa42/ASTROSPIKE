@@ -500,11 +500,13 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var boltHit: BoltHit = .stun
     /// Free-for-all ring only: the share of `gravity` felt at the rim. Ring
     /// gravity is spin gravity, nothing at the centre and growing straight
-    /// out to this at the rim, so the goals on the hub hang in light air.
-    /// A pilot's preference; the field is offline only, so it never rides
-    /// the wire.
-    public var ringGravity: Double = 1
-    public static let ringGravityRange = 0.4 ... 1.5
+    /// out to this at the rim. A pilot's preference; the field is offline
+    /// only, so it never rides the wire. The default is well under the
+    /// duel's: on the ring the rim is down in every direction, so full
+    /// weight drags everything to the edge.
+    public var ringGravity: Double = Self.ringGravityDefault
+    public static let ringGravityDefault = 0.3
+    public static let ringGravityRange = 0.1 ... 1.5
     public static let ringGravityKey = "ringGravity"
 
     public init(
@@ -641,6 +643,9 @@ public struct SimulationEngine: Sendable {
     private var goalsThisStep: [Int: Team] = [:]
     /// Free-for-all's goals this step: ball index to goal index.
     private var freeForAllGoalsThisStep: [Int: Int] = [:]
+    /// Ring only: the net each ball came in the back of and has not yet
+    /// cleared, by ball index. Such a ball cannot score in that net.
+    private var ringBackDoor: [Int: Int] = [:]
     /// What the physics saw this step that the stat book wants. Physics runs
     /// on every board, the guest's roll-forward and the warm-up bay
     /// included, so it only buffers here: the book is written on the
@@ -797,7 +802,7 @@ public struct SimulationEngine: Sendable {
 
     private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
-            return ring.toWorld(Self.freeForAllSpawn(goalCentre: 0), spoke: bay)
+            return ring.toWorld(SIMD2(0, -(ring.rimRadius - ring.netBackRadius) / 2), net: bay)
         }
         if let bay = state.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
             return Self.freeForAllSpawn(goalCentre: arena.goalCentres[bay])
@@ -811,11 +816,11 @@ public struct SimulationEngine: Sendable {
         SIMD2(goalCentre + (goalCentre <= 0 ? -0.42 : 0.42), -0.45)
     }
 
-    /// A fresh hull points up, away from the floor -- on the ring, at the
-    /// hub above its own goal.
+    /// A fresh hull points up, away from the floor -- on the ring it starts
+    /// behind its own net, halfway to the rim, pointing in at the middle.
     private func spawnAngle(for seat: Seat) -> Double {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
-            return .pi / 2 + ring.frameAngle(bay)
+            return ring.spokeAngles[bay] + .pi
         }
         return .pi / 2
     }
@@ -1251,6 +1256,17 @@ public struct SimulationEngine: Sendable {
     /// Enough sideways drift that the ball lands well inside the receiving
     /// half rather than on the centre line.
     static let serveDriftSpeed = 0.45
+    /// The ring's face-off drift out of the middle, between two nets.
+    static let ringServeSpeed = 0.30
+    /// How far off dead centre the face-off ball sits, toward its gap, so a
+    /// staged serve that lets go with no push still drifts out the gap.
+    static let ringServeOffset = 0.04
+    /// How far the face-off drift is turned off the fin's centre line, as a
+    /// share of half the gap between nets. Straight down the line, a fin
+    /// lobs the ball back through the middle along the same line -- and
+    /// with three nets that line ends in a mouth, so every untouched serve
+    /// scored. Anywhere from 0.05 to 0.3 of a half-gap off it, none did.
+    static let ringServeSkew = 0.2
     /// How far a serve strays from the stock one, as fractions of it. The
     /// side it drifts to never changes; how hard, how fast it drops and how
     /// long the countdown hangs do, so a pilot parked on the landing spot
@@ -1290,12 +1306,16 @@ public struct SimulationEngine: Sendable {
                 sign * Self.serveDriftSpeed * serveDraw(salt + 1, in: Self.serveDriftRange),
                 -configuration.ballDropSpeed * serveDraw(salt + 2, in: Self.serveDropRange)
             )
-            // On the ring the serve is the duel's, under the conceding goal,
-            // turned to hang from wherever that goal points.
-            if let ring = arena.ring, let bay = state.freeForAll?.serveBay, ring.spokeAngles.indices.contains(bay) {
+            // On the ring the serve is a face-off in the weightless middle,
+            // drifting out through the gap beside the net that just conceded
+            // -- never at a mouth, which all face the middle -- toward the
+            // fin there, which lobs it back in.
+            if let ring = arena.ring, let bay = state.freeForAll?.serveBay, ring.finBearings.indices.contains(bay) {
+                let out = SIMD2(cos(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)), sin(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)))
+                let across = SIMD2(-out.y, out.x)
                 return BallState(
-                    position: ring.toWorld(SIMD2(spread, configuration.ballDropHeight), spoke: bay),
-                    velocity: moving ? ring.vectorToWorld(velocity, spoke: bay) : .zero,
+                    position: out * Self.ringServeOffset + across * spread,
+                    velocity: moving ? out * Self.ringServeSpeed * serveDraw(salt + 2, in: Self.serveDropRange) : .zero,
                     radius: configuration.ballRadius
                 )
             }
@@ -1851,7 +1871,7 @@ public struct SimulationEngine: Sendable {
 
             let outside = arena.ring.map {
                 let distance = simd_length(bolt.position)
-                return distance > $0.rimRadius || distance < $0.hubRadius
+                return distance > $0.rimRadius
             } ?? (abs(bolt.position.x) > arena.halfWidth
                 || bolt.position.y < arena.floorY
                 || bolt.position.y > arena.ceilingY)
@@ -2134,7 +2154,7 @@ public struct SimulationEngine: Sendable {
         effects: inout [SimulationEvent]
     ) {
         if let ring = arena.ring {
-            resolveRingCollision(for: &ship, hitbox: hitbox, ring: ring)
+            resolveRingCollision(for: &ship, hitbox: hitbox, from: previousPosition, ring: ring, effects: &effects)
             return
         }
         // Curved parts meet the hull's bounding circle; the flat walls meet
@@ -2238,18 +2258,31 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    /// The ring's hub and rim meet a hull like the duel's roof and floor:
-    /// whatever part of the drawn hull points at them, the roof a little
-    /// springy and the floor dead. Nothing about a goal stops a hull.
-    private func resolveRingCollision(for ship: inout ShipState, hitbox: ShipHitbox, ring: RingField) {
-        let out = ring.outward(at: ship.position)
-        let distance = simd_length(ship.position)
-        let towardHub = hitbox.extent(along: -out, angle: ship.angle)
-        if distance - towardHub <= ring.hubRadius {
-            ship.position = out * (ring.hubRadius + towardHub)
-            let speed = simd_dot(ship.velocity, out)
-            if speed < 0 { ship.velocity -= out * ((1 + 0.3) * speed) }
+    /// The ring's rim meets a hull like the duel's floor, dead: whatever part
+    /// of the drawn hull points at it. The fins are solid; a live net is not.
+    private func resolveRingCollision(
+        for ship: inout ShipState,
+        hitbox: ShipHitbox,
+        from previousPosition: SIMD2<Double>,
+        ring: RingField,
+        effects: inout [SimulationEvent]
+    ) {
+        // A hull flies through a live net, front or back, as through the
+        // duel's goal; only a knocked-out pilot's shut net stops it.
+        var solid = arena
+        let field = state.freeForAll
+        solid.obstacles += ring.closedNets { field?.isSolid(goal: $0) ?? false }
+        if let wall = solid.obstacleContact(from: previousPosition, to: ship.position, radius: hitbox.reach) {
+            ship.position = wall.position
+            let inwardSpeed = simd_dot(ship.velocity, wall.normal)
+            if inwardSpeed < 0 {
+                ship.velocity -= wall.normal * ((1 + 0.12) * inwardSpeed)
+            }
+            if inwardSpeed < -Self.effectImpactSpeed {
+                effects.append(.collisionEffect(position: ship.position, intensity: abs(inwardSpeed)))
+            }
         }
+        let out = ring.outward(at: ship.position)
         let towardRim = hitbox.extent(along: out, angle: ship.angle)
         if simd_length(ship.position) + towardRim >= ring.rimRadius {
             ship.position = out * (ring.rimRadius - towardRim)
@@ -2258,122 +2291,65 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    /// The ball on the ring. The goal nearest it is met in that goal's own
-    /// frame, where it is the duel's goal and the duel's sweeps apply; the hub
-    /// and the rim are met in the world.
+    /// The ball on the ring: the nets' frames, the fins and the rim. A net
+    /// whose pilot is out has a bar across its mouth. A ball whose centre
+    /// crosses a net's goal line -- all of it over -- is in.
+    ///
+    /// The fins' flanks meet the rim, and a net's frame has inside corners,
+    /// so a ball can be touching two surfaces at once; resolving one can push
+    /// it into the other. A few passes settle it.
     private mutating func resolveRingBallCollision(
         ballIndex: Int,
         previousPosition: SIMD2<Double>,
         ring: RingField
     ) {
-        let goal = ring.spokeIndex(nearest: previousPosition)
-        state.balls[ballIndex].position = ring.toLocal(state.balls[ballIndex].position, spoke: goal)
-        state.balls[ballIndex].velocity = ring.vectorToLocal(state.balls[ballIndex].velocity, spoke: goal)
-        let field = arena
-        arena = ring.spoke
-        let scored = resolveSpokeGoal(
-            ballIndex: ballIndex,
-            goal: goal,
-            previousPosition: ring.toLocal(previousPosition, spoke: goal)
-        )
-        arena = field
-        state.balls[ballIndex].position = ring.toWorld(state.balls[ballIndex].position, spoke: goal)
-        state.balls[ballIndex].velocity = ring.vectorToWorld(state.balls[ballIndex].velocity, spoke: goal)
-        if scored { return }
-
+        var solid = arena
+        let field = state.freeForAll
+        solid.obstacles = ring.ballWalls { field?.isSolid(goal: $0) ?? false }
         let r = state.balls[ballIndex].radius
-        let out = ring.outward(at: state.balls[ballIndex].position)
-        if simd_length(state.balls[ballIndex].position) - r <= ring.hubRadius {
-            state.balls[ballIndex].position = out * (ring.hubRadius + r)
-            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, out)
-            if inwardSpeed < 0 {
-                let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= out * ((1 + Self.ballRestitution) * inwardSpeed)
-                grip(out, from: incoming, ballIndex: ballIndex)
-            }
-        }
-        if simd_length(state.balls[ballIndex].position) + r >= ring.rimRadius {
-            state.balls[ballIndex].position = out * (ring.rimRadius - r)
-            let outwardSpeed = simd_dot(state.balls[ballIndex].velocity, out)
-            if outwardSpeed > 0 {
-                let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= out * ((1 + Self.floorRestitution) * outwardSpeed)
-                grip(-out, from: incoming, ballIndex: ballIndex)
-            }
-        }
-    }
-
-    /// One goal of the ring, in its own frame: the duel's lip, cap and face
-    /// sweeps, as free-for-all scores them. True when the ball went in.
-    private mutating func resolveSpokeGoal(ballIndex: Int, goal: Int, previousPosition: SIMD2<Double>) -> Bool {
-        let r = state.balls[ballIndex].radius
-        var blockedByLip = false
-        if let lip = arena.lipContact(
-            from: previousPosition,
-            to: state.balls[ballIndex].position,
-            radius: r
-        ), lip.normal.y < 0 {
-            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, lip.normal)
-            if inwardSpeed < 0 {
-                state.balls[ballIndex].position = lip.position
-                let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
-                grip(lip.normal, from: incoming, ballIndex: ballIndex)
-                blockedByLip = true
-            }
-        }
-        if let capHit = sweptNetCapHit(
-            ballIndex: ballIndex,
-            from: previousPosition,
-            to: state.balls[ballIndex].position,
-            radius: r,
-            postCenterX: 0
-        ) {
-            state.balls[ballIndex].position = capHit.position
-            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, capHit.normal)
-            if inwardSpeed < 0 {
-                let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= capHit.normal * (2 * inwardSpeed)
-                grip(capHit.normal, from: incoming, ballIndex: ballIndex)
-            }
-        } else if let netHit = sweptNetHit(
-            ballIndex: ballIndex,
-            from: previousPosition,
-            to: state.balls[ballIndex].position,
-            radius: r,
-            postCenterX: 0
-        ) {
-            let closed = state.freeForAll?.isSolid(goal: goal) ?? false
-            if netHit.crossedFace, !blockedByLip, !closed, netHit.position.y <= arena.portalMouthTopY {
-                state.balls[ballIndex].position = netHit.position
-                freeForAllGoalsThisStep[ballIndex] = goal
-                return true
-            }
-            if netHit.position.y > arena.portalMouthTopY || (closed && netHit.crossedFace) {
-                state.balls[ballIndex].position = netHit.position
-                let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
-                let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, normal)
+        var from = previousPosition
+        for _ in 0 ..< 3 {
+            var touched = false
+            if let wall = solid.obstacleContact(from: from, to: state.balls[ballIndex].position, radius: r) {
+                touched = true
+                state.balls[ballIndex].position = wall.position
+                let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, wall.normal)
                 if inwardSpeed < 0 {
                     let incoming = state.balls[ballIndex].velocity
-                    state.balls[ballIndex].velocity -= normal * ((1 + Self.ballRestitution) * inwardSpeed)
-                    grip(normal, from: incoming, ballIndex: ballIndex)
+                    state.balls[ballIndex].velocity -= wall.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                    grip(wall.normal, from: incoming, ballIndex: ballIndex)
                 }
             }
-        }
-        if !blockedByLip, let lip = arena.lipContact(
-            from: previousPosition,
-            to: state.balls[ballIndex].position,
-            radius: r
-        ) {
-            state.balls[ballIndex].position = lip.position
-            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, lip.normal)
-            if inwardSpeed < 0 {
-                let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
-                grip(lip.normal, from: incoming, ballIndex: ballIndex)
+            let out = ring.outward(at: state.balls[ballIndex].position)
+            if simd_length(state.balls[ballIndex].position) + r >= ring.rimRadius {
+                touched = true
+                state.balls[ballIndex].position = out * (ring.rimRadius - r)
+                let outwardSpeed = simd_dot(state.balls[ballIndex].velocity, out)
+                if outwardSpeed > 0 {
+                    let incoming = state.balls[ballIndex].velocity
+                    state.balls[ballIndex].velocity -= out * ((1 + Self.floorRestitution) * outwardSpeed)
+                    grip(-out, from: incoming, ballIndex: ballIndex)
+                }
             }
+            if !touched { break }
+            from = state.balls[ballIndex].position
         }
-        return false
+
+        // Only a ball that came in the mouth scores. One that came through
+        // the back is marked for that net until it is clear of it, so it can
+        // roll out the mouth, or hang and drop back, without counting.
+        let position = state.balls[ballIndex].position
+        let cameInBack = ringBackDoor[ballIndex]
+        if let goal = ring.goalCrossing(from: previousPosition, to: position),
+           goal != cameInBack,
+           !(field?.isSolid(goal: goal) ?? false) {
+            freeForAllGoalsThisStep[ballIndex] = goal
+        } else if let pocket = ring.backPocket(holding: position) {
+            ringBackDoor[ballIndex] = pocket
+        }
+        if let net = ringBackDoor[ballIndex], ring.isClear(of: net, position) {
+            ringBackDoor[ballIndex] = nil
+        }
     }
 
     private mutating func resolveBallCollision(

@@ -444,7 +444,7 @@ final class GameSession {
             configuration.ballCount = 1
             let stored = UserDefaults.standard.object(forKey: SimulationConfiguration.ringGravityKey) as? Double
             let range = SimulationConfiguration.ringGravityRange
-            configuration.ringGravity = min(range.upperBound, max(range.lowerBound, stored ?? 1))
+            configuration.ringGravity = min(range.upperBound, max(range.lowerBound, stored ?? SimulationConfiguration.ringGravityDefault))
         }
         return configuration
     }
@@ -792,16 +792,21 @@ final class GameSession {
 
     /// The free-for-all's calls: who lost a life, who is out, who won.
     private func presentFreeForAll(_ event: SimulationEvent) {
+        // "YOU" takes the plural verb: YOU LOSE, not YOU LOSES.
+        func says(_ seat: Seat, _ one: String, _ you: String) -> String {
+            let name = callSign(seat)
+            return "\(name) \(name == "YOU" ? you : one)"
+        }
         switch event {
         case let .lifeLost(seat, _, left):
-            lastPointText = left == 0 ? "\(callSign(seat)) IS OUT"
-                : "\(callSign(seat)) LOSES A LIFE · \(left) LEFT"
+            lastPointText = left == 0 ? says(seat, "IS OUT", "ARE OUT")
+                : says(seat, "LOSES A LIFE", "LOSE A LIFE") + " · \(left) LEFT"
             if seat == flownSeat { FeedbackCenter.shared.impact() }
         case let .pilotOut(seat):
             knockedOut.append(seat)
             if seat == flownSeat { FeedbackCenter.shared.lose() }
         case let .lastPilotStanding(seat):
-            lastPointText = "\(callSign(seat)) WINS"
+            lastPointText = says(seat, "WINS", "WIN")
             if seat == flownSeat { FeedbackCenter.shared.win() }
         default:
             break

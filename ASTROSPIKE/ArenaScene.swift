@@ -453,8 +453,9 @@ final class ArenaScene: SKScene {
         }
     }
 
-    /// The free-for-all ring: the rim the ball rolls round, the hub in the
-    /// middle, and every pilot's goal hanging out from the hub toward the rim.
+    /// The free-for-all ring: the rim the ball rolls round, a fin between
+    /// each pair of nets, and every pilot's net standing off the rim with its
+    /// mouth turned in to the open middle.
     private func addRing(_ ring: RingField) {
         func circle(_ radius: Double) -> CGPath {
             let path = CGMutablePath()
@@ -473,19 +474,90 @@ final class ArenaScene: SKScene {
         rim.glowWidth = 1
         arenaLayer.addChild(rim)
 
-        let hub = SKShapeNode(path: circle(ring.hubRadius))
-        hub.fillColor = SKColor(white: 0.16, alpha: 1)
-        hub.strokeColor = .white.withAlphaComponent(0.85)
-        hub.lineWidth = 3
-        arenaLayer.addChild(hub)
+        // Each fin: up one flank to the tip and down the other, closed along
+        // the rim, from the same arcs the ball rides.
+        for bearing in ring.finBearings {
+            let up = ring.finFlank(at: bearing, side: 1)
+            let down = ring.finFlank(at: bearing, side: -1).reversed()
+            let fin = CGMutablePath()
+            for (index, sample) in (up + down).enumerated() {
+                let screen = point(sample.x, sample.y)
+                if index == 0 { fin.move(to: screen) } else { fin.addLine(to: screen) }
+            }
+            let fill = SKShapeNode(path: fin)
+            fill.fillColor = SKColor(white: 0.16, alpha: 1)
+            fill.strokeColor = .white.withAlphaComponent(0.55)
+            fill.lineWidth = 3
+            fill.glowWidth = 1
+            arenaLayer.addChild(fill)
+        }
 
         for index in ring.spokeAngles.indices {
-            addPortalNet(
-                spoke: (ring, index),
-                owner: snapshot?.freeForAll?.owner(ofGoal: index),
-                solid: drawnSolidGoals[index]
-            )
+            addRingNet(ring, index: index, owner: snapshot?.freeForAll?.owner(ofGoal: index), solid: drawnSolidGoals[index])
         }
+    }
+
+    /// One hockey net on the ring: a dark pocket, the frame in its owner's
+    /// colour -- it is their net to defend -- and a faint goal line a ball's
+    /// width inside the mouth, which the whole ball has to cross. A net whose
+    /// pilot is out is drawn shut, grey, with a bar across the mouth.
+    private func addRingNet(_ ring: RingField, index: Int, owner: Seat?, solid: Bool) {
+        func point(_ local: SIMD2<Double>) -> CGPoint {
+            let world = ring.toWorld(local, net: index)
+            return self.point(world.x, world.y)
+        }
+        let outline = ring.netOutline
+        let pocket = CGMutablePath()
+        pocket.move(to: point(outline[0]))
+        for sample in outline.dropFirst() { pocket.addLine(to: point(sample)) }
+        pocket.closeSubpath()
+        let pocketNode = SKShapeNode(path: pocket)
+        pocketNode.fillColor = solid ? SKColor(white: 0.16, alpha: 1) : SKColor(white: 0, alpha: 0.85)
+        pocketNode.strokeColor = .clear
+        pocketNode.zPosition = -1
+        arenaLayer.addChild(pocketNode)
+
+        let color = owner.map { solid ? SKColor(white: 0.55, alpha: 1) : seatColor($0) } ?? .white
+        // A live net's back is open to the ball, so it is drawn as netting:
+        // the posts solid, the back a fainter dashed line. A knocked-out
+        // net is shut all round and drawn solid.
+        let last = outline.count - 1
+        let posts = CGMutablePath()
+        posts.move(to: point(outline[0]))
+        posts.addLine(to: point(outline[1]))
+        posts.move(to: point(outline[last - 1]))
+        posts.addLine(to: point(outline[last]))
+        let back = CGMutablePath()
+        back.move(to: point(outline[1]))
+        for sample in outline[2 ... last - 1] { back.addLine(to: point(sample)) }
+        if solid { posts.addPath(back) }
+        let postNode = SKShapeNode(path: posts)
+        postNode.strokeColor = color.withAlphaComponent(0.9)
+        postNode.lineWidth = solid ? 3 : 4
+        postNode.glowWidth = solid ? 0 : 4
+        postNode.lineCap = .round
+        postNode.lineJoin = .round
+        arenaLayer.addChild(postNode)
+        if !solid {
+            let backNode = SKShapeNode(path: back.copy(dashingWithPhase: 0, lengths: [5, 5]))
+            backNode.strokeColor = color.withAlphaComponent(0.55)
+            backNode.lineWidth = 2
+            backNode.lineCap = .round
+            arenaLayer.addChild(backNode)
+        }
+
+        let line = CGMutablePath()
+        if solid {
+            line.move(to: point(SIMD2(-ring.netHalfWidth, ring.netDepth)))
+            line.addLine(to: point(SIMD2(ring.netHalfWidth, ring.netDepth)))
+        } else {
+            line.move(to: point(SIMD2(-ring.netInnerHalfWidth, ring.goalLineY)))
+            line.addLine(to: point(SIMD2(ring.netInnerHalfWidth, ring.goalLineY)))
+        }
+        let lineNode = SKShapeNode(path: line)
+        lineNode.strokeColor = solid ? SKColor(white: 0.55, alpha: 1) : color.withAlphaComponent(0.35)
+        lineNode.lineWidth = solid ? 4 : 1.5
+        arenaLayer.addChild(lineNode)
     }
 
     /// Volleyball's net: one slab standing up out of the middle of the floor,
@@ -764,18 +836,10 @@ final class ArenaScene: SKScene {
     /// On the free-for-all field there is one per pilot at `centre`, both
     /// faces in the owner's colour -- it is their goal from either side --
     /// and a knocked-out pilot's goal is drawn shut.
-    ///
-    /// On the ring the goal is drawn in its own frame, `spoke`, turned out
-    /// from the hub.
-    private func addPortalNet(at centre: Double = 0, spoke: (ring: RingField, index: Int)? = nil, owner: Seat? = nil, solid: Bool = false) {
-        let arena = spoke?.ring.spoke ?? self.arena
+    private func addPortalNet(at centre: Double = 0, owner: Seat? = nil, solid: Bool = false) {
         let half = arena.netHalfWidth
         let collarBottom = arena.portalMouthTopY
-        func point(_ x: Double, _ y: Double) -> CGPoint {
-            guard let spoke else { return self.point(centre + x, y) }
-            let world = spoke.ring.toWorld(SIMD2(x, y), spoke: spoke.index)
-            return self.point(world.x, world.y)
-        }
+        func point(_ x: Double, _ y: Double) -> CGPoint { self.point(centre + x, y) }
 
         // The collar: the part of the slab hanging from the hump, above the
         // mouth. Solid and neutral, like the cap.

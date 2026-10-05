@@ -190,8 +190,9 @@ public struct ArenaGeometry: Equatable, Sendable {
     public var goalCentres: [Double] = [0]
 
     /// Set on the round free-for-all field, which replaces the rectangle:
-    /// the walls, floor and roof are the rim and the hub, and the goals hang
-    /// from the hub in their own frames. Nil on every other court.
+    /// the walls, floor and roof are all the rim, and the goals are nets
+    /// standing round the open middle, mouths turned in. Nil on every other
+    /// court.
     public var ring: RingField?
 
     /// How many goals the field hangs.
@@ -401,10 +402,11 @@ public struct ArenaGeometry: Equatable, Sendable {
         goalCentres.isEmpty ? 0 : goalCentres[goalIndex(nearest: x)]
     }
 
-    /// The free-for-all field: the round one, a goal per pilot hanging from
-    /// the hub. The rectangle it carries is only the box the ring fits in,
-    /// for drawing and for bolts; nothing in it is solid, and with no net
-    /// style the duel's hump, lips and portal stay out of the world frame.
+    /// The free-for-all field: the round one, a net per pilot on the rim
+    /// facing in. The rectangle it carries is only the box the ring fits in,
+    /// for drawing and for bolts; its obstacles are the fins (hulls and
+    /// bolts fly through a live net; the ball's walls come from the ring), and
+    /// with no net style the duel's hump, lips and portal stay out of it.
     public static func freeForAll(pilots: Int, ballRadius: Double) -> ArenaGeometry {
         let ring = RingField(pilots: pilots, ballRadius: ballRadius)
         var court = ArenaGeometry(
@@ -415,6 +417,7 @@ public struct ArenaGeometry: Equatable, Sendable {
             netStyle: .none
         )
         court.ring = ring
+        court.obstacles = ring.fins
         return court
     }
 

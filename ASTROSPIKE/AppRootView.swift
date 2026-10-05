@@ -449,7 +449,7 @@ private struct FreeForAllSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("FREE-FOR-ALL").font(.title.bold())
-            Text("One round arena, a goal each hanging from the middle, gravity pulling out to the rim. A ball through either face of yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+            Text("One round arena, a net each standing round the open middle with its mouth turned in, gravity pulling out to the rim. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
                 .font(.footnote).foregroundStyle(.secondary)
             Picker("Pilots", selection: $pilots) {
                 Text("3 PILOTS").tag(3)
@@ -2145,7 +2145,7 @@ private struct SettingsView: View {
     @AppStorage(GameSession.muteEmotesKey) private var muteEmotes = false
     @AppStorage("arrangePads") private var arrangePads = false
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
-    @AppStorage(SimulationConfiguration.ringGravityKey) private var ringGravity = 1.0
+    @AppStorage(SimulationConfiguration.ringGravityKey) private var ringGravity = SimulationConfiguration.ringGravityDefault
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
     var body: some View {
         NavigationStack {
@@ -2223,12 +2223,12 @@ private struct SettingsView: View {
                         readout: { "\(Int(($0 * 100).rounded()))%" }
                     )
                     .accessibilityIdentifier("ring-gravity")
-                    Button("Reset to default") { ringGravity = 1 }
-                        .disabled(ringGravity == 1)
+                    Button("Reset to default") { ringGravity = SimulationConfiguration.ringGravityDefault }
+                        .disabled(ringGravity == SimulationConfiguration.ringGravityDefault)
                 } header: {
                     Text("Free-for-all")
                 } footer: {
-                    Text("How hard the ring pulls at its rim. Gravity grows from nothing at the centre to this at the rim, so the goals always sit in lighter air. Takes effect next match.")
+                    Text("How hard the ring pulls at its rim, against the duel's full weight. Gravity grows from nothing at the centre to this at the rim. Takes effect next match.")
                 }
                 if let replayIntro {
                     Section("Intro") {
