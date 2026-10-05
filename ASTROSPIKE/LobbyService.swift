@@ -614,6 +614,16 @@ final class LobbyService {
         }
     }
 
+    /// The board holding a chair: open it to the pool once the pilot who
+    /// left is back in the app and searching there.
+    func watchSeatReturns(using online: OnlineMatchCoordinator) {
+        guard let group = online.holdGroup else { return }
+        let now = Date.now
+        for id in online.droppedPilotIDs where SeatReturn.isReturning(presence(of: id), pilot: id, group: group, at: now) {
+            online.openSeatToPool(for: id)
+        }
+    }
+
     /// Writes (or refreshes) the durable ask. The record name is fixed per
     /// pair, so asking twice moves the clock forward instead of stacking a
     /// second row on the other pilot's screen.

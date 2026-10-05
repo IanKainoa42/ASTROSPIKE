@@ -53,6 +53,7 @@
 		769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07221F436E712100C50841C1 /* LobbyTests.swift */; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
 		7B0A96B4A21AAAFDED620A63 /* SoundBank.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A34F8A0F4853AB40D1C40B /* SoundBank.swift */; };
+		7B0DB149601D478832101925 /* SeatReturn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A89AE44E2F19595442A144C /* SeatReturn.swift */; };
 		7D7AE085AA869108B2933733 /* EmoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF4CC0793BBEF7450A3DFF60 /* EmoteTests.swift */; };
 		80AAF95DAC953B7A45D6D7ED /* Emotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E7824A8B02D40366234B000 /* Emotes.swift */; };
 		80CF1BF67CDDA2E0DA55402F /* TrackGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */; };
@@ -111,6 +112,7 @@
 		F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */; };
 		F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1684B9B2B0AB4D715A34F79D /* GameCenterDiagnosticsPanel.swift */; };
 		F3542B6264C2698FDAF675B5 /* LobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 415B202192D985A9E29E73E1 /* LobbyView.swift */; };
+		F8265155211E60990F490E3A /* SeatReturnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F157410DAE452AAC1E251B9B /* SeatReturnTests.swift */; };
 		F9182CDFF749B4D8C21C8CCA /* BallContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1718C582551AF16144D011A9 /* BallContactTests.swift */; };
 		FBD2318E88826A51173DF6D6 /* HullStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056582DB470999C16355D1FE /* HullStore.swift */; };
 		FE4B75A3F9457A59AB99500E /* WarmupRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5637738B4E3686D57BD33184 /* WarmupRings.swift */; };
@@ -224,6 +226,7 @@
 		59789ED6BD3380F1CF173747 /* BoltShipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltShipTests.swift; sourceTree = "<group>"; };
 		645D1FA24033CE1191F24341 /* ShipDesigns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipDesigns.swift; sourceTree = "<group>"; };
 		64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControlTests.swift; sourceTree = "<group>"; };
+		6A89AE44E2F19595442A144C /* SeatReturn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeatReturn.swift; sourceTree = "<group>"; };
 		6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocolTests.swift; sourceTree = "<group>"; };
 		6E6C209D8015028776DDD2A2 /* MatchRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRules.swift; sourceTree = "<group>"; };
 		74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterOrange.mp3; sourceTree = "<group>"; };
@@ -276,6 +279,7 @@
 		EA49DED6455F8C46F5368592 /* FeedbackCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackCenter.swift; sourceTree = "<group>"; };
 		EC8A3E13D6A4F39F11B8406B /* TrackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSession.swift; sourceTree = "<group>"; };
 		F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RallyLifecycleTests.swift; sourceTree = "<group>"; };
+		F157410DAE452AAC1E251B9B /* SeatReturnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeatReturnTests.swift; sourceTree = "<group>"; };
 		F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyDisclosureTests.swift; sourceTree = "<group>"; };
 		FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TractorBeamTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -343,6 +347,7 @@
 				3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */,
 				9A61EBE7A32C3AF4322C50CE /* OpenTable.swift */,
 				079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */,
+				6A89AE44E2F19595442A144C /* SeatReturn.swift */,
 				1D0AED08F5A123283EB23CBF /* ShipConceptCatalog.swift */,
 				645D1FA24033CE1191F24341 /* ShipDesigns.swift */,
 				11F13BD35800AABC6A36A9B6 /* Ships.json */,
@@ -454,6 +459,7 @@
 				F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */,
 				F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */,
 				E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */,
+				F157410DAE452AAC1E251B9B /* SeatReturnTests.swift */,
 				CF08260D34E017255668BDB7 /* ShipHitboxTests.swift */,
 				384F8B29DCAE339F1B2CA389 /* SimulationMotionTests.swift */,
 				4D871F54459735F6332B8CFC /* StandingInviteTests.swift */,
@@ -653,6 +659,7 @@
 				9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */,
 				BF3640FAEB076CBC170019A1 /* OpenTable.swift in Sources */,
 				8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */,
+				7B0DB149601D478832101925 /* SeatReturn.swift in Sources */,
 				86D5CF5361D7F2585D97096D /* ShipConceptCatalog.swift in Sources */,
 				694B4410F85276442F78FF96 /* ShipDesigns.swift in Sources */,
 				E11DB57ED3D16C9DC60D3C8D /* StandingInvite.swift in Sources */,
@@ -727,6 +734,7 @@
 				DE0C9433C7AFD7FC5912429C /* PrivacyDisclosureTests.swift in Sources */,
 				8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */,
 				2B482102C2AED82F18584933 /* ResultsLoopTests.swift in Sources */,
+				F8265155211E60990F490E3A /* SeatReturnTests.swift in Sources */,
 				187691FC059EF69BB380EE10 /* ShipHitboxTests.swift in Sources */,
 				AB304B77604D155C20139980 /* SimulationMotionTests.swift in Sources */,
 				A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */,
@@ -893,7 +901,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 129;
+				CURRENT_PROJECT_VERSION = 130;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -953,7 +961,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 129;
+				CURRENT_PROJECT_VERSION = 130;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

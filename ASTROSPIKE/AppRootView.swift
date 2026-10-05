@@ -148,7 +148,16 @@ struct AppRootView: View {
                 }
                 .transition(.opacity)
             }
-            if let invite = bannerInvite {
+            if showsReturnBanner, let ticket = online.returnTicket {
+                ReturnToMatchBanner(ticket: ticket) {
+                    online.returnToMatch()
+                } dismiss: {
+                    withAnimation(.easeOut(duration: 0.2)) { online.forgetReturn() }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let invite = bannerInvite {
                 IncomingInviteBanner(invite: invite) {
                     shelvedInvites.insert(invite.id)
                     lobby.answerStandingInvite(invite, accept: true, using: online)
@@ -173,6 +182,16 @@ struct AppRootView: View {
             }
         }
         .onChange(of: online.meetingTag) { _, _ in syncLobbyActivity() }
+        // Holding a dropped pilot's chair: watch for them searching their
+        // way back in, and open the chair to them when they are.
+        .task(id: isWatchingReturns) {
+            guard isWatchingReturns else { return }
+            while !Task.isCancelled {
+                await lobby.refresh()
+                lobby.watchSeatReturns(using: online)
+                try? await Task.sleep(for: .seconds(LobbyService.pollSeconds))
+            }
+        }
         .preferredColorScheme(.dark)
         .task {
             online.localHull = profile.selectedHull
@@ -180,6 +199,7 @@ struct AppRootView: View {
             lobby.localHull = profile.selectedHull
             if diagnosticsPreview == nil {
                 #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--return-preview") { online.previewReturn() }
                 if ProcessInfo.processInfo.arguments.contains("--joining-preview") {
                     online.previewMatchmaking(headline: PlayerNetworkCopy.Matchmaking.joining("Ian"))
                     return
@@ -230,8 +250,14 @@ struct AppRootView: View {
         .onChange(of: gameMode) { _, _ in syncLobbyActivity() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .active: lobby.start()
-            case .background: lobby.stop()
+            case .active:
+                lobby.start()
+                online.cameBack()
+            case .background:
+                // Suspended mid-match, the link goes and the others hold the
+                // chair. Keep what it takes to come back to it.
+                if gameMode == .online { online.stepAway() }
+                lobby.stop()
             default: break
             }
         }
@@ -311,6 +337,17 @@ struct AppRootView: View {
                           : activity == .matching ? online.meetingTag : nil)
     }
 
+    private var isWatchingReturns: Bool {
+        scenePhase == .active && online.holdGroup != nil
+    }
+
+    /// RETURN TO MATCH on the menus, while the chair is still held.
+    private var showsReturnBanner: Bool {
+        guard gameMode == nil, sheet == nil, !showOnboarding, !showTrack, online.canReturnToMatch else { return false }
+        if case .matching = online.status { return false }
+        return true
+    }
+
     private var isWatchingInvites: Bool {
         scenePhase == .active && !showTrack && (gameMode == nil || gameMode == .warmup)
     }
@@ -318,7 +355,7 @@ struct AppRootView: View {
     /// The newest ask the pilot has not closed, while they are on the home
     /// screen with nothing over it.
     private var bannerInvite: StandingInvite? {
-        guard gameMode == nil, sheet == nil, !showOnboarding, !showTrack else { return nil }
+        guard gameMode == nil, sheet == nil, !showOnboarding, !showTrack, !showsReturnBanner else { return nil }
         if case .matching = online.status { return nil }
         return lobby.standingInviteInbox.first { !shelvedInvites.contains($0.id) }
     }
@@ -640,6 +677,53 @@ private struct InviteHubSections: View {
 
 /// An ask that arrived while the pilot was on the home screen. JOIN answers
 /// it; the X only puts the banner away, and the ask stays in INVITES.
+/// The match this pilot left is still holding their chair.
+private struct ReturnToMatchBanner: View {
+    let ticket: SeatReturnTicket
+    let rejoin: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let left = ticket.secondsLeft(at: context.date)
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.title2.weight(.bold)).foregroundStyle(.cyan)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VS \(ticket.opponentNames.joined(separator: " & ").uppercased())")
+                        .font(.headline.weight(.black)).lineLimit(1)
+                    Text(left > 0 ? "YOUR CHAIR IS HELD · \(left)s" : "THE HOLD RAN OUT")
+                        .font(.caption2.monospaced().weight(.bold)).foregroundStyle(.white.opacity(0.6))
+                }
+                Spacer(minLength: 12)
+                Button(action: left > 0 ? rejoin : dismiss) {
+                    Text(left > 0 ? "RETURN TO MATCH" : "OK")
+                        .font(.callout.weight(.bold))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderedProminent).tint(.cyan)
+                .accessibilityIdentifier("return-banner-rejoin")
+                Button(action: dismiss) {
+                    Image(systemName: "xmark").font(.callout.weight(.bold)).frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.bordered).tint(.secondary)
+                .accessibilityLabel("Leave the match")
+                .accessibilityIdentifier("return-banner-dismiss")
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(maxWidth: 560)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.cyan.opacity(0.45)))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("return-banner")
+    }
+}
+
 private struct IncomingInviteBanner: View {
     let invite: StandingInvite
     let join: () -> Void
@@ -915,25 +999,8 @@ private struct GameView: View {
                     )
                     .padding(.top, 4)
                 }
-                // The table's host chases a dropped pilot even while watching.
-                if mode == .online, !isSpectating || online.isTableHost, case .reconnecting = online.status {
-                    let cooldown = online.reinviteCooldownSecondsRemaining
-                    Button {
-                        online.reinviteDroppedPilots()
-                    } label: {
-                        Label(
-                            cooldown.map { "INVITE SENT · \($0)s" } ?? "RE-INVITE PILOT",
-                            systemImage: cooldown == nil
-                                ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill"
-                        )
-                        .font(.caption.weight(.bold))
-                        .padding(.horizontal, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(cooldown == nil ? .yellow : .white.opacity(0.4))
-                    .disabled(cooldown != nil)
-                    .padding(.top, 6)
-                    .accessibilityIdentifier("reinvite-button")
+                if mode == .online, case .reconnecting = online.status {
+                    holdButton
                 }
                 if !mode.isBay {
                     let left = session.state.team(onHalfAt: -1)
@@ -1030,7 +1097,11 @@ private struct GameView: View {
                 }
             }
             if let linkFailure, session.state.match.phase != .finished {
-                LinkLostOverlay(message: linkFailure, exit: leaveGame)
+                LinkLostOverlay(
+                    message: linkFailure,
+                    rejoin: linkLostRejoin,
+                    exit: leaveGame
+                )
             }
             if session.state.match.phase == .finished {
                 ResultsOverlay(
@@ -1292,10 +1363,63 @@ private struct GameView: View {
         }
     }
 
+    /// RETURN TO MATCH on the link-lost card, while the chair is held.
+    private var linkLostRejoin: (() -> Void)? {
+        guard mode == .online, online.canReturnToMatch else { return nil }
+        return returnToMatch
+    }
+
+    /// While a chair is held. The phone that left gets the way back in: the
+    /// others hold its chair, and calling them back would cross their call.
+    /// Everyone else -- and the table's host, even watching -- can chase
+    /// the pilot who dropped.
+    @ViewBuilder private var holdButton: some View {
+        if !isSpectating, online.returnTicket != nil {
+            Button(action: returnToMatch) {
+                Label("RETURN TO MATCH", systemImage: "arrow.uturn.backward.circle.fill")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.cyan)
+            .padding(.top, 6)
+            .accessibilityIdentifier("return-to-match-button")
+        } else if !isSpectating || online.isTableHost {
+            let cooldown = online.reinviteCooldownSecondsRemaining
+            Button {
+                online.reinviteDroppedPilots()
+            } label: {
+                Label(
+                    cooldown.map { "INVITE SENT · \($0)s" } ?? "RE-INVITE PILOT",
+                    systemImage: cooldown == nil
+                        ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill"
+                )
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(cooldown == nil ? .yellow : .white.opacity(0.4))
+            .disabled(cooldown != nil)
+            .padding(.top, 6)
+            .accessibilityIdentifier("reinvite-button")
+        }
+    }
+
+    /// Leaves the arena for the menus and searches the way back in from
+    /// there; the host's resync rebuilds the match when it lands.
+    private func returnToMatch() {
+        lobby.hostDuelAbandoned()
+        exit()
+        online.returnToMatch()
+    }
+
     private func leaveGame() {
         switch mode {
         case .online:
             lobby.hostDuelAbandoned()
+            // Walking out mid-match still leaves a held chair behind.
+            if session.state.match.phase != .finished { online.stepAway() }
             online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
         case .solo, .doubles, .practice, .volleyball, .basketball: break
@@ -1988,6 +2112,8 @@ private struct CourtPauseOverlay: View {
 /// what happened, one way out.
 private struct LinkLostOverlay: View {
     let message: String
+    /// RETURN TO MATCH, while the others still hold this pilot's chair.
+    var rejoin: (() -> Void)?
     let exit: () -> Void
     var body: some View {
         VStack(spacing: 14) {
@@ -1999,7 +2125,17 @@ private struct LinkLostOverlay: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 260)
-            Button("BACK TO MENU", action: exit).buttonStyle(.borderedProminent).tint(.orange)
+            if let rejoin {
+                Button(action: rejoin) {
+                    Label("RETURN TO MATCH", systemImage: "arrow.uturn.backward.circle.fill")
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderedProminent).tint(.cyan)
+                .accessibilityIdentifier("link-lost-return")
+                Button("BACK TO MENU", action: exit).buttonStyle(.bordered).tint(.orange)
+            } else {
+                Button("BACK TO MENU", action: exit).buttonStyle(.borderedProminent).tint(.orange)
+            }
         }
         .padding(30)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))

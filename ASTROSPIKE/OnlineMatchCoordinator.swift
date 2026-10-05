@@ -97,6 +97,8 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var status: Status = .signedOut
     private(set) var isMatchReady = false
     private(set) var isAuthoritative = false
+    /// The host we stood in for after its link went quiet, not dropped.
+    private var silentHostTakenFrom: String?
     private(set) var localSeat: Seat?
     var localTeam: Team? { localSeat?.team }
     /// Bumped each time a fresh table is seated. The arena keys on it: a
@@ -427,13 +429,42 @@ final class OnlineMatchCoordinator: NSObject,
     /// instead of sending a second invite that crosses the first. Nil for
     /// every other search.
     private(set) var meetingTag: String?
-    /// The pilot an in-game meeting is for. GameKit can hand the match back
-    /// before they are on it, so whoever connects is checked against this.
-    private var meetingPilotID: String?
+    /// The pilots a private-pool search is for: the one an in-game invite
+    /// asked, or the ones holding this pilot's chair. GameKit can hand the
+    /// match back before they are on it, so whoever connects is checked
+    /// against this.
+    private var expectedPilots: Set<String>?
+    /// The match this pilot stepped away from while the others hold their
+    /// chair: what RETURN TO MATCH needs. Kept through `leaveMatch`, which
+    /// is how a pilot gets from the arena to the button on the menu.
+    private(set) var returnTicket: SeatReturnTicket?
+    /// While searching our way back in: the pilots who may seat us.
+    private var returningTo: Set<String>?
+    /// While holding a chair: the pool it is open to, once the pilot who
+    /// left is searching it.
+    private var seatPoolGroup: Int?
+    /// A call-back invite whose `addPlayers` has not called back yet.
+    private var callBackInFlight = false
+    /// How long a pilot searches for the match they left before saying it
+    /// has gone: the holder's next lobby poll, a read, and the pairing.
+    static let returnSearchSeconds = 35
     /// The guest's end of an in-game invite, told once whether GameKit
     /// paired the two phones, so the invite row is answered or put back.
     private var meetingPaired: ((Bool) -> Void)?
     private var meetingWatchdog: Task<Void, Never>?
+    /// RETURN TO MATCH, while the chair is still held.
+    var canReturnToMatch: Bool { returnTicket?.isOpen(at: .now) ?? false }
+
+    /// The private pool a pilot whose chair this board holds would search to
+    /// get back in. Nil when nothing is held, and at an open table, whose
+    /// bench and host rules a return does not cover.
+    var holdGroup: Int? {
+        guard case .reconnecting = status, openTable == nil, !droppedPilots.isEmpty else { return nil }
+        return SeatReturn.group(seated: seating.keys)
+    }
+
+    var droppedPilotIDs: Set<String> { droppedPilots }
+
     /// How long a guest searches the pool before saying it could not meet
     /// the host. Two phones already searching pair in seconds.
     static let meetingJoinSeconds = 25
@@ -879,6 +910,126 @@ final class OnlineMatchCoordinator: NSObject,
         if lifecycle.phase == .configuring { leaveMatch() }
     }
 
+    // MARK: - Return to match
+
+    /// This pilot is leaving a live match -- the app is going to the
+    /// background, the link failed, or they walked out -- and the others
+    /// will hold their chair. Keeps what RETURN TO MATCH needs.
+    func stepAway() {
+        let localID = GKLocalPlayer.local.gamePlayerID
+        guard openTable == nil, lifecycle.acceptsGameplayData, seating[localID] != nil, seating.count > 1 else { return }
+        let seated = Set(seating.keys)
+        // Already away from this match: the chair has been held since then.
+        if let held = returnTicket, held.seated == seated, held.isOpen(at: .now) { return }
+        // A board already holding someone's chair is the one they come back
+        // to. If it searched the pool too, the two searchers would pair with
+        // each other and nobody would seat anyone.
+        guard case .connected = status else { return }
+        let others = seating.keys.filter { $0 != localID }.sorted()
+        returnTicket = SeatReturnTicket(
+            seated: seated,
+            localID: localID,
+            opponentNames: others.map { seatedPilotNames[$0] ?? knownPlayers[$0]?.displayName ?? "PILOT" },
+            seat: localSeat,
+            hostID: hostID,
+            leftAt: .now,
+            holdSeconds: Self.seatHoldSeconds
+        )
+        note("STEPPED AWAY · CHAIR HELD \(Self.seatHoldSeconds)s")
+    }
+
+    /// Back in the foreground. If the link rode it out, there is nothing to
+    /// return to and the ticket goes; otherwise RETURN TO MATCH stays up.
+    func cameBack() {
+        guard returnTicket != nil else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.peerSilenceSeconds + 2))
+            guard let self, case .connected = self.status, self.lifecycle.phase == .active else { return }
+            self.note("LINK HELD THROUGH THE BACKGROUND")
+            self.returnTicket = nil
+        }
+    }
+
+    func forgetReturn() { returnTicket = nil }
+
+    #if DEBUG
+    /// `--return-preview`: the home banner for a match left a moment ago.
+    func previewReturn() {
+        returnTicket = SeatReturnTicket(
+            seated: ["preview", "maya"], localID: "preview", opponentNames: ["Maya"],
+            seat: nil, hostID: "maya", leftAt: .now, holdSeconds: Self.seatHoldSeconds
+        )
+    }
+    #endif
+
+    /// RETURN TO MATCH. Searches the match's own pool; the board holding the
+    /// chair sees this pilot there in the lobby and opens the chair to it,
+    /// so GameKit puts them back with no banner on either phone. Runs from
+    /// the menus: the arena is left first and the host's resync rebuilds it.
+    func returnToMatch() {
+        guard let ticket = returnTicket else { return }
+        guard ticket.isOpen(at: .now) else {
+            returnTicket = nil
+            status = .failed(reason: .inviteJoinFailed(underlyingMessage: "The hold on your chair ran out."))
+            return
+        }
+        if lifecycle.phase != .idle { leaveMatch(preservingStatus: true) }
+        let names = ticket.opponentNames.joined(separator: " & ")
+        startMatchmaking(recipients: nil, teamUp: false, playerGroup: ticket.group, returning: ticket)
+        guard case .matching = status else { return }
+        role = .invitee
+        inviterID = ticket.hostID == ticket.localID ? nil : ticket.hostID
+        returningTo = ticket.others
+        meetingTag = SeatReturn.tag(group: ticket.group)
+        matchmakingHeadlineText = PlayerNetworkCopy.Matchmaking.rejoining(names)
+        note("RETURNING TO MATCH VS \(names.uppercased()) · POOL \(ticket.group)")
+        let generation = matchmakingGeneration
+        meetingWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.returnSearchSeconds))
+            guard let self, !Task.isCancelled, generation == self.matchmakingGeneration,
+                  case .matching = self.status, self.lifecycle.phase == .idle else { return }
+            self.note("RETURN: NOBODY OPENED THE CHAIR AFTER \(Self.returnSearchSeconds)s")
+            self.matchmakingGeneration += 1
+            if self.findMatchGeneration != nil { GKMatchmaker.shared().cancel() }
+            self.findMatchGeneration = nil
+            self.meetingTag = nil
+            self.returningTo = nil
+            self.status = .failed(reason: .inviteJoinFailed(
+                underlyingMessage: "Couldn't get back in. \(names) may have left the match."
+            ))
+        }
+    }
+
+    /// The board holding a chair sees its pilot searching the match's pool:
+    /// open the chair to that pool. Only the host does it, so one request
+    /// is out per match, and the push call-back is withdrawn first so the
+    /// two do not cross.
+    func openSeatToPool(for pilotID: String) {
+        guard let match, isAuthoritative, let group = holdGroup,
+              droppedPilots.contains(pilotID), seatPoolGroup != group else { return }
+        let name = seatedPilotNames[pilotID] ?? "PILOT"
+        note("\(name) IS BACK IN THE APP · CHAIR OPEN IN POOL \(group)")
+        seatPoolGroup = group
+        // Only cancel a request that is really out: with nothing pending,
+        // GameKit's asynchronous cancel can land on the one below instead.
+        if callBackInFlight { GKMatchmaker.shared().cancel() }
+        callBackInFlight = false
+        withdrawCallbacks()
+        let request = GKMatchRequest()
+        request.minPlayers = 2
+        request.maxPlayers = max(2, seating.count)
+        request.playerGroup = group
+        GKMatchmaker.shared().addPlayers(to: match, matchRequest: request) { [weak self] error in
+            let detail = error.map { self?.describe($0) ?? "\($0)" }
+            Task { @MainActor [weak self] in
+                guard let self, let detail, self.seatPoolGroup == group else { return }
+                // Try again on the next poll that still sees them searching.
+                self.seatPoolGroup = nil
+                self.note("CHAIR POOL FAILED: \(detail)")
+            }
+        }
+    }
+
     func loadInvitees() {
         guard GKLocalPlayer.local.isAuthenticated, !isLoadingInvitees else { return }
         isLoadingInvitees = true
@@ -907,16 +1058,29 @@ final class OnlineMatchCoordinator: NSObject,
         teamUp: Bool,
         asOpenTable: Bool = false,
         playerGroup: Int = 0,
-        meeting: (pilotID: String, name: String, hostTag: String?)? = nil
+        meeting: (pilotID: String, name: String, hostTag: String?)? = nil,
+        returning ticket: SeatReturnTicket? = nil
     ) {
         // Whatever in-game join was out is over: this search replaces it.
         finishMeeting(paired: false)
         meetingTag = meeting?.hostTag
+        // Starting anything else is leaving the old match for good.
+        if ticket == nil { returnTicket = nil }
         guard GKLocalPlayer.local.isAuthenticated else {
             if meeting != nil {
                 // Only the lobby starts one, and it needs a signed-in pilot.
                 note("IN-GAME INVITE: NOT SIGNED IN")
                 meetingTag = nil
+                return
+            }
+            if ticket != nil {
+                // Saving this as a pending intent would turn it into a
+                // quick match against a stranger once sign-in lands.
+                note("RETURN: NOT SIGNED IN")
+                status = .failed(reason: .inviteJoinFailed(
+                    underlyingMessage: "Sign in to Game Center to get back in."
+                ))
+                authenticate()
                 return
             }
             if let recipients {
@@ -932,7 +1096,10 @@ final class OnlineMatchCoordinator: NSObject,
         // table everyone asked, since the bench holds the rest.
         let wanted = 1 + (recipients?.count ?? 1)
         let partySize: Int
-        if asOpenTable {
+        if let ticket {
+            // The match being rejoined, at its own size.
+            partySize = ticket.seated.count
+        } else if asOpenTable {
             partySize = min(OpenTable.maxPilots, wanted, GKMatchRequest.maxPlayersAllowedForMatch(of: .peerToPeer))
         } else {
             partySize = min(4, wanted)
@@ -1062,16 +1229,23 @@ final class OnlineMatchCoordinator: NSObject,
                 // GameKit can hand the match back before they have joined
                 // it -- an empty `players` is a pilot still on the way, and
                 // is checked again when they connect.
-                self.meetingPilotID = meeting?.pilotID
-                if let meeting, match.players.contains(where: { $0.gamePlayerID != meeting.pilotID }) {
-                    self.note("IN-GAME MEETING: A STRANGER TOOK THE SEAT · DROPPED")
+                let expected = meeting.map { Set([$0.pilotID]) } ?? ticket?.others
+                self.expectedPilots = expected
+                if let expected, match.players.contains(where: { !expected.contains($0.gamePlayerID) }) {
+                    self.note("PRIVATE POOL: A STRANGER TOOK THE SEAT · DROPPED")
                     match.disconnect()
                     self.finishMeeting(paired: false)
                     self.meetingTag = nil
                     self.status = .failed(reason: .inviteJoinFailed(
-                        underlyingMessage: "Couldn't meet \(meeting.name). Try again."
+                        underlyingMessage: meeting.map { "Couldn't meet \($0.name). Try again." }
+                            ?? "Couldn't get back in. Try again."
                     ))
                     return
+                }
+                if ticket != nil {
+                    // Back on the link; the chair is ours again once seated.
+                    self.returnTicket = nil
+                    self.meetingTag = nil
                 }
                 self.finishMeeting(paired: true)
                 let names = match.players.map(\.displayName).joined(separator: ", ")
@@ -1459,6 +1633,9 @@ final class OnlineMatchCoordinator: NSObject,
             // The table's host seats every duel at its table, a rejoin included.
             if resumingAfterDrop { return false }
         }
+        // Back from the menu into a match whose host may have changed while
+        // we were gone: whoever is still at it seats us.
+        if let returningTo { return returningTo.contains(playerID) }
         if resumingAfterDrop {
             let flewWithUs = seatedBeforeDrop.subtracting([localID])
             guard flewWithUs.contains(playerID) else { return false }
@@ -1526,10 +1703,36 @@ final class OnlineMatchCoordinator: NSObject,
             for id in gone { readyPeers.remove(id) }
             droppedPilots.formUnion(gone)
             pendingForfeitWinner = seating[dropped]?.team.opponent
+            let localID = GKLocalPlayer.local.gamePlayerID
+            if let hostID, gone.contains(hostID), seating[localID] != nil,
+               OnlineSeating.localTakesOverHosting(
+                   localID: localID, hostID: hostID, droppedID: hostID,
+                   remainingPeerIDs: seating.keys.filter { $0 != localID && !gone.contains($0) }
+               ) {
+                // A suspended phone goes quiet before GameKit calls it gone.
+                // Someone has to run the rules -- and open the chair to the
+                // pool when the host comes back from the menus.
+                silentHostTakenFrom = hostID
+                isAuthoritative = true
+                self.hostID = localID
+                snapshotGate.reset()
+                eventGate.reset()
+                note("HOST \(name) WENT SILENT · LOCAL NOW HOSTS")
+            }
             beginReconnectWindow()
         case .resumed(let returned):
             guard case .reconnecting = status else { return }
             note("PACKETS RESUMED · SEAT RECLAIMED")
+            if let host = silentHostTakenFrom, returned.contains(host) {
+                // The host never left its match and still runs it: two
+                // boards running the rules would fight over every snapshot.
+                isAuthoritative = false
+                hostID = host
+                snapshotGate.reset()
+                eventGate.reset()
+                note("HOST BACK ON THE LINK · RULES HANDED BACK")
+            }
+            silentHostTakenFrom = nil
             readyPeers.formUnion(returned)
             _ = lifecycle.acceptConnection()
             completeReconnect()
@@ -1897,6 +2100,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// does the match go to the side that stayed.
     private func beginReconnectWindow() {
         guard lifecycle.beginReconnect(), var session else { return }
+        seatPoolGroup = nil
         _ = session.remoteDisconnected(at: 0)
         self.session = session
         // Every board holds the table's copy of the bench, so every board
@@ -1973,6 +2177,9 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask?.cancel()
         reconnectTask = nil
         droppedPilots = []
+        seatPoolGroup = nil
+        silentHostTakenFrom = nil
+        returnTicket = nil
         handshakeTask?.cancel()
         handshakeTask = nil
         doorSecondsRemaining = nil
@@ -2021,6 +2228,14 @@ final class OnlineMatchCoordinator: NSObject,
     /// invite sent is remembered so it can be withdrawn when the hold ends.
     private func callBackDroppedPilots(automatic: Bool) {
         guard let match, case .reconnecting = status else { return }
+        // We are the one who left: the others hold our chair, and an invite
+        // from us would only cross theirs. RETURN TO MATCH is our way back.
+        if automatic, returnTicket != nil {
+            note("STEPPED AWAY · NOT CALLING BACK")
+            return
+        }
+        // The pilot is already searching the pool; a push would cross it.
+        guard seatPoolGroup == nil else { return }
         // The bench watches a hold; it does not chase anyone. The table's
         // host does, whether it is flying or watching.
         guard !isSpectating || isTableHost else { return }
@@ -2047,10 +2262,12 @@ final class OnlineMatchCoordinator: NSObject,
         request.inviteMessage = "Your seat is still open. Come back!"
         note("RE-INVITING \(missing.map(\.displayName).joined(separator: ", "))")
         beginReinviteCooldown()
+        callBackInFlight = true
         GKMatchmaker.shared().addPlayers(to: match, matchRequest: request) { [weak self] error in
             let detail = error.map { self?.describe($0) ?? "\($0)" }
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.callBackInFlight = false
                 if let detail {
                     // Nothing reached their phone, so there is nothing to
                     // protect: free the button for another try at once.
@@ -2152,8 +2369,14 @@ final class OnlineMatchCoordinator: NSObject,
         note("PEER \(displayName): \(word) · \(match?.players.count ?? 0) IN · EXPECTING \(match?.expectedPlayerCount ?? 0)")
         switch state {
         case .connected:
-            if let expected = meetingPilotID, playerID != expected, lifecycle.phase == .configuring {
-                note("IN-GAME MEETING: \(displayName) IS NOT WHO WAS ASKED · DROPPED")
+            // The pool a held chair is open to is a number anyone with the
+            // lobby can work out: only the pilot the chair is held for gets it.
+            if seatPoolGroup != nil, case .reconnecting = status, !droppedPilots.contains(playerID) {
+                note("\(displayName) CAME IN THROUGH THE POOL WITH NO CHAIR · IGNORED")
+                return
+            }
+            if let expected = expectedPilots, !expected.contains(playerID), lifecycle.phase == .configuring {
+                note("PRIVATE POOL: \(displayName) IS NOT WHO WAS EXPECTED · DROPPED")
                 status = .failed(reason: .inviteJoinFailed(underlyingMessage: "Couldn't meet your pilot. Try again."))
                 leaveMatch(preservingStatus: true)
                 return
@@ -2456,6 +2679,8 @@ final class OnlineMatchCoordinator: NSObject,
             // A log line was the whole of it, which is how a pilot got dropped
             // with the arena still up and nothing on screen to say so.
             guard self.lifecycle.acceptsNetworkMessages else { return }
+            // The others may still be holding our chair on their side.
+            self.stepAway()
             self.status = .failed(reason: reason)
         }
     }
@@ -2501,8 +2726,10 @@ final class OnlineMatchCoordinator: NSObject,
         let generation = matchmakingGeneration
         if ownSearchIsOut { GKMatchmaker.shared().cancel() }
         findMatchGeneration = nil
-        // A Game Center invite won over an in-game one that was out.
+        // A Game Center invite won over an in-game one that was out -- or
+        // the call-back banner beat RETURN TO MATCH to it.
         meetingTag = nil
+        returnTicket = nil
         finishMeeting(paired: false)
         role = .invitee
         declinedInvites = 0
@@ -2634,7 +2861,11 @@ final class OnlineMatchCoordinator: NSObject,
         readyPeers = []
         role = .automatch
         meetingTag = nil
-        meetingPilotID = nil
+        expectedPilots = nil
+        returningTo = nil
+        seatPoolGroup = nil
+        silentHostTakenFrom = nil
+        callBackInFlight = false
         finishMeeting(paired: false)
         declinedInvites = 0
         invitesAllAccepted = false
@@ -2688,6 +2919,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// which keeps the winner on the court for the next one.
     func finishCompletedMatch(winner: Team? = nil) {
         guard lifecycle.acceptsGameplayData else { return }
+        returnTicket = nil
         // At an open table the match object outlives the duel: the next
         // one is seated on it.
         if openTable != nil {
