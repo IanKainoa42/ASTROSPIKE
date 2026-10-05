@@ -84,9 +84,10 @@ public struct FreeForAllState: Codable, Equatable, Sendable {
 ///
 /// Known gap: it defends weakly. It clears a ball close in front of its own
 /// mouth but keeps no goal, so its misses that rebound off the fins and rim
-/// can still go into its own net. On the slow-motion table, alone against
-/// idle hulls (two-hour samples), it takes about 0.9 rival lives a minute at
-/// three pilots and 0.6 at four, and almost never gives one up.
+/// can still go into its own net. It keeps short of every MAX CROSS line
+/// and shoots a ball out on a rival's ground that it cannot reach. Alone
+/// against idle hulls (two-hour samples) it takes about 0.6 rival lives a
+/// minute at three pilots and 0.8 at four, and gives up 0.1.
 public struct FreeForAllPilot: Sendable {
     /// How much nearer the ball a new net must be before the bot gives up
     /// the one it is working on, so a ball midway between two does not make
@@ -108,7 +109,33 @@ public struct FreeForAllPilot: Sendable {
 
     public mutating func input(for state: WorldState, seat: Seat, arena: ArenaGeometry, tick: UInt64) -> PlayerInput {
         guard let ring = arena.ring else { return .idle(tick: tick) }
-        return input(for: state, seat: seat, ring: ring, tick: tick)
+        var input = input(for: state, seat: seat, ring: ring, tick: tick)
+        guard let field = state.freeForAll, let ship = state.ships[seat], !ship.isDestroyed,
+              let own = field.bay(of: seat) else { return input }
+        let guarded = { (index: Int) in !field.isSolid(goal: index) }
+        let toBall = state.ball.position - ship.position
+        let distance = simd_length(toBall)
+        let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
+        // A ball out on a rival's ground, past the line, the hull cannot
+        // reach: hold at the line with the nose on it and shoot it.
+        let unreachable = ring.offside(state.ball.position, home: own, guarded: guarded) != nil
+        if unreachable, distance < reach, simd_length(ship.velocity) < 0.4, distance > 0.000_001 {
+            let error = remainder(atan2(toBall.y, toBall.x) - ship.angle, 2 * .pi)
+            input.torque = abs(error) < 0.03 ? 0 : max(-1, min(1, error * 4))
+            input.thrust = false
+        }
+        // Fire when the nose is on the ball and the knock either frees an
+        // unreachable ball or heads into an open rival mouth -- never into
+        // its own -- from short of the line.
+        guard let alignment = difficulty.fireAlignment, ship.fireCooldownTicks == 0,
+              distance > 0.16, distance < reach,
+              ring.offside(ship.position, home: own, guarded: guarded) == nil else { return input }
+        let nose = SIMD2(cos(ship.angle), sin(ship.angle))
+        guard simd_dot(toBall / distance, nose) > max(alignment, 0.985),
+              !headsInto(own, from: state.ball.position, along: nose, ring: ring) else { return input }
+        let scores = ring.spokeAngles.indices.contains { $0 != own && guarded($0) && headsInto($0, from: state.ball.position, along: nose, ring: ring) }
+        if unreachable || scores { input.fire = true }
+        return input
     }
 
     /// How near its own mouth the ball must come before the bot drops the
@@ -134,6 +161,8 @@ public struct FreeForAllPilot: Sendable {
     /// shooting: the middle has no weight to stop a ball, so a full strike
     /// to the middle carries it straight across.
     static let ringNudgeSpeed = 0.9
+    /// How far short of a MAX CROSS line the bot holds a target.
+    static let ringLineMargin = 0.04
 
     /// The ring bot. Every mouth faces the open middle, so a shot has to
     /// come from the centre side: the bot gets the ball in front of a rival
@@ -148,6 +177,14 @@ public struct FreeForAllPilot: Sendable {
         }
         let own = field.bay(of: seat)
         let ball = state.ball
+        // Never aim past the MAX CROSS line: a target on a rival's ground is
+        // pulled back short of it, so the bot shoots from the line rather
+        // than leaning on the push-back.
+        func onside(_ point: SIMD2<Double>) -> SIMD2<Double> {
+            guard let own, let back = ring.offside(point, home: own, guarded: { !field.isSolid(goal: $0) }) else { return point }
+            let depth = simd_length(back)
+            return point + back * ((depth + Self.ringLineMargin) / depth)
+        }
         // Where the ball will be by the time the ship gets there, roughly.
         let lead = min(0.25, simd_length(ball.position - ship.position) / 2.0)
         let spot = ball.position + ball.velocity * lead
@@ -181,7 +218,7 @@ public struct FreeForAllPilot: Sendable {
                 aim = ring.toWorld(SIMD2(0, ring.netDepth + 0.25), net: goal)
             }
         } else {
-            return fly(ship: ship, to: .zero, closing: .zero, ring: ring, tick: tick)
+            return fly(ship: ship, to: onside(.zero), closing: .zero, ring: ring, tick: tick)
         }
 
         // Aim error, the same each reaction window so it reads as a miss
@@ -211,15 +248,15 @@ public struct FreeForAllPilot: Sendable {
             let safe = own.map { !headsInto($0, from: spot, along: hit, ring: ring) } ?? true
             if distance < standoff * 1.6, safe {
                 // Behind it and close: drive through along the line.
-                return fly(ship: ship, to: spot + line * standoff, closing: ball.velocity + line * speed, ring: ring, tick: tick)
+                return fly(ship: ship, to: onside(spot + line * standoff), closing: ball.velocity + line * speed, ring: ring, tick: tick)
             }
-            return fly(ship: ship, to: behind, closing: ball.velocity, ring: ring, tick: tick)
+            return fly(ship: ship, to: onside(behind), closing: ball.velocity, ring: ring, tick: tick)
         }
         // Go round the ball on a circle clear of it, a step at a time, so
         // the hull never cuts across it and knocks it somewhere unplanned.
         let orbit = max(standoff + Self.ringClearance, min(distance, Self.ringOrbitRadius))
         let step = max(-Self.ringOrbitStep, min(Self.ringOrbitStep, turn))
-        return fly(ship: ship, to: spot + Self.rotate(bearing, by: step) * orbit, closing: ball.velocity, ring: ring, tick: tick)
+        return fly(ship: ship, to: onside(spot + Self.rotate(bearing, by: step) * orbit), closing: ball.velocity, ring: ring, tick: tick)
     }
 
     static func rotate(_ v: SIMD2<Double>, by angle: Double) -> SIMD2<Double> {

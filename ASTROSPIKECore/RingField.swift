@@ -2,8 +2,9 @@ import Foundation
 import simd
 
 /// The free-for-all field: a round air-hockey table. Every pilot's goal is
-/// a net tucked into the rim with its mouth turned in toward the centre, so
-/// a shot comes in from the open middle, which is the whole table. Between
+/// a net standing just off the rim with its mouth turned in toward the
+/// centre, so a shot comes in from the open middle, and a ball can roll
+/// round behind it between the net and the rim. Between
 /// neighbouring nets a fin rises off the rim, its flanks curving up from the
 /// floor like the duel's corners, so a ball running round the rim is turned
 /// back into the middle.
@@ -18,11 +19,16 @@ public struct RingField: Equatable, Sendable {
     /// Centre to rim. The field is the size the old hub-and-spoke ring was,
     /// so nothing on screen shrank; the hub's room is now open play.
     public static let rimRadius = 1.52
-    /// The gap between the back of every net and the rim: narrower than the
-    /// smallest ball, so nothing gets round behind a net. The net is hung
-    /// from here inward, so a bigger ball's deeper net reaches further in
-    /// and never pokes through the rim.
-    public static let backGap = 0.03
+    /// Room between the back of every net and the rim, past the ball's
+    /// width, so a ball rolls round behind a net rather than wedging there.
+    /// The net is hung from there inward, so a bigger ball's deeper net
+    /// reaches further in and never pokes through the rim.
+    public static let backClearance = 0.07
+    /// Each pilot's MAX CROSS line, as a share of the distance out to the
+    /// mouths: the arc across each rival's ground past which the rival
+    /// shoves a pilot back, as the duel's line does half way into the far
+    /// half.
+    public static let maxCrossShare = 0.6
     /// Thickness of a net's frame, as a capsule radius.
     public static let netWall = 0.014
     /// Thickness of a fin's flank.
@@ -86,8 +92,11 @@ public struct RingField: Equatable, Sendable {
     /// Straight out from the centre at `bearing`.
     static func outward(_ bearing: Double) -> SIMD2<Double> { SIMD2(cos(bearing), sin(bearing)) }
 
+    /// The gap between the back of every net and the rim: a ball and some.
+    public var backGap: Double { 2 * ballRadius + Self.backClearance }
+
     /// Distance from the centre to the back of every net's frame.
-    public var netBackRadius: Double { rimRadius - Self.backGap - Self.netWall }
+    public var netBackRadius: Double { rimRadius - backGap - Self.netWall }
 
     /// Distance from the centre to every net's mouth.
     public var mouthRadius: Double { netBackRadius - netDepth }
@@ -195,6 +204,44 @@ public struct RingField: Equatable, Sendable {
             if abs(x) < netInnerHalfWidth { return index }
         }
         return nil
+    }
+
+    // MARK: - MAX CROSS
+
+    /// Every pilot's ground is the wedge of the ring round their net, fin to
+    /// fin. The middle inside this radius is everyone's; past it a pilot
+    /// may fly only on their own ground or a knocked-out pilot's.
+    public var maxCrossRadius: Double { mouthRadius * Self.maxCrossShare }
+
+    /// Whose ground `point` is on: the net it shares a wedge with.
+    public func ground(at point: SIMD2<Double>) -> Int { spokeIndex(nearest: point) }
+
+    /// The bearings of net `index`'s two borders, the fins either side.
+    public func borders(of index: Int) -> (low: Double, high: Double) {
+        let half = Double.pi / Double(spokeAngles.count)
+        return (spokeAngles[index] - half, spokeAngles[index] + half)
+    }
+
+    /// How a pilot from net `home` at `point` gets back onside: the shortest
+    /// step onto ground they may fly, or nil if they are on it. `guarded`
+    /// says which nets still have a pilot defending their ground. A border
+    /// between two guarded wedges is no way through: only the arc, their
+    /// own ground or an unguarded wedge counts as onside.
+    public func offside(_ point: SIMD2<Double>, home: Int, guarded: (Int) -> Bool) -> SIMD2<Double>? {
+        let distance = simd_length(point)
+        guard distance > maxCrossRadius else { return nil }
+        let wedge = ground(at: point)
+        guard wedge != home, guarded(wedge) else { return nil }
+        var best = point * (maxCrossRadius / distance) - point
+        let count = spokeAngles.count
+        let (low, high) = borders(of: wedge)
+        for (bearing, neighbour) in [(low, (wedge + count - 1) % count), (high, (wedge + 1) % count)]
+        where neighbour == home || !guarded(neighbour) {
+            let along = Self.outward(bearing)
+            let step = along * max(0, simd_dot(point, along)) - point
+            if simd_length(step) < simd_length(best) { best = step }
+        }
+        return best
     }
 
     // MARK: - Fins

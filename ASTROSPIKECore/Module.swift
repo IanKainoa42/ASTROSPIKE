@@ -849,6 +849,14 @@ public struct SimulationEngine: Sendable {
     /// keeps the book.
     public var isFreeForAll: Bool { state.freeForAll != nil }
 
+    /// On the ring, how a hull at `point` gets back short of `seat`'s MAX
+    /// CROSS line, or nil when it is already there. A knocked-out pilot's
+    /// ground is open to everyone.
+    public func ringOffside(_ point: SIMD2<Double>, seat: Seat) -> SIMD2<Double>? {
+        guard let ring = arena.ring, let field = state.freeForAll, let home = field.bay(of: seat) else { return nil }
+        return ring.offside(point, home: home) { !field.isSolid(goal: $0) }
+    }
+
     /// Whether two seats are on opposite sides. In free-for-all everyone
     /// else is.
     private func rivals(_ a: Seat, _ b: Seat) -> Bool {
@@ -975,6 +983,14 @@ public struct SimulationEngine: Sendable {
                 acceleration -= ship.velocity
                     * (configuration.crossingDrag * min(1, depth / 0.20))
             }
+            // The ring's MAX CROSS: the same treacle, shoving back toward the
+            // nearest ground the pilot may fly.
+            if let back = ringOffside(ship.position, seat: seat) {
+                let depth = simd_length(back)
+                acceleration += back * configuration.crossingPushBack
+                acceleration -= ship.velocity
+                    * (configuration.crossingDrag * min(1, depth / 0.20))
+            }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
             resolveArenaCollision(
@@ -990,7 +1006,9 @@ public struct SimulationEngine: Sendable {
             // for ramming but the bolts stay holstered. (Until build 125 it
             // stopped at the base of the hump.)
             let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-            let shortOfTheLine = isFreeForAll || ship.position.x * homeSign >= -arena.opponentCrossingLimit
+            let shortOfTheLine = isFreeForAll
+                ? ringOffside(ship.position, seat: seat) == nil
+                : ship.position.x * homeSign >= -arena.opponentCrossingLimit
             if input.fire, shortOfTheLine, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, seat: seat)
             }

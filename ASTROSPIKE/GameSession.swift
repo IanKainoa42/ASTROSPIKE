@@ -855,7 +855,12 @@ final class GameSession {
         // the voice belongs to the seat's colour, which never does.
         for (seat, ship) in state.ships {
             let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
-            if !isFreeForAll, ship.position.x * intrusionSign > limit {
+            // On the ring only your own hull calls it: three bots leaning
+            // on their lines would chirp all match.
+            let offside = isFreeForAll
+                ? seat == localSeat && engine.ringOffside(ship.position, seat: seat) != nil
+                : ship.position.x * intrusionSign > limit
+            if offside {
                 offsideNow.insert(seat)
                 if !offsideLastFrame.contains(seat) {
                     FeedbackCenter.shared.crossedOffside(

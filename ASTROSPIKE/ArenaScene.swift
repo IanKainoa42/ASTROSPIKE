@@ -492,9 +492,55 @@ final class ArenaScene: SKScene {
             arenaLayer.addChild(fill)
         }
 
+        for index in ring.spokeAngles.indices where !drawnSolidGoals[index] {
+            addRingGround(ring, index: index, owner: snapshot?.freeForAll?.owner(ofGoal: index))
+        }
         for index in ring.spokeAngles.indices {
             addRingNet(ring, index: index, owner: snapshot?.freeForAll?.owner(ofGoal: index), solid: drawnSolidGoals[index])
         }
+    }
+
+    /// A live pilot's ground, drawn like the duel's MAX CROSS line in the
+    /// owner's colour: a dashed arc across their wedge, and the two borders
+    /// running out from its ends to the fins. Everyone else is shoved back
+    /// short of it. A knocked-out pilot's ground is open, so it is not drawn.
+    private func addRingGround(_ ring: RingField, index: Int, owner: Seat?) {
+        let color = owner.map(seatColor) ?? .white
+        let radius = ring.maxCrossRadius
+        let (low, high) = ring.borders(of: index)
+        let path = CGMutablePath()
+        let steps = 40
+        for step in 0 ... steps {
+            let angle = low + (high - low) * Double(step) / Double(steps)
+            let screen = point(radius * cos(angle), radius * sin(angle))
+            if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
+        }
+        let tip = ring.rimRadius - RingField.finHeight
+        for bearing in [low, high] {
+            path.move(to: point(radius * cos(bearing), radius * sin(bearing)))
+            path.addLine(to: point(tip * cos(bearing), tip * sin(bearing)))
+        }
+        let marker = SKShapeNode(path: path.copy(dashingWithPhase: 0, lengths: [6, 6]))
+        marker.strokeColor = color.withAlphaComponent(0.32)
+        marker.lineWidth = 1.5
+        marker.glowWidth = 1
+        arenaLayer.addChild(marker)
+
+        // The label sits just past the arc on the owner's side, on the
+        // net's line, turned along the arc and never upside down.
+        let bearing = ring.spokeAngles[index]
+        let label = SKLabelNode(text: "MAX CROSS")
+        label.fontName = "AvenirNextCondensed-Bold"
+        label.fontSize = 8
+        label.fontColor = color.withAlphaComponent(0.5)
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = point((radius + 0.035) * cos(bearing), (radius + 0.035) * sin(bearing))
+        var turn = bearing - .pi / 2
+        turn = remainder(turn, 2 * .pi)
+        if abs(turn) > .pi / 2 { turn += .pi }
+        label.zRotation = CGFloat(turn)
+        arenaLayer.addChild(label)
     }
 
     /// One hockey net on the ring: a dark pocket, the frame in its owner's
