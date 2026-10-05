@@ -303,7 +303,11 @@ public struct FreeForAllPilot: Sendable {
         let fallLimit = (2 * 2.6 * max(0, clearance - 0.04)).squareRoot()
         if fall > fallLimit { desired -= out * (fall - fallLimit) }
 
-        var need = (desired - ship.velocity) * 3.5 + up * simd_length(configuration.gravity)
+        let weight = simd_length(ring.gravity(
+            at: ship.position,
+            rim: simd_length(configuration.gravity) * configuration.ringGravity
+        ))
+        var need = (desired - ship.velocity) * 3.5 + up * weight
         let lift = simd_dot(need, up)
         let across = need - up * lift
         let altitude = min(1, max(0, clearance / 0.33))

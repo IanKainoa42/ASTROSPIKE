@@ -77,6 +77,13 @@ public struct RingField: Equatable, Sendable {
         return distance > 0.000_001 ? point / distance : SIMD2(0, -1)
     }
 
+    /// Spin gravity at `point`: straight out, nothing at the centre, growing
+    /// in step with the distance to `rim` at the rim itself. The goals on the
+    /// hub sit in light air and only the rim pulls with full weight.
+    public func gravity(at point: SIMD2<Double>, rim strength: Double) -> SIMD2<Double> {
+        point * (strength / rimRadius)
+    }
+
     /// The middle of goal `index`'s mouth, in the world.
     public func mouthCentre(_ index: Int) -> SIMD2<Double> {
         let court = spoke

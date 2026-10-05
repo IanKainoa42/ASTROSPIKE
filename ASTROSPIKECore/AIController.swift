@@ -782,23 +782,26 @@ public struct AIController: InputSource, Sendable {
         guard let bowl else {
             return drive(sending: ballVelocity, to: lobVelocity(target - point))
         }
-        // In the bowl gravity points out from the centre, so solve the arc
-        // with "down" the way it pulls halfway along it.
-        let out = simd_normalize((point + target) / 2 - bowl.centre)
+        // In the bowl gravity points out from the centre and grows outward,
+        // so solve the arc with "down" -- and its strength -- as it pulls
+        // halfway along it.
+        let middle = (point + target) / 2
+        let out = simd_normalize(middle - bowl.centre)
         let tilt = atan2(out.x, -out.y)
         func turned(_ v: SIMD2<Double>, by angle: Double) -> SIMD2<Double> {
             SIMD2(v.x * cos(angle) - v.y * sin(angle), v.x * sin(angle) + v.y * cos(angle))
         }
-        let wanted = turned(lobVelocity(turned(target - point, by: -tilt)), by: tilt)
+        let pull = simd_length(gravity(at: middle, scale: configuration.ballGravityMultiplier))
+        let wanted = turned(lobVelocity(turned(target - point, by: -tilt), gravity: pull), by: tilt)
         return drive(sending: ballVelocity, to: wanted)
     }
 
     /// The launch velocity of the gentlest arc that covers `delta` under
-    /// gravity straight down.
-    private func lobVelocity(_ delta: SIMD2<Double>) -> SIMD2<Double> {
+    /// gravity straight down, the court's unless `gravity` says otherwise.
+    private func lobVelocity(_ delta: SIMD2<Double>, gravity pull: Double? = nil) -> SIMD2<Double> {
         let gravity = max(
             0.001,
-            -configuration.gravity.y * configuration.ballGravityMultiplier
+            pull ?? -configuration.gravity.y * configuration.ballGravityMultiplier
         )
         let horizontal = abs(delta.x)
         let direction: SIMD2<Double>
@@ -900,13 +903,12 @@ public struct AIController: InputSource, Sendable {
         return bowl.centre.y - max(0, bowl.rim * bowl.rim - across * across).squareRoot()
     }
 
-    /// Gravity at `point`: straight down, or out from the bowl's centre.
+    /// Gravity at `point`: straight down, or the ring's spin gravity out from
+    /// the bowl's centre, growing with the distance to full at the rim.
     private func gravity(at point: SIMD2<Double>, scale: Double = 1) -> SIMD2<Double> {
         guard let bowl else { return configuration.gravity * scale }
-        let offset = point - bowl.centre
-        let distance = simd_length(offset)
-        let out = distance > 0.000_001 ? offset / distance : SIMD2(0, -1)
-        return out * (simd_length(configuration.gravity) * scale)
+        return (point - bowl.centre)
+            * (simd_length(configuration.gravity) * configuration.ringGravity * scale / bowl.rim)
     }
 
     private func normalizedAngle(_ angle: Double) -> Double {

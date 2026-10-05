@@ -431,7 +431,8 @@ final class GameSession {
     }
 
     /// Free-for-all plays one ball whatever the slider says: a second one
-    /// would be a serve nobody saw coming on the far side of the ring.
+    /// would be a serve nobody saw coming on the far side of the ring. Its
+    /// gravity is the pilot's Ring gravity setting.
     private static func resolved(
         _ configuration: SimulationConfiguration,
         mode: GameMode,
@@ -439,7 +440,12 @@ final class GameSession {
     ) -> SimulationConfiguration {
         if isDoubles { return .doubles(from: configuration) }
         var configuration = configuration
-        if mode.isFreeForAll { configuration.ballCount = 1 }
+        if mode.isFreeForAll {
+            configuration.ballCount = 1
+            let stored = UserDefaults.standard.object(forKey: SimulationConfiguration.ringGravityKey) as? Double
+            let range = SimulationConfiguration.ringGravityRange
+            configuration.ringGravity = min(range.upperBound, max(range.lowerBound, stored ?? 1))
+        }
         return configuration
     }
 

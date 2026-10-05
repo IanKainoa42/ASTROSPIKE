@@ -498,6 +498,14 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var sandbox: Bool
     /// What an enemy bolt does to a hull besides shove it.
     public var boltHit: BoltHit = .stun
+    /// Free-for-all ring only: the share of `gravity` felt at the rim. Ring
+    /// gravity is spin gravity, nothing at the centre and growing straight
+    /// out to this at the rim, so the goals on the hub hang in light air.
+    /// A pilot's preference; the field is offline only, so it never rides
+    /// the wire.
+    public var ringGravity: Double = 1
+    public static let ringGravityRange = 0.4 ... 1.5
+    public static let ringGravityKey = "ringGravity"
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -912,9 +920,11 @@ public struct SimulationEngine: Sendable {
                 ship.knockSpin *= exp(-dt / Self.knockSpinDecay)
                 if abs(ship.knockSpin) < 0.05 { ship.knockSpin = 0 }
             }
-            // On the ring, down is out: gravity pulls every hull to the rim.
-            var acceleration = arena.ring.map { $0.outward(at: ship.position) * simd_length(configuration.gravity) }
-                ?? configuration.gravity
+            // On the ring, down is out: gravity pulls every hull to the rim,
+            // harder the farther out it flies.
+            var acceleration = arena.ring.map {
+                $0.gravity(at: ship.position, rim: simd_length(configuration.gravity) * configuration.ringGravity)
+            } ?? configuration.gravity
             if input.thrust {
                 ship.thrustLevel = ship.thrustLevel > 0
                     ? min(
@@ -990,8 +1000,11 @@ public struct SimulationEngine: Sendable {
         freeForAllGoalsThisStep.removeAll()
         for ballIndex in state.balls.indices {
             if let ring = arena.ring {
-                state.balls[ballIndex].velocity += ring.outward(at: state.balls[ballIndex].position)
-                    * (simd_length(configuration.gravity) * configuration.ballGravityMultiplier * dt)
+                state.balls[ballIndex].velocity += ring.gravity(
+                    at: state.balls[ballIndex].position,
+                    rim: simd_length(configuration.gravity) * configuration.ringGravity
+                        * configuration.ballGravityMultiplier
+                ) * dt
             } else {
                 state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
             }

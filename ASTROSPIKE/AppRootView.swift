@@ -2145,6 +2145,7 @@ private struct SettingsView: View {
     @AppStorage(GameSession.muteEmotesKey) private var muteEmotes = false
     @AppStorage("arrangePads") private var arrangePads = false
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
+    @AppStorage(SimulationConfiguration.ringGravityKey) private var ringGravity = 1.0
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
     var body: some View {
         NavigationStack {
@@ -2212,6 +2213,22 @@ private struct SettingsView: View {
                     Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena, peg pull and bolt hit apply to solo and doubles matches and to any online match you host. Bolt hit is what an enemy bolt does to a hull: shove it, stun its controls for a moment, or spin it round.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                Section {
+                    TuningSlider(
+                        title: "Ring gravity",
+                        value: $ringGravity,
+                        range: SimulationConfiguration.ringGravityRange,
+                        step: 0.05,
+                        readout: { "\(Int(($0 * 100).rounded()))%" }
+                    )
+                    .accessibilityIdentifier("ring-gravity")
+                    Button("Reset to default") { ringGravity = 1 }
+                        .disabled(ringGravity == 1)
+                } header: {
+                    Text("Free-for-all")
+                } footer: {
+                    Text("How hard the ring pulls at its rim. Gravity grows from nothing at the centre to this at the rim, so the goals always sit in lighter air. Takes effect next match.")
                 }
                 if let replayIntro {
                     Section("Intro") {

@@ -76,11 +76,40 @@ struct FreeForAllTests {
             var engine = start
             for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
             let out = SIMD2(cos(bearing), sin(bearing))
-            engine.state.ball = BallState(position: out * (ring.hubRadius + 0.3), velocity: .zero)
+            engine.state.ball = BallState(position: out * (ring.hubRadius + 0.3), velocity: .zero, radius: ring.ballRadius)
             engine.state.serveTicksRemaining = 0
-            for _ in 0 ..< 1200 { engine.step(inputs: [:]) }
+            // Spin gravity is light near the hub and the rim gives most of a
+            // bounce back, so the ball takes about half a minute to settle.
+            for _ in 0 ..< 4800 { engine.step(inputs: [:]) }
             #expect(abs(simd_length(engine.state.ball.position) - (ring.rimRadius - ring.ballRadius)) < 0.01, "bearing \(bearing)")
         }
+    }
+
+    @Test("Ring gravity is spin gravity: it grows with the distance out, full at the rim, and the Ring gravity setting scales it")
+    func gravityGrowsOutward() {
+        let (start, arena) = field(pilots: 4)
+        let ring = arena.ring!
+        let bearing = Double.pi / 8
+        let out = SIMD2(cos(bearing), sin(bearing))
+        func pull(at radius: Double, setting: Double = 1) -> Double {
+            var engine = start
+            for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+            var configuration = engine.configuration
+            configuration.ringGravity = setting
+            engine.updateConfiguration(configuration)
+            engine.state.ball = BallState(position: out * radius, velocity: .zero)
+            engine.state.serveTicksRemaining = 0
+            engine.step(inputs: [:])
+            return simd_dot(engine.state.ball.velocity, out)
+        }
+        let near = pull(at: 0.6), far = pull(at: 1.2)
+        #expect(near > 0)
+        #expect(abs(far / near - 2) < 0.02, "twice as far out pulls twice as hard: \(far / near)")
+        let duel = simd_length(start.configuration.gravity) * start.configuration.ballGravityMultiplier
+            * start.configuration.stepDuration
+        let rimSpot = ring.rimRadius - ring.ballRadius - 0.01
+        #expect(abs(pull(at: rimSpot) / (duel * rimSpot / ring.rimRadius) - 1) < 0.02, "the duel's weight at the rim")
+        #expect(abs(pull(at: 1.2, setting: 0.5) / far - 0.5) < 0.02, "the setting scales it")
     }
 
     @Test("Three pilots take the ends and one wing; four take every seat; everyone starts under their own goal")
