@@ -86,8 +86,8 @@ public struct FreeForAllState: Codable, Equatable, Sendable {
 /// mouth but keeps no goal, so its misses that rebound off the fins and rim
 /// can still go into its own net. It keeps short of every MAX CROSS line
 /// and shoots a ball out on a rival's ground that it cannot reach. Alone
-/// against idle hulls (two-hour samples) it takes about 0.6 rival lives a
-/// minute at three pilots and 0.8 at four, and gives up 0.1.
+/// against idle hulls (two-hour samples) it takes about 0.75 rival lives a
+/// minute at three pilots and 1.1 at four, and gives up 0.1 (default ring tuning).
 public struct FreeForAllPilot: Sendable {
     /// How much nearer the ball a new net must be before the bot gives up
     /// the one it is working on, so a ball midway between two does not make
@@ -321,10 +321,10 @@ public struct FreeForAllPilot: Sendable {
 
         let weight = simd_length(ring.gravity(
             at: ship.position,
-            rim: simd_length(configuration.gravity) * configuration.ringGravity
+            rim: simd_length(configuration.gravity) * configuration.ring.gravity
         ))
         var need = (desired - ship.velocity) * 3.5 + up * weight
-            + ship.velocity * SimulationConfiguration.ringShipDrag
+            + ship.velocity * configuration.ring.hullDrag
         // Ring gravity is a small fraction of the thrust, so the nose goes
         // wherever the demand points -- outward too, which every shot at a
         // mouth needs. Only just over the rim does it insist on lift.

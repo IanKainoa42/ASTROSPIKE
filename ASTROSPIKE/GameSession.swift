@@ -47,11 +47,11 @@ enum GameMode: Hashable {
     ///
     /// It is cut for the ball that will be played on it: the goal mouth has
     /// to be taller than the ball is wide, and the ball is a slider now.
-    func court(ballRadius: Double) -> ArenaGeometry {
+    func court(ballRadius: Double, ring: RingTuning = RingTuning()) -> ArenaGeometry {
         switch self {
         case .volleyball: .volleyball
         case .basketball: .basketball(ballRadius: ballRadius)
-        case let .freeForAll(pilots, _): .freeForAll(pilots: pilots, ballRadius: ballRadius)
+        case let .freeForAll(pilots, _): .freeForAll(pilots: pilots, ballRadius: ballRadius, tuning: ring)
         case .solo, .doubles, .online, .warmup, .practice: .standard(ballRadius: ballRadius)
         }
     }
@@ -418,7 +418,7 @@ final class GameSession {
         isDoubles: Bool
     ) -> ArenaGeometry {
         let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
-            : mode.court(ballRadius: configuration.ballRadius)
+            : mode.court(ballRadius: configuration.ballRadius, ring: configuration.ring)
         // The layouts are cut for the duel court; the ring has none.
         guard court.netStyle == .roofPortal, !mode.isFreeForAll else { return court }
         return court.laidOut(configuration.arenaLayout)
@@ -431,8 +431,8 @@ final class GameSession {
     }
 
     /// Free-for-all plays one ball whatever the slider says: a second one
-    /// would be a serve nobody saw coming on the far side of the ring. Its
-    /// gravity is the pilot's Ring gravity setting.
+    /// would be a serve nobody saw coming on the far side of the ring. How it
+    /// flies and where its nets and lines stand are the pilot's ring settings.
     private static func resolved(
         _ configuration: SimulationConfiguration,
         mode: GameMode,
@@ -442,9 +442,7 @@ final class GameSession {
         var configuration = configuration
         if mode.isFreeForAll {
             configuration.ballCount = 1
-            let stored = UserDefaults.standard.object(forKey: SimulationConfiguration.ringGravityKey) as? Double
-            let range = SimulationConfiguration.ringGravityRange
-            configuration.ringGravity = min(range.upperBound, max(range.lowerBound, stored ?? SimulationConfiguration.ringGravityDefault))
+            configuration.ring = RingTuning.stored()
         }
         return configuration
     }

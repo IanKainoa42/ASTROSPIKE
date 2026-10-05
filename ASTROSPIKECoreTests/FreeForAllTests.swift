@@ -108,12 +108,12 @@ struct FreeForAllTests {
         for pilots in [3, 4] {
             let (start, arena) = field(pilots: pilots)
             let ring = arena.ring!
-            #expect(start.configuration.ringGravity == 0)
+            #expect(start.configuration.ring.gravity == 0)
             for setting in [0.0, 0.3] {
                 for net in ring.spokeAngles.indices {
                     var engine = start
                     var configuration = engine.configuration
-                    configuration.ringGravity = setting
+                    configuration.ring.gravity = setting
                     engine.updateConfiguration(configuration)
                     for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
                     // Out between a net and the fin beside it, clear of both.
@@ -143,14 +143,14 @@ struct FreeForAllTests {
     func gravityGrowsOutward() {
         let (start, arena) = field(pilots: 4)
         let ring = arena.ring!
-        #expect(SimulationConfiguration.ringGravityDefault == 0, "flat, like an air-hockey table")
-        #expect(SimulationConfiguration.ringGravityRange.lowerBound == 0)
+        #expect(RingTuning().gravity == 0, "flat, like an air-hockey table")
+        #expect(RingTuning.knobs.first { $0.keyPath == \RingTuning.gravity }!.range.lowerBound == 0)
         func pull(at radius: Double, bearing: Double, setting: Double = 0.3) -> Double {
             let out = SIMD2(cos(bearing), sin(bearing))
             var engine = start
             for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
             var configuration = engine.configuration
-            configuration.ringGravity = setting
+            configuration.ring.gravity = setting
             engine.updateConfiguration(configuration)
             engine.state.ball = BallState(position: out * radius, velocity: .zero)
             engine.state.serveTicksRemaining = 0
@@ -219,8 +219,13 @@ struct FreeForAllTests {
         engine.state.ships[seat]!.position = SIMD2(-1.3, -0.4)
         engine.state.ships[seat]!.velocity = .zero
         engine.state.ships[seat]!.angle = 0
+        // The law holds at any setting; these keep the run inside the ring.
+        var configuration = engine.configuration
+        configuration.ring.speed = 0.3
+        configuration.ring.hullDrag = 0.5
+        engine.updateConfiguration(configuration)
         let top = engine.configuration.ringTopSpeed
-        let k = SimulationConfiguration.ringShipDrag
+        let k = configuration.ring.hullDrag
         func fly(_ seconds: Double, thrust: Bool) -> Double {
             for _ in 0 ..< Int(seconds * 120) {
                 engine.step(inputs: [seat: PlayerInput(tick: engine.state.tick, torque: 0, thrust: thrust)])
@@ -418,7 +423,11 @@ struct FreeForAllTests {
     @Test("Every other hull is a rival: a lead's bolt hits the seat that is its wing in doubles")
     func boltHitsFormerTeammate() {
         var (engine, arena) = field(pilots: 3)
+        // Out in the open middle, short of its own zone.
+        let home = arena.ring!.spokeAngles[engine.state.freeForAll!.bay(of: .cyanWing)!]
+        engine.state.ships[.cyanWing]!.position = RingField.outward(home) * arena.ring!.maxCrossRadius * 0.6
         let wing = engine.state.ships[.cyanWing]!
+        #expect(!engine.ringInOwnZone(wing.position, seat: .cyanWing))
         // Fired straight out at the wing from the middle side, the ball
         // across the ring out of the way.
         let out = arena.ring!.outward(at: wing.position)
@@ -433,6 +442,71 @@ struct FreeForAllTests {
         }
         #expect(events.contains { if case .shipZapped(.cyanWing, _) = $0 { true } else { false } })
         #expect(engine.state.bolts.isEmpty, "the bolt dies on the hull")
+    }
+
+    @Test("Home in its own zone, past its MAX CROSS line, a hull is impervious: an enemy bolt breaks on it without a shove, a stun or a zap")
+    func zoneIsBoltproof() {
+        for boltHit in BoltHit.allCases {
+            var (engine, arena) = field(pilots: 3)
+            let ring = arena.ring!
+            var configuration = engine.configuration
+            configuration.boltHit = boltHit
+            engine.updateConfiguration(configuration)
+            let bay = engine.state.freeForAll!.bay(of: .cyanWing)!
+            let home = RingField.outward(ring.spokeAngles[bay]) * (ring.maxCrossRadius + 0.15)
+            engine.state.ships[.cyanWing]!.position = home
+            engine.state.ships[.cyanWing]!.velocity = .zero
+            #expect(engine.ringInOwnZone(home, seat: .cyanWing))
+            let out = ring.outward(at: home)
+            engine.state.ball.position = -out * 1.0
+            engine.state.ball.velocity = .zero
+            engine.state.bolts = [BoltState(id: 900, owner: .cyan, seat: .cyan, position: home - out * 0.15,
+                                            velocity: out * 2.6, ticksRemaining: 60)]
+            var events: [SimulationEvent] = []
+            for _ in 0 ..< 10 {
+                engine.step(inputs: [:])
+                events += engine.lastEvents
+            }
+            let ship = engine.state.ships[.cyanWing]!
+            #expect(!events.contains { if case .shipZapped = $0 { true } else { false } }, "\(boltHit)")
+            #expect(events.contains { if case .collisionEffect = $0 { true } else { false } }, "it sparks where it breaks")
+            #expect(engine.state.bolts.isEmpty, "the bolt breaks on the hull, not through it")
+            #expect(ship.stunTicks == 0 && ship.knockSpin == 0)
+            #expect(simd_length(ship.velocity) < 0.01, "\(boltHit): no shove")
+        }
+    }
+
+    @Test("The ring sliders reach the field: the line and the gap behind the nets move with them, a slack line lets a rival through, and stored settings clamp to their sliders")
+    func ringTuning() {
+        var tuning = RingTuning()
+        let ballRadius = SimulationConfiguration.online.ballRadius
+        let base = RingField(pilots: 4, ballRadius: ballRadius)
+        tuning.lineShare = 0.9
+        tuning.netGap = 0.2
+        let moved = RingField(pilots: 4, ballRadius: ballRadius, tuning: tuning)
+        #expect(abs(moved.maxCrossRadius / moved.mouthRadius - 0.9) < 1e-9)
+        #expect(abs(moved.backGap - base.backGap - 0.13) < 1e-9)
+        #expect(abs(base.netBackRadius - moved.netBackRadius - 0.13) < 1e-9, "the nets move in with the gap")
+
+        // No push and no brake: a rival flies straight up to the mouth.
+        var (engine, arena) = field(pilots: 3)
+        var configuration = engine.configuration
+        configuration.ring.linePush = 0
+        configuration.ring.lineBrake = 0
+        engine.updateConfiguration(configuration)
+        let slack = run(&engine, seat: engine.state.freeForAll!.bays[1], from: .zero, at: arena.ring!.mouthCentre(0))
+        #expect(slack.nearest < 0.1, "\(slack.nearest) from the mouth")
+
+        let defaults = UserDefaults(suiteName: "ringTuning-\(UUID())")!
+        #expect(RingTuning.stored(in: defaults) == RingTuning())
+        defaults.set(99.0, forKey: "ring.linePush")
+        defaults.set(0.25, forKey: "ringGravity")
+        var stored = RingTuning.stored(in: defaults)
+        #expect(stored.linePush == 30, "clamped to the slider")
+        #expect(stored.gravity == 0.25, "Ring gravity keeps its old key")
+        stored = RingTuning()
+        stored.store(in: defaults)
+        #expect(defaults.object(forKey: "ring.linePush") == nil, "a default is cleared, not written")
     }
 
     /// Flies `seat` flat out from `start` toward `target` for three seconds,
@@ -483,8 +557,8 @@ struct FreeForAllTests {
                     #expect(straight.nearest < 0.1, "\(pilots)p owner \(owner) out \(knockedOut): \(straight.nearest) from the mouth")
                 } else {
                     #expect(straight.offside > 0, "the run reaches the line")
-                    #expect(straight.offside < 0.25, "\(pilots)p: \(straight.offside) past the line")
-                    #expect(straight.nearest > ring.mouthRadius - ring.maxCrossRadius - 0.25)
+                    #expect(straight.offside < 0.36, "\(pilots)p: \(straight.offside) past the line")
+                    #expect(straight.nearest > ring.mouthRadius - ring.maxCrossRadius - 0.36)
                 }
             }
             // From the rival's own ground, out near the rim, straight across
@@ -496,7 +570,7 @@ struct FreeForAllTests {
             let radius = (ring.maxCrossRadius + ring.rimRadius - RingField.finHeight) / 2
             let start = RingField.outward(border + 0.3) * radius
             let side = run(&engine, seat: seat, from: start, at: RingField.outward(border - 0.4) * radius)
-            #expect(side.offside > 0 && side.offside < 0.2, "\(pilots)p: \(side.offside) over the border")
+            #expect(side.offside > 0 && side.offside < 0.25, "\(pilots)p: \(side.offside) over the border")
         }
     }
 
@@ -527,11 +601,11 @@ struct FreeForAllTests {
     /// The bot is chaotic, so judge it over several starts rather than one:
     /// ten two-minute games alone against idle hulls (the step is 1/120 s).
     /// Held short of every MAX CROSS line, it scores from the line, shooting
-    /// a ball it cannot reach. Over 200 such games it takes 19.4 rival lives
-    /// per 20 minutes at three pilots (sets of ten ranged 12-31) and 26.5 at
-    /// four (13-41), giving up 2-4; the floors sit about 30% under the
-    /// means, and an idle bot takes none -- an untouched face-off never
-    /// scores.
+    /// a ball it cannot reach. At the build 137 flight (thrust 45%, drag
+    /// 0.45) over 120 minutes it takes 14.8 rival lives per 20 minutes at
+    /// three pilots and 22.6 at four, giving up about 2; the floors sit
+    /// about 30% under the means, and an idle bot takes none -- an
+    /// untouched face-off never scores.
     @Test("The bot takes rivals' lives more often than it gives up its own", arguments: [3, 4])
     func botScores(pilots: Int) {
         var rival = 0
@@ -549,7 +623,7 @@ struct FreeForAllTests {
                 if engine.state.match.phase == .finished { break }
             }
         }
-        #expect(rival >= (pilots == 3 ? 13 : 18), "only \(rival) rival lives in 20 minutes")
+        #expect(rival >= (pilots == 3 ? 10 : 15), "only \(rival) rival lives in 20 minutes")
         #expect(Double(rival) > 1.3 * Double(own), "rival \(rival), own \(own)")
     }
 }

@@ -498,34 +498,14 @@ public struct SimulationConfiguration: Equatable, Sendable {
     public var sandbox: Bool
     /// What an enemy bolt does to a hull besides shove it.
     public var boltHit: BoltHit = .stun
-    /// Free-for-all ring only: the share of `gravity` felt at the rim. Ring
-    /// gravity is spin gravity, nothing at the centre and growing straight
-    /// out to this at the rim. A pilot's preference; the field is offline
-    /// only, so it never rides the wire. The default is well under the
-    /// duel's: on the ring the rim is down in every direction, so full
-    /// weight drags everything to the edge.
-    public var ringGravity: Double = Self.ringGravityDefault
-    /// Flat, like an air-hockey table. The slider can still tilt it.
-    public static let ringGravityDefault = 0.0
-    public static let ringGravityRange = 0.0 ... 1.5
-    public static let ringGravityKey = "ringGravity"
-    /// Free-for-all ring only: the ring flies like slow-motion air hockey.
-    /// The motor pushes at this share of the Thrust slider, and the hull
-    /// glides on drag, so held thrust builds speed along 1 - e^(-t / tau)
-    /// toward `ringTopSpeed` -- about a second to half of it and six to
-    /// all of it -- and a hull let go coasts to a stop in a few seconds
-    /// rather than sliding forever. Constants, not sliders: the ring is
-    /// offline only, so none of this rides the wire.
-    public static let ringThrustShare = 0.3
-    /// Velocity bled off a ring hull each second.
-    public static let ringShipDrag = 0.5
-    /// Velocity bled off the ball each second on the ring: a puck on air,
-    /// well under the hull's, so a struck ball glides across the table.
-    public static let ringBallDrag = 0.15
+    /// Free-for-all ring only: how the ring flies and how hard its lines
+    /// hold. The pilot's sliders; the field is offline only, so it never
+    /// rides the wire.
+    public var ring = RingTuning()
     /// What the motor pushes a ring hull with.
-    public var ringThrust: Double { maximumThrustAcceleration * Self.ringThrustShare }
+    public var ringThrust: Double { maximumThrustAcceleration * ring.speed }
     /// The speed a ring hull settles at with the motor held.
-    public var ringTopSpeed: Double { ringThrust / Self.ringShipDrag }
+    public var ringTopSpeed: Double { ringThrust / max(0.01, ring.hullDrag) }
 
     public init(
         stepDuration: Double = 1.0 / 120.0,
@@ -857,6 +837,14 @@ public struct SimulationEngine: Sendable {
         return ring.offside(point, home: home) { !field.isSolid(goal: $0) }
     }
 
+    /// Whether `seat` is home in its own zone: on its own ground past the
+    /// MAX CROSS line, where no rival may fly. Enemy bolts break on a hull
+    /// there.
+    public func ringInOwnZone(_ point: SIMD2<Double>, seat: Seat) -> Bool {
+        guard let ring = arena.ring, let home = state.freeForAll?.bay(of: seat) else { return false }
+        return simd_length(point) > ring.maxCrossRadius && ring.ground(at: point) == home
+    }
+
     /// Whether two seats are on opposite sides. In free-for-all everyone
     /// else is.
     private func rivals(_ a: Seat, _ b: Seat) -> Bool {
@@ -956,7 +944,7 @@ public struct SimulationEngine: Sendable {
             // On the ring, down is out: gravity pulls every hull to the rim,
             // harder the farther out it flies.
             var acceleration = arena.ring.map {
-                $0.gravity(at: ship.position, rim: simd_length(configuration.gravity) * configuration.ringGravity)
+                $0.gravity(at: ship.position, rim: simd_length(configuration.gravity) * configuration.ring.gravity)
             } ?? configuration.gravity
             if input.thrust {
                 ship.thrustLevel = ship.thrustLevel > 0
@@ -966,12 +954,12 @@ public struct SimulationEngine: Sendable {
                     )
                     : configuration.initialThrustAcceleration
                 acceleration += SIMD2(cos(ship.angle), sin(ship.angle)) * ship.thrustLevel
-                    * (arena.ring == nil ? 1 : SimulationConfiguration.ringThrustShare)
+                    * (arena.ring == nil ? 1 : configuration.ring.speed)
             } else {
                 ship.thrustLevel = 0
             }
             if arena.ring != nil {
-                acceleration -= ship.velocity * SimulationConfiguration.ringShipDrag
+                acceleration -= ship.velocity * configuration.ring.hullDrag
             }
             // The halfway marker is a wall of treacle rather than a tripwire: the
             // deeper a pilot pushes into the far half, the harder the arena shoves
@@ -987,9 +975,9 @@ public struct SimulationEngine: Sendable {
             // nearest ground the pilot may fly.
             if let back = ringOffside(ship.position, seat: seat) {
                 let depth = simd_length(back)
-                acceleration += back * configuration.crossingPushBack
+                acceleration += back * configuration.ring.linePush
                 acceleration -= ship.velocity
-                    * (configuration.crossingDrag * min(1, depth / 0.20))
+                    * (configuration.ring.lineBrake * min(1, depth / 0.20))
             }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
@@ -1049,7 +1037,7 @@ public struct SimulationEngine: Sendable {
             if let ring = arena.ring {
                 state.balls[ballIndex].velocity += ring.gravity(
                     at: state.balls[ballIndex].position,
-                    rim: simd_length(configuration.gravity) * configuration.ringGravity
+                    rim: simd_length(configuration.gravity) * configuration.ring.gravity
                         * configuration.ballGravityMultiplier
                 ) * dt
             } else {
@@ -1063,7 +1051,7 @@ public struct SimulationEngine: Sendable {
             applyExhaustWash(dt: dt, ballIndex: ballIndex)
             applyTractorBeam(dt: dt, ballIndex: ballIndex)
             if arena.ring != nil {
-                state.balls[ballIndex].velocity *= exp(-SimulationConfiguration.ringBallDrag * dt)
+                state.balls[ballIndex].velocity *= exp(-configuration.ring.ballDrag * dt)
             }
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
@@ -1613,7 +1601,7 @@ public struct SimulationEngine: Sendable {
             let falloff = 1 - distance / range
             let centring = (along - Self.exhaustWashCone) / (1 - Self.exhaustWashCone)
             // On the ring the wash is the motor's: as soft as the push.
-            let motor = ship.thrustLevel * (arena.ring == nil ? 1 : SimulationConfiguration.ringThrustShare)
+            let motor = ship.thrustLevel * (arena.ring == nil ? 1 : configuration.ring.speed)
             let push = motor * configuration.exhaustWashStrength * falloff * centring
             state.balls[ballIndex].velocity += tail * (push * dt)
         }
@@ -1840,7 +1828,7 @@ public struct SimulationEngine: Sendable {
             if let shipHit, earliest.map({ shipHit.contact <= $0.contact }) ?? true,
                var ship = state.ships[shipHit.seat] {
                 let touch = previous + (bolt.position - previous) * shipHit.contact
-                if tractorGrip(of: ship, at: previous) != nil {
+                if tractorGrip(of: ship, at: previous) != nil || ringInOwnZone(ship.position, seat: shipHit.seat) {
                     effects.append(.collisionEffect(position: touch, intensity: configuration.boltPunch))
                 } else {
                     let speed = simd_length(bolt.velocity)

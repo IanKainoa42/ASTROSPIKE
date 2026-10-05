@@ -1326,7 +1326,10 @@ private struct GameView: View {
                     quit: {
                         showPause = false
                         leaveGame()
-                    }
+                    },
+                    ring: mode.isFreeForAll
+                        ? (tuning.configuration.maximumThrustAcceleration, { _ in session.applyTuning(tuning.configuration) })
+                        : nil
                 )
             }
         }
@@ -2145,7 +2148,6 @@ private struct SettingsView: View {
     @AppStorage(GameSession.muteEmotesKey) private var muteEmotes = false
     @AppStorage("arrangePads") private var arrangePads = false
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
-    @AppStorage(SimulationConfiguration.ringGravityKey) private var ringGravity = SimulationConfiguration.ringGravityDefault
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
     var body: some View {
         NavigationStack {
@@ -2215,20 +2217,11 @@ private struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
-                    TuningSlider(
-                        title: "Ring gravity",
-                        value: $ringGravity,
-                        range: SimulationConfiguration.ringGravityRange,
-                        step: 0.05,
-                        readout: { "\(Int(($0 * 100).rounded()))%" }
-                    )
-                    .accessibilityIdentifier("ring-gravity")
-                    Button("Reset to default") { ringGravity = SimulationConfiguration.ringGravityDefault }
-                        .disabled(ringGravity == SimulationConfiguration.ringGravityDefault)
+                    RingTuningControls(thrust: tuning.configuration.maximumThrustAcceleration)
                 } header: {
                     Text("Free-for-all")
                 } footer: {
-                    Text("The ring is a flat air-hockey table at 0%. Raise it to tilt the table out toward the rim: gravity grows from nothing at the centre to this share of the duel's weight at the rim. Takes effect next match.")
+                    Text(RingTuningControls.footer)
                 }
                 if let replayIntro {
                     Section("Intro") {
@@ -2283,36 +2276,114 @@ struct TuningSlider: View {
     }
 }
 
-/// Paused, on the court. Resume, drop a fresh ball, or leave. The flight
-/// sliders that used to live here are gone with the rest of the developer
-/// tuning; the match flies the baked physics.
+/// Every free-for-all knob, one slider each, written straight to the
+/// pilot's defaults. `changed` hears every move, so the pause card can put
+/// it into the match under the pilot's thumb.
+struct RingTuningControls: View {
+    /// The Thrust slider's top push, for the speed readout.
+    let thrust: Double
+    var changed: (RingTuning) -> Void = { _ in }
+    @State private var tuning = RingTuning.stored()
+
+    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Gap behind nets is room for the ball to roll round behind them. Gravity tilts the table out to the rim. All of it applies the moment you resume."
+
+    var body: some View {
+        ForEach(RingTuning.knobs) { knob in
+            TuningSlider(
+                title: knob.title,
+                value: Binding(
+                    get: { tuning[keyPath: knob.keyPath] },
+                    set: { tuning[keyPath: knob.keyPath] = $0 }
+                ),
+                range: knob.range,
+                step: knob.step,
+                readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : $0.formatted(.number.precision(.fractionLength(2))) }
+            )
+            .accessibilityIdentifier(knob.key)
+            if knob.keyPath == \RingTuning.hullDrag {
+                let top = thrust * tuning.speed / max(0.01, tuning.hullDrag)
+                let half = log(2) / max(0.01, tuning.hullDrag)
+                Text("Top speed \(top.formatted(.number.precision(.fractionLength(2)))), half of it in \(half.formatted(.number.precision(.fractionLength(1)))) s")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        Button("Reset ring to default") { tuning = RingTuning() }
+            .disabled(tuning == RingTuning())
+            .onChange(of: tuning) { _, tuning in
+                tuning.store()
+                changed(tuning)
+            }
+    }
+}
+
+/// Paused, on the court. Resume, drop a fresh ball, or leave. On the ring it
+/// also opens every ring slider, live: what you set is what you fly on
+/// resume.
 private struct CourtPauseOverlay: View {
     let restartDrop: () -> Void
     let resume: () -> Void
     let quit: () -> Void
+    /// Present on the ring: the Thrust slider's push, and where a moved
+    /// ring slider goes.
+    var ring: (thrust: Double, changed: (RingTuning) -> Void)? = nil
+    @State private var tuningRing = false
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.65).ignoresSafeArea()
-            VStack(spacing: 18) {
-                Text("PAUSED")
-                    .font(.title2.weight(.black)).tracking(4)
-                    .foregroundStyle(.white)
-                Button("Resume", action: resume)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.cyan)
-                    .accessibilityIdentifier("resume-button")
-                Button("Restart Drop", action: restartDrop)
-                    .buttonStyle(.bordered)
-                Button("Quit", role: .destructive, action: quit)
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("quit-match-paused")
+            if let ring, tuningRing {
+                VStack(spacing: 10) {
+                    HStack {
+                        Text("TUNE THE RING")
+                            .font(.headline.weight(.black)).tracking(3)
+                        Spacer()
+                        Button("Done") { tuningRing = false }
+                            .buttonStyle(.borderedProminent).tint(.cyan)
+                            .accessibilityIdentifier("ring-tuning-done")
+                    }
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            RingTuningControls(thrust: ring.thrust, changed: ring.changed)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: 460)
+                .background(.black.opacity(0.92), in: RoundedRectangle(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.25)))
+                .padding(16)
+                .foregroundStyle(.white)
+            } else {
+                VStack(spacing: 18) {
+                    Text("PAUSED")
+                        .font(.title2.weight(.black)).tracking(4)
+                        .foregroundStyle(.white)
+                    Button("Resume", action: resume)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.cyan)
+                        .accessibilityIdentifier("resume-button")
+                    if ring != nil {
+                        Button {
+                            tuningRing = true
+                        } label: {
+                            Label("Tune the Ring", systemImage: "slider.horizontal.3")
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("tune-ring")
+                    }
+                    Button("Restart Drop", action: restartDrop)
+                        .buttonStyle(.bordered)
+                    Button("Quit", role: .destructive, action: quit)
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("quit-match-paused")
+                }
+                .padding(28)
+                .frame(maxWidth: 360)
+                .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.25)))
+                .padding(20)
             }
-            .padding(28)
-            .frame(maxWidth: 360)
-            .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.25)))
-            .padding(20)
         }
         .accessibilityIdentifier("pause-screen")
     }

@@ -407,8 +407,8 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// for drawing and for bolts; its obstacles are the fins (hulls and
     /// bolts fly through a live net; the ball's walls come from the ring), and
     /// with no net style the duel's hump, lips and portal stay out of it.
-    public static func freeForAll(pilots: Int, ballRadius: Double) -> ArenaGeometry {
-        let ring = RingField(pilots: pilots, ballRadius: ballRadius)
+    public static func freeForAll(pilots: Int, ballRadius: Double, tuning: RingTuning = RingTuning()) -> ArenaGeometry {
+        let ring = RingField(pilots: pilots, ballRadius: ballRadius, tuning: tuning)
         var court = ArenaGeometry(
             halfWidth: ring.rimRadius,
             floorY: -ring.rimRadius,

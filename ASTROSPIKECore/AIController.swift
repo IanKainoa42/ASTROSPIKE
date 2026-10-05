@@ -908,7 +908,7 @@ public struct AIController: InputSource, Sendable {
     private func gravity(at point: SIMD2<Double>, scale: Double = 1) -> SIMD2<Double> {
         guard let bowl else { return configuration.gravity * scale }
         return (point - bowl.centre)
-            * (simd_length(configuration.gravity) * configuration.ringGravity * scale / bowl.rim)
+            * (simd_length(configuration.gravity) * configuration.ring.gravity * scale / bowl.rim)
     }
 
     private func normalizedAngle(_ angle: Double) -> Double {

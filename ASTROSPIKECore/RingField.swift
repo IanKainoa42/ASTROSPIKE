@@ -22,13 +22,14 @@ public struct RingField: Equatable, Sendable {
     /// Room between the back of every net and the rim, past the ball's
     /// width, so a ball rolls round behind a net rather than wedging there.
     /// The net is hung from there inward, so a bigger ball's deeper net
-    /// reaches further in and never pokes through the rim.
-    public static let backClearance = 0.07
+    /// reaches further in and never pokes through the rim. The Net gap
+    /// setting.
+    public var backClearance: Double
     /// Each pilot's MAX CROSS line, as a share of the distance out to the
     /// mouths: the arc across each rival's ground past which the rival
     /// shoves a pilot back, as the duel's line does half way into the far
-    /// half.
-    public static let maxCrossShare = 0.6
+    /// half. The MAX CROSS line setting.
+    public var maxCrossShare: Double
     /// Thickness of a net's frame, as a capsule radius.
     public static let netWall = 0.014
     /// Thickness of a fin's flank.
@@ -55,9 +56,11 @@ public struct RingField: Equatable, Sendable {
     public var backs: [[ArenaObstacle]]
     public var fins: [ArenaObstacle]
 
-    public init(pilots: Int, ballRadius: Double) {
+    public init(pilots: Int, ballRadius: Double, tuning: RingTuning = RingTuning()) {
         let count = max(2, pilots)
         self.ballRadius = ballRadius
+        backClearance = tuning.netGap
+        maxCrossShare = tuning.lineShare
         rimRadius = Self.rimRadius
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
         netHalfWidth = ballRadius + 0.10 + Self.netWall
@@ -93,7 +96,7 @@ public struct RingField: Equatable, Sendable {
     static func outward(_ bearing: Double) -> SIMD2<Double> { SIMD2(cos(bearing), sin(bearing)) }
 
     /// The gap between the back of every net and the rim: a ball and some.
-    public var backGap: Double { 2 * ballRadius + Self.backClearance }
+    public var backGap: Double { 2 * ballRadius + backClearance }
 
     /// Distance from the centre to the back of every net's frame.
     public var netBackRadius: Double { rimRadius - backGap - Self.netWall }
@@ -211,7 +214,7 @@ public struct RingField: Equatable, Sendable {
     /// Every pilot's ground is the wedge of the ring round their net, fin to
     /// fin. The middle inside this radius is everyone's; past it a pilot
     /// may fly only on their own ground or a knocked-out pilot's.
-    public var maxCrossRadius: Double { mouthRadius * Self.maxCrossShare }
+    public var maxCrossRadius: Double { mouthRadius * maxCrossShare }
 
     /// Whose ground `point` is on: the net it shares a wedge with.
     public func ground(at point: SIMD2<Double>) -> Int { spokeIndex(nearest: point) }
@@ -289,5 +292,85 @@ public struct RingField: Equatable, Sendable {
     /// Where the fins stand, between each pair of nets.
     public var finBearings: [Double] {
         spokeAngles.map { $0 + .pi / Double(spokeAngles.count) }
+    }
+}
+
+/// Every free-for-all knob a pilot can turn: how the ring flies, how hard
+/// each pilot's MAX CROSS line holds, and where the nets and lines stand.
+/// A pilot's preferences, set in Settings or on the pause card mid-match;
+/// the ring is offline only, so none of it rides the wire.
+public struct RingTuning: Equatable, Sendable {
+    /// The motor's push on the ring, as a share of the Thrust slider.
+    public var speed = 0.45
+    /// Velocity bled off a ring hull each second. Held thrust builds speed
+    /// along 1 - e^(-drag t) toward thrust / drag, and a hull let go glides
+    /// to a stop on it.
+    public var hullDrag = 0.45
+    /// Velocity bled off the ball each second: a puck on air.
+    public var ballDrag = 0.15
+    /// The share of the duel's gravity felt at the rim. Ring gravity is spin
+    /// gravity: nothing at the centre, growing straight out to this.
+    public var gravity = 0.0
+    /// How hard a rival past a MAX CROSS line is shoved back, per unit of
+    /// depth. The duel's is 18.
+    public var linePush = 10.0
+    /// How much speed the line steals from a rival past it. The duel's is 5.
+    public var lineBrake = 2.5
+    /// Where each MAX CROSS arc stands, as a share of the way out to the
+    /// mouths.
+    public var lineShare = 0.6
+    /// Room behind every net past the ball's width.
+    public var netGap = 0.07
+
+    public init() {}
+
+    /// One slider: what it sets, its travel, and its key in the defaults.
+    public struct Knob: Identifiable {
+        public let key: String
+        public let title: String
+        public let range: ClosedRange<Double>
+        public let step: Double
+        /// Shown as a percentage rather than a number.
+        public let percent: Bool
+        public let keyPath: WritableKeyPath<RingTuning, Double>
+        public var id: String { key }
+    }
+
+    /// Every knob, in the order the sliders stand. Ring gravity keeps the key
+    /// it had when it was the only one, so a stored setting carries over.
+    public static var knobs: [Knob] {
+        [
+            Knob(key: "ring.speed", title: "Thrust", range: 0.1 ... 1.2, step: 0.05, percent: true, keyPath: \.speed),
+            Knob(key: "ring.hullDrag", title: "Hull drag", range: 0.05 ... 1.5, step: 0.05, percent: false, keyPath: \.hullDrag),
+            Knob(key: "ring.ballDrag", title: "Ball drag", range: 0 ... 0.8, step: 0.01, percent: false, keyPath: \.ballDrag),
+            Knob(key: "ringGravity", title: "Ring gravity", range: 0 ... 1.5, step: 0.05, percent: true, keyPath: \.gravity),
+            Knob(key: "ring.linePush", title: "MAX CROSS push", range: 0 ... 30, step: 0.5, percent: false, keyPath: \.linePush),
+            Knob(key: "ring.lineBrake", title: "MAX CROSS brake", range: 0 ... 8, step: 0.1, percent: false, keyPath: \.lineBrake),
+            Knob(key: "ring.lineShare", title: "MAX CROSS line", range: 0.3 ... 1.0, step: 0.02, percent: true, keyPath: \.lineShare),
+            Knob(key: "ring.netGap", title: "Gap behind nets", range: 0 ... 0.4, step: 0.01, percent: false, keyPath: \.netGap),
+        ]
+    }
+
+    /// The pilot's settings, each clamped to its slider; a knob never set
+    /// reads its default.
+    public static func stored(in defaults: UserDefaults = .standard) -> RingTuning {
+        var tuning = RingTuning()
+        for knob in knobs {
+            guard let value = defaults.object(forKey: knob.key) as? Double else { continue }
+            tuning[keyPath: knob.keyPath] = min(knob.range.upperBound, max(knob.range.lowerBound, value))
+        }
+        return tuning
+    }
+
+    /// Writes every knob, or clears them all back to default when `self`
+    /// is the default.
+    public func store(in defaults: UserDefaults = .standard) {
+        for knob in Self.knobs {
+            if self[keyPath: knob.keyPath] == RingTuning()[keyPath: knob.keyPath] {
+                defaults.removeObject(forKey: knob.key)
+            } else {
+                defaults.set(self[keyPath: knob.keyPath], forKey: knob.key)
+            }
+        }
     }
 }
