@@ -36,6 +36,9 @@ final class LobbyService {
     static let containerIdentifier = "iCloud.com.iankainoa.ASTROSPIKE"
     static let heartbeatSeconds = 30
     static let pollSeconds = 6
+    /// How long a guest waits in the pool for a host it called there: the
+    /// host's next poll, a lobby read, and the pairing itself.
+    static let callHostSeconds = 40
 
     private(set) var availability: Availability = .checking
     private(set) var snapshot = LobbySnapshot()
@@ -488,11 +491,13 @@ final class LobbyService {
 
     /// Resolves a lobby pilot to a `GKPlayer` and hands them to Game Center
     /// matchmaking, so the inviter waits in the bay as with any other invite.
-    func invite(pilotID: String, name: String, using online: OnlineMatchCoordinator) {
+    /// `pushTag` marks the invite as the live half of a standing ask, so a
+    /// JOIN from the guest's app calls this pilot to the pool instead.
+    func invite(pilotID: String, name: String, using online: OnlineMatchCoordinator, pushTag: String? = nil) {
         if let player = knownPlayers[pilotID] {
             note("INVITE: \(name.uppercased()) FROM FRIEND LIST")
             notice = nil
-            online.invite([player])
+            online.invite([player], pushTag: pushTag)
             return
         }
         note("INVITE: RESOLVING \(name.uppercased()) \(pilotID.prefix(6))… (\(knownPlayers.count) KNOWN)")
@@ -519,7 +524,7 @@ final class LobbyService {
                         if let player = self.knownPlayers[pilotID] {
                             self.note("INVITE: \(name.uppercased()) FOUND ON RELOAD")
                             self.notice = nil
-                            online.invite([player])
+                            online.invite([player], pushTag: pushTag)
                         } else {
                             self.note("INVITE: \(name.uppercased()) NOT IN \(self.friends.count) FRIENDS")
                             self.notice = self.friends.isEmpty
@@ -530,7 +535,7 @@ final class LobbyService {
                     return
                 }
                 self.notice = nil
-                online.invite(players)
+                online.invite(players, pushTag: pushTag)
             }
         }
     }
@@ -573,8 +578,9 @@ final class LobbyService {
                 online.meetInGame(group: group, with: pilotID, name: name, hostTag: ask.rendezvousTag)
                 return
             }
-            if let ask { await self.openStandingInvite(ask) }
-            self.invite(pilotID: pilotID, name: name, using: online)
+            var written: StandingInvite?
+            if let ask { written = await self.openStandingInvite(ask) }
+            self.invite(pilotID: pilotID, name: name, using: online, pushTag: written?.pushTag)
         }
     }
 
@@ -590,13 +596,22 @@ final class LobbyService {
         snapshot.pilots.first { $0.id == pilotID }
     }
 
-    /// The host's half of an in-game invite: the other pilot said no from
-    /// their screen, so stop waiting in the pool for them.
+    /// The host's half of an ask it is waiting on: the other pilot said no
+    /// from their screen, so stop waiting for them -- or, waiting on the
+    /// push, said yes from it, so go and meet them in the pool.
     func watchInGameInvite(using online: OnlineMatchCoordinator) {
         guard let tag = online.meetingTag,
-              let ask = inviteBook.invites.first(where: { $0.rendezvousTag == tag }),
-              inviteBook.status(of: ask, at: .now) == .declined else { return }
-        online.inGameInviteDeclined(tag: tag, by: ask.guestName)
+              let ask = inviteBook.invites.first(where: { $0.rendezvousTag == tag || $0.pushTag == tag })
+        else { return }
+        let status = inviteBook.status(of: ask, at: .now)
+        if InviteRouting.hostMovesToPool(ask, waitingOn: tag, status: status) {
+            online.moveInviteToPool(
+                from: tag, group: ask.rendezvousGroup,
+                pilotID: ask.guestID, name: ask.guestName, hostTag: ask.rendezvousTag
+            )
+        } else if status == .declined {
+            online.inGameInviteDeclined(tag: tag, by: ask.guestName)
+        }
     }
 
     /// Writes (or refreshes) the durable ask. The record name is fixed per
@@ -691,7 +706,8 @@ final class LobbyService {
         // pool, no Game Center banner on either phone. The answer is only
         // written once the phones have paired, so a meeting that falls
         // through puts the row back to try again.
-        if accept, case let .inGame(group) = InviteRouting.join(invite, host: presence(of: invite.hostID), at: .now) {
+        let route = accept ? InviteRouting.join(invite, host: presence(of: invite.hostID), at: .now) : .gameCenter
+        if case let .inGame(group) = route {
             online.meetInGame(group: group, with: invite.hostID, name: invite.hostName, hostTag: nil) { [weak self] paired in
                 guard let self else { return }
                 if paired {
@@ -699,6 +715,21 @@ final class LobbyService {
                 } else {
                     self.answeredLocally.remove(invite.id)
                 }
+            }
+            return
+        }
+        // The host is waiting on the Game Center invite it sent us. A second
+        // one back would cross it and each phone would cancel the other's,
+        // so the yes is the signal: the host reads it on its next poll and
+        // comes to the pool. Here the answer has to go first.
+        if case let .callHostToPool(group) = route {
+            Task {
+                await publishReply(to: invite, accepted: true)
+                online.meetInGame(
+                    group: group, with: invite.hostID, name: invite.hostName, hostTag: nil,
+                    giveUpAfter: Self.callHostSeconds,
+                    missed: "Couldn't meet \(invite.hostName). Ask them to invite you again."
+                )
             }
             return
         }

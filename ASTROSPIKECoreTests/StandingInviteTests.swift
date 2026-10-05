@@ -225,6 +225,24 @@ private func presence(
         #expect(InviteRouting.send(ask, guest: presence("zoe", .idle), at: epoch) == .gameCenter)
     }
 
+    @Test func aJoinNeverCrossesTheHostsOwnPush() {
+        let ask = invite()
+        let pushing = presence("ian", .matching, tag: ask.pushTag)
+        #expect(InviteRouting.join(ask, host: pushing, at: epoch) == .callHostToPool(group: ask.rendezvousGroup))
+        // A push for some other ask, or a host gone quiet, is not this one.
+        #expect(InviteRouting.join(ask, host: presence("ian", .matching, tag: "gc:other"), at: epoch) == .gameCenter)
+        #expect(InviteRouting.join(ask, host: presence("ian", .matching, tag: ask.pushTag, age: 46), at: epoch) == .gameCenter)
+    }
+
+    @Test func theHostLeavesItsPushForThePoolOnlyOnAYes() {
+        let ask = invite()
+        #expect(InviteRouting.hostMovesToPool(ask, waitingOn: ask.pushTag, status: .accepted))
+        #expect(!InviteRouting.hostMovesToPool(ask, waitingOn: ask.pushTag, status: .open))
+        #expect(!InviteRouting.hostMovesToPool(ask, waitingOn: ask.pushTag, status: .declined))
+        #expect(!InviteRouting.hostMovesToPool(ask, waitingOn: ask.rendezvousTag, status: .accepted))
+        #expect(!InviteRouting.hostMovesToPool(ask, waitingOn: nil, status: .accepted))
+    }
+
     @Test func joinMeetsTheHostOnlyWhileItWaitsForThisAsk() {
         let ask = invite()
         let waiting = presence("ian", .matching, tag: ask.rendezvousTag)

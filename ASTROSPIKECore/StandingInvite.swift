@@ -212,6 +212,11 @@ public struct StandingInviteBook: Equatable, Sendable {
 public enum InviteRoute: Equatable, Sendable {
     /// Both in the app. They meet in automatch pool `group`.
     case inGame(group: Int)
+    /// The host is waiting on a Game Center invitation to this very guest.
+    /// Sending one back would cross the two invites, and each phone cancels
+    /// the other's. Instead the guest answers yes, the host sees it and
+    /// moves to pool `group`, and they meet there.
+    case callHostToPool(group: Int)
     /// A Game Center invitation, delivered as a push.
     case gameCenter
 }
@@ -234,6 +239,10 @@ extension StandingInvite {
     /// What the host's presence says while it waits in that pool, so the
     /// guest knows to meet it there rather than ring its phone.
     public var rendezvousTag: String { "rv:\(id)" }
+
+    /// What the host's presence says while it waits on the Game Center push
+    /// it sent for this ask.
+    public var pushTag: String { "gc:\(id)" }
 }
 
 public enum InviteRouting {
@@ -255,14 +264,24 @@ public enum InviteRouting {
         return .inGame(group: invite.rendezvousGroup)
     }
 
-    /// The guest answering: meet in game only when the host is still in the
-    /// pool for this very ask. Otherwise the host has moved on, and JOIN
-    /// sends the invitation back to them as a push.
+    /// The guest answering: meet in game when the host is still waiting on
+    /// this very ask -- in the pool already, or on the push it sent, which
+    /// it leaves for the pool once it sees the yes. Otherwise the host has
+    /// moved on, and JOIN sends the invitation back to them as a push.
     public static func join(_ invite: StandingInvite, host: PilotPresence?, at now: Date) -> InviteRoute {
         guard let host, host.id == invite.hostID,
               now.timeIntervalSince(host.updatedAt) <= presenceWindow,
-              host.activity == .matching,
-              host.matchID == invite.rendezvousTag else { return .gameCenter }
-        return .inGame(group: invite.rendezvousGroup)
+              host.activity == .matching else { return .gameCenter }
+        switch host.matchID {
+        case invite.rendezvousTag: return .inGame(group: invite.rendezvousGroup)
+        case invite.pushTag: return .callHostToPool(group: invite.rendezvousGroup)
+        default: return .gameCenter
+        }
+    }
+
+    /// The host waiting on a push for `invite`: once the guest has said yes
+    /// in the app, stop waiting on the push and meet them in the pool.
+    public static func hostMovesToPool(_ invite: StandingInvite, waitingOn tag: String?, status: StandingInviteStatus) -> Bool {
+        tag == invite.pushTag && status == .accepted
     }
 }

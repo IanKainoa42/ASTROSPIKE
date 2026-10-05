@@ -422,8 +422,14 @@ final class OnlineMatchCoordinator: NSObject,
     private var joinWatchdog: Task<Void, Never>?
     /// While this pilot hosts an in-game invite: the tag its lobby presence
     /// carries, so the guest's JOIN knows to meet it in the pool rather than
-    /// ring its phone. Nil for every other search.
+    /// ring its phone. Also set while it waits on the Game Center invite it
+    /// sent for a standing ask, so a JOIN from the app calls it to the pool
+    /// instead of sending a second invite that crosses the first. Nil for
+    /// every other search.
     private(set) var meetingTag: String?
+    /// The pilot an in-game meeting is for. GameKit can hand the match back
+    /// before they are on it, so whoever connects is checked against this.
+    private var meetingPilotID: String?
     /// The guest's end of an in-game invite, told once whether GameKit
     /// paired the two phones, so the invite row is answered or put back.
     private var meetingPaired: ((Bool) -> Void)?
@@ -665,8 +671,23 @@ final class OnlineMatchCoordinator: NSObject,
     /// Sends Game Center invitations straight from the app and returns at
     /// once, so the pilot waits in the bay instead of in a modal sheet.
     /// A team-up seats them on the inviter's side instead of across the net.
-    func invite(_ players: [GKPlayer], teamUp: Bool = false) {
+    func invite(_ players: [GKPlayer], teamUp: Bool = false, pushTag: String? = nil) {
         startMatchmaking(recipients: players, teamUp: teamUp)
+        if let pushTag, case .matching = status { meetingTag = pushTag }
+    }
+
+    /// The host of a standing ask, waiting on the Game Center invite it
+    /// sent, sees the guest say yes from the app: the guest is in the pool,
+    /// so drop the push and meet them there.
+    func moveInviteToPool(from pushTag: String, group: Int, pilotID: String, name: String, hostTag: String) {
+        guard meetingTag == pushTag, case .matching = status, lifecycle.phase == .idle else { return }
+        note("\(name.uppercased()) SAID YES IN THE APP · MOVING TO POOL \(group)")
+        matchmakingGeneration += 1
+        if findMatchGeneration != nil { GKMatchmaker.shared().cancel() }
+        findMatchGeneration = nil
+        meetInGame(group: group, with: pilotID, name: name, hostTag: hostTag,
+                   giveUpAfter: Self.meetingJoinSeconds,
+                   missed: "Couldn't meet \(name). Invite them again.")
     }
 
     /// An invite answered inside the app. Both pilots search automatch pool
@@ -675,9 +696,20 @@ final class OnlineMatchCoordinator: NSObject,
     /// invitation always arrives as Apple's banner, however the sender sent
     /// it. The host waits in the bay under `hostTag`; the guest gives the
     /// pool `meetingJoinSeconds` and then hears `paired(false)`.
-    func meetInGame(group: Int, with pilotID: String, name: String, hostTag: String?, paired: ((Bool) -> Void)? = nil) {
+    func meetInGame(
+        group: Int,
+        with pilotID: String,
+        name: String,
+        hostTag: String?,
+        giveUpAfter seconds: Int? = nil,
+        missed: String? = nil,
+        paired: ((Bool) -> Void)? = nil
+    ) {
         startMatchmaking(recipients: nil, teamUp: false, playerGroup: group, meeting: (pilotID, name, hostTag))
-        guard hostTag == nil else { return }
+        // A host waiting for the guest to notice the ask waits as long as
+        // it likes; anyone who knows the other phone is already looking
+        // gives up.
+        guard let seconds = seconds ?? (hostTag == nil ? Self.meetingJoinSeconds : nil) else { return }
         guard case .matching = status else {
             paired?(false)
             return
@@ -685,16 +717,17 @@ final class OnlineMatchCoordinator: NSObject,
         meetingPaired = paired
         let generation = matchmakingGeneration
         meetingWatchdog = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(Self.meetingJoinSeconds))
+            try? await Task.sleep(for: .seconds(seconds))
             guard let self, !Task.isCancelled, generation == self.matchmakingGeneration,
                   case .matching = self.status, self.lifecycle.phase == .idle else { return }
-            self.note("IN-GAME JOIN: \(name.uppercased()) NOT IN THE POOL AFTER \(Self.meetingJoinSeconds)s")
+            self.note("IN-GAME MEETING: \(name.uppercased()) NOT IN THE POOL AFTER \(seconds)s")
             self.matchmakingGeneration += 1
             if self.findMatchGeneration != nil { GKMatchmaker.shared().cancel() }
             self.findMatchGeneration = nil
+            self.meetingTag = nil
             self.finishMeeting(paired: false)
             self.status = .failed(reason: .inviteJoinFailed(
-                underlyingMessage: "Couldn't meet \(name). Tap JOIN again to ring their phone."
+                underlyingMessage: missed ?? "Couldn't meet \(name). Tap JOIN again to ring their phone."
             ))
         }
     }
@@ -1026,7 +1059,11 @@ final class OnlineMatchCoordinator: NSObject,
                 }
                 // The pool number can be worked out by anyone who reads the
                 // public lobby, so pair only with the pilot who was asked.
-                if let meeting, !match.players.contains(where: { $0.gamePlayerID == meeting.pilotID }) {
+                // GameKit can hand the match back before they have joined
+                // it -- an empty `players` is a pilot still on the way, and
+                // is checked again when they connect.
+                self.meetingPilotID = meeting?.pilotID
+                if let meeting, match.players.contains(where: { $0.gamePlayerID != meeting.pilotID }) {
                     self.note("IN-GAME MEETING: A STRANGER TOOK THE SEAT · DROPPED")
                     match.disconnect()
                     self.finishMeeting(paired: false)
@@ -2115,6 +2152,12 @@ final class OnlineMatchCoordinator: NSObject,
         note("PEER \(displayName): \(word) · \(match?.players.count ?? 0) IN · EXPECTING \(match?.expectedPlayerCount ?? 0)")
         switch state {
         case .connected:
+            if let expected = meetingPilotID, playerID != expected, lifecycle.phase == .configuring {
+                note("IN-GAME MEETING: \(displayName) IS NOT WHO WAS ASKED · DROPPED")
+                status = .failed(reason: .inviteJoinFailed(underlyingMessage: "Couldn't meet your pilot. Try again."))
+                leaveMatch(preservingStatus: true)
+                return
+            }
             // At an open table anyone not flying the duel in progress -- and
             // anyone at all between duels -- is for the bench. Nothing is
             // paused and no hold is closed, so this comes before the
@@ -2591,6 +2634,7 @@ final class OnlineMatchCoordinator: NSObject,
         readyPeers = []
         role = .automatch
         meetingTag = nil
+        meetingPilotID = nil
         finishMeeting(paired: false)
         declinedInvites = 0
         invitesAllAccepted = false
