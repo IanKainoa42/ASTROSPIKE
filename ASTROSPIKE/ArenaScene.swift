@@ -454,8 +454,8 @@ final class ArenaScene: SKScene {
     }
 
     /// The free-for-all ring: the rim the ball rolls round, a fin between
-    /// each pair of nets, and every pilot's net standing off the rim with its
-    /// mouth turned in to the open middle.
+    /// each pair of coves, and every pilot's net sunk in its cove against
+    /// the rim, mouth to the open middle.
     private func addRing(_ ring: RingField) {
         func circle(_ radius: Double) -> CGPath {
             let path = CGMutablePath()
@@ -490,6 +490,26 @@ final class ArenaScene: SKScene {
             fill.lineWidth = 3
             fill.glowWidth = 1
             arenaLayer.addChild(fill)
+        }
+
+        // Each cove: the two blocks either side of the net, from the cove
+        // wall round the rim and back up the outer face.
+        for index in ring.spokeAngles.indices {
+            for side in [-1.0, 1.0] {
+                let block = CGMutablePath()
+                for (step, local) in ring.coveBlock(side: side).enumerated() {
+                    let world = ring.toWorld(local, net: index)
+                    let screen = point(world.x, world.y)
+                    if step == 0 { block.move(to: screen) } else { block.addLine(to: screen) }
+                }
+                block.closeSubpath()
+                let fill = SKShapeNode(path: block)
+                fill.fillColor = SKColor(white: 0.16, alpha: 1)
+                fill.strokeColor = .white.withAlphaComponent(0.55)
+                fill.lineWidth = 3
+                fill.glowWidth = 1
+                arenaLayer.addChild(fill)
+            }
         }
 
         for index in ring.spokeAngles.indices where !drawnSolidGoals[index] {

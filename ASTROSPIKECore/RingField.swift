@@ -2,30 +2,31 @@ import Foundation
 import simd
 
 /// The free-for-all field: a round air-hockey table. Every pilot's goal is
-/// a net standing in from the rim with its mouth turned out to face it, so
-/// a goal has to be banked in: off the rim and back into the mouth. A live
-/// net is only netting -- the ball flows straight through its back and
-/// sides, so a shot from the middle runs through the net, off the rim and
-/// back in. Between neighbouring nets a fin rises off the rim, its flanks
-/// curving up from the floor like the duel's corners, so a ball running
-/// round the rim is turned back into the middle.
+/// a net set into the rim, mouth to the middle, at the back of its own
+/// cove: a walled bay cut into a block that juts in off the rim. The cove's
+/// walls flare a little toward the middle, so a goal goes in straight down
+/// the cove or off one of its walls. Between neighbouring coves a fin rises
+/// off the rim, its flanks curving up from the floor like the duel's
+/// corners, so a ball running round the rim is turned back into the middle.
 ///
 /// Each net is drawn and collided in its own frame: x across the mouth, y
-/// pointing out from the back of the net, through the mouth, toward the
-/// rim. The nets and fins are all `ArenaObstacle` capsules. Hulls, bolts
-/// and the ball pass through a live net and meet only the fins; a
-/// knocked-out pilot's net is shut all round to all of them.
+/// pointing in from the back of the net (against the rim), through the
+/// mouth, toward the middle. Nets, coves and fins are all `ArenaObstacle`
+/// capsules. The ball meets a live net's frame and goes in only through the
+/// mouth; a hull meets every net shut, so nobody parks behind a goal line,
+/// but flies into a cove to keep it.
 public struct RingField: Equatable, Sendable {
     /// Centre to rim. The field is the size the old hub-and-spoke ring was,
     /// so nothing on screen shrank; the hub's room is now open play.
     public static let rimRadius = 1.52
-    /// Room between every mouth and the rim, past the ball's width: the
-    /// lane a banked shot comes back through. The net is hung from there
-    /// inward, so a bigger ball's deeper net reaches further in. The Net to
-    /// rim setting.
-    public var rimClearance: Double
+    /// How far each cove runs in from the mouth to its entrance. The Cove
+    /// depth setting.
+    public var coveDepth: Double
+    /// How far each cove wall leans out from straight, in radians: a wider
+    /// entrance than mouth. The Cove flare setting.
+    public var coveFlare: Double
     /// Each pilot's MAX CROSS line, as a share of the distance out to the
-    /// backs of the nets: the arc across each rival's ground past which the
+    /// cove entrances: the arc across each rival's ground past which the
     /// rival shoves a pilot back, as the duel's line does half way into the
     /// far half. The MAX CROSS line setting.
     public var maxCrossShare: Double
@@ -53,12 +54,16 @@ public struct RingField: Equatable, Sendable {
     public var posts: [ArenaObstacle]
     /// Each net's back, post to post round the rounded corners.
     public var backs: [[ArenaObstacle]]
+    /// Every cove's two walls (mouth to entrance) and the block's two outer
+    /// faces (entrance back out to the rim). Solid to everything.
+    public var coves: [ArenaObstacle]
     public var fins: [ArenaObstacle]
 
     public init(pilots: Int, ballRadius: Double, tuning: RingTuning = RingTuning()) {
         let count = max(2, pilots)
         self.ballRadius = ballRadius
-        rimClearance = tuning.rimRoom
+        coveDepth = tuning.coveDepth
+        coveFlare = tuning.coveFlare * .pi / 180
         maxCrossShare = tuning.lineShare
         rimRadius = Self.rimRadius
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
@@ -66,23 +71,29 @@ public struct RingField: Equatable, Sendable {
         netDepth = 2 * ballRadius + 0.07 + Self.netWall
         posts = []
         backs = []
+        coves = []
         fins = []
         for index in spokeAngles.indices {
             let outline = Self.segments(netOutline.map { toWorld($0, net: index) }, radius: Self.netWall)
             posts += [outline[0], outline[outline.count - 1]]
             backs.append(Array(outline[1 ..< outline.count - 1]))
+            for side in [-1.0, 1.0] {
+                let block = coveBlock(side: side).map { toWorld($0, net: index) }
+                coves += Self.segments([block[0], block[1]], radius: Self.netWall)
+                coves += Self.segments([block[block.count - 1], block[0]], radius: Self.netWall)
+            }
         }
         for index in spokeAngles.indices { fins += fin(at: spokeAngles[index] + .pi / Double(count)) }
     }
 
-    /// What the ball meets: the fins and every net in `solid` (a knocked-out
-    /// pilot's net is shut all round). A live net it flows straight through.
+    /// What the ball meets: the fins, the coves, every net's frame, and a
+    /// bar across the mouth of every net in `solid` (a knocked-out pilot's).
     public func ballWalls(solid: (Int) -> Bool) -> [ArenaObstacle] {
-        fins + closedNets(solid)
+        fins + coves + posts + backs.flatMap { $0 } + spokeAngles.indices.filter(solid).map(mouthBar)
     }
 
     /// Every net in `solid`, shut all round: frame and mouth. A hull meets
-    /// these as well as the fins; a live net it flies straight through.
+    /// every net this way, live or not, as well as the coves and fins.
     public func closedNets(_ solid: (Int) -> Bool) -> [ArenaObstacle] {
         spokeAngles.indices.filter(solid).flatMap { index in
             [posts[2 * index], posts[2 * index + 1], mouthBar(index)] + backs[index]
@@ -94,33 +105,59 @@ public struct RingField: Equatable, Sendable {
     /// Straight out from the centre at `bearing`.
     static func outward(_ bearing: Double) -> SIMD2<Double> { SIMD2(cos(bearing), sin(bearing)) }
 
-    /// The lane between every mouth and the rim: a ball and some.
-    public var rimGap: Double { 2 * ballRadius + rimClearance }
+    /// Distance from the centre to the back of every net's frame, against
+    /// the rim: the frame's outer edge just touches it, so nothing gets
+    /// behind a net.
+    public var netBackRadius: Double { rimRadius - 2 * Self.netWall }
 
     /// Distance from the centre to every net's mouth.
-    public var mouthRadius: Double { rimRadius - rimGap }
+    public var mouthRadius: Double { netBackRadius - netDepth }
 
-    /// Distance from the centre to the back of every net's frame, its side
+    /// Distance from the centre to every cove's entrance, the open end
     /// toward the middle.
-    public var netBackRadius: Double { mouthRadius - netDepth }
+    public var coveEntranceRadius: Double { mouthRadius - coveDepth }
+
+    /// Half the cove's width at its entrance, out to the middle of each wall.
+    public var coveEntranceHalfWidth: Double { netHalfWidth + coveDepth * tan(coveFlare) }
 
     /// Net `index`'s frame point `local` in the world.
     public func toWorld(_ local: SIMD2<Double>, net index: Int) -> SIMD2<Double> {
         let out = Self.outward(spokeAngles[index])
         let across = SIMD2(-out.y, out.x)
-        return out * (netBackRadius + local.y) + across * local.x
+        return out * (netBackRadius - local.y) + across * local.x
     }
 
     /// A world point in net `index`'s frame.
     public func toLocal(_ point: SIMD2<Double>, net index: Int) -> SIMD2<Double> {
         let out = Self.outward(spokeAngles[index])
         let across = SIMD2(-out.y, out.x)
-        return SIMD2(simd_dot(point, across), simd_dot(point, out) - netBackRadius)
+        return SIMD2(simd_dot(point, across), netBackRadius - simd_dot(point, out))
     }
 
-    /// Where the ball's centre meets the rim straight out along net
-    /// `index`'s centre line, in that net's frame: the bank behind it.
-    public var rimLineY: Double { rimRadius - ballRadius - netBackRadius }
+    /// One side's block, in the net's frame: the cove entrance, the mouth
+    /// post, the back of the post at the rim, then round the rim to where
+    /// the block's outer face comes back in to the entrance. `side` is +1
+    /// or -1 across the mouth. The outer face leaves the rim a little wider
+    /// than the entrance, so it stands near square to the rim and turns a
+    /// ball running along the rim back in, like a fin.
+    public func coveBlock(side: Double) -> [SIMD2<Double>] {
+        let entrance = SIMD2(side * coveEntranceHalfWidth, netDepth + coveDepth)
+        let post = SIMD2(side * netHalfWidth, netDepth)
+        let base = SIMD2(side * netHalfWidth, 0.0)
+        // The rim, in this frame: the circle about (0, netBackRadius).
+        func onRim(x: Double) -> SIMD2<Double> {
+            SIMD2(x, netBackRadius - (rimRadius * rimRadius - x * x).squareRoot())
+        }
+        let outer = side * (coveEntranceHalfWidth + Self.coveShoulder)
+        let steps = 6
+        let rim = (0 ... steps).map { step in
+            onRim(x: side * netHalfWidth + (outer - side * netHalfWidth) * Double(step) / Double(steps))
+        }
+        return [entrance, post, base] + rim
+    }
+
+    /// How much wider than the cove's entrance the block meets the rim.
+    public static let coveShoulder = 0.04
 
     /// The net whose direction is nearest `point`'s.
     public func spokeIndex(nearest point: SIMD2<Double>) -> Int {
@@ -192,9 +229,7 @@ public struct RingField: Equatable, Sendable {
 
     /// The net a ball went all the way into between `start` and `end`, if
     /// any: its centre crossed the goal line inside the posts, coming in
-    /// from the mouth -- back toward the middle, off the rim. A ball running
-    /// out through the net from the middle crosses the line going the other
-    /// way and does not count.
+    /// from the mouth.
     public func goalCrossing(from start: SIMD2<Double>, to end: SIMD2<Double>) -> Int? {
         for index in spokeAngles.indices {
             let a = toLocal(start, net: index)
@@ -212,7 +247,7 @@ public struct RingField: Equatable, Sendable {
     /// Every pilot's ground is the wedge of the ring round their net, fin to
     /// fin. The middle inside this radius is everyone's; past it a pilot
     /// may fly only on their own ground or a knocked-out pilot's.
-    public var maxCrossRadius: Double { netBackRadius * maxCrossShare }
+    public var maxCrossRadius: Double { coveEntranceRadius * maxCrossShare }
 
     /// Whose ground `point` is on: the net it shares a wedge with.
     public func ground(at point: SIMD2<Double>) -> Int { spokeIndex(nearest: point) }
@@ -315,11 +350,12 @@ public struct RingTuning: Equatable, Sendable {
     /// How much speed the line steals from a rival past it. The duel's is 5.
     public var lineBrake = 2.5
     /// Where each MAX CROSS arc stands, as a share of the way out to the
-    /// backs of the nets.
+    /// cove entrances.
     public var lineShare = 0.6
-    /// Room between every mouth and the rim past the ball's width: the lane
-    /// a banked shot comes back through.
-    public var rimRoom = 0.40
+    /// How far each cove runs in from its mouth.
+    public var coveDepth = 0.30
+    /// How far each cove wall leans out from straight, in degrees.
+    public var coveFlare = 15.0
 
     public init() {}
 
@@ -332,6 +368,8 @@ public struct RingTuning: Equatable, Sendable {
         /// Shown as a percentage rather than a number.
         public let percent: Bool
         public let keyPath: WritableKeyPath<RingTuning, Double>
+        /// Shown in whole degrees.
+        public var degrees = false
         public var id: String { key }
     }
 
@@ -346,7 +384,8 @@ public struct RingTuning: Equatable, Sendable {
             Knob(key: "ring.linePush", title: "MAX CROSS push", range: 0 ... 30, step: 0.5, percent: false, keyPath: \.linePush),
             Knob(key: "ring.lineBrake", title: "MAX CROSS brake", range: 0 ... 8, step: 0.1, percent: false, keyPath: \.lineBrake),
             Knob(key: "ring.lineShare", title: "MAX CROSS line", range: 0.3 ... 1.0, step: 0.02, percent: true, keyPath: \.lineShare),
-            Knob(key: "ring.rimRoom", title: "Net to rim", range: 0.1 ... 0.6, step: 0.01, percent: false, keyPath: \.rimRoom),
+            Knob(key: "ring.coveDepth", title: "Cove depth", range: 0 ... 0.4, step: 0.01, percent: false, keyPath: \.coveDepth),
+            Knob(key: "ring.coveFlare", title: "Cove flare", range: 0 ... 20, step: 1, percent: false, keyPath: \.coveFlare, degrees: true),
         ]
     }
 

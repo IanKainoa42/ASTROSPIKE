@@ -797,7 +797,7 @@ public struct SimulationEngine: Sendable {
 
     private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
-            return ring.toWorld(SIMD2(ring.netHalfWidth + Self.ringSpawnBeside, 0), net: bay)
+            return ring.toWorld(SIMD2(ring.coveEntranceHalfWidth + Self.ringSpawnBeside, ring.netDepth + ring.coveDepth), net: bay)
         }
         if let bay = state.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
             return Self.freeForAllSpawn(goalCentre: arena.goalCentres[bay])
@@ -805,11 +805,10 @@ public struct SimulationEngine: Sendable {
         return Self.spawnPosition(for: seat, mirrored: mirrored, arena: arena)
     }
 
-    /// How far beside their own net, past the post, a ring pilot starts,
-    /// level with its back and nose to the middle: out of the lane between
-    /// the mouth and the rim, so an idle hull is not a keeper parked in it
-    /// from the first second.
-    static let ringSpawnBeside = 0.14
+    /// How far beside their own cove's entrance a ring pilot starts, level
+    /// with it and nose to the middle: outside the cove, so an idle hull is
+    /// not a keeper parked in its own goal from the first second.
+    static let ringSpawnBeside = 0.16
 
     /// Where a free-for-all pilot starts: beside their own goal, on the side
     /// nearer the wall, clear of the ball that drops from under it.
@@ -2302,11 +2301,10 @@ public struct SimulationEngine: Sendable {
         ring: RingField,
         effects: inout [SimulationEvent]
     ) {
-        // A hull flies through a live net, front or back, as through the
-        // duel's goal; only a knocked-out pilot's shut net stops it.
+        // A hull meets every net shut, live or not: it can fly into a cove
+        // and keep it, but never park behind a goal line.
         var solid = arena
-        let field = state.freeForAll
-        solid.obstacles += ring.closedNets { field?.isSolid(goal: $0) ?? false }
+        solid.obstacles += ring.closedNets { _ in true }
         if let wall = solid.obstacleContact(from: previousPosition, to: ship.position, radius: hitbox.reach) {
             ship.position = wall.position
             let inwardSpeed = simd_dot(ship.velocity, wall.normal)

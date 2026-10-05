@@ -449,7 +449,7 @@ private struct FreeForAllSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("FREE-FOR-ALL").font(.title.bold())
-            Text("One round arena on an air-hockey table, a net each with its mouth turned out to the wall: bank the ball off the wall to score. The ball flows straight through a net's back and sides. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+            Text("One round arena on an air-hockey table, a net each sunk in a walled cove on the rim, mouth to the middle: score straight down a cove or off its walls. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
                 .font(.footnote).foregroundStyle(.secondary)
             Picker("Pilots", selection: $pilots) {
                 Text("3 PILOTS").tag(3)
@@ -2285,7 +2285,7 @@ struct RingTuningControls: View {
     var changed: (RingTuning) -> Void = { _ in }
     @State private var tuning = RingTuning.stored()
 
-    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Net to rim is the lane between each mouth and the wall that a banked shot comes back through: more room pulls the nets in toward the middle. Gravity tilts the table out to the rim. All of it applies the moment you resume."
+    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Cove depth is how far each cove's walls run out from the mouth, and cove flare how far they lean open: deeper and straighter guards a goal harder. Gravity tilts the table out to the rim. All of it applies the moment you resume."
 
     var body: some View {
         ForEach(RingTuning.knobs) { knob in
@@ -2297,7 +2297,7 @@ struct RingTuningControls: View {
                 ),
                 range: knob.range,
                 step: knob.step,
-                readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : $0.formatted(.number.precision(.fractionLength(2))) }
+                readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : knob.degrees ? "\(Int($0.rounded()))°" : $0.formatted(.number.precision(.fractionLength(2))) }
             )
             .accessibilityIdentifier(knob.key)
             if knob.keyPath == \RingTuning.hullDrag {
