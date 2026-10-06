@@ -453,63 +453,48 @@ final class ArenaScene: SKScene {
         }
     }
 
-    /// The free-for-all ring: the rim the ball rolls round, a fin between
-    /// each pair of coves, and every pilot's net sunk in its cove against
-    /// the rim, mouth to the open middle.
+    /// The free-for-all ring: the rim the ball rolls round, open at each
+    /// flush mouth, a round bumper beside every post, and every pilot's net
+    /// hung outside the rim, mouth to the open middle.
     private func addRing(_ ring: RingField) {
-        func circle(_ radius: Double) -> CGPath {
+        func disk(at centre: SIMD2<Double>, radius: Double) -> CGPath {
             let path = CGMutablePath()
-            let steps = 96
+            let steps = 28
             for step in 0 ... steps {
                 let angle = Double(step) / Double(steps) * 2 * .pi
-                let screen = point(radius * cos(angle), radius * sin(angle))
+                let screen = point(centre.x + radius * cos(angle), centre.y + radius * sin(angle))
                 if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
             }
             path.closeSubpath()
             return path
         }
-        let rim = SKShapeNode(path: circle(ring.rimRadius))
+        // The rim, in arcs from post to post, so each mouth is a gap.
+        let rimPath = CGMutablePath()
+        let count = ring.spokeAngles.count
+        for index in ring.spokeAngles.indices {
+            let start = ring.spokeAngles[index] + ring.postHalfAngle
+            var end = ring.spokeAngles[(index + 1) % count] - ring.postHalfAngle
+            if end < start { end += 2 * .pi }
+            let steps = 24
+            for step in 0 ... steps {
+                let angle = start + (end - start) * Double(step) / Double(steps)
+                let screen = point(ring.rimRadius * cos(angle), ring.rimRadius * sin(angle))
+                if step == 0 { rimPath.move(to: screen) } else { rimPath.addLine(to: screen) }
+            }
+        }
+        let rim = SKShapeNode(path: rimPath)
         rim.strokeColor = .white.withAlphaComponent(0.55)
         rim.lineWidth = 4
         rim.glowWidth = 1
         arenaLayer.addChild(rim)
 
-        // Each fin: up one flank to the tip and down the other, closed along
-        // the rim, from the same arcs the ball rides.
-        for bearing in ring.finBearings {
-            let up = ring.finFlank(at: bearing, side: 1)
-            let down = ring.finFlank(at: bearing, side: -1).reversed()
-            let fin = CGMutablePath()
-            for (index, sample) in (up + down).enumerated() {
-                let screen = point(sample.x, sample.y)
-                if index == 0 { fin.move(to: screen) } else { fin.addLine(to: screen) }
-            }
-            let fill = SKShapeNode(path: fin)
+        for corner in ring.corners + ring.centre {
+            let fill = SKShapeNode(path: disk(at: corner.start, radius: corner.radius))
             fill.fillColor = SKColor(white: 0.16, alpha: 1)
             fill.strokeColor = .white.withAlphaComponent(0.55)
             fill.lineWidth = 3
             fill.glowWidth = 1
             arenaLayer.addChild(fill)
-        }
-
-        // Each cove: the two blocks either side of the net, from the cove
-        // wall round the rim and back up the outer face.
-        for index in ring.spokeAngles.indices {
-            for side in [-1.0, 1.0] {
-                let block = CGMutablePath()
-                for (step, local) in ring.coveBlock(side: side).enumerated() {
-                    let world = ring.toWorld(local, net: index)
-                    let screen = point(world.x, world.y)
-                    if step == 0 { block.move(to: screen) } else { block.addLine(to: screen) }
-                }
-                block.closeSubpath()
-                let fill = SKShapeNode(path: block)
-                fill.fillColor = SKColor(white: 0.16, alpha: 1)
-                fill.strokeColor = .white.withAlphaComponent(0.55)
-                fill.lineWidth = 3
-                fill.glowWidth = 1
-                arenaLayer.addChild(fill)
-            }
         }
 
         for index in ring.spokeAngles.indices where !drawnSolidGoals[index] {
@@ -522,7 +507,7 @@ final class ArenaScene: SKScene {
 
     /// A live pilot's ground, drawn like the duel's MAX CROSS line in the
     /// owner's colour: a dashed arc across their wedge, and the two borders
-    /// running out from its ends to the fins. Everyone else is shoved back
+    /// running out from its ends toward the rim. Everyone else is shoved back
     /// short of it. A knocked-out pilot's ground is open, so it is not drawn.
     private func addRingGround(_ ring: RingField, index: Int, owner: Seat?) {
         let color = owner.map(seatColor) ?? .white
@@ -535,7 +520,7 @@ final class ArenaScene: SKScene {
             let screen = point(radius * cos(angle), radius * sin(angle))
             if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
         }
-        let tip = ring.rimRadius - RingField.finHeight
+        let tip = ring.rimRadius - 0.04
         for bearing in [low, high] {
             path.move(to: point(radius * cos(bearing), radius * sin(bearing)))
             path.addLine(to: point(tip * cos(bearing), tip * sin(bearing)))

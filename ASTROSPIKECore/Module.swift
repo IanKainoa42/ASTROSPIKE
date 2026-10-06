@@ -797,18 +797,13 @@ public struct SimulationEngine: Sendable {
 
     private func spawn(for seat: Seat, mirrored: Bool) -> SIMD2<Double> {
         if let ring = arena.ring, let bay = state.freeForAll?.bay(of: seat), ring.spokeAngles.indices.contains(bay) {
-            return ring.toWorld(SIMD2(ring.coveEntranceHalfWidth + Self.ringSpawnBeside, ring.netDepth + ring.coveDepth), net: bay)
+            return ring.spawnPoint(bay: bay)
         }
         if let bay = state.freeForAll?.bay(of: seat), arena.goalCentres.indices.contains(bay) {
             return Self.freeForAllSpawn(goalCentre: arena.goalCentres[bay])
         }
         return Self.spawnPosition(for: seat, mirrored: mirrored, arena: arena)
     }
-
-    /// How far beside their own cove's entrance a ring pilot starts, level
-    /// with it and nose to the middle: outside the cove, so an idle hull is
-    /// not a keeper parked in its own goal from the first second.
-    static let ringSpawnBeside = 0.16
 
     /// Where a free-for-all pilot starts: beside their own goal, on the side
     /// nearer the wall, clear of the ball that drops from under it.
@@ -1294,8 +1289,8 @@ public struct SimulationEngine: Sendable {
     /// How far off dead centre the face-off ball sits, toward its gap, so a
     /// staged serve that lets go with no push still drifts out the gap.
     static let ringServeOffset = 0.04
-    /// How far the face-off drift is turned off the fin's centre line, as a
-    /// share of half the gap between nets. Straight down the line, a fin
+    /// How far the face-off drift is turned off the gap's centre line, as a
+    /// share of half the gap between nets. Straight down the line, the rim
     /// sends the ball back through the middle along the same line -- and
     /// with three nets that line ends in a mouth, so every untouched serve
     /// scored. Anywhere from 0.05 to 0.3 of a half-gap off it, none did.
@@ -1340,13 +1335,16 @@ public struct SimulationEngine: Sendable {
                 -configuration.ballDropSpeed * serveDraw(salt + 2, in: Self.serveDropRange)
             )
             // On the ring the serve is a face-off in the open middle,
-            // drifting out through the gap beside the net that just conceded
-            // toward the fin there, which turns it back in.
-            if let ring = arena.ring, let bay = state.freeForAll?.serveBay, ring.finBearings.indices.contains(bay) {
-                let out = SIMD2(cos(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)), sin(ring.finBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)))
+            // drifting out through the gap beside the net that just conceded.
+            // The centre bumper, when it is up, pushes the drop out past itself.
+            if let ring = arena.ring, let bay = state.freeForAll?.serveBay, ring.gapBearings.indices.contains(bay) {
+                let out = SIMD2(cos(ring.gapBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)), sin(ring.gapBearings[bay] - Self.ringServeSkew * .pi / Double(ring.spokeAngles.count)))
                 let across = SIMD2(-out.y, out.x)
+                let drop = ring.centreBumper
+                    ? RingField.centreBumperRadius + configuration.ballRadius + 0.03
+                    : Self.ringServeOffset
                 return BallState(
-                    position: out * Self.ringServeOffset + across * spread,
+                    position: out * drop + across * spread,
                     velocity: moving ? out * Self.ringServeSpeed * serveDraw(salt + 2, in: Self.serveDropRange) : .zero,
                     radius: configuration.ballRadius
                 )
@@ -2301,8 +2299,8 @@ public struct SimulationEngine: Sendable {
         ring: RingField,
         effects: inout [SimulationEvent]
     ) {
-        // A hull meets every net shut, live or not: it can fly into a cove
-        // and keep it, but never park behind a goal line.
+        // A hull meets every net shut, live or not: it can fly up to a
+        // mouth and keep it, but never park behind a goal line.
         var solid = arena
         solid.obstacles += ring.closedNets { _ in true }
         if let wall = solid.obstacleContact(from: previousPosition, to: ship.position, radius: hitbox.reach) {
@@ -2324,11 +2322,13 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    /// The ball on the ring: the nets' frames, the fins and the rim. A net
-    /// whose pilot is out has a bar across its mouth. A ball whose centre
-    /// crosses a net's goal line -- all of it over -- is in.
+    /// The ball on the ring: the nets' frames, the corner bumpers, the
+    /// centre bumper and the rim. The rim opens through a live mouth, so
+    /// the ball can leave the circle into the pocket. A net whose pilot is
+    /// out has a bar across its mouth and the rim stays shut there. A ball
+    /// whose centre crosses a net's goal line -- all of it over -- is in.
     ///
-    /// The fins' flanks meet the rim, and a net's frame has inside corners,
+    /// A corner bumper meets the rim, and a net's frame has inside corners,
     /// so a ball can be touching two surfaces at once; resolving one can push
     /// it into the other. A few passes settle it.
     private mutating func resolveRingBallCollision(
@@ -2354,7 +2354,8 @@ public struct SimulationEngine: Sendable {
                 }
             }
             let out = ring.outward(at: state.balls[ballIndex].position)
-            if simd_length(state.balls[ballIndex].position) + r >= ring.rimRadius {
+            let openMouth = ring.admitsThroughRim(state.balls[ballIndex].position) { !(field?.isSolid(goal: $0) ?? true) }
+            if !openMouth, simd_length(state.balls[ballIndex].position) + r >= ring.rimRadius {
                 touched = true
                 state.balls[ballIndex].position = out * (ring.rimRadius - r)
                 let outwardSpeed = simd_dot(state.balls[ballIndex].velocity, out)

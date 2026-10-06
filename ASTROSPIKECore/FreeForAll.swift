@@ -84,7 +84,7 @@ public struct FreeForAllState: Codable, Equatable, Sendable {
 ///
 /// Known gap: it defends weakly. It clears a ball in the lane in front of
 /// its own mouth out sideways but keeps no goal, so its misses that rebound
-/// off the fins and rim can still go into its own net. It keeps short of every MAX CROSS line
+/// off the corner bumpers and rim can still go into its own net. It keeps short of every MAX CROSS line
 /// and shoots a ball out on a rival's ground that it cannot reach. Alone
 /// against idle hulls (two-hour samples) it takes about 1.3 rival lives a
 /// minute at three pilots and 2.0 at four, and gives up 0.1-0.2 (default ring tuning).
@@ -163,18 +163,17 @@ public struct FreeForAllPilot: Sendable {
     static let ringNudgeSpeed = 0.9
     /// How far short of a MAX CROSS line the bot holds a target.
     static let ringLineMargin = 0.04
-    /// How far out in front of a rival cove's entrance the bot moves a ball
-    /// that has no clear line down it.
+    /// How far out in front of a rival mouth the bot moves a ball that has
+    /// no clear line through the slot.
     static let ringStagingRoom = 0.25
 
-    /// The ring bot. Every mouth sits at the back of a walled cove, facing
-    /// the middle. A ball with a clear line down a rival cove the bot
-    /// strikes straight at the mouth, from behind the ball, or from the MAX
-    /// CROSS line if the ball is past it; one off to the side it first moves
-    /// round in front of the cove; one on the rim it runs along to a fin. A
-    /// ball in front of its own mouth it clears back out of the cove to the
-    /// middle. It never knocks the ball on a line that runs into its own
-    /// mouth.
+    /// The ring bot. Every mouth sits flush in the rim, facing the middle.
+    /// A ball with a clear line through a rival slot the bot strikes straight
+    /// at the mouth, from behind the ball, or from the MAX CROSS line if the
+    /// ball is past it; one off to the side it first moves round in front of
+    /// the mouth; one on the rim it runs along to a corner bumper. A ball in
+    /// front of its own mouth it clears back out to the middle. It never
+    /// knocks the ball on a line that runs into its own mouth.
     private mutating func input(for state: WorldState, seat: Seat, ring: RingField, tick: UInt64) -> PlayerInput {
         guard let field = state.freeForAll, let ship = state.ships[seat], !ship.isDestroyed else {
             return .idle(tick: tick)
@@ -196,30 +195,32 @@ public struct FreeForAllPilot: Sendable {
         var aim: SIMD2<Double>
         var speed = min(Self.ringNudgeSpeed, configuration.ringTopSpeed * 0.55)
         if let own, threatens(spot, net: own, ring: ring) {
-            // Clear: knock it back out of the cove, down the middle of it;
-            // sideways only runs it into the cove walls.
+            // Clear: knock it back out of the slot, down the middle of it;
+            // sideways only runs it into a post.
             let local = ring.toLocal(spot, net: own)
             aim = ring.toWorld(SIMD2(local.x * 0.5, local.y + 0.8), net: own)
             targetGoal = nil
         } else if let goal = chooseRingGoal(state: state, field: field, seat: seat, ring: ring, from: spot) {
             targetGoal = goal
             let mouth = ring.toWorld(SIMD2(0, ring.goalLineY - ring.ballRadius), net: goal)
-            if downCove(goal, from: spot, at: mouth, ring: ring) {
+            if downMouth(goal, from: spot, at: mouth, ring: ring) {
                 aim = mouth
                 speed = min(difficulty.strikeSpeed * 0.6, configuration.ringTopSpeed * 0.9)
             } else if simd_length(spot) > ring.rimRadius - ring.ballRadius - Self.ringRimBand {
-                // On the rim: run it along to the nearest fin, which turns
-                // it back in. Nothing can get under it to push.
+                // On the rim: run it along to the nearest corner bumper,
+                // which turns it back in. Nothing can get under it to push.
                 let bearing = atan2(spot.y, spot.x)
-                let fin = ring.finBearings.min {
-                    abs(remainder($0 - bearing, 2 * .pi)) < abs(remainder($1 - bearing, 2 * .pi))
-                } ?? bearing
+                let peg = ring.corners.min {
+                    abs(remainder(atan2($0.start.y, $0.start.x) - bearing, 2 * .pi))
+                        < abs(remainder(atan2($1.start.y, $1.start.x) - bearing, 2 * .pi))
+                }?.start ?? spot
                 let out = ring.outward(at: spot)
-                aim = spot + SIMD2(-out.y, out.x) * (remainder(fin - bearing, 2 * .pi) >= 0 ? 0.5 : -0.5)
+                let pegBearing = atan2(peg.y, peg.x)
+                aim = spot + SIMD2(-out.y, out.x) * (remainder(pegBearing - bearing, 2 * .pi) >= 0 ? 0.5 : -0.5)
             } else {
-                // Off to the side of the cove: move it on round in front of
-                // the entrance, for a clear line next time.
-                aim = ring.toWorld(SIMD2(0, ring.netDepth + ring.coveDepth + Self.ringStagingRoom), net: goal)
+                // Off to the side of the slot: move it on round in front of
+                // the mouth, for a clear line next time.
+                aim = ring.toWorld(SIMD2(0, ring.netDepth + Self.ringStagingRoom), net: goal)
             }
         } else {
             return fly(ship: ship, to: onside(.zero), closing: .zero, ring: ring, tick: tick)
@@ -295,16 +296,16 @@ public struct FreeForAllPilot: Sendable {
     }
 
     /// True when a ball at `point` struck at `target` (the mouth) would run
-    /// down `net`'s cove without touching a wall: its line crosses the
-    /// cove's entrance inside the walls. A ball already in the cove counts.
-    private func downCove(_ net: Int, from point: SIMD2<Double>, at target: SIMD2<Double>, ring: RingField) -> Bool {
+    /// through `net`'s slot: its line crosses the mouth inside the posts.
+    /// A ball already in the lane in front of the mouth counts.
+    private func downMouth(_ net: Int, from point: SIMD2<Double>, at target: SIMD2<Double>, ring: RingField) -> Bool {
         let start = ring.toLocal(point, net: net)
         let end = ring.toLocal(target, net: net)
-        let entrance = ring.netDepth + ring.coveDepth
-        if start.y <= entrance { return abs(start.x) < ring.netHalfWidth + (start.y - ring.netDepth) * tan(ring.coveFlare) }
+        if start.y >= ring.netDepth, abs(start.x) < ring.netInnerHalfWidth { return true }
         guard start.y > end.y else { return false }
-        let t = (start.y - entrance) / (start.y - end.y)
-        return abs(start.x + (end.x - start.x) * t) < ring.coveEntranceHalfWidth - ring.ballRadius - RingField.netWall
+        let t = (start.y - ring.netDepth) / (start.y - end.y)
+        guard (0 ... 1).contains(t) else { return false }
+        return abs(start.x + (end.x - start.x) * t) < ring.netInnerHalfWidth - ring.ballRadius
     }
 
     /// True when the ball is in front of a mouth: past it, toward the
