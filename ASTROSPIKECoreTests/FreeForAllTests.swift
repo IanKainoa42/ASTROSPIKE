@@ -701,8 +701,9 @@ struct FreeForAllTests {
     @Test("Hull touches and zaps on the ring go in the book; a guest's board keeps none of it")
     func ringPlaysAreBooked() {
         var (engine, _) = field(pilots: 3)
-        let field = engine.state.freeForAll!
-        let hitter = field.bays[1]
+        // Not `field`: that name is the helper, called again below.
+        let book = engine.state.freeForAll!
+        let hitter = book.bays[1]
         // Park the ball dead in front of the hull and knock it.
         let ship = engine.state.ships[hitter]!
         let nose = SIMD2(cos(ship.angle), sin(ship.angle))
