@@ -14,9 +14,10 @@ public enum WirePayload: Codable, Equatable, Sendable {
     case profile(seat: Seat, hull: Hull)
     /// The host's seating plan, Game Center player ID to seat, and the host's
     /// sliders, physics and format. Guests fly exactly this rather than
-    /// negotiating or reading their own settings. `teamUp` is the host's
-    /// call that its guests fly beside it: doubles, whoever turned up.
-    case seating(plan: [String: Seat], tuning: FlightTuningSnapshot, teamUp: Bool)
+    /// negotiating or reading their own settings. `format` is the host's
+    /// call on what the plan is for: a duel, a team-up (doubles, whoever
+    /// turned up) or a free-for-all ring.
+    case seating(plan: [String: Seat], tuning: FlightTuningSnapshot, format: OnlineFormat)
     case ping(nanoseconds: UInt64)
     case resync(WorldState)
     /// The open table as its host keeps it: who flies the duel, who is on
@@ -134,7 +135,12 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     hump and decode neither the tuning nor the ships.
     // 38: SimulationEvent gained play (zap / slam / save calls by name);
     //     PilotStats gained saves, close, bolt and beam saves.
-    public static let currentVersion: UInt16 = 38
+    // 39: free-for-all goes online. The seating plan carries `format` (duel /
+    //     team-up / free-for-all) in place of `teamUp`, and the host's tuning
+    //     carries its ring settings, so a guest cuts the same ring. A build
+    //     139 peer decodes neither, and one that could would seat a ring
+    //     plan as doubles.
+    public static let currentVersion: UInt16 = 39
 
     public var version: UInt16
     public var sequence: UInt64

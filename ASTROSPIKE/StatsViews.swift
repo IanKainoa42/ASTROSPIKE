@@ -185,7 +185,7 @@ struct StatsSheet: View {
                 } header: {
                     Text("YOUR BEST MATCH")
                 } footer: {
-                    Text("Solo, doubles and online matches count. Practice and the warm-up bay do not.")
+                    Text("Solo, doubles, free-for-all and online matches count. Practice and the warm-up bay do not.")
                 }
                 Section {
                     ForEach(PracticeBoard.allCases, id: \.self) { board in

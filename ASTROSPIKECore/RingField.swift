@@ -332,7 +332,9 @@ public struct RingField: Equatable, Sendable {
 /// each pilot's MAX CROSS line holds, and where the nets and lines stand.
 /// A pilot's preferences, set in Settings or on the pause card mid-match;
 /// the ring is offline only, so none of it rides the wire.
-public struct RingTuning: Equatable, Sendable {
+/// Codable: the host's ring settings ride the wire with the rest of its
+/// tuning, so every board on an online ring flies the same table.
+public struct RingTuning: Equatable, Sendable, Codable {
     /// The motor's push on the ring, as a share of the Thrust slider.
     public var speed = 0.45
     /// Velocity bled off a ring hull each second. Held thrust builds speed

@@ -127,6 +127,21 @@ public enum OnlineMatchRole: Equatable, Sendable {
     case automatch
 }
 
+/// What the host called the match as. It rides the wire with the seating
+/// plan, so every board builds the same court from the same plan.
+public enum OnlineFormat: String, Codable, Equatable, Sendable {
+    /// One across the net; a third pilot makes it two against one and a bot.
+    case duel
+    /// The host's guests fly beside it: doubles, whoever turned up.
+    case teamUp
+    /// Three or four pilots round the ring, a net and five lives each, bots
+    /// in the empty chairs. There are no teams: every seat is its own side.
+    case freeForAll
+
+    /// Every seat flies for itself.
+    public var isFreeForAll: Bool { self == .freeForAll }
+}
+
 /// The two decisions the table needs that must come out the same on every
 /// phone: who seats it, and when everyone seated has answered.
 public enum OnlineSeating {
@@ -134,13 +149,20 @@ public enum OnlineSeating {
     /// across the net, so three pilots are two against one plus a bot on the
     /// empty wing. A team-up puts the second pilot beside the host, so two
     /// friends fly together against bots and a fourth makes it two a side.
+    /// The ring hands out the duel's order: its three-pilot field is the
+    /// two leads and the cyan wing, which is what the duel's first three
+    /// chairs are.
+    public static func order(format: OnlineFormat) -> [Seat] {
+        format == .teamUp ? [.cyan, .cyanWing, .orange, .orangeWing] : [.cyan, .orange, .cyanWing, .orangeWing]
+    }
+
     public static func order(teamUp: Bool) -> [Seat] {
-        teamUp ? [.cyan, .cyanWing, .orange, .orangeWing] : [.cyan, .orange, .cyanWing, .orangeWing]
+        order(format: teamUp ? .teamUp : .duel)
     }
 
     /// The host's plan: itself first, then every peer by player ID.
-    public static func plan(localID: String, peerIDs: [String], teamUp: Bool) -> [String: Seat] {
-        let order = order(teamUp: teamUp)
+    public static func plan(localID: String, peerIDs: [String], format: OnlineFormat) -> [String: Seat] {
+        let order = order(format: format)
         var plan: [String: Seat] = [:]
         for (index, id) in ([localID] + peerIDs.sorted()).prefix(order.count).enumerated() {
             plan[id] = order[index]
@@ -148,23 +170,62 @@ public enum OnlineSeating {
         return plan
     }
 
+    public static func plan(localID: String, peerIDs: [String], teamUp: Bool) -> [String: Seat] {
+        plan(localID: localID, peerIDs: peerIDs, format: teamUp ? .teamUp : .duel)
+    }
+
     /// Doubles whenever the host called a team-up, however few accepted, or
-    /// whenever more than two pilots sat down.
+    /// whenever more than two pilots sat down. A free-for-all is a ring of
+    /// three, or of four once a fourth pilot sits down; the chairs the plan
+    /// leaves empty are the bots'.
+    public static func roster(filled: Set<Seat>, format: OnlineFormat) -> Set<Seat> {
+        switch format {
+        case .freeForAll: FreeForAllState.seats(pilots: ringSize(seated: filled.count))
+        case .duel, .teamUp: format == .teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
+        }
+    }
+
     public static func roster(filled: Set<Seat>, teamUp: Bool) -> Set<Seat> {
-        teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
+        roster(filled: filled, format: teamUp ? .teamUp : .duel)
+    }
+
+    /// How many nets the ring has for this many pilots seated: never fewer
+    /// than three, so two friends fly against one bot rather than a duel.
+    public static func ringSize(seated: Int) -> Int { max(3, min(4, seated)) }
+
+    /// The chair a pilot who connects after kick-off takes: the first empty
+    /// one in the order, which a bot has been keeping warm. On the ring the
+    /// court was cut at kick-off and cannot grow, so the chair has to be one
+    /// of the ring's own, and the plan with them in it has to cut the same
+    /// ring on their board as everyone else is flying (`roster(filled:)`
+    /// reads the ring's size off the plan alone): a three-net ring that is
+    /// full, or a four-net ring down to three pilots, has no chair for them.
+    public static func lateSeat(filled: Set<Seat>, format: OnlineFormat, ring: [Seat]?) -> Seat? {
+        guard format == .freeForAll else {
+            return order(format: format).first { !filled.contains($0) }
+        }
+        // The ring as it is flown; a host with no snapshot out yet flies
+        // the one its own plan cuts.
+        let ringSeats = ring.map { Set($0) } ?? roster(filled: filled, format: format)
+        guard FreeForAllState.seats(pilots: ringSize(seated: filled.count + 1)) == ringSeats else { return nil }
+        return order(format: format).first { ringSeats.contains($0) && !filled.contains($0) }
     }
 
     /// When a dropped pilot's hold runs out: the plan to play on with, their
     /// chair handed to a bot, or nil for a forfeit. The match goes on only
     /// when every team that lost a pilot still has a human flying for it --
-    /// a teammate walking out should not cost the one who stayed.
+    /// a teammate walking out should not cost the one who stayed. On the
+    /// ring every pilot is their own side, so a dropped pilot's chair always
+    /// goes to a bot and the field plays on.
     public static func seatingAfterHold(
         seating: [String: Seat],
-        dropped: Set<String>
+        dropped: Set<String>,
+        format: OnlineFormat = .duel
     ) -> [String: Seat]? {
         let staying = seating.filter { !dropped.contains($0.key) }
+        guard staying.count < seating.count, !staying.isEmpty else { return nil }
+        if format == .freeForAll { return staying }
         let bereft = Set(seating.filter { dropped.contains($0.key) }.values.map(\.team))
-        guard !bereft.isEmpty, !staying.isEmpty else { return nil }
         let manned = Set(staying.values.map(\.team))
         return bereft.isSubset(of: manned) ? staying : nil
     }
@@ -178,9 +239,10 @@ public enum OnlineSeating {
     public static func benchesDropped(
         _ dropped: Set<String>,
         seating: [String: Seat],
-        plan: [String: Seat]
+        plan: [String: Seat],
+        format: OnlineFormat = .duel
     ) -> Bool {
-        !dropped.isEmpty && plan == seatingAfterHold(seating: seating, dropped: dropped)
+        !dropped.isEmpty && plan == seatingAfterHold(seating: seating, dropped: dropped, format: format)
     }
 
     /// Whether the host should seat the table now.
