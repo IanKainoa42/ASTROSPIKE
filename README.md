@@ -71,6 +71,10 @@ xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
 
 `ExportOptions.plist` holds the distribution settings. Xcode's Product ▸ Archive ▸ Distribute App does the same thing through the GUI.
 
+## Free-for-all
+
+Three or four pilots round one ring, a net each sunk in a walled cove on the rim, five lives each, last pilot flying wins. Offline it is bots in every chair but yours, on your own ring settings; online it is a Game Center invite (FREE-FOR-ALL ▸ WITH FRIENDS, or RING in the invite sheet) for up to three friends, with bots in the chairs nobody takes and the host's ring settings on every phone. The ring keeps the same stat book as the duel -- goals, bolt goals, slam dunks, zaps and hits, each goal credited to the last play on the ball -- and a finished ring posts to the per-match Game Center boards and the pilot's bests like any other match. There are no halves on the ring, so no rally is measured and no save is called.
+
 ## Online architecture
 
 - `GKMatchmakerViewController` provides automatic matching and friend invitations.
@@ -80,6 +84,7 @@ xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
 - Lifecycle and scoring events are sent reliably.
 - Guests run a full round trip ahead of each snapshot (`GuestClock`), so their inputs reach the host before it plays those ticks, and the host flies every input on the tick it was sent for. On a snapshot the guest re-runs the ticks since with the inputs it really sent (`GuestRollForward`), so on a working link its own ship is never corrected; anything left over reconciles by blend-or-snap. `GuestPredictionTests` measures this over a simulated slow and lossy link.
 - A disconnect opens a 120-second seat-hold window. Reconnection triggers a reliable full resync; expiry finishes the match by forfeit.
+- The seating plan carries the host's match format (`OnlineFormat`: duel, team-up or free-for-all) and its whole tuning, ring settings included. A free-for-all invite seats up to four pilots round one ring in the duel's chair order; the ring is cut from the plan alone (three nets for two or three pilots, four for four), the host's ring bots fly the chairs nobody took, and every board steps those bots between snapshots. A pilot who drops on the ring is replaced by a bot rather than forfeiting a side, and a late arrival takes a bot's chair only when their plan cuts the same ring. The host books the ring's stats (goals, bolt goals, slam dunks, zaps, hits) exactly as a duel's, credits each goal to the last play on the ball, and the final book reaches every board in the full resync ahead of `lastPilotStanding`.
 - An open table invites up to five pilots at once on one `GKMatch`. The first to connect duels the host immediately; later arrivals sit on a bench and spectate the host's snapshots. After each game everyone who fits on the court flies the next one, seated by the host on the same match after a ten-second intermission: three pilots play two against one and a bot, four play two a side, and partners rotate every game. Past four, the winning side stays on and the losers go to the back of the bench. This continues until the host closes the table. The rotation lives in `OpenTable` (Core) and is broadcast whole, so every board shows the same line. With somebody on the bench the seat hold drops to 30 seconds.
 
 The implementation follows Apple's [real-time data exchange](https://developer.apple.com/documentation/gamekit/exchanging-data-between-players-in-real-time-games) and [matchmaking](https://developer.apple.com/documentation/gamekit/gkmatchmakerviewcontroller) guidance.

@@ -86,6 +86,8 @@ public enum GuestRollForward {
         public var state: WorldState
         /// The bots, stepped through the same ticks.
         public var bots: [Seat: AIController]
+        /// The ring's bots, likewise. Empty off the ring.
+        public var fieldBots: [Seat: FreeForAllPilot]
         /// How far the guest's own ship was from where the host's world put
         /// it, before the two were blended. Zero is the goal.
         public var localCorrection: Double
@@ -99,6 +101,9 @@ public enum GuestRollForward {
     ///   - predicted: what the guest has on its own board right now.
     ///   - target: the tick to roll forward to, from `GuestClock`.
     ///   - flownSeat: the seat the guest's thumb flies, nil on the bench.
+    ///   - fieldBots: the ring's bots, on a free-for-all; they fly the host's
+    ///     empty chairs on this board too, so a bot's hull moves between
+    ///     snapshots instead of hanging dead in the air.
     ///   - localInput: what the guest sent for a tick.
     ///   - remoteInput: what another pilot sent for a tick, or their last word.
     public static func resolve(
@@ -109,12 +114,14 @@ public enum GuestRollForward {
         arena: ArenaGeometry,
         flownSeat: Seat?,
         bots: [Seat: AIController],
+        fieldBots: [Seat: FreeForAllPilot] = [:],
         localInput: (UInt64) -> PlayerInput,
         remoteInput: (Seat, UInt64) -> PlayerInput
     ) -> Resolution {
         var rolled = SimulationEngine(state: authoritative, configuration: configuration, arena: arena)
         rolled.followsHost = true
         var bots = bots
+        var fieldBots = fieldBots
         let ahead = target >= authoritative.tick ? target - authoritative.tick : 0
         if ahead <= maximumTicks, [.serve, .playing].contains(authoritative.match.phase) {
             while rolled.state.tick < target {
@@ -125,6 +132,9 @@ public enum GuestRollForward {
                     if var bot = bots[seat] {
                         inputs[seat] = bot.input(for: rolled.state, seat: seat, tick: tick)
                         bots[seat] = bot
+                    } else if var bot = fieldBots[seat] {
+                        inputs[seat] = bot.input(for: rolled.state, seat: seat, arena: arena, tick: tick)
+                        fieldBots[seat] = bot
                     } else {
                         inputs[seat] = remoteInput(seat, tick)
                     }
@@ -142,6 +152,7 @@ public enum GuestRollForward {
         return Resolution(
             state: resolved,
             bots: bots,
+            fieldBots: fieldBots,
             localCorrection: correction,
             renumbered: resolved.tick != predicted.tick
         )

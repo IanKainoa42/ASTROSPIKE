@@ -169,6 +169,36 @@ public struct MatchStats: Codable, Equatable, Sendable {
         }
     }
 
+    /// The free-for-all's goal: the same book, read by seat. Every other
+    /// pilot is a rival, so the only own goal is the net's owner putting it
+    /// in their own; a rival's beam pulling it in is that rival's slam dunk.
+    @discardableResult
+    public mutating func creditGoal(lastPlay: BallPlay?, pulledBy: Seat? = nil, defendingSeat: Seat) -> (seat: Seat, style: GoalStyle)? {
+        if let puller = pulledBy, puller != defendingSeat {
+            self[puller].goals += 1
+            self[puller].slamDunks += 1
+            if let play = lastPlay, play.seat == puller, play.kind != .hull { self[puller].boltGoals += 1 }
+            return (puller, .slamDunk)
+        }
+        guard let play = lastPlay else { return nil }
+        if play.seat == defendingSeat {
+            self[play.seat].ownGoals += 1
+            return (play.seat, .ownGoal)
+        }
+        self[play.seat].goals += 1
+        switch play.kind {
+        case .hull:
+            return (play.seat, .hull)
+        case .bolt:
+            self[play.seat].boltGoals += 1
+            return (play.seat, .bolt)
+        case .slamDunk:
+            self[play.seat].boltGoals += 1
+            self[play.seat].slamDunks += 1
+            return (play.seat, .slamDunk)
+        }
+    }
+
     /// One side's match so far: its pilots' numbers added up.
     public func total(for team: Team) -> PilotStats {
         pilots.filter { $0.key.team == team }.values.reduce(into: PilotStats()) { sum, pilot in

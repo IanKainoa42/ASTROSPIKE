@@ -499,8 +499,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// What an enemy bolt does to a hull besides shove it.
     public var boltHit: BoltHit = .stun
     /// Free-for-all ring only: how the ring flies and how hard its lines
-    /// hold. The pilot's sliders; the field is offline only, so it never
-    /// rides the wire.
+    /// hold. The pilot's sliders offline; online the host's, which reach
+    /// every board with the seating plan.
     public var ring = RingTuning()
     /// What the motor pushes a ring hull with.
     public var ringThrust: Double { maximumThrustAcceleration * ring.speed }
@@ -1146,19 +1146,7 @@ public struct SimulationEngine: Sendable {
         ruleEvents: [SimulationEvent],
         before: SimulationEngine?
     ) -> [SimulationEvent] {
-        var calls: [SimulationEvent] = []
-        for play in playsThisStep {
-            switch play {
-            case let .hit(seat):
-                state.stats[seat].hits += 1
-            case let .boltHit(seat, slam):
-                state.stats[seat].boltHits += 1
-                if slam { calls.append(.play(seat: seat, call: .slam)) }
-            case let .zap(seat, victim):
-                state.stats[seat].zaps += 1
-                calls.append(.play(seat: seat, call: .zap(victim: victim)))
-            }
-        }
+        var calls = bookPlays()
         calls += bookSaves(before: before)
         for contact in contacts {
             if case .ballCrossedCenter = contact { state.stats.ballCrossedCenter() }
@@ -1187,6 +1175,26 @@ public struct SimulationEngine: Sendable {
         }
         if state.match.phase != .playing { pendingSaves.removeAll() }
         return calls + events
+    }
+
+    /// Writes the step's hits, bolt hits and zaps into the book and returns
+    /// the calls worth naming (a slam, a zap). Shared by every court that
+    /// keeps a book: the duel's rulebook and the free-for-all's.
+    private mutating func bookPlays() -> [SimulationEvent] {
+        var calls: [SimulationEvent] = []
+        for play in playsThisStep {
+            switch play {
+            case let .hit(seat):
+                state.stats[seat].hits += 1
+            case let .boltHit(seat, slam):
+                state.stats[seat].boltHits += 1
+                if slam { calls.append(.play(seat: seat, call: .slam)) }
+            case let .zap(seat, victim):
+                state.stats[seat].zaps += 1
+                calls.append(.play(seat: seat, call: .zap(victim: victim)))
+            }
+        }
+        return calls
     }
 
     /// A save is a play by the defending side on a ball that, left alone,
@@ -1389,13 +1397,19 @@ public struct SimulationEngine: Sendable {
 
     /// Free-for-all's rulebook. A goal costs its owner a life; the last life
     /// takes their ship off the field and closes their goal; one pilot left
-    /// is the winner. Nothing else -- bounces, touches, crossings -- counts.
+    /// is the winner. Nothing else -- bounces, touches, crossings -- counts
+    /// toward the result, but the book is kept as the duel keeps it: hits,
+    /// bolt hits and zaps every step, and each goal credited to the last
+    /// play on the ball (a slam dunk when a rival's beam pulled it in, an
+    /// own goal when the net's owner put it there). There are no halves, so
+    /// no rally is measured and no save is called.
     private mutating func resolveFreeForAll(effects: [SimulationEvent]) {
         var events = effects
         guard var field = state.freeForAll, state.match.phase == .playing else {
             lastEvents = events
             return
         }
+        events = bookPlays() + events
         // One goal a step: a second ball in the same tick would be a serve
         // nobody saw coming.
         guard let (ballIndex, goal) = freeForAllGoalsThisStep.sorted(by: { $0.key < $1.key }).first,
@@ -1404,9 +1418,15 @@ public struct SimulationEngine: Sendable {
             return
         }
         let scorer = state.balls[ballIndex].lastPlay?.seat
+        let credit = state.stats.creditGoal(
+            lastPlay: state.balls[ballIndex].lastPlay,
+            pulledBy: beamPuller(of: ballIndex),
+            defendingSeat: owner
+        )
         let left = max(0, (field.lives[owner] ?? 0) - 1)
         field.lives[owner] = left
         events.append(.lifeLost(seat: owner, by: scorer, livesLeft: left))
+        if let credit { events.append(.goalScored(seat: credit.seat, style: credit.style)) }
         if left == 0 {
             events.append(.pilotOut(owner))
             state.ships[owner] = nil

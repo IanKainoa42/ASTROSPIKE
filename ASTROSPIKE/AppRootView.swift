@@ -278,18 +278,24 @@ struct AppRootView: View {
                 DoublesSheet(online: online) { difficulty in
                     sheet = nil
                     gameMode = .doubles(difficulty)
-                } teamUp: { teamUp in
+                } openPicker: { format in
                     sheet = nil
                     Task {
                         try? await Task.sleep(for: .milliseconds(450))
-                        online.presentFriendInvite(teamUp: teamUp)
+                        online.presentFriendInvite(format: format)
                     }
                 }
                 .presentationDetents([.large])
             case .freeForAll:
-                FreeForAllSheet { pilots, difficulty in
+                FreeForAllSheet(online: online) { pilots, difficulty in
                     sheet = nil
                     gameMode = .freeForAll(pilots: pilots, difficulty)
+                } openPicker: { format in
+                    sheet = nil
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        online.presentFriendInvite(format: format)
+                    }
                 }
                 .presentationDetents([.large])
             case .tutorial:
@@ -320,13 +326,13 @@ struct AppRootView: View {
                 StatsSheet()
                     .presentationDetents([.medium, .large])
             case .invite:
-                InviteSheet(online: online, lobby: lobby) { teamUp in
+                InviteSheet(online: online, lobby: lobby) { format in
                     sheet = nil
                     // Let the sheet finish dismissing before Game Center's own
                     // picker takes the top of the stack.
                     Task {
                         try? await Task.sleep(for: .milliseconds(450))
-                        online.presentFriendInvite(teamUp: teamUp)
+                        online.presentFriendInvite(format: format)
                     }
                 }
                 .presentationDetents([.medium, .large])
@@ -372,10 +378,12 @@ struct AppRootView: View {
     }
 
     /// The host puts the duel on the lobby's board as soon as the table is
-    /// seated. Doubles is recorded as its two leads.
+    /// seated. Doubles is recorded as its two leads; the ring has no sides
+    /// for the board, so it is not put up.
     private func announceHostedDuel() {
         let names = online.seatedPilotNames
-        guard let cyanID = online.seating.first(where: { $0.value == .cyan })?.key,
+        guard !online.isFreeForAll,
+              let cyanID = online.seating.first(where: { $0.value == .cyan })?.key,
               let orangeID = online.seating.first(where: { $0.value == .orange })?.key else { return }
         Task {
             await lobby.hostDuelStarted(
@@ -397,7 +405,7 @@ private enum MenuSheet: String, Identifiable {
 private struct DoublesSheet: View {
     let online: OnlineMatchCoordinator
     let chooseBot: (AIDifficulty) -> Void
-    let teamUp: (_ teamUp: Bool) -> Void
+    let openPicker: (_ format: OnlineFormat) -> Void
     @State private var wingman: Wingman?
 
     private enum Wingman { case bot, friend }
@@ -422,7 +430,7 @@ private struct DoublesSheet: View {
         case .bot:
             DifficultyPicker(title: "CHOOSE THE RIVAL PAIR", choose: chooseBot)
         case .friend:
-            InviteSheet(online: online, teamUp: true, openPicker: teamUp)
+            InviteSheet(online: online, format: .teamUp, openPicker: openPicker)
         }
     }
 
@@ -441,27 +449,63 @@ private struct DoublesSheet: View {
     }
 }
 
-/// FREE-FOR-ALL asks how many pilots, then how good the bots are.
+/// FREE-FOR-ALL asks who is on the ring: bots (how many, how good) or
+/// friends over Game Center, with bots in the chairs nobody takes.
 private struct FreeForAllSheet: View {
+    let online: OnlineMatchCoordinator
     let start: (_ pilots: Int, AIDifficulty) -> Void
+    let openPicker: (_ format: OnlineFormat) -> Void
+    @State private var rivals: Rivals?
     @State private var pilots = 3
 
+    private enum Rivals { case bots, friends }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("FREE-FOR-ALL").font(.title.bold())
-            Text("One round arena on an air-hockey table, a net each sunk in a walled cove on the rim, mouth to the middle: score straight down a cove or off its walls. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
-                .font(.footnote).foregroundStyle(.secondary)
-            Picker("Pilots", selection: $pilots) {
-                Text("3 PILOTS").tag(3)
-                Text("4 PILOTS").tag(4)
+        switch rivals {
+        case nil:
+            VStack(alignment: .leading, spacing: 16) {
+                Text("FREE-FOR-ALL").font(.title.bold())
+                Text("One round arena on an air-hockey table, a net each sunk in a walled cove on the rim, mouth to the middle: score straight down a cove or off its walls. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    choice("AGAINST BOTS", detail: "Three or four on the ring, every other chair a bot. Pick their level next.",
+                           icon: "cpu", identifier: "ffa-bots") { rivals = .bots }
+                    choice("WITH FRIENDS", detail: "Invite up to three pilots. Bots fill the chairs nobody takes; your ring settings fly on every phone.",
+                           icon: "person.3.fill", identifier: "ffa-friends") { rivals = .friends }
+                }
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("ffa-pilots")
-            DifficultyPicker(title: "CHOOSE THE BOTS") { start(pilots, $0) }
-                .padding(-28)
-                .padding(.top, 28)
+            .padding(28)
+        case .bots:
+            VStack(alignment: .leading, spacing: 16) {
+                Text("FREE-FOR-ALL").font(.title.bold())
+                Picker("Pilots", selection: $pilots) {
+                    Text("3 PILOTS").tag(3)
+                    Text("4 PILOTS").tag(4)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("ffa-pilots")
+                DifficultyPicker(title: "CHOOSE THE BOTS") { start(pilots, $0) }
+                    .padding(-28)
+                    .padding(.top, 28)
+            }
+            .padding(28)
+        case .friends:
+            InviteSheet(online: online, format: .freeForAll, openPicker: openPicker)
         }
-        .padding(28)
+    }
+
+    private func choice(_ title: String, detail: String, icon: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Image(systemName: icon).font(.title)
+                Text(title).font(.headline)
+                Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 140)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier(identifier)
     }
 }
 
@@ -471,9 +515,11 @@ private struct FreeForAllSheet: View {
 }
 
 /// One chip per pilot, in seat order: colour, name, lives.
-private struct FreeForAllHUD: View {
+@MainActor private struct FreeForAllHUD: View {
     let state: WorldState
     let localSeat: Seat?
+    /// Who each seat is: a pilot's name online, the seat's colour for a bot.
+    let name: @MainActor (Seat) -> String
     let action: () -> Void
 
     var body: some View {
@@ -503,8 +549,9 @@ private struct FreeForAllHUD: View {
         let color = freeForAllColor(seat)
         let out = lives <= 0
         return HStack(spacing: 5) {
-            Text(seat == localSeat ? "YOU" : ArenaScene.freeForAllName(for: seat))
+            Text(seat == localSeat ? "YOU" : name(seat))
                 .font(.system(size: 11, weight: .black, design: .monospaced))
+                .lineLimit(1)
             if out {
                 Text("OUT").font(.system(size: 10, weight: .black, design: .monospaced))
             } else {
@@ -522,19 +569,26 @@ private struct FreeForAllHUD: View {
         .background(.black.opacity(0.5), in: Capsule())
         .overlay(Capsule().stroke(color.opacity(out ? 0.2 : seat == localSeat ? 0.9 : 0.4), lineWidth: seat == localSeat ? 1.5 : 1))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(ArenaScene.freeForAllName(for: seat)), \(out ? "out" : "\(lives) lives")")
+        .accessibilityLabel("\(name(seat)), \(out ? "out" : "\(lives) lives")")
     }
 }
 
 /// The free-for-all's last card: the field in finishing order. Also shown
 /// the moment the local pilot is knocked out, with WATCH to see the rest.
-private struct FreeForAllResults: View {
+@MainActor private struct FreeForAllResults: View {
     let state: WorldState
     let localSeat: Seat?
+    /// Who each seat is: a pilot's name online, the seat's colour for a bot.
+    let name: @MainActor (Seat) -> String
     /// First out first.
     let knockedOut: [Seat]
+    /// Whose numbers the stat line shows; nil hides it (the bench).
+    var statSeat: Seat? = nil
+    /// Boards this match set a personal best on.
+    var newBests: Set<StatBoard> = []
     let watch: (() -> Void)?
-    let playAgain: () -> Void
+    /// Nil online: the ring cannot be re-seated from one board.
+    let playAgain: (() -> Void)?
     let exit: () -> Void
 
     private var standings: [Seat] {
@@ -545,7 +599,7 @@ private struct FreeForAllResults: View {
 
     private var title: String {
         if let winner = state.freeForAll?.winner {
-            return winner == localSeat ? "YOU WIN" : "\(ArenaScene.freeForAllName(for: winner)) WINS"
+            return winner == localSeat ? "YOU WIN" : "\(name(winner)) WINS"
         }
         return "YOU'RE OUT"
     }
@@ -558,7 +612,7 @@ private struct FreeForAllResults: View {
                 ForEach(Array(standings.enumerated()), id: \.element) { place, seat in
                     HStack {
                         Text(Self.ordinal(place + 1)).frame(width: 44, alignment: .leading)
-                        Text(seat == localSeat ? "YOU" : ArenaScene.freeForAllName(for: seat))
+                        Text(seat == localSeat ? "YOU" : name(seat)).lineLimit(1)
                         Spacer()
                         if state.freeForAll?.isOut(seat) == false, state.freeForAll?.winner == nil {
                             Text("FLYING").foregroundStyle(.secondary)
@@ -569,15 +623,27 @@ private struct FreeForAllResults: View {
                 }
             }
             .frame(maxWidth: 280)
+            // The pilot's own match in numbers, once it is over: while they
+            // watch the rest of the field the book is still being written.
+            if let statSeat, state.match.phase == .finished {
+                MatchStatLine(stats: state.stats, seat: statSeat, newBests: newBests)
+            }
             HStack(spacing: 12) {
                 if let watch {
                     Button("WATCH", action: watch).buttonStyle(.bordered).tint(.white)
                         .accessibilityIdentifier("ffa-watch")
                 }
-                Button("PLAY AGAIN", action: playAgain).buttonStyle(.borderedProminent).tint(.cyan)
-                    .accessibilityIdentifier("ffa-play-again")
-                Button("EXIT", action: exit).buttonStyle(.bordered).tint(.white)
-                    .accessibilityIdentifier("ffa-exit")
+                if let playAgain {
+                    Button("PLAY AGAIN", action: playAgain).buttonStyle(.borderedProminent).tint(.cyan)
+                        .accessibilityIdentifier("ffa-play-again")
+                }
+                if playAgain == nil {
+                    Button("EXIT", action: exit).buttonStyle(.borderedProminent).tint(.cyan)
+                        .accessibilityIdentifier("ffa-exit")
+                } else {
+                    Button("EXIT", action: exit).buttonStyle(.bordered).tint(.white)
+                        .accessibilityIdentifier("ffa-exit")
+                }
             }
             .font(.headline)
         }
@@ -603,6 +669,8 @@ private enum InviteFormat: Hashable {
     case duel
     /// Up to three on your side against bots, or two a side.
     case teamUp
+    /// Up to three round the ring with you, bots in the chairs nobody takes.
+    case freeForAll
     /// Ask up to five at once. The first to join flies you; everyone after
     /// watches the game in progress and flies the next: three is two
     /// against one and a bot, four is two a side.
@@ -614,8 +682,17 @@ private enum InviteFormat: Hashable {
     var pickLimit: Int {
         switch self {
         case .duel: 1
-        case .teamUp: 3
+        case .teamUp, .freeForAll: 3
         case .openTable, .addToTable: OpenTable.maxInvitees
+        }
+    }
+
+    /// What the match is called as on the wire. A table is seated as duels.
+    var online: OnlineFormat {
+        switch self {
+        case .teamUp: .teamUp
+        case .freeForAll: .freeForAll
+        case .duel, .openTable, .addToTable: .duel
         }
     }
 }
@@ -623,22 +700,19 @@ private enum InviteFormat: Hashable {
 private struct InviteSheet: View {
     let online: OnlineMatchCoordinator
     /// The INVITES hub: asks waiting on this pilot, asks out, and who is in
-    /// the app now. Nil for team-up, which only sends.
+    /// the app now. Nil for team-up and free-for-all, which only send.
     var lobby: LobbyService?
-    let openPicker: (_ teamUp: Bool) -> Void
+    /// Apple's picker, for the format on show.
+    let openPicker: (_ format: OnlineFormat) -> Void
     @State private var format: InviteFormat
     @State private var picked: Set<String> = []
     @Environment(\.dismiss) private var dismiss
 
-    init(online: OnlineMatchCoordinator, lobby: LobbyService? = nil, format: InviteFormat = .duel, openPicker: @escaping (_ teamUp: Bool) -> Void) {
+    init(online: OnlineMatchCoordinator, lobby: LobbyService? = nil, format: InviteFormat = .duel, openPicker: @escaping (_ format: OnlineFormat) -> Void) {
         self.online = online
         self.lobby = lobby
         self.openPicker = openPicker
         _format = State(initialValue: format)
-    }
-
-    init(online: OnlineMatchCoordinator, teamUp: Bool, openPicker: @escaping (_ teamUp: Bool) -> Void) {
-        self.init(online: online, format: teamUp ? .teamUp : .duel, openPicker: openPicker)
     }
 
     private var isPicking: Bool { format != .duel }
@@ -653,6 +727,7 @@ private struct InviteSheet: View {
         switch format {
         case .duel: "Pick a pilot. If they are in the app it rings in game; if not, the ask keeps for a day and Game Center taps them."
         case .teamUp: "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
+        case .freeForAll: "Pick up to three. Everyone gets a net and five lives on the ring; two of you fly against a bot, four fill the ring. Your ring settings fly on every phone."
         case .openTable: "Pick up to five. The first to join starts a duel with you; anyone after watches the game in progress, then everyone flies the next: three is two against one and a bot, four is two a side. Past four, winners stay on."
         case .addToTable: "They watch the game in progress and fly the next one. Past four pilots, they wait their turn on the bench."
         }
@@ -662,6 +737,7 @@ private struct InviteSheet: View {
         switch format {
         case .duel: lobby == nil ? "INVITE A PILOT" : "INVITES"
         case .teamUp: "TEAM UP"
+        case .freeForAll: "FREE-FOR-ALL"
         case .openTable: "OPEN TABLE"
         case .addToTable: "INVITE TO THE TABLE"
         }
@@ -676,6 +752,7 @@ private struct InviteSheet: View {
                         Picker("Match", selection: $format) {
                             Text("DUEL").tag(InviteFormat.duel)
                             Text("TEAM UP").tag(InviteFormat.teamUp)
+                            Text("RING").tag(InviteFormat.freeForAll)
                             Text("OPEN TABLE").tag(InviteFormat.openTable)
                         }
                         .pickerStyle(.segmented)
@@ -739,7 +816,8 @@ private struct InviteSheet: View {
                                 .contentShape(Rectangle())
                         }
                         .disabled(picked.isEmpty)
-                        .accessibilityIdentifier(format == .teamUp ? "invite-team-up-send" : "invite-open-table-send")
+                        .accessibilityIdentifier(format == .teamUp ? "invite-team-up-send"
+                            : format == .freeForAll ? "invite-free-for-all-send" : "invite-open-table-send")
                     } footer: {
                         if format == .openTable {
                             Text("Everyone gets the invite at once, so nobody waits on the slowest phone.")
@@ -748,9 +826,9 @@ private struct InviteSheet: View {
                 }
                 // Apple's picker seats whoever it returns in one go, so it
                 // has no bench to put a late arrival on.
-                if format == .duel || format == .teamUp {
+                if format == .duel || format == .teamUp || format == .freeForAll {
                     Section {
-                        Button { openPicker(format == .teamUp) } label: {
+                        Button { openPicker(format.online) } label: {
                             Label("Game Center picker", systemImage: "person.2.wave.2.fill")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
@@ -773,6 +851,7 @@ private struct InviteSheet: View {
         guard !picked.isEmpty else { return format == .teamUp ? "PICK A TEAMMATE" : "PICK PILOTS" }
         switch format {
         case .teamUp: return "SEND TEAM-UP (\(picked.count))"
+        case .freeForAll: return "SEND FREE-FOR-ALL (\(picked.count))"
         case .addToTable: return "INVITE TO THE TABLE (\(picked.count))"
         case .duel, .openTable: return "OPEN THE TABLE (\(picked.count))"
         }
@@ -783,7 +862,8 @@ private struct InviteSheet: View {
             .filter { picked.contains($0.gamePlayerID) }
         switch format {
         case .duel: break
-        case .teamUp: online.invite(players, teamUp: true)
+        case .teamUp: online.invite(players, format: .teamUp)
+        case .freeForAll: online.invite(players, format: .freeForAll)
         case .openTable: online.openTable(inviting: players)
         case .addToTable:
             online.inviteToTable(players)
@@ -1132,10 +1212,15 @@ private struct GameView: View {
             VStack(spacing: 0) {
                 if mode.isBay {
                     WarmupHUD(session: session, online: mode == .warmup ? online : nil) { showLeaveConfirmation = true }
-                } else if mode.isFreeForAll {
-                    FreeForAllHUD(state: session.state, localSeat: session.localSeat) {
-                        if !session.isPaused { session.togglePause() }
-                        showPause = true
+                } else if session.isFreeForAll {
+                    FreeForAllHUD(state: session.state, localSeat: session.localSeat, name: session.callSign) {
+                        if mode.isOffline {
+                            if !session.isPaused { session.togglePause() }
+                            showPause = true
+                        } else {
+                            // Online there is no pause: the ring plays on.
+                            showLeaveConfirmation = true
+                        }
                     }
                 } else {
                     MatchHUD(
@@ -1177,7 +1262,7 @@ private struct GameView: View {
                 if mode == .online, case .reconnecting = online.status {
                     holdButton
                 }
-                if !mode.isBay, !mode.isFreeForAll {
+                if !mode.isBay, !session.isFreeForAll {
                     let left = session.state.team(onHalfAt: -1)
                     let right = left.opponent
                     let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
@@ -1254,7 +1339,7 @@ private struct GameView: View {
                             .background(.black.opacity(0.66), in: Capsule())
                             .overlay(Capsule().stroke(.white.opacity(0.35)))
                     }
-                    if !mode.isFreeForAll {
+                    if !session.isFreeForAll {
                     let servingSide = session.state.team(onHalfAt: session.state.serveDriftSign)
                     let isLocalServe = !isSpectating && servingSide == localTeam
                     let serveColor = servingSide == .cyan ? Color.cyan : Color.orange
@@ -1280,19 +1365,22 @@ private struct GameView: View {
                     exit: leaveGame
                 )
             }
-            if mode.isFreeForAll {
+            if session.isFreeForAll {
                 let finished = session.state.match.phase == .finished
                 let localOut = session.state.freeForAll?.isOut(session.localSeat) == true
                 if finished || (localOut && !watchingField) {
                     FreeForAllResults(
                         state: session.state,
-                        localSeat: session.localSeat,
+                        localSeat: isSpectating ? nil : session.localSeat,
+                        name: session.callSign,
                         knockedOut: session.knockedOut,
+                        statSeat: session.keepsStats ? session.localSeat : nil,
+                        newBests: session.newBests,
                         watch: finished ? nil : { watchingField = true },
-                        playAgain: {
+                        playAgain: mode.isOffline ? {
                             watchingField = false
                             playAgain()
-                        },
+                        } : nil,
                         exit: leaveGame
                     )
                 }

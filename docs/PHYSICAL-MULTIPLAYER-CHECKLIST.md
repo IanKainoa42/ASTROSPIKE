@@ -63,6 +63,16 @@ host A and pilots B, C, D.
 - [ ] In a three-pilot game, lock the phone of the host's partner past the hold. Confirm a bot takes their chair, the game plays on, and they are gone from the table afterwards.
 - [ ] Close the table on A. Confirm every other device shows `A CLOSED THE TABLE`.
 
+## Free-for-all ring (two or more devices)
+
+- [ ] On device A, FREE-FOR-ALL ▸ WITH FRIENDS, pick device B and send. Confirm the invite message reads "Free-for-all in ASTROSPIKE".
+- [ ] Accept on B. Confirm both devices draw the same three-net ring with a bot in the third chair, A's ring settings (Settings ▸ Free-for-all) on both, and the lives HUD naming the pilots rather than CYAN / ORANGE.
+- [ ] Score on the bot's net from either device. Confirm both devices call the life lost and the goal (`GOAL — NAME`, `BOLT GOAL`, `SLAM DUNK`, `OWN GOAL`) with the same name.
+- [ ] With a third device, send to both at once and confirm a three-net ring with no bot; with four, a four-net ring.
+- [ ] Knock one pilot out. Confirm their device shows YOU'RE OUT with WATCH, and that WATCH keeps showing the live field.
+- [ ] Finish the match. Confirm every device shows the same standings, the finished pilot's stat line under them, and that the Game Center per-match boards took the goals / zaps.
+- [ ] Background device B mid-ring. Confirm A holds the chair, then hands it to a bot when the hold runs out instead of forfeiting, and that the ring plays on.
+
 ## Waiting, timeouts, and the link log
 
 - [ ] Invite a pilot and leave their phone locked. Confirm the warm-up bay keeps `JOINING …` for at least two minutes before giving up — a 30-second `CONNECTION TIMEOUT` here is the old behaviour and a failure.

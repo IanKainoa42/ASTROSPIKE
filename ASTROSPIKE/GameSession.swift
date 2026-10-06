@@ -191,7 +191,12 @@ final class GameSession {
     /// Two a side. The doubles court is bigger and plays two small balls,
     /// whoever fills the chairs -- bots, friends, or a mix.
     let isDoubles: Bool
-    var isFreeForAll: Bool { mode.isFreeForAll }
+    /// The ring: three or four pilots, a net and five lives each, no teams.
+    /// Offline it is its own mode; online it is the host's call, carried in
+    /// the seating plan, so a `.online` session can be a ring too.
+    let isFreeForAll: Bool
+    /// How many nets the ring has, or nil off it.
+    private let ringPilots: Int?
 
     init(
         mode: GameMode,
@@ -210,6 +215,9 @@ final class GameSession {
         self.localSeat = localSeat
         let isSpectator = mode == .online && online?.isSpectating == true
         self.isSpectator = isSpectator
+        let onlineFormat = online?.format ?? .duel
+        let isFreeForAll = mode.isFreeForAll || (mode == .online && onlineFormat == .freeForAll)
+        self.isFreeForAll = isFreeForAll
         var initialEngine = SimulationEngine.testing()
         let roster: Set<Seat>
         var botSeats: [Seat: AIDifficulty] = [:]
@@ -234,23 +242,28 @@ final class GameSession {
         case .online:
             let filled = online?.filledSeats ?? Seat.singles
             // Three pilots, or a team-up of two, play doubles with the host
-            // flying the empty chairs.
-            roster = OnlineSeating.roster(filled: filled, teamUp: online?.teamUp ?? false)
+            // flying the empty chairs; a free-for-all is a ring of three or
+            // four with the host's ring bots in the chairs nobody took.
+            roster = OnlineSeating.roster(filled: filled, format: onlineFormat)
             if online?.isAuthoritative == true {
-                for seat in roster.subtracting(filled) { botSeats[seat] = .pilot }
+                for seat in roster.subtracting(filled) {
+                    if isFreeForAll { fieldBotSeats[seat] = .pilot } else { botSeats[seat] = .pilot }
+                }
             }
         }
         // Four free-for-all pilots fill the same seats as doubles, but it is
         // not doubles: one ball, one ring, no teams.
-        let isDoubles = !mode.isFreeForAll && roster == Seat.doubles
+        let isDoubles = !isFreeForAll && roster == Seat.doubles
         self.isDoubles = isDoubles
-        let configuration = Self.resolved(configuration, mode: mode, isDoubles: isDoubles)
-        let court = Self.court(for: configuration, mode: mode, isDoubles: isDoubles)
+        let ringPilots = isFreeForAll ? roster.count : nil
+        self.ringPilots = ringPilots
+        let configuration = Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll)
+        let court = Self.court(for: configuration, mode: mode, isDoubles: isDoubles, ringPilots: ringPilots)
         initialEngine.updateConfiguration(configuration)
         // The court goes on before the roster: the opening ball is staged as
         // part of seating, and it is staged into this arena.
         initialEngine.updateArena(court)
-        if mode.isFreeForAll {
+        if isFreeForAll {
             initialEngine.configureFreeForAll(roster)
         } else {
             initialEngine.configureRoster(roster)
@@ -302,7 +315,7 @@ final class GameSession {
             demoAI = AIController(difficulty: .pilot, configuration: configuration, arena: court)
         }
         scene.scaleMode = .resizeFill
-        scene.seatColors = mode.isFreeForAll ? .freeForAll : .teams
+        scene.seatColors = isFreeForAll ? .freeForAll : .teams
         scene.arena = court
         scene.tractorRange = engine.configuration.tractorRange
         scene.boltPunch = engine.configuration.boltPunch
@@ -406,43 +419,50 @@ final class GameSession {
     private var court: ArenaGeometry { court(for: engine.configuration) }
 
     private func court(for configuration: SimulationConfiguration) -> ArenaGeometry {
-        Self.court(for: configuration, mode: mode, isDoubles: isDoubles)
+        Self.court(for: configuration, mode: mode, isDoubles: isDoubles, ringPilots: ringPilots)
     }
 
-    /// The one place a table's court is cut: doubles or duel, for this ball,
-    /// with the chosen layout's walls built in. Only the portal court takes a
-    /// layout; the parked volleyball and hoop courts stay as they were.
+    /// The one place a table's court is cut: the ring for this many pilots,
+    /// doubles or duel, for this ball, with the chosen layout's walls built
+    /// in. Only the portal court takes a layout; the parked volleyball and
+    /// hoop courts stay as they were, and the ring has none.
     private static func court(
         for configuration: SimulationConfiguration,
         mode: GameMode,
-        isDoubles: Bool
+        isDoubles: Bool,
+        ringPilots: Int?
     ) -> ArenaGeometry {
+        if let ringPilots {
+            return .freeForAll(pilots: ringPilots, ballRadius: configuration.ballRadius, tuning: configuration.ring)
+        }
         let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
             : mode.court(ballRadius: configuration.ballRadius, ring: configuration.ring)
-        // The layouts are cut for the duel court; the ring has none.
-        guard court.netStyle == .roofPortal, !mode.isFreeForAll else { return court }
+        guard court.netStyle == .roofPortal else { return court }
         return court.laidOut(configuration.arenaLayout)
     }
 
     /// The pilot's sliders, as this table plays them: doubles fixes the
     /// ball count and size whatever the slider says.
     private func resolved(_ configuration: SimulationConfiguration) -> SimulationConfiguration {
-        Self.resolved(configuration, mode: mode, isDoubles: isDoubles)
+        Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll)
     }
 
     /// Free-for-all plays one ball whatever the slider says: a second one
     /// would be a serve nobody saw coming on the far side of the ring. How it
-    /// flies and where its nets and lines stand are the pilot's ring settings.
+    /// flies and where its nets and lines stand are the pilot's ring settings
+    /// offline; online they are the host's, already in the configuration
+    /// that came with the seating plan.
     private static func resolved(
         _ configuration: SimulationConfiguration,
         mode: GameMode,
-        isDoubles: Bool
+        isDoubles: Bool,
+        isFreeForAll: Bool
     ) -> SimulationConfiguration {
         if isDoubles { return .doubles(from: configuration) }
         var configuration = configuration
-        if mode.isFreeForAll {
+        if isFreeForAll {
             configuration.ballCount = 1
-            configuration.ring = RingTuning.stored()
+            if mode.isOffline { configuration.ring = RingTuning.stored() }
         }
         return configuration
     }
@@ -616,19 +636,27 @@ final class GameSession {
             for seat in pilots.keys where online.filledSeats.contains(seat) {
                 pilots[seat] = nil
             }
+            for seat in fieldPilots.keys where online.filledSeats.contains(seat) {
+                fieldPilots[seat] = nil
+            }
             // A teammate whose hold ran out left their chair empty: a bot
             // flies it so the one who stayed is not a pilot short. So does
             // a guest who took over hosting from a host that ran the bots.
             // A guest runs the same bots too -- the pilot is deterministic,
             // so its prediction of the bot's ship stays close to the host's
             // instead of leaving every bot dead in the air between snapshots.
+            // On the ring the chair goes to a ring bot.
             for seat in engine.state.ships.keys where seat != flownSeat
-                && pilots[seat] == nil && !online.filledSeats.contains(seat) {
-                pilots[seat] = AIController(
-                    difficulty: .pilot,
-                    configuration: engine.configuration,
-                    arena: court
-                )
+                && pilots[seat] == nil && fieldPilots[seat] == nil && !online.filledSeats.contains(seat) {
+                if isFreeForAll {
+                    fieldPilots[seat] = FreeForAllPilot(difficulty: .pilot, configuration: engine.configuration)
+                } else {
+                    pilots[seat] = AIController(
+                        difficulty: .pilot,
+                        configuration: engine.configuration,
+                        arena: court
+                    )
+                }
             }
         }
         for seat in pilots.keys.sorted() {
@@ -717,8 +745,13 @@ final class GameSession {
                 }
             }
             if case .online = mode, online?.isAuthoritative == true {
-                if case .matchEnded = event {
+                switch event {
+                case .matchEnded, .lastPilotStanding:
+                    // The final book goes out whole ahead of the call that
+                    // ends the match, so every board finishes on it.
                     online?.sendFullResync(engine.state)
+                default:
+                    break
                 }
                 online?.sendEvent(event)
                 if case .point = event {
@@ -727,6 +760,10 @@ final class GameSession {
                 if case let .matchEnded(winner) = event {
                     lobby?.hostDuelFinished(winner: winner, score: engine.state.match.score)
                     online?.finishCompletedMatch(winner: winner)
+                }
+                if case .lastPilotStanding = event {
+                    // The ring has no sides for the lobby's board to score.
+                    online?.finishCompletedMatch()
                 }
             }
         }
@@ -743,7 +780,10 @@ final class GameSession {
             if previous == .finished { newBests = [] }
             return
         }
-        guard previous != .finished, state.match.winner != nil, keepsStats, !isResultsPreview else { return }
+        // A duel's winner is a team; the ring's is its last pilot. A forfeit
+        // on the ring finishes the match with neither, and reports nothing.
+        guard previous != .finished, state.match.winner != nil || state.freeForAll?.winner != nil,
+              keepsStats, !isResultsPreview else { return }
         newBests = StatsReporter.report(state.stats, for: localSeat)
     }
 
@@ -813,11 +853,12 @@ final class GameSession {
 
     /// Whether this board has a pilot whose match counts: a real match --
     /// not the warm-up bay or the parked side modes -- flown, not watched.
+    /// The ring counts: its goals, slams and zaps go in the same book.
     var keepsStats: Bool {
         guard flownSeat != nil else { return false }
         return switch mode {
-        case .solo, .doubles, .online: true
-        case .warmup, .practice, .volleyball, .basketball, .freeForAll: false
+        case .solo, .doubles, .online, .freeForAll: true
+        case .warmup, .practice, .volleyball, .basketball: false
         }
     }
 
@@ -941,10 +982,12 @@ final class GameSession {
                 arena: self.engine.arena,
                 flownSeat: self.flownSeat,
                 bots: self.pilots,
+                fieldBots: self.fieldPilots,
                 localInput: { history[$0] ?? latest ?? .idle(tick: $0) },
                 remoteInput: { seat, tick in online.remoteInput(for: seat, tick: tick) ?? .idle(tick: tick) }
             )
             self.pilots = resolution.bots
+            self.fieldPilots = resolution.fieldBots
             let resolved = resolution.state
             self.engine = SimulationEngine(
                 state: resolved,
@@ -1004,9 +1047,11 @@ final class GameSession {
                 if seat == self.flownSeat { FeedbackCenter.shared.impact() }
             case .destruction:
                 FeedbackCenter.shared.impact()
-            case .lifeLost, .pilotOut, .lastPilotStanding:
-                // Free-for-all is offline only.
-                break
+            case .lifeLost, .pilotOut:
+                self.presentFreeForAll(event)
+            case .lastPilotStanding:
+                self.presentFreeForAll(event)
+                online.finishCompletedMatch()
             case let .matchEnded(winner):
                 // The bench cheers nobody in particular.
                 if !self.isSpectator { FeedbackCenter.shared.win() }

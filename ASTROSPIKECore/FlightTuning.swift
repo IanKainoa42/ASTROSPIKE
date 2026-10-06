@@ -32,6 +32,10 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// What an enemy bolt does to a hull. A match rule: the host's pick
     /// rides the wire.
     public var boltHit: BoltHit = .stun
+    /// The free-for-all ring: how it flies, where its lines and coves
+    /// stand. The host's sliders, so an online ring is the host's table on
+    /// every board; offline the pilot's own.
+    public var ring = RingTuning()
 
     /// The one baseline every mode flies. The online preset and the warm-up
     /// bay are built from these same numbers, so a quick game against a bot
@@ -67,6 +71,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         configuration.arenaLayout = arenaLayout
         configuration.pegPull = pegPull
         configuration.boltHit = boltHit
+        configuration.ring = ring
         return configuration
     }
 }
@@ -147,7 +152,8 @@ public final class FlightTuningStore {
             setsToWin: setsToWin,
             arenaLayout: arenaLayout,
             pegPull: pegPull,
-            boltHit: boltHit
+            boltHit: boltHit,
+            ring: RingTuning.stored(in: defaults)
         )
     }
 

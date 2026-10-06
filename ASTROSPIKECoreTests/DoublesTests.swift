@@ -123,15 +123,23 @@ struct DoublesTests {
         let profile = WireEnvelope(sequence: 2, payload: .profile(seat: .cyanWing, hull: .manta))
         let seating = WireEnvelope(
             sequence: 3,
-            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], tuning: FlightTuningSnapshot.defaults, teamUp: true)
+            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing], tuning: FlightTuningSnapshot.defaults, format: .teamUp)
         )
         var snapshotEngine = doublesEngine()
         snapshotEngine.step(inputs: [:])
         let snapshot = WireEnvelope(sequence: 4, payload: .snapshot(snapshotEngine.state))
-        for envelope in [input, profile, seating, snapshot] {
+        // A ring plan carries the host's ring settings with it.
+        var ringTuning = FlightTuningSnapshot.defaults
+        ringTuning.ring.coveDepth = 0.2
+        ringTuning.ring.gravity = 0.5
+        let ring = WireEnvelope(
+            sequence: 5,
+            payload: .seating(plan: ["G:1": .cyan, "G:2": .orange], tuning: ringTuning, format: .freeForAll)
+        )
+        for envelope in [input, profile, seating, snapshot, ring] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 38)
+        #expect(WireEnvelope.currentVersion == 39)
     }
 
     @Test("A team-up seats the invited friend beside the host")

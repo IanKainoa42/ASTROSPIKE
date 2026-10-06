@@ -33,14 +33,16 @@ struct FreeForAllTests {
         arena: ArenaGeometry,
         net: Int,
         across: Double = 0,
-        speed: Double = 1.2
+        speed: Double = 1.2,
+        lastPlay: BallPlay? = nil
     ) -> [SimulationEvent] {
         let ring = arena.ring!
         let start = SIMD2(across, ring.netDepth + 0.2)
         engine.state.ball = BallState(
             position: ring.toWorld(start, net: net),
             velocity: worldVector(SIMD2(0, -speed), ring: ring, net: net),
-            radius: ring.ballRadius
+            radius: ring.ballRadius,
+            lastPlay: lastPlay
         )
         engine.state.serveTicksRemaining = 0
         var events: [SimulationEvent] = []
@@ -609,6 +611,194 @@ struct FreeForAllTests {
             engine.step(inputs: [seat: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, fire: true, tractor: false)])
             #expect(engine.state.bolts.contains { $0.seat == seat } == !offside, "offside \(offside)")
         }
+    }
+
+    // MARK: - The stat book on the ring
+
+    private func goalScored(_ events: [SimulationEvent]) -> (seat: Seat, style: GoalStyle)? {
+        for event in events { if case let .goalScored(seat, style) = event { return (seat, style) } }
+        return nil
+    }
+
+    @Test("A goal on the ring is booked to the last play on the ball, by kind, and called after the life it took", arguments: [3, 4])
+    func ringGoalsAreBooked(pilots: Int) {
+        for (kind, style) in [(BallPlay.Kind.hull, GoalStyle.hull), (.bolt, .bolt), (.slamDunk, .slamDunk)] {
+            var (engine, arena) = field(pilots: pilots)
+            let field = engine.state.freeForAll!
+            let owner = field.bays[0]
+            let scorer = field.bays[1]
+            let ring = arena.ring!
+            engine.state.ball = BallState(
+                position: ring.toWorld(SIMD2(0, ring.netDepth + 0.2), net: 0),
+                velocity: worldVector(SIMD2(0, -1.2), ring: ring, net: 0),
+                radius: ring.ballRadius,
+                lastPlay: BallPlay(seat: scorer, kind: kind)
+            )
+            engine.state.serveTicksRemaining = 0
+            var events: [SimulationEvent] = []
+            for _ in 0 ..< 120 {
+                engine.step(inputs: [:])
+                events += engine.lastEvents
+                if engine.state.match.phase != .playing { break }
+            }
+            #expect(livesLost(events) == [owner], "\(kind)")
+            let credit = goalScored(events)
+            #expect(credit?.seat == scorer && credit?.style == style, "\(kind): \(String(describing: credit))")
+            let lifeIndex = events.firstIndex { if case .lifeLost = $0 { true } else { false } }
+            let goalIndex = events.firstIndex { if case .goalScored = $0 { true } else { false } }
+            #expect(lifeIndex != nil && goalIndex != nil && lifeIndex! < goalIndex!, "the call follows the life")
+            let expected = PilotStats(
+                goals: 1,
+                boltGoals: kind == .hull ? 0 : 1,
+                slamDunks: kind == .slamDunk ? 1 : 0
+            )
+            #expect(engine.state.stats[scorer] == expected, "\(kind)")
+            #expect(engine.state.stats[owner] == PilotStats())
+            // No halves on the ring: nothing crosses, so no rally is measured.
+            #expect(engine.state.stats.longestRally == 0)
+        }
+    }
+
+    @Test("The net's owner putting it in is an own goal; a rival's beam pulling it in is that rival's slam dunk")
+    func ringOwnGoalAndBeamSlam() {
+        var (engine, arena) = field(pilots: 3)
+        let ring = arena.ring!
+        let owner = engine.state.freeForAll!.bays[0]
+        let puller = engine.state.freeForAll!.bays[2]
+        var own = engine
+        let events = shoot(&own, arena: arena, net: 0)
+        #expect(goalScored(events) == nil, "a face-off ball nobody played is nobody's goal")
+        #expect(own.state.stats == MatchStats())
+
+        own = engine
+        let ownGoal = shoot(&own, arena: arena, net: 0, lastPlay: BallPlay(seat: owner, kind: .hull))
+        #expect(goalScored(ownGoal)?.style == .ownGoal)
+        #expect(own.state.stats[owner] == PilotStats(ownGoals: 1))
+
+        engine.state.ball = BallState(
+            position: ring.toWorld(SIMD2(0, ring.netDepth + 0.2), net: 0),
+            velocity: worldVector(SIMD2(0, -1.2), ring: ring, net: 0),
+            radius: ring.ballRadius,
+            lastPlay: BallPlay(seat: owner, kind: .hull),
+            beamHold: BeamHold(seat: puller, tick: engine.state.tick)
+        )
+        engine.state.serveTicksRemaining = 0
+        var pulled: [SimulationEvent] = []
+        for _ in 0 ..< 120 {
+            // Keep the hold fresh: the slam grace is a fraction of a second.
+            engine.state.ball.beamHold = BeamHold(seat: puller, tick: engine.state.tick)
+            engine.step(inputs: [:])
+            pulled += engine.lastEvents
+            if engine.state.match.phase != .playing { break }
+        }
+        #expect(livesLost(pulled) == [owner])
+        #expect(goalScored(pulled)?.seat == puller)
+        #expect(goalScored(pulled)?.style == .slamDunk)
+        #expect(engine.state.stats[puller] == PilotStats(goals: 1, slamDunks: 1))
+        #expect(engine.state.stats[owner].ownGoals == 0)
+    }
+
+    @Test("Hull touches and zaps on the ring go in the book; a guest's board keeps none of it")
+    func ringPlaysAreBooked() {
+        var (engine, _) = field(pilots: 3)
+        // Not `field`: that name is the helper, called again below.
+        let book = engine.state.freeForAll!
+        let hitter = book.bays[1]
+        // Park the ball dead in front of the hull and knock it.
+        let ship = engine.state.ships[hitter]!
+        let nose = SIMD2(cos(ship.angle), sin(ship.angle))
+        engine.state.ball = BallState(position: ship.position + nose * 0.09, velocity: -nose * 0.8, radius: engine.state.ball.radius)
+        engine.state.serveTicksRemaining = 0
+        var guest = engine
+        guest.followsHost = true
+        for _ in 0 ..< 20 {
+            engine.step(inputs: [:])
+            guest.step(inputs: [:])
+        }
+        #expect(engine.state.stats[hitter].hits >= 1)
+        #expect(engine.state.ball.lastPlay?.seat == hitter)
+        #expect(guest.state.stats == MatchStats(), "a guest flies the physics and writes nothing")
+
+        // A bolt into a rival hull is a zap.
+        var (zapper, _) = field(pilots: 3)
+        let shooter = zapper.state.freeForAll!.bays[1]
+        let victim = zapper.state.freeForAll!.bays[2]
+        zapper.state.serveTicksRemaining = 0
+        zapper.state.ships[shooter]!.position = SIMD2(-0.3, 0)
+        zapper.state.ships[shooter]!.velocity = .zero
+        zapper.state.ships[shooter]!.angle = 0
+        zapper.state.ships[victim]!.position = SIMD2(0.3, 0)
+        zapper.state.ships[victim]!.velocity = .zero
+        // The ball parked in the open middle, off the bolt's line.
+        zapper.state.ball = BallState(position: SIMD2(0, 0.5), velocity: .zero, radius: zapper.state.ball.radius)
+        var events: [SimulationEvent] = []
+        for tick in 0 ..< 90 {
+            zapper.state.ships[victim]!.position = SIMD2(0.3, 0)
+            zapper.state.ships[victim]!.velocity = .zero
+            zapper.step(inputs: [shooter: PlayerInput(tick: zapper.state.tick, torque: 0, thrust: false, fire: tick == 0, tractor: false)])
+            events += zapper.lastEvents
+        }
+        #expect(zapper.state.stats[shooter].zaps == 1)
+        #expect(events.contains(.play(seat: shooter, call: .zap(victim: victim))))
+    }
+
+    // MARK: - Online seating
+
+    @Test("A ring plan seats the duel's order and cuts a ring of three or four from the plan alone")
+    func ringSeating() {
+        let plan = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:2"], format: .freeForAll)
+        #expect(plan == ["G:1": .cyan, "G:2": .orange])
+        #expect(OnlineSeating.roster(filled: Set(plan.values), format: .freeForAll) == FreeForAllState.seats(pilots: 3))
+        let three = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:3", "G:2"], format: .freeForAll)
+        #expect(Set(three.values) == FreeForAllState.seats(pilots: 3), "three pilots fill the three-net ring exactly")
+        #expect(OnlineSeating.roster(filled: Set(three.values), format: .freeForAll) == FreeForAllState.seats(pilots: 3))
+        let four = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:4", "G:2", "G:3"], format: .freeForAll)
+        #expect(OnlineSeating.roster(filled: Set(four.values), format: .freeForAll) == Seat.doubles)
+        // A duel's roster is untouched.
+        #expect(OnlineSeating.roster(filled: [.cyan, .orange], format: .duel) == Seat.singles)
+        #expect(OnlineSeating.roster(filled: [.cyan, .cyanWing], format: .teamUp) == Seat.doubles)
+    }
+
+    @Test("A late arrival takes a bot's chair on the ring only when their board would cut the same ring")
+    func ringLateSeat() {
+        let three = Array(FreeForAllState.seats(pilots: 3))
+        // Two on a three-net ring: the bot's chair is theirs.
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .freeForAll, ring: three) == .cyanWing)
+        // Three on a three-net ring: full. A fourth would build a four-net ring.
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange, .cyanWing], format: .freeForAll, ring: three) == nil)
+        // A four-net ring down to three pilots takes one back.
+        let four = Seat.allCases
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange, .cyanWing], format: .freeForAll, ring: four) == .orangeWing)
+        // Down to two it does not: a newcomer's plan of three would cut three nets.
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .freeForAll, ring: four) == nil)
+        // No snapshot out yet: the ring is the one the plan cuts.
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .freeForAll, ring: nil) == .cyanWing)
+        // Off the ring the first empty chair in the order, as before.
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .duel, ring: nil) == .cyanWing)
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .cyanWing], format: .teamUp, ring: nil) == .orange)
+    }
+
+    @Test("On the ring a dropped pilot's chair always goes to a bot: nobody forfeits a field")
+    func ringHoldExpiry() {
+        let three: [String: Seat] = ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing]
+        #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2"], format: .freeForAll) == ["G:1": .cyan, "G:3": .cyanWing])
+        #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2", "G:3"], format: .freeForAll) == ["G:1": .cyan])
+        #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: [], format: .freeForAll) == nil)
+        #expect(OnlineSeating.benchesDropped(["G:2"], seating: three, plan: ["G:1": .cyan, "G:3": .cyanWing], format: .freeForAll))
+        // The duel still forfeits a side left with nobody.
+        #expect(OnlineSeating.seatingAfterHold(seating: ["G:1": .cyan, "G:2": .orange], dropped: ["G:2"]) == nil)
+    }
+
+    @Test("The host's ring settings ride the wire in its tuning")
+    func ringTuningOnTheWire() throws {
+        var tuning = FlightTuningSnapshot.defaults
+        tuning.ring.speed = 0.6
+        tuning.ring.coveFlare = 5
+        let data = try JSONEncoder().encode(tuning)
+        let decoded = try JSONDecoder().decode(FlightTuningSnapshot.self, from: data)
+        #expect(decoded == tuning)
+        #expect(decoded.configuration.ring == tuning.ring)
+        #expect(decoded.configuration.ringThrust == decoded.configuration.maximumThrustAcceleration * 0.6)
     }
 
     @Test("A duel never carries a free-for-all book")
