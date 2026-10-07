@@ -207,16 +207,13 @@ public struct FreeForAllPilot: Sendable {
                 aim = mouth
                 speed = min(difficulty.strikeSpeed * 0.6, configuration.ringTopSpeed * 0.9)
             } else if simd_length(spot) > ring.rimRadius - ring.ballRadius - Self.ringRimBand {
-                // On the rim: run it along to the nearest corner bumper,
-                // which turns it back in. Nothing can get under it to push.
+                // On the rim: run it along to the nearest corner, whose
+                // barrier turns it back in. Nothing can get under it to push.
                 let bearing = atan2(spot.y, spot.x)
-                let peg = ring.corners.min {
-                    abs(remainder(atan2($0.start.y, $0.start.x) - bearing, 2 * .pi))
-                        < abs(remainder(atan2($1.start.y, $1.start.x) - bearing, 2 * .pi))
-                }?.start ?? spot
+                func away(_ corner: Double) -> Double { abs(remainder(corner - bearing, 2 * .pi)) }
+                let corner = ring.gapBearings.min { away($0) < away($1) } ?? bearing
                 let out = ring.outward(at: spot)
-                let pegBearing = atan2(peg.y, peg.x)
-                aim = spot + SIMD2(-out.y, out.x) * (remainder(pegBearing - bearing, 2 * .pi) >= 0 ? 0.5 : -0.5)
+                aim = spot + SIMD2(-out.y, out.x) * (remainder(corner - bearing, 2 * .pi) >= 0 ? 0.5 : -0.5)
             } else {
                 // Off to the side of the slot: move it on round in front of
                 // the mouth, for a clear line next time.

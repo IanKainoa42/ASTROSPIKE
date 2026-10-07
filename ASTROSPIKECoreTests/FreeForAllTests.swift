@@ -72,7 +72,7 @@ struct FreeForAllTests {
         }.min()!
     }
 
-    @Test("The field is a ring: a net per pilot evenly round it, mouth flush with the rim and pocket outside, a rounded bumper beside each post")
+    @Test("The field is a ring: a net per pilot evenly round it, mouth flush with the rim and pocket outside, a rounded barrier in every corner")
     func fieldLayout() {
         let ballRadius = SimulationConfiguration.online.ballRadius
         let smallestBall = BallState.nominalRadius
@@ -97,8 +97,13 @@ struct FreeForAllTests {
                 #expect(abs(simd_length(post) - ring.rimRadius) < 1e-6, "the mouth ends sit on the rim")
             }
             #expect(ring.centre.isEmpty, "the centre bumper is off unless asked")
-            #expect(ring.corners.count == pilots * 2)
-            for tuning in [RingTuning(), bumperUp] {
+            #expect(!ring.corners.isEmpty)
+            var flat = RingTuning()
+            flat.cornerDepth = 0
+            #expect(RingField(pilots: pilots, ballRadius: ballRadius, tuning: flat).corners.isEmpty, "Corners at 0 is a plain rim")
+            var deepest = RingTuning()
+            deepest.cornerDepth = 0.24
+            for tuning in [RingTuning(), bumperUp, deepest] {
                 for radius in [smallestBall, ballRadius, biggestBall] {
                     let sized = RingField(pilots: pilots, ballRadius: radius, tuning: tuning)
                     let label = "\(pilots) pilots, ball \(radius), bumper \(tuning.centreBumper)"
@@ -108,12 +113,21 @@ struct FreeForAllTests {
                     #expect(frame.contains { max(simd_length($0.start), simd_length($0.end)) > sized.rimRadius }, "\(label)")
                     // The MAX CROSS line well short of every mouth.
                     #expect(sized.mouthRadius - sized.maxCrossRadius > 0.25, "\(label): line at \(sized.maxCrossRadius)")
-                    // The corner bumper meets the post closely enough that no
-                    // ball slips between them into the slot, and does not
-                    // overlap the frame.
-                    let room = gap(frame, sized.corners)
-                    #expect(room > 0, "\(label): bumper overlaps the frame by \(-room)")
-                    #expect(room < 2 * smallestBall, "\(label): \(room) lets a ball past the bumper")
+                    // Each corner barrier stands its depth in off the rim at
+                    // its corner, meets the rim at both ends, and leaves
+                    // plain rim between its end and the post.
+                    let depth = min(tuning.cornerDepth, sized.maxCornerDepth)
+                    #expect(depth > 0.09, "\(label): barrier held down to \(depth)")
+                    for index in sized.gapBearings.indices {
+                        let face = sized.cornerFace(index)
+                        #expect(abs(simd_length(face.first!) - sized.rimRadius) < 1e-9 && abs(simd_length(face.last!) - sized.rimRadius) < 1e-9, "\(label)")
+                        let along = RingField.outward(sized.gapBearings[index])
+                        // The flat runs between the two ends' last points, square to the corner.
+                        let flat = [face[face.count / 2 - 1], face[face.count / 2]]
+                        #expect(flat.allSatisfy { abs(simd_dot($0, along) - (sized.rimRadius - depth)) < 1e-9 }, "\(label): face at its depth")
+                    }
+                    #expect(Double.pi / Double(pilots) - sized.cornerHalfAngle - sized.postHalfAngle >= sized.cornerPostClearance - 1e-9, "\(label): barrier crowds the post")
+                    #expect(gap(frame, sized.corners) > 2 * radius, "\(label): a ball fits between the barrier and the net")
                     if tuning.centreBumper {
                         #expect(sized.centre.count == 1)
                         #expect(simd_length(sized.centre[0].start) == 0)
@@ -126,7 +140,7 @@ struct FreeForAllTests {
         #expect(ArenaGeometry.standard.ring == nil, "the duel court stays a rectangle")
     }
 
-    @Test("The table is flat by default: a ball let go stays put; tilt it with Ring gravity and the ball rolls out to the rim")
+    @Test("The table is flat by default: a ball let go stays put; tilt it with Ring gravity and the ball rolls out to the corner barrier")
     func gravityPullsOut() {
         for pilots in [3, 4] {
             let (start, arena) = field(pilots: pilots)
@@ -154,7 +168,9 @@ struct FreeForAllTests {
                     if setting == 0 {
                         #expect(simd_distance(ball, from) < 1e-9, "\(pilots) pilots, net \(net): flat")
                     } else {
-                        #expect(abs(simd_length(ball) - (ring.rimRadius - ring.ballRadius)) < 0.01, "\(pilots) pilots, net \(net)")
+                        // Straight out into the corner, it comes to rest on the barrier's face.
+                        let wall = ring.rimRadius - ring.cornerDepth - RingField.netWall
+                        #expect(abs(simd_length(ball) - (wall - ring.ballRadius)) < 0.01, "\(pilots) pilots, net \(net)")
                         #expect(abs(remainder(atan2(ball.y, ball.x) - bearing, 2 * .pi)) < 0.05, "straight out")
                     }
                 }
@@ -263,45 +279,49 @@ struct FreeForAllTests {
         #expect(abs(coasting / (released * exp(-3 * k)) - 1) < 0.02, "three seconds' glide: \(coasting)")
     }
 
-    /// The corner bumper guards the slot: a ball run into it from beside the
-    /// mouth, or along the rim, is turned away. Straight down the mouth scores.
-    @Test("A corner bumper guards its net: from beside it or along the rim the ball is turned away; straight down the mouth it scores")
-    func cornerBumperGuards() {
+    /// The corner barriers turn the ball: one running the rim rides up the
+    /// rounded end and comes off along the face, never getting behind it,
+    /// and one hit square at the face comes straight back. Straight down a
+    /// mouth still scores.
+    @Test("A corner barrier turns the ball: along the rim it rides the rounded end back in, square on it bounces off the face; straight down the mouth it scores")
+    func cornersTurnTheBall() {
         for pilots in [3, 4] {
             let (start, arena) = field(pilots: pilots)
             let ring = arena.ring!
             for net in ring.spokeAngles.indices {
                 let owner = start.state.freeForAll!.bays[net]
+                let corner = ring.gapBearings[net]
+                let along = RingField.outward(corner)
+                let face = ring.rimRadius - ring.cornerDepth - ring.ballRadius
                 for side in [1.0, -1.0] {
+                    // Along the rim from the plain wall into the barrier.
                     var engine = start
                     for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
-                    let bumper = ring.cornerCentre(goal: net, side: side)
-                    let from = bumper - ring.outward(at: bumper) * (RingField.cornerRadius + ring.ballRadius + 0.05)
-                    let into = simd_normalize(bumper - from) * 1.2
-                    engine.state.ball = BallState(position: from, velocity: into, radius: ring.ballRadius)
+                    let bearing = corner - side * (ring.cornerHalfAngle + 0.08)
+                    let rimSpot = RingField.outward(bearing) * (ring.rimRadius - ring.ballRadius - 0.002)
+                    let run = SIMD2(-sin(bearing), cos(bearing)) * (side * 1.2)
+                    engine.state.ball = BallState(position: rimSpot, velocity: run, radius: ring.ballRadius)
                     engine.state.serveTicksRemaining = 0
-                    var events: [SimulationEvent] = []
-                    for _ in 0 ..< 40 where simd_dot(engine.state.ball.velocity, into) > 0 {
+                    var inward = false
+                    var behind = 0.0
+                    for _ in 0 ..< 120 {
                         engine.step(inputs: [:])
-                        events += engine.lastEvents
+                        let ball = engine.state.ball
+                        behind = max(behind, simd_dot(ball.position, along) - face)
+                        if simd_dot(ball.velocity, ring.outward(at: ball.position)) < -0.3 { inward = true }
                     }
-                    #expect(livesLost(events).isEmpty, "\(pilots) pilots, net \(net), side \(side): through the bumper")
-                    #expect(simd_dot(engine.state.ball.velocity, into) <= 0, "\(pilots) pilots, net \(net), side \(side): turned away")
+                    #expect(behind < 0.005, "\(pilots) pilots, corner \(net), side \(side): \(behind) behind the face")
+                    #expect(inward, "\(pilots) pilots, corner \(net), side \(side): turned back in off the rim")
 
-                    // Along the rim toward the mouth. The bumper is in the way.
+                    // Square at the face from the middle.
                     engine = start
                     for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
-                    let bearing = ring.spokeAngles[net] + side * 0.55
-                    let rimSpot = RingField.outward(bearing) * (ring.rimRadius - ring.ballRadius - 0.005)
-                    let along = SIMD2(-sin(bearing), cos(bearing)) * (-side * 1.2)
-                    engine.state.ball = BallState(position: rimSpot, velocity: along, radius: ring.ballRadius)
+                    let across = SIMD2(-along.y, along.x) * (side * 0.1)
+                    engine.state.ball = BallState(position: along * 0.6 + across, velocity: along * 1.2, radius: ring.ballRadius)
                     engine.state.serveTicksRemaining = 0
-                    events = []
-                    for _ in 0 ..< 120 * 2 {
-                        engine.step(inputs: [:])
-                        events += engine.lastEvents
-                    }
-                    #expect(livesLost(events).isEmpty, "\(pilots) pilots, net \(net), side \(side): in along the rim")
+                    for _ in 0 ..< 120 where simd_dot(engine.state.ball.velocity, along) > 0 { engine.step(inputs: [:]) }
+                    #expect(simd_dot(engine.state.ball.velocity, along) < -0.5, "\(pilots) pilots, corner \(net): came back off the face")
+                    #expect(simd_dot(engine.state.ball.position, along) <= face + 0.005)
                 }
                 var engine = start
                 for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
@@ -506,6 +526,10 @@ struct FreeForAllTests {
         #expect(abs(moved.maxCrossRadius / moved.mouthRadius - 0.9) < 1e-9)
         #expect(base.centre.isEmpty && moved.centre.count == 1, "the bumper stands only when asked")
         #expect(moved.netBackRadius == base.netBackRadius, "the nets stay flush with the rim")
+        tuning.cornerDepth = 0.2
+        let cornered = RingField(pilots: 4, ballRadius: ballRadius, tuning: tuning)
+        #expect(cornered.cornerDepth == min(0.2, cornered.maxCornerDepth) && cornered.cornerDepth > base.cornerDepth, "the barriers stand further in")
+        #expect(abs(base.cornerDepth - RingTuning().cornerDepth) < 1e-9)
 
         // No push and no brake: a rival flies straight up to the mouth.
         var (engine, arena) = field(pilots: 3)

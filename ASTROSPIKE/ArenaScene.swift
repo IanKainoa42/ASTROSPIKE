@@ -454,7 +454,7 @@ final class ArenaScene: SKScene {
     }
 
     /// The free-for-all ring: the rim the ball rolls round, open at each
-    /// flush mouth, a round bumper beside every post, and every pilot's net
+    /// flush mouth, a rounded barrier in every corner, and every pilot's net
     /// hung outside the rim, mouth to the open middle.
     private func addRing(_ ring: RingField) {
         func disk(at centre: SIMD2<Double>, radius: Double) -> CGPath {
@@ -488,7 +488,33 @@ final class ArenaScene: SKScene {
         rim.glowWidth = 1
         arenaLayer.addChild(rim)
 
-        for corner in ring.corners + ring.centre {
+        // Each corner barrier: along its face rim to rim, then back round
+        // the rim behind it, filled solid.
+        if !ring.corners.isEmpty {
+            for index in ring.gapBearings.indices {
+                let face = ring.cornerFace(index)
+                let path = CGMutablePath()
+                for (step, sample) in face.enumerated() {
+                    let screen = point(sample.x, sample.y)
+                    if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
+                }
+                let reach = ring.cornerHalfAngle
+                let steps = 16
+                for step in 0 ... steps {
+                    let angle = ring.gapBearings[index] - reach + 2 * reach * Double(step) / Double(steps)
+                    path.addLine(to: point(ring.rimRadius * cos(angle), ring.rimRadius * sin(angle)))
+                }
+                path.closeSubpath()
+                let fill = SKShapeNode(path: path)
+                fill.fillColor = SKColor(white: 0.16, alpha: 1)
+                fill.strokeColor = .white.withAlphaComponent(0.55)
+                fill.lineWidth = 3
+                fill.glowWidth = 1
+                arenaLayer.addChild(fill)
+            }
+        }
+
+        for corner in ring.centre {
             let fill = SKShapeNode(path: disk(at: corner.start, radius: corner.radius))
             fill.fillColor = SKColor(white: 0.16, alpha: 1)
             fill.strokeColor = .white.withAlphaComponent(0.55)
@@ -520,7 +546,7 @@ final class ArenaScene: SKScene {
             let screen = point(radius * cos(angle), radius * sin(angle))
             if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
         }
-        let tip = ring.rimRadius - 0.04
+        let tip = ring.rimRadius - ring.cornerDepth - 0.04
         for bearing in [low, high] {
             path.move(to: point(radius * cos(bearing), radius * sin(bearing)))
             path.addLine(to: point(tip * cos(bearing), tip * sin(bearing)))

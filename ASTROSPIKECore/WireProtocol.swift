@@ -142,7 +142,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     plan as doubles.
     // 40: flush ring goals and the centre-bumper toggle replace coves.
     // Older boards have different collision geometry and ring tuning.
-    public static let currentVersion: UInt16 = 40
+    // 41: ring tuning carries the corner barriers' depth; a build 141
+    // board would cut pegs where the host has barriers.
+    public static let currentVersion: UInt16 = 41
 
     public var version: UInt16
     public var sequence: UInt64

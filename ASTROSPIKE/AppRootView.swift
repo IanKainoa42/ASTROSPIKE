@@ -465,7 +465,7 @@ private struct FreeForAllSheet: View {
         case nil:
             VStack(alignment: .leading, spacing: 16) {
                 Text("FREE-FOR-ALL").font(.title.bold())
-                Text("One round arena on an air-hockey table, a net each cut flush in the rim, mouth to the middle: score straight through a slot. Round bumpers beside the posts turn a ball running the wall back in. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
+                Text("One round arena on an air-hockey table, a net each cut flush in the rim, mouth to the middle: score straight through a slot. Rounded barriers fill the corners between the goals and turn a ball running the wall back in. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
                     .font(.footnote).foregroundStyle(.secondary)
                 HStack(spacing: 12) {
                     choice("AGAINST BOTS", detail: "Three or four on the ring, every other chair a bot. Pick their level next.",
@@ -2373,7 +2373,7 @@ struct RingTuningControls: View {
     var changed: (RingTuning) -> Void = { _ in }
     @State private var tuning = RingTuning.stored()
 
-    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Gravity tilts the table out to the rim. All of it applies the moment you resume."
+    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Corners is how far each corner barrier stands in off the rim (0 is a plain round rim). The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Gravity tilts the table out to the rim. All of it applies the moment you resume."
 
     var body: some View {
         ForEach(RingTuning.knobs) { knob in
