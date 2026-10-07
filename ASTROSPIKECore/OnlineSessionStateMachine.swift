@@ -137,9 +137,11 @@ public enum OnlineFormat: String, Codable, Equatable, Sendable {
     /// Three or four pilots round the ring, a net and five lives each, bots
     /// in the empty chairs. There are no teams: every seat is its own side.
     case freeForAll
+    case doublesVersus
+    case freeForAll4
 
     /// Every seat flies for itself.
-    public var isFreeForAll: Bool { self == .freeForAll }
+    public var isFreeForAll: Bool { self == .freeForAll || self == .freeForAll4 }
 }
 
 /// The two decisions the table needs that must come out the same on every
@@ -181,6 +183,8 @@ public enum OnlineSeating {
     public static func roster(filled: Set<Seat>, format: OnlineFormat) -> Set<Seat> {
         switch format {
         case .freeForAll: FreeForAllState.seats(pilots: ringSize(seated: filled.count))
+        case .freeForAll4: FreeForAllState.seats(pilots: 4)
+        case .doublesVersus: Seat.doubles
         case .duel, .teamUp: format == .teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
         }
     }
@@ -201,13 +205,14 @@ public enum OnlineSeating {
     /// reads the ring's size off the plan alone): a three-net ring that is
     /// full, or a four-net ring down to three pilots, has no chair for them.
     public static func lateSeat(filled: Set<Seat>, format: OnlineFormat, ring: [Seat]?) -> Seat? {
-        guard format == .freeForAll else {
+        guard format == .freeForAll || format == .freeForAll4 else {
             return order(format: format).first { !filled.contains($0) }
         }
         // The ring as it is flown; a host with no snapshot out yet flies
         // the one its own plan cuts.
         let ringSeats = ring.map { Set($0) } ?? roster(filled: filled, format: format)
-        guard FreeForAllState.seats(pilots: ringSize(seated: filled.count + 1)) == ringSeats else { return nil }
+        let projected = format == .freeForAll4 ? FreeForAllState.seats(pilots: 4) : FreeForAllState.seats(pilots: ringSize(seated: filled.count + 1))
+        guard projected == ringSeats else { return nil }
         return order(format: format).first { ringSeats.contains($0) && !filled.contains($0) }
     }
 
@@ -224,7 +229,7 @@ public enum OnlineSeating {
     ) -> [String: Seat]? {
         let staying = seating.filter { !dropped.contains($0.key) }
         guard staying.count < seating.count, !staying.isEmpty else { return nil }
-        if format == .freeForAll { return staying }
+        if format.isFreeForAll { return staying }
         let bereft = Set(seating.filter { dropped.contains($0.key) }.values.map(\.team))
         let manned = Set(staying.values.map(\.team))
         return bereft.isSubset(of: manned) ? staying : nil

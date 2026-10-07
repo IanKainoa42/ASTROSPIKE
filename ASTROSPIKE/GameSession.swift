@@ -216,7 +216,7 @@ final class GameSession {
         let isSpectator = mode == .online && online?.isSpectating == true
         self.isSpectator = isSpectator
         let onlineFormat = online?.format ?? .duel
-        let isFreeForAll = mode.isFreeForAll || (mode == .online && onlineFormat == .freeForAll)
+        let isFreeForAll = mode.isFreeForAll || (mode == .online && onlineFormat.isFreeForAll)
         self.isFreeForAll = isFreeForAll
         var initialEngine = SimulationEngine.testing()
         let roster: Set<Seat>

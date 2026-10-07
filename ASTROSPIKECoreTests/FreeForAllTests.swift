@@ -753,6 +753,10 @@ struct FreeForAllTests {
         #expect(OnlineSeating.roster(filled: Set(three.values), format: .freeForAll) == FreeForAllState.seats(pilots: 3))
         let four = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:4", "G:2", "G:3"], format: .freeForAll)
         #expect(OnlineSeating.roster(filled: Set(four.values), format: .freeForAll) == Seat.doubles)
+        #expect(OnlineSeating.roster(filled: [.cyan, .orange], format: .freeForAll4) == Seat.doubles,
+                "a four-pilot invite keeps four nets even while bots fill two chairs")
+        #expect(OnlineSeating.roster(filled: [.cyan, .orange], format: .doublesVersus) == Seat.doubles,
+                "a versus invite keeps both wings even before more friends join")
         // A duel's roster is untouched.
         #expect(OnlineSeating.roster(filled: [.cyan, .orange], format: .duel) == Seat.singles)
         #expect(OnlineSeating.roster(filled: [.cyan, .cyanWing], format: .teamUp) == Seat.doubles)
@@ -770,6 +774,8 @@ struct FreeForAllTests {
         #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange, .cyanWing], format: .freeForAll, ring: four) == .orangeWing)
         // Down to two it does not: a newcomer's plan of three would cut three nets.
         #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .freeForAll, ring: four) == nil)
+        #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .freeForAll4, ring: four) == .cyanWing,
+                "a four-pilot invite keeps that bot chair available")
         // No snapshot out yet: the ring is the one the plan cuts.
         #expect(OnlineSeating.lateSeat(filled: [.cyan, .orange], format: .freeForAll, ring: nil) == .cyanWing)
         // Off the ring the first empty chair in the order, as before.
@@ -781,6 +787,8 @@ struct FreeForAllTests {
     func ringHoldExpiry() {
         let three: [String: Seat] = ["G:1": .cyan, "G:2": .orange, "G:3": .cyanWing]
         #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2"], format: .freeForAll) == ["G:1": .cyan, "G:3": .cyanWing])
+        #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2"], format: .freeForAll4) == ["G:1": .cyan, "G:3": .cyanWing],
+                "a four-pilot ring carries on with a bot after a disconnect")
         #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: ["G:2", "G:3"], format: .freeForAll) == ["G:1": .cyan])
         #expect(OnlineSeating.seatingAfterHold(seating: three, dropped: [], format: .freeForAll) == nil)
         #expect(OnlineSeating.benchesDropped(["G:2"], seating: three, plan: ["G:1": .cyan, "G:3": .cyanWing], format: .freeForAll))

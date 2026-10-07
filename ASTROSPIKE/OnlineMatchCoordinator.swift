@@ -115,7 +115,7 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var format: OnlineFormat = .duel
     var teamUp: Bool { format == .teamUp }
     /// Three or four pilots round the ring, every seat its own side.
-    var isFreeForAll: Bool { format == .freeForAll }
+    var isFreeForAll: Bool { format.isFreeForAll }
     /// Display names of everyone at the table, by Game Center player ID.
     var seatedPilotNames: [String: String] {
         var names = [GKLocalPlayer.local.gamePlayerID: GKLocalPlayer.local.displayName]
@@ -715,13 +715,13 @@ final class OnlineMatchCoordinator: NSObject,
     /// The host of a standing ask, waiting on the Game Center invite it
     /// sent, sees the guest say yes from the app: the guest is in the pool,
     /// so drop the push and meet them there.
-    func moveInviteToPool(from pushTag: String, group: Int, pilotID: String, name: String, hostTag: String) {
+    func moveInviteToPool(from pushTag: String, group: Int, pilotID: String, name: String, format: OnlineFormat = .duel, hostTag: String) {
         guard meetingTag == pushTag, case .matching = status, lifecycle.phase == .idle else { return }
         note("\(name.uppercased()) SAID YES IN THE APP · MOVING TO POOL \(group)")
         matchmakingGeneration += 1
         if findMatchGeneration != nil { GKMatchmaker.shared().cancel() }
         findMatchGeneration = nil
-        meetInGame(group: group, with: pilotID, name: name, hostTag: hostTag,
+        meetInGame(group: group, with: pilotID, name: name, format: format, hostTag: hostTag,
                    giveUpAfter: Self.meetingJoinSeconds,
                    missed: "Couldn't meet \(name). Invite them again.")
     }
@@ -736,12 +736,13 @@ final class OnlineMatchCoordinator: NSObject,
         group: Int,
         with pilotID: String,
         name: String,
+        format: OnlineFormat = .duel,
         hostTag: String?,
         giveUpAfter seconds: Int? = nil,
         missed: String? = nil,
         paired: ((Bool) -> Void)? = nil
     ) {
-        startMatchmaking(recipients: nil, format: .duel, playerGroup: group, meeting: (pilotID, name, hostTag))
+        startMatchmaking(recipients: nil, format: format, playerGroup: group, meeting: (pilotID, name, hostTag))
         // A host waiting for the guest to notice the ask waits as long as
         // it likes; anyone who knows the other phone is already looking
         // gives up.
@@ -1113,7 +1114,7 @@ final class OnlineMatchCoordinator: NSObject,
         request.maxPlayers = partySize
         request.defaultNumberOfPlayers = partySize
         request.inviteMessage = asOpenTable ? Self.openTableInviteMessage
-            : format == .freeForAll ? "Free-for-all in ASTROSPIKE"
+            : format.isFreeForAll ? "Free-for-all in ASTROSPIKE"
             : format == .teamUp ? "Team up with me in ASTROSPIKE"
             : partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
         request.recipients = recipients
@@ -1329,7 +1330,8 @@ final class OnlineMatchCoordinator: NSObject,
         request.maxPlayers = format == .duel ? 2 : 4
         request.defaultNumberOfPlayers = 2
         request.inviteMessage = switch format {
-        case .freeForAll: "Free-for-all in ASTROSPIKE"
+        case .freeForAll, .freeForAll4: "Free-for-all in ASTROSPIKE"
+        case .doublesVersus: "Versus match in ASTROSPIKE"
         case .teamUp: "Team up with me in ASTROSPIKE"
         case .duel: "Duel me in ASTROSPIKE"
         }
@@ -1548,7 +1550,7 @@ final class OnlineMatchCoordinator: NSObject,
         hostTuning = preferredTuning
         // The ring sliders write straight to the defaults, so read them now
         // rather than trust a snapshot taken before Settings was opened.
-        if format == .freeForAll { hostTuning.ring = RingTuning.stored() }
+        if format.isFreeForAll { hostTuning.ring = RingTuning.stored() }
         isAuthoritative = true
         startConfiguredMatch()
     }

@@ -493,11 +493,11 @@ final class LobbyService {
     /// matchmaking, so the inviter waits in the bay as with any other invite.
     /// `pushTag` marks the invite as the live half of a standing ask, so a
     /// JOIN from the guest's app calls this pilot to the pool instead.
-    func invite(pilotID: String, name: String, using online: OnlineMatchCoordinator, pushTag: String? = nil) {
+    func invite(pilotID: String, name: String, format: OnlineFormat = .duel, using online: OnlineMatchCoordinator, pushTag: String? = nil) {
         if let player = knownPlayers[pilotID] {
             note("INVITE: \(name.uppercased()) FROM FRIEND LIST")
             notice = nil
-            online.invite([player], pushTag: pushTag)
+            online.invite([player], format: format, pushTag: pushTag)
             return
         }
         note("INVITE: RESOLVING \(name.uppercased()) \(pilotID.prefix(6))… (\(knownPlayers.count) KNOWN)")
@@ -524,7 +524,7 @@ final class LobbyService {
                         if let player = self.knownPlayers[pilotID] {
                             self.note("INVITE: \(name.uppercased()) FOUND ON RELOAD")
                             self.notice = nil
-                            online.invite([player], pushTag: pushTag)
+                            online.invite([player], format: format, pushTag: pushTag)
                         } else {
                             self.note("INVITE: \(name.uppercased()) NOT IN \(self.friends.count) FRIENDS")
                             self.notice = self.friends.isEmpty
@@ -549,7 +549,7 @@ final class LobbyService {
     /// simply not holding their phone never sees it. This writes the ask
     /// down first, so it survives both apps closing; the live invite that
     /// follows is the optimistic case, not the only one.
-    func inviteAnytime(pilotID: String, name: String, using online: OnlineMatchCoordinator) {
+    func inviteAnytime(pilotID: String, name: String, format: OnlineFormat = .duel, using online: OnlineMatchCoordinator) {
         // Durable first, live second, in that order and not concurrently.
         // Both paths report failure through `notice`, and the ask that
         // keeps is the one Ian asked for -- it must not have its message
@@ -567,7 +567,7 @@ final class LobbyService {
             await self.refresh()
             let guest = self.snapshot.pilots.first { $0.id == pilotID }
             let now = Date.now
-            let ask = self.draftInvite(pilotID: pilotID, name: name, at: now)
+            let ask = self.draftInvite(pilotID: pilotID, name: name, format: format, at: now)
             if let ask, case let .inGame(group) = InviteRouting.send(ask, guest: guest, at: now) {
                 // Presence first: a guest who taps JOIN the moment the row
                 // arrives has to find the host already in the pool, or they
@@ -575,12 +575,12 @@ final class LobbyService {
                 await self.publishActivity(.matching, matchID: ask.rendezvousTag)
                 guard await self.openStandingInvite(ask) != nil else { return }
                 self.note("IN-GAME INVITE → \(name.uppercased()) · BOTH IN THE APP")
-                online.meetInGame(group: group, with: pilotID, name: name, hostTag: ask.rendezvousTag)
+                online.meetInGame(group: group, with: pilotID, name: name, format: format, hostTag: ask.rendezvousTag)
                 return
             }
             var written: StandingInvite?
             if let ask { written = await self.openStandingInvite(ask) }
-            self.invite(pilotID: pilotID, name: name, using: online, pushTag: written?.pushTag)
+            self.invite(pilotID: pilotID, name: name, format: format, using: online, pushTag: written?.pushTag)
         }
     }
 
@@ -607,7 +607,7 @@ final class LobbyService {
         if InviteRouting.hostMovesToPool(ask, waitingOn: tag, status: status) {
             online.moveInviteToPool(
                 from: tag, group: ask.rendezvousGroup,
-                pilotID: ask.guestID, name: ask.guestName, hostTag: ask.rendezvousTag
+                pilotID: ask.guestID, name: ask.guestName, format: ask.format ?? .duel, hostTag: ask.rendezvousTag
             )
         } else if status == .declined {
             online.inGameInviteDeclined(tag: tag, by: ask.guestName)
@@ -628,8 +628,8 @@ final class LobbyService {
     /// pair, so asking twice moves the clock forward instead of stacking a
     /// second row on the other pilot's screen.
     @discardableResult
-    func openStandingInvite(pilotID: String, name: String) async -> StandingInvite? {
-        guard let invite = draftInvite(pilotID: pilotID, name: name, at: .now) else { return nil }
+    func openStandingInvite(pilotID: String, name: String, format: OnlineFormat = .duel) async -> StandingInvite? {
+        guard let invite = draftInvite(pilotID: pilotID, name: name, format: format, at: .now) else { return nil }
         return await openStandingInvite(invite)
     }
 
@@ -637,7 +637,7 @@ final class LobbyService {
     /// Whole seconds: both phones hash `createdAt` into the invite's
     /// automatch pool, and CloudKit is not promised to hand back the
     /// fraction it was given.
-    private func draftInvite(pilotID: String, name: String, at date: Date) -> StandingInvite? {
+    private func draftInvite(pilotID: String, name: String, format: OnlineFormat, at date: Date) -> StandingInvite? {
         guard canPublish, let localID else {
             note("STANDING INVITE: NOT PUBLISHED · \(availability.label)")
             return nil
@@ -651,7 +651,8 @@ final class LobbyService {
             guestID: pilotID,
             guestName: name,
             createdAt: now,
-            expiresAt: inviteBook.expiry(from: now)
+            expiresAt: inviteBook.expiry(from: now),
+            format: format
         )
     }
 
@@ -718,7 +719,8 @@ final class LobbyService {
         // through puts the row back to try again.
         let route = accept ? InviteRouting.join(invite, host: presence(of: invite.hostID), at: .now) : .gameCenter
         if case let .inGame(group) = route {
-            online.meetInGame(group: group, with: invite.hostID, name: invite.hostName, hostTag: nil) { [weak self] paired in
+            online.meetInGame(group: group, with: invite.hostID, name: invite.hostName,
+                              format: invite.format ?? .duel, hostTag: nil) { [weak self] paired in
                 guard let self else { return }
                 if paired {
                     Task { await self.publishReply(to: invite, accepted: true) }
@@ -736,14 +738,16 @@ final class LobbyService {
             Task {
                 await publishReply(to: invite, accepted: true)
                 online.meetInGame(
-                    group: group, with: invite.hostID, name: invite.hostName, hostTag: nil,
+                    group: group, with: invite.hostID, name: invite.hostName,
+                    format: invite.format ?? .duel, hostTag: nil,
                     giveUpAfter: Self.callHostSeconds,
                     missed: "Couldn't meet \(invite.hostName). Ask them to invite you again."
                 )
             }
             return
         }
-        if accept { self.invite(pilotID: invite.hostID, name: invite.hostName, using: online) }
+        if accept { self.invite(pilotID: invite.hostID, name: invite.hostName,
+                                format: invite.format ?? .duel, using: online) }
         Task { await publishReply(to: invite, accepted: accept) }
     }
 
@@ -906,7 +910,7 @@ private enum Records {
     static func write(_ invite: StandingInvite, into record: CKRecord) {
         record["hostID"] = invite.hostID as NSString
         record["hostName"] = invite.hostName as NSString
-        record["hostHull"] = invite.hostHull.rawValue as NSString
+        record["hostHull"] = invite.encodedHostHull as NSString
         record["guestID"] = invite.guestID as NSString
         record["guestName"] = invite.guestName as NSString
         record[startedAt] = invite.createdAt as NSDate
@@ -929,16 +933,18 @@ private enum Records {
               let guestName = record["guestName"] as? String,
               let createdAt = record[startedAt] as? Date,
               let expiresAt = record["expiresAt"] as? Date else { return nil }
+        let inviteIdentity = StandingInvite.decodeHostHull(record["hostHull"] as? String)
         return StandingInvite(
             id: record.recordID.recordName,
             hostID: hostID,
             hostName: hostName,
-            hostHull: (record["hostHull"] as? String).flatMap(Hull.init(rawValue:)) ?? .lancet,
+            hostHull: inviteIdentity.hull,
             guestID: guestID,
             guestName: guestName,
             createdAt: createdAt,
             expiresAt: expiresAt,
-            withdrawn: (record["withdrawn"] as? Int ?? 0) != 0
+            withdrawn: (record["withdrawn"] as? Int ?? 0) != 0,
+            format: inviteIdentity.format
         )
     }
 

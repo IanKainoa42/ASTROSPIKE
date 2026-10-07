@@ -147,6 +147,21 @@ private func invite(
         let data = try! JSONEncoder().encode(sent)
         #expect(try! JSONDecoder().decode(StandingInvite.self, from: data) == sent)
     }
+
+    @Test func selectedMatchSurvivesTheExistingCloudKitHullField() {
+        var sent = invite()
+        sent.format = .freeForAll4
+        let decoded = StandingInvite.decodeHostHull(sent.encodedHostHull)
+        #expect(decoded.hull == sent.hostHull)
+        #expect(decoded.format == .freeForAll4)
+        #expect(sent.matchLabel == "FOUR-PILOT FREE-FOR-ALL")
+
+        // Invites written by earlier builds have only a hull; they still
+        // open as duels and show the host's original ship.
+        let legacy = StandingInvite.decodeHostHull(sent.hostHull.rawValue)
+        #expect(legacy.hull == sent.hostHull)
+        #expect(legacy.format == nil)
+    }
 }
 
 @Suite struct OnlineTimeoutTests {

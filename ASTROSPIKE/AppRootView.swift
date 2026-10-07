@@ -913,8 +913,8 @@ private struct InviteHubSections: View {
                         isFriend: lobby.friends.contains(pilot.id),
                         duel: lobby.snapshot.liveMatches(at: .now).first { $0.involves(pilot.id) },
                         isInvited: lobby.hasStandingInvite(to: pilot.id)
-                    ) {
-                        lobby.inviteAnytime(pilotID: pilot.id, name: pilot.name, using: online)
+                    ) { format in
+                        lobby.inviteAnytime(pilotID: pilot.id, name: pilot.name, format: format, using: online)
                     }
                 }
             }
@@ -981,7 +981,7 @@ private struct IncomingInviteBanner: View {
             HullBadge(hull: invite.hostHull, team: .orange).frame(width: 34, height: 38)
             VStack(alignment: .leading, spacing: 2) {
                 Text(invite.hostName.uppercased()).font(.headline.weight(.black))
-                Text("WANTS A DUEL").font(.caption2.monospaced().weight(.bold)).foregroundStyle(.white.opacity(0.6))
+                Text("WANTS A \(invite.matchLabel)").font(.caption2.monospaced().weight(.bold)).foregroundStyle(.white.opacity(0.6))
             }
             Spacer(minLength: 12)
             Button(action: join) {

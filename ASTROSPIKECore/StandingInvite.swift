@@ -63,6 +63,32 @@ public struct StandingInvite: Codable, Equatable, Sendable, Identifiable {
     /// Set by the host to take the ask back. The host owns this record, so
     /// this is the only field either side can flip without a shared write.
     public var withdrawn: Bool
+    public var format: OnlineFormat?
+
+    /// The production CloudKit invite schema already has a string hull field.
+    /// Keep old invites readable while carrying the selected match format in
+    /// that field, without requiring a schema migration for TestFlight users.
+    public var encodedHostHull: String {
+        guard let format else { return hostHull.rawValue }
+        return "\(hostHull.rawValue)|\(format.rawValue)"
+    }
+
+    public static func decodeHostHull(_ value: String?) -> (hull: Hull, format: OnlineFormat?) {
+        let parts = (value ?? "").split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+        let hull = parts.first.flatMap { Hull(rawValue: String($0)) } ?? .lancet
+        let format = parts.count == 2 ? OnlineFormat(rawValue: String(parts[1])) : nil
+        return (hull, format)
+    }
+
+    public var matchLabel: String {
+        switch format ?? .duel {
+        case .duel: "DUEL"
+        case .teamUp: "TEAM UP"
+        case .doublesVersus: "VERSUS"
+        case .freeForAll: "FREE-FOR-ALL"
+        case .freeForAll4: "FOUR-PILOT FREE-FOR-ALL"
+        }
+    }
 
     public init(
         id: String,
@@ -73,7 +99,8 @@ public struct StandingInvite: Codable, Equatable, Sendable, Identifiable {
         guestName: String,
         createdAt: Date,
         expiresAt: Date,
-        withdrawn: Bool = false
+        withdrawn: Bool = false,
+        format: OnlineFormat? = nil
     ) {
         self.id = id
         self.hostID = hostID
@@ -84,6 +111,7 @@ public struct StandingInvite: Codable, Equatable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.withdrawn = withdrawn
+        self.format = format
     }
 
     /// The record name both ends compute without talking to each other, so

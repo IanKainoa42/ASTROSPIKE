@@ -109,8 +109,8 @@ struct LobbyView: View {
                     duel: pilot.matchID.flatMap { id in lobby.snapshot.matches.first { $0.id == id } }
                         ?? lobby.snapshot.liveMatches(at: now).first { $0.involves(pilot.id) },
                     isInvited: lobby.hasStandingInvite(to: pilot.id)
-                ) {
-                    lobby.inviteAnytime(pilotID: pilot.id, name: pilot.name, using: online)
+                ) { format in
+                    lobby.inviteAnytime(pilotID: pilot.id, name: pilot.name, format: format, using: online)
                 }
             }
         }
@@ -163,8 +163,12 @@ struct LobbyView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(away, id: \.gamePlayerID) { player in
-                Button {
-                    lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, using: online)
+                Menu {
+                    Button("Duel (1v1)") { lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, format: .duel, using: online) }
+                    Button("Team Up (2v2 vs Bots)") { lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, format: .teamUp, using: online) }
+                    Button("Versus (2v2)") { lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, format: .doublesVersus, using: online) }
+                    Button("Free-for-all (3-player)") { lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, format: .freeForAll, using: online) }
+                    Button("Free-for-all (4-player)") { lobby.inviteAnytime(pilotID: player.gamePlayerID, name: player.displayName, format: .freeForAll4, using: online) }
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "person.crop.circle")
@@ -253,7 +257,7 @@ struct PilotRow: View {
     /// An ask is already out to this pilot: say so rather than sending a
     /// second one that only resets their clock.
     let isInvited: Bool
-    let invite: () -> Void
+    let invite: (OnlineFormat) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -277,7 +281,13 @@ struct PilotRow: View {
                 Text("WAITING").font(.caption2.monospaced().weight(.bold)).foregroundStyle(.cyan)
                     .accessibilityIdentifier("lobby-pilot-waiting-\(pilot.id)")
             } else {
-                Button(action: invite) {
+                Menu {
+                    Button("Duel (1v1)") { invite(.duel) }
+                    Button("Team Up (2v2)") { invite(.teamUp) }
+                    Button("Versus (2v2)") { invite(.doublesVersus) }
+                    Button("Free-for-all (1v1v1)") { invite(.freeForAll) }
+                    Button("Free-for-all (1v1v1v1)") { invite(.freeForAll4) }
+                } label: {
                     Label("INVITE", systemImage: "paperplane.fill")
                         .font(.caption.weight(.bold)).labelStyle(.titleAndIcon)
                 }
@@ -311,7 +321,7 @@ struct StandingInviteRow: View {
                 .frame(width: 34, height: 38)
             VStack(alignment: .leading, spacing: 2) {
                 Text(isWaitingOnMe ? invite.hostName : invite.guestName).font(.headline)
-                Text(isWaitingOnMe ? "WANTS A DUEL · \(remaining)" : "ASKED · \(remaining)")
+                Text(isWaitingOnMe ? "WANTS A \(invite.matchLabel) · \(remaining)" : "ASKED · \(remaining)")
                     .font(.caption2.monospaced()).foregroundStyle(.secondary)
             }
             Spacer()

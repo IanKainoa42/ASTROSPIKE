@@ -37,7 +37,7 @@ quietly — which is the point, but check the notice appears.
 - [ ] Force-quit the app on device B. From device A, tap `ASK` next to B's pilot.
 - [ ] Confirm device A's row moves to the `INVITES` section reading `ASKED · KEEPS 24H`, and that B no longer appears under `INVITE ANYTIME`.
 - [ ] Leave both apps closed for at least five minutes.
-- [ ] Open the app on device B, go to LOBBY, and confirm the ask is waiting under `INVITES` as `WANTS A DUEL · KEEPS …H` with `JOIN` and decline buttons.
+- [ ] Open the app on device B, go to LOBBY, and confirm the ask is waiting under `INVITES` with the selected match format, `KEEPS …H`, and `JOIN` and decline buttons.
 - [ ] Tap `JOIN` on B with device A's app still **closed**. Confirm device A receives a Game Center invitation notification.
 - [ ] Accept on A and confirm both reach `LINK STABLE`.
 - [ ] Repeat, tapping the decline (✕) instead. Confirm the row clears on B, and that A's lobby link log records `… DECLINED YOUR INVITE` within one poll.
