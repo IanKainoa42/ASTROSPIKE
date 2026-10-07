@@ -130,7 +130,7 @@ struct DoublesTests {
         let snapshot = WireEnvelope(sequence: 4, payload: .snapshot(snapshotEngine.state))
         // A ring plan carries the host's ring settings with it.
         var ringTuning = FlightTuningSnapshot.defaults
-        ringTuning.ring.coveDepth = 0.2
+        ringTuning.ring.centreBumper = true
         ringTuning.ring.gravity = 0.5
         let ring = WireEnvelope(
             sequence: 5,
@@ -139,7 +139,7 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot, ring] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 39)
+        #expect(WireEnvelope.currentVersion == 40)
     }
 
     @Test("A team-up seats the invited friend beside the host")

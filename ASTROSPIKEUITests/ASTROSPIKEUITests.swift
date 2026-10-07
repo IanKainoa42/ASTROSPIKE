@@ -2,6 +2,38 @@ import XCTest
 
 final class ASTROSPIKEUITests: XCTestCase {
     @MainActor
+    func testRingBumperTogglePersistsAndResets() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--skip-onboarding", "--ffa", "4"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
+        app.buttons["Pause match"].tap()
+        app.buttons["Tune the Ring"].tap()
+        let bumper = app.switches["Centre bumper"]
+        reveal(bumper, in: app.scrollViews.firstMatch)
+        if bumper.value as? String == "1" { bumper.tap() }
+        bumper.tap()
+        XCTAssertEqual(bumper.value as? String, "1")
+        app.buttons["Done"].tap()
+        app.buttons["Resume"].tap()
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "Four-pilot ring with centre bumper"
+        capture.lifetime = .keepAlways
+        add(capture)
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
+        app.buttons["Pause match"].tap()
+        app.buttons["Tune the Ring"].tap()
+        reveal(bumper, in: app.scrollViews.firstMatch)
+        XCTAssertEqual(bumper.value as? String, "1")
+        let reset = app.buttons["Reset ring to default"]
+        reveal(reset, in: app.scrollViews.firstMatch)
+        reset.tap()
+        XCTAssertEqual(bumper.value as? String, "0")
+    }
+
+    @MainActor
     func testLaunchShowsMainModesInLandscape() throws {
         let app = XCUIApplication()
         app.launchArguments.append("--skip-onboarding")

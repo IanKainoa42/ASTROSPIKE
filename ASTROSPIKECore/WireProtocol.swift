@@ -140,7 +140,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     carries its ring settings, so a guest cuts the same ring. A build
     //     139 peer decodes neither, and one that could would seat a ring
     //     plan as doubles.
-    public static let currentVersion: UInt16 = 39
+    // 40: flush ring goals and the centre-bumper toggle replace coves.
+    // Older boards have different collision geometry and ring tuning.
+    public static let currentVersion: UInt16 = 40
 
     public var version: UInt16
     public var sequence: UInt64

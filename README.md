@@ -73,7 +73,7 @@ xcrun altool --upload-app -f build/export/ASTROSPIKE.ipa -t ios \
 
 ## Free-for-all
 
-Three or four pilots round one ring, a net each sunk in a walled cove on the rim, five lives each, last pilot flying wins. Offline it is bots in every chair but yours, on your own ring settings; online it is a Game Center invite (FREE-FOR-ALL ▸ WITH FRIENDS, or RING in the invite sheet) for up to three friends, with bots in the chairs nobody takes and the host's ring settings on every phone. The ring keeps the same stat book as the duel -- goals, bolt goals, slam dunks, zaps and hits, each goal credited to the last play on the ball -- and a finished ring posts to the per-match Game Center boards and the pilot's bests like any other match. There are no halves on the ring, so no rally is measured and no save is called.
+Three or four pilots round one ring, a net each cut flush into the rim, rounded barriers beside the posts, and an optional centre bumper, five lives each, last pilot flying wins. Offline it is bots in every chair but yours, on your own ring settings; online it is a Game Center invite (FREE-FOR-ALL ▸ WITH FRIENDS, or RING in the invite sheet) for up to three friends, with bots in the chairs nobody takes and the host's ring settings on every phone. The ring keeps the same stat book as the duel -- goals, bolt goals, slam dunks, zaps and hits, each goal credited to the last play on the ball -- and a finished ring posts to the per-match Game Center boards and the pilot's bests like any other match. There are no halves on the ring, so no rally is measured and no save is called.
 
 ## Online architecture
 

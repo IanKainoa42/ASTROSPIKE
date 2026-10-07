@@ -70,6 +70,12 @@ if [ ! -f "$IPA" ]; then
   exit 1
 fi
 
+echo "=== Validating build $BUILD_NUM with Apple ==="
+xcrun altool --validate-app --type ios \
+  -f "$IPA" \
+  --apiKey "$KEY_ID" \
+  --apiIssuer "$ISSUER"
+
 echo "=== Uploading build $BUILD_NUM to TestFlight ==="
 xcrun altool --upload-app --type ios \
   -f "$IPA" \

@@ -32,7 +32,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// What an enemy bolt does to a hull. A match rule: the host's pick
     /// rides the wire.
     public var boltHit: BoltHit = .stun
-    /// The free-for-all ring: how it flies, where its lines and coves
+    /// The free-for-all ring: how it flies, where its lines and bumpers
     /// stand. The host's sliders, so an online ring is the host's table on
     /// every board; offline the pilot's own.
     public var ring = RingTuning()
