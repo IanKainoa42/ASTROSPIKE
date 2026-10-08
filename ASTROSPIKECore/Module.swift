@@ -1411,8 +1411,8 @@ public struct SimulationEngine: Sendable {
             return
         }
         events = bookPlays() + events
-        // One goal a step: a second ball in the same tick would be a serve
-        // nobody saw coming.
+        // One goal a step. With two balls up, one that went in on the same
+        // tick bounces back out of the pocket and has to go in again.
         guard let (ballIndex, goal) = freeForAllGoalsThisStep.sorted(by: { $0.key < $1.key }).first,
               let owner = field.owner(ofGoal: goal), !field.isOut(owner) else {
             lastEvents = events
@@ -1443,6 +1443,13 @@ public struct SimulationEngine: Sendable {
         }
         field.serveBay = field.nearestOpenBay(to: goal)
         state.freeForAll = field
+        // Two balls up: only the one that went in comes back, already
+        // moving off the face-off spot; the other never stops.
+        if state.balls.count > 1, state.balls.count == configuration.ballCount {
+            state.balls[ballIndex] = stagedBalls(moving: true)[0]
+            lastEvents = events
+            return
+        }
         state.match.phase = .serve
         stageServe(on: nil)
         lastEvents = events

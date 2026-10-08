@@ -10,8 +10,9 @@ import Testing
 @Suite("Free-for-all")
 struct FreeForAllTests {
     private func field(pilots: Int) -> (engine: SimulationEngine, arena: ArenaGeometry) {
-        let configuration = SimulationConfiguration.online
-        let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: configuration.ballRadius)
+        var configuration = SimulationConfiguration.online
+        configuration.ring = .lab
+        let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: configuration.ballRadius, tuning: .lab)
         var engine = SimulationEngine.testing()
         engine.updateConfiguration(configuration)
         engine.updateArena(arena)
@@ -77,16 +78,16 @@ struct FreeForAllTests {
         let ballRadius = SimulationConfiguration.online.ballRadius
         let smallestBall = BallState.nominalRadius
         let biggestBall = BallState.nominalRadius * ArenaGeometry.maximumRadiusScale
-        var bumperUp = RingTuning()
+        var bumperUp = RingTuning.lab
         bumperUp.centreBumper = true
-        var tallWide = RingTuning()
+        var tallWide = RingTuning.lab
         tallWide.bumpHeight = 0.40
         tallWide.bumpWidth = 0.70
-        var tallNarrow = RingTuning()
+        var tallNarrow = RingTuning.lab
         tallNarrow.bumpHeight = 0.40
         tallNarrow.bumpWidth = 0.15
         for pilots in [3, 4] {
-            let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: ballRadius)
+            let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: ballRadius, tuning: .lab)
             let ring = arena.ring!
             #expect(arena.goalCount == pilots)
             #expect(abs(ring.spokeAngles[0] + .pi / 2) < 1e-9, "net 0 at the bottom")
@@ -100,7 +101,7 @@ struct FreeForAllTests {
                 #expect(ring.toLocal(.zero, net: net).y > ring.netDepth, "the middle is out in front of every mouth")
                 #expect(ring.spokeIndex(nearest: ring.mouthCentre(net)) == net)
             }
-            // The default bell peaks a quarter of the radius in off the rim,
+            // The lab bell peaks a quarter of the radius in off the rim,
             // and the whole pocket is walled inside it.
             #expect(abs(ring.cornerDepth - 0.25 * ring.rimRadius) < 1e-9)
             #expect(abs(ring.bumpHeight(at: 0) - ring.cornerDepth) < 1e-9, "the peak is on the goal's line")
@@ -110,7 +111,7 @@ struct FreeForAllTests {
             #expect(!ring.corners.isEmpty)
 
             // Bump height 0: the goals sit flush in a plain round rim.
-            var flat = RingTuning()
+            var flat = RingTuning.lab
             flat.bumpHeight = 0
             let plain = RingField(pilots: pilots, ballRadius: ballRadius, tuning: flat)
             #expect(plain.corners.isEmpty && !plain.hasBumps, "Bump height 0 is a plain rim")
@@ -120,7 +121,7 @@ struct FreeForAllTests {
                 #expect(abs(simd_length(post) - plain.rimRadius) < 1e-6, "flush mouth ends sit on the rim")
             }
 
-            for tuning in [RingTuning(), bumperUp, tallWide, tallNarrow] {
+            for tuning in [RingTuning.lab, RingTuning(), bumperUp, tallWide, tallNarrow] {
                 for radius in [smallestBall, ballRadius, biggestBall] {
                     let sized = RingField(pilots: pilots, ballRadius: radius, tuning: tuning)
                     let label = "\(pilots) pilots, ball \(radius), height \(tuning.bumpHeight), width \(tuning.bumpWidth)"
@@ -163,10 +164,10 @@ struct FreeForAllTests {
         #expect(ArenaGeometry.standard.ring == nil, "the duel court stays a rectangle")
     }
 
-    @Test("The table is flat by default: a ball let go stays put; tilt it with Ring gravity and the ball rolls out into the valley between two bumps")
+    @Test("A flat table: a ball let go stays put; tilt it with Ring gravity and the ball rolls out into the valley between two bumps")
     func gravityPullsOut() {
         for pilots in [3, 4] {
-            for width in [RingTuning().bumpWidth, 0.70] {
+            for width in [RingTuning.lab.bumpWidth, 0.70] {
             var (start, arena) = field(pilots: pilots)
             var tuning = start.configuration.ring
             tuning.bumpWidth = width
@@ -212,7 +213,7 @@ struct FreeForAllTests {
     func gravityGrowsOutward() {
         let (start, arena) = field(pilots: 4)
         let ring = arena.ring!
-        #expect(RingTuning().gravity == 0, "flat, like an air-hockey table")
+        #expect(RingTuning.lab.gravity == 0, "flat, like an air-hockey table")
         #expect(RingTuning.knobs.first { $0.keyPath == \RingTuning.gravity }!.range.lowerBound == 0)
         func pull(at radius: Double, bearing: Double, setting: Double = 0.3) -> Double {
             let out = SIMD2(cos(bearing), sin(bearing))
@@ -352,6 +353,42 @@ struct FreeForAllTests {
                 #expect(livesLost(events) == [owner], "\(pilots) pilots, net \(net): straight in")
             }
         }
+    }
+
+    @Test("Two balls up: a goal puts back only the ball that went in, and the other plays on")
+    func twoBallsPlayOn() {
+        var configuration = SimulationConfiguration.online
+        configuration.ballCount = 2
+        let arena = ArenaGeometry.freeForAll(pilots: 3, ballRadius: configuration.ballRadius)
+        let ring = arena.ring!
+        var engine = SimulationEngine.testing()
+        engine.updateConfiguration(configuration)
+        engine.updateArena(arena)
+        engine.configureFreeForAll(FreeForAllState.seats(pilots: 3))
+        engine.beginPlay()
+        #expect(engine.state.balls.count == 2)
+        for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+        let owner = engine.state.freeForAll!.bays[0]
+        engine.state.balls[0] = BallState(
+            position: ring.toWorld(SIMD2(0, ring.netDepth + 0.2), net: 0),
+            velocity: worldVector(SIMD2(0, -1.2), ring: ring, net: 0),
+            radius: ring.ballRadius
+        )
+        // The other ball out in the open between the other two nets, rolling slowly.
+        let otherStart = SIMD2(-0.3, -0.2)
+        engine.state.balls[1] = BallState(position: otherStart, velocity: SIMD2(0.1, 0), radius: ring.ballRadius)
+        engine.state.serveTicksRemaining = 0
+        var events: [SimulationEvent] = []
+        for _ in 0 ..< 120 where livesLost(events).isEmpty {
+            engine.step(inputs: [:])
+            events += engine.lastEvents
+        }
+        #expect(livesLost(events) == [owner])
+        #expect(engine.state.match.phase == .playing, "no serve: the rally never stops")
+        #expect(engine.state.balls.count == 2)
+        #expect(simd_length(engine.state.balls[0].position) < ring.mouthRadius - 0.2, "the scored ball is back in the middle")
+        #expect(simd_length(engine.state.balls[0].velocity) > 0, "and already moving")
+        #expect(engine.state.balls[1].position.x > otherStart.x, "the other ball rolled on where it was")
     }
 
     @Test("A knocked-out pilot's net is shut: the ball bounces off its mouth")
@@ -540,9 +577,9 @@ struct FreeForAllTests {
 
     @Test("The ring sliders reach the field: the line moves with them, the centre bumper toggles, a slack line lets a rival through, and stored settings clamp to their sliders")
     func ringTuning() {
-        var tuning = RingTuning()
+        var tuning = RingTuning.lab
         let ballRadius = SimulationConfiguration.online.ballRadius
-        let base = RingField(pilots: 4, ballRadius: ballRadius)
+        let base = RingField(pilots: 4, ballRadius: ballRadius, tuning: tuning)
         tuning.lineShare = 0.9
         tuning.centreBumper = true
         let moved = RingField(pilots: 4, ballRadius: ballRadius, tuning: tuning)
@@ -558,7 +595,7 @@ struct FreeForAllTests {
         let wider = RingField(pilots: 4, ballRadius: ballRadius, tuning: tuning)
         let offset = wider.flankEndAngle / 2
         #expect(wider.bumpHeight(at: offset) / wider.cornerDepth > taller.bumpHeight(at: offset) / taller.cornerDepth, "a wider bell stands taller half way down")
-        #expect(abs(base.cornerDepth - RingTuning().bumpHeight * base.rimRadius) < 1e-9)
+        #expect(abs(base.cornerDepth - RingTuning.lab.bumpHeight * base.rimRadius) < 1e-9)
 
         // No push and no brake: a rival flies straight up to the mouth.
         var (engine, arena) = field(pilots: 3)
@@ -930,7 +967,7 @@ struct FreeForAllTests {
         for offset in [0, 37, 91, 150, 233, 311, 389, 467, 541, 613] {
             var (engine, arena) = field(pilots: pilots)
             for _ in 0 ..< offset { engine.step(inputs: [:]) }
-            var bot = FreeForAllPilot(difficulty: .ace, configuration: .online)
+            var bot = FreeForAllPilot(difficulty: .ace, configuration: engine.configuration)
             for _ in 0 ..< 120 * 120 {
                 let input = bot.input(for: engine.state, seat: .cyanWing, arena: arena, tick: engine.state.tick)
                 engine.step(inputs: [.cyanWing: input])
@@ -942,5 +979,27 @@ struct FreeForAllTests {
         }
         #expect(rival >= (pilots == 3 ? 32 : 19), "only \(rival) rival lives in 20 minutes")
         #expect(Double(rival) > 1.3 * Double(own), "rival \(rival), own \(own)")
+    }
+}
+
+extension RingTuning {
+    /// The table the ring's mechanics are pinned against: flat, no centre
+    /// bumper, a ball rather than a puck, bumps a quarter of the radius. The
+    /// shipped defaults are Ian's own feel (build 146) and move with it, so
+    /// these tests never lean on them.
+    static var lab: RingTuning {
+        var tuning = RingTuning()
+        tuning.speed = 0.45
+        tuning.hullDrag = 0.45
+        tuning.ballDrag = 0.15
+        tuning.gravity = 0
+        tuning.linePush = 10
+        tuning.lineBrake = 2.5
+        tuning.lineShare = 0.6
+        tuning.centreBumper = false
+        tuning.bumpHeight = 0.25
+        tuning.bumpWidth = 0.25
+        tuning.puck = false
+        return tuning
     }
 }

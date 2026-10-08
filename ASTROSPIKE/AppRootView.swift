@@ -2373,7 +2373,7 @@ struct RingTuningControls: View {
     var changed: (RingTuning) -> Void = { _ in }
     @State private var tuning = RingTuning.stored()
 
-    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Bump height is how far each goal's bump rises off the rim, as a share of the ring's radius (0 puts the goals flush in a plain round rim); bump width is how broad its bell is. Fire rate is the seconds between your bolts on the ring, apart from the duel's. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Puck turns the ball into a flat air-hockey puck that slides dead straight: spin never bends it. Gravity tilts the table out to the rim. All of it applies the moment you resume."
+    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Bump height is how far each goal's bump rises off the rim, as a share of the ring's radius (0 puts the goals flush in a plain round rim); bump width is how broad its bell is. Fire rate is the seconds between your bolts on the ring, apart from the duel's. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Puck turns the ball into a flat air-hockey puck that slides dead straight: spin never bends it. Two balls puts a second one in play; a goal re-drops only the one that went in. Gravity tilts the table out to the rim. All of it applies the moment you resume."
 
     var body: some View {
         ForEach(RingTuning.knobs) { knob in
@@ -2405,6 +2405,11 @@ struct RingTuningControls: View {
             set: { tuning.puck = $0 }
         ))
         .accessibilityIdentifier(RingTuning.puckKey)
+        Toggle("Two balls", isOn: Binding(
+            get: { tuning.twoBalls },
+            set: { tuning.twoBalls = $0 }
+        ))
+        .accessibilityIdentifier(RingTuning.twoBallsKey)
         Button("Reset ring to default") { tuning = RingTuning() }
             .disabled(tuning == RingTuning())
             .onChange(of: tuning) { _, tuning in

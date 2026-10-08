@@ -447,8 +447,8 @@ final class GameSession {
         Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll)
     }
 
-    /// Free-for-all plays one ball whatever the slider says: a second one
-    /// would be a serve nobody saw coming on the far side of the ring. How it
+    /// Free-for-all plays one ball, or two when the ring's Two balls is on,
+    /// whatever the duel's settings say. How it
     /// flies and where its nets and lines stand are the pilot's ring settings
     /// offline; online they are the host's, already in the configuration
     /// that came with the seating plan.
@@ -461,8 +461,8 @@ final class GameSession {
         if isDoubles { return .doubles(from: configuration) }
         var configuration = configuration
         if isFreeForAll {
-            configuration.ballCount = 1
             if mode.isOffline { configuration.ring = RingTuning.stored() }
+            configuration.ballCount = configuration.ring.twoBalls ? 2 : 1
         }
         return configuration
     }

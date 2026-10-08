@@ -356,35 +356,38 @@ public struct RingField: Equatable, Sendable {
 /// every board flies the same table.
 public struct RingTuning: Equatable, Sendable, Codable {
     /// The motor's push on the ring, as a share of the Thrust slider.
-    public var speed = 0.45
+    public var speed = 0.70
     /// Velocity bled off a ring hull each second. Held thrust builds speed
     /// along 1 - e^(-drag t) toward thrust / drag, and a hull let go glides
     /// to a stop on it.
-    public var hullDrag = 0.45
+    public var hullDrag = 0.80
     /// Velocity bled off the ball each second: a puck on air.
-    public var ballDrag = 0.15
+    public var ballDrag = 0.21
     /// The share of the duel's gravity felt at the rim. Ring gravity is spin
     /// gravity: nothing at the centre, growing straight out to this.
-    public var gravity = 0.0
+    public var gravity = 0.10
     /// How hard a rival past a MAX CROSS line is shoved back, per unit of
     /// depth. The duel's is 18.
-    public var linePush = 10.0
+    public var linePush = 15.0
     /// How much speed the line steals from a rival past it. The duel's is 5.
-    public var lineBrake = 2.5
+    public var lineBrake = 0.7
     /// Where each MAX CROSS arc stands, as a share of the way out to the
     /// mouths.
-    public var lineShare = 0.6
+    public var lineShare = 0.3
     /// The round bumper in the middle. Off leaves the face-off clear.
-    public var centreBumper = false
+    public var centreBumper = true
     /// How far each goal's bump stands in off the rim, rim to mouth, as a
     /// share of the rim radius. Zero is a plain round rim, goals flush.
-    public var bumpHeight = 0.25
+    public var bumpHeight = 0.19
     /// How wide each bump's bell is: its standard deviation as a share of
     /// the rim from the goal's line to the valley.
-    public var bumpWidth = 0.25
+    public var bumpWidth = 0.29
     /// The ball is an air-hockey puck: it slides dead straight whatever
     /// spin a hit leaves on it, and it is drawn as a flat disc.
-    public var puck = false
+    public var puck = true
+    /// Two balls in play at once. A goal re-drops only the ball that went
+    /// in; the other plays on.
+    public var twoBalls = true
     /// Seconds between one bolt and the next on the ring, apart from the
     /// duel's own fire rate. A ring is a crowd, so it fires much slower.
     public var fireCooldown = 1.5
@@ -411,6 +414,8 @@ public struct RingTuning: Equatable, Sendable, Codable {
     public static let centreBumperKey = "ring.centreBumper"
     /// The defaults key for the puck. Not a slider.
     public static let puckKey = "ring.puck"
+    /// The defaults key for two balls. Not a slider.
+    public static let twoBallsKey = "ring.twoBalls"
 
     /// Every knob, in the order the sliders stand. Ring gravity keeps the key
     /// it had when it was the only one, so a stored setting carries over.
@@ -437,8 +442,9 @@ public struct RingTuning: Equatable, Sendable, Codable {
             guard let value = defaults.object(forKey: knob.key) as? Double else { continue }
             tuning[keyPath: knob.keyPath] = min(knob.range.upperBound, max(knob.range.lowerBound, value))
         }
-        tuning.centreBumper = defaults.object(forKey: centreBumperKey) as? Bool ?? false
-        tuning.puck = defaults.object(forKey: puckKey) as? Bool ?? false
+        tuning.centreBumper = defaults.object(forKey: centreBumperKey) as? Bool ?? RingTuning().centreBumper
+        tuning.puck = defaults.object(forKey: puckKey) as? Bool ?? RingTuning().puck
+        tuning.twoBalls = defaults.object(forKey: twoBallsKey) as? Bool ?? RingTuning().twoBalls
         return tuning
     }
 
@@ -461,6 +467,11 @@ public struct RingTuning: Equatable, Sendable, Codable {
             defaults.removeObject(forKey: Self.puckKey)
         } else {
             defaults.set(puck, forKey: Self.puckKey)
+        }
+        if twoBalls == RingTuning().twoBalls {
+            defaults.removeObject(forKey: Self.twoBallsKey)
+        } else {
+            defaults.set(twoBalls, forKey: Self.twoBallsKey)
         }
     }
 }

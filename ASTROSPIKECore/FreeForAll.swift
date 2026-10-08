@@ -113,12 +113,13 @@ public struct FreeForAllPilot: Sendable {
         guard let field = state.freeForAll, let ship = state.ships[seat], !ship.isDestroyed,
               let own = field.bay(of: seat) else { return input }
         let guarded = { (index: Int) in !field.isSolid(goal: index) }
-        let toBall = state.ball.position - ship.position
+        let ball = focus(state: state, ship: ship, own: own, ring: ring)
+        let toBall = ball.position - ship.position
         let distance = simd_length(toBall)
         let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
         // A ball out on a rival's ground, past the line, the hull cannot
         // reach: hold at the line with the nose on it and shoot it.
-        let unreachable = ring.offside(state.ball.position, home: own, guarded: guarded) != nil
+        let unreachable = ring.offside(ball.position, home: own, guarded: guarded) != nil
         if unreachable, distance < reach, simd_length(ship.velocity) < 0.4, distance > 0.000_001 {
             let error = remainder(atan2(toBall.y, toBall.x) - ship.angle, 2 * .pi)
             input.torque = abs(error) < 0.03 ? 0 : max(-1, min(1, error * 4))
@@ -132,8 +133,8 @@ public struct FreeForAllPilot: Sendable {
               ring.offside(ship.position, home: own, guarded: guarded) == nil else { return input }
         let nose = SIMD2(cos(ship.angle), sin(ship.angle))
         guard simd_dot(toBall / distance, nose) > max(alignment, 0.985),
-              !headsInto(own, from: state.ball.position, along: nose, ring: ring) else { return input }
-        let scores = ring.spokeAngles.indices.contains { $0 != own && guarded($0) && headsInto($0, from: state.ball.position, along: nose, ring: ring) }
+              !headsInto(own, from: ball.position, along: nose, ring: ring) else { return input }
+        let scores = ring.spokeAngles.indices.contains { $0 != own && guarded($0) && headsInto($0, from: ball.position, along: nose, ring: ring) }
         if unreachable || scores { input.fire = true }
         return input
     }
@@ -179,7 +180,7 @@ public struct FreeForAllPilot: Sendable {
             return .idle(tick: tick)
         }
         let own = field.bay(of: seat)
-        let ball = state.ball
+        let ball = focus(state: state, ship: ship, own: own, ring: ring)
         // Never aim past the MAX CROSS line: a target on a rival's ground is
         // pulled back short of it, so the bot shoots from the line rather
         // than leaning on the push-back.
@@ -310,6 +311,18 @@ public struct FreeForAllPilot: Sendable {
     }
 
     /// The ball is in front of `net`'s mouth and close to it.
+    /// The ball the bot plays when two are up: one bearing down on its
+    /// own mouth first, otherwise the nearer one.
+    private func focus(state: WorldState, ship: ShipState, own: Int?, ring: RingField) -> BallState {
+        guard state.balls.count > 1 else { return state.ball }
+        if let own, let danger = state.balls
+            .filter({ threatens($0.position, net: own, ring: ring) })
+            .min(by: { simd_length($0.position - ring.mouthCentre(own)) < simd_length($1.position - ring.mouthCentre(own)) }) {
+            return danger
+        }
+        return state.balls.min { simd_length($0.position - ship.position) < simd_length($1.position - ship.position) } ?? state.ball
+    }
+
     private func threatens(_ point: SIMD2<Double>, net: Int, ring: RingField) -> Bool {
         let local = ring.toLocal(point, net: net)
         return inFront(local, ring: ring) && simd_length(point - ring.mouthCentre(net)) < Self.ringDefendRange

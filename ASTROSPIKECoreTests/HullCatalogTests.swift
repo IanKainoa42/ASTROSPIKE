@@ -33,7 +33,7 @@ struct HullCatalogTests {
         let signature = HullCatalog.spec(for: .lancet).outline.silhouette
             .map { "\(Self.trim($0.x)),\(Self.trim($0.y))" }.joined(separator: ";")
         #expect(signature == "0,30;3.5,14;7,1;21,-16;14,-19;6,-11;0,-15;-6,-11;-14,-19;-21,-16;-7,1;-3.5,14")
-        #expect(WireEnvelope.currentVersion == 43)
+        #expect(WireEnvelope.currentVersion == 44)
     }
 
     private static func trim(_ value: Double) -> String {
