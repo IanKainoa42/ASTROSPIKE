@@ -55,10 +55,14 @@ public struct BallPlay: Codable, Equatable, Sendable {
 public struct BeamHold: Codable, Equatable, Sendable {
     public var seat: Seat
     public var tick: UInt64
+    /// The tick this beam's unbroken grip began, so a long enough hold can
+    /// lock the ball on.
+    public var since: UInt64
 
-    public init(seat: Seat, tick: UInt64) {
+    public init(seat: Seat, tick: UInt64, since: UInt64? = nil) {
         self.seat = seat
         self.tick = tick
+        self.since = since ?? tick
     }
 }
 

@@ -2300,7 +2300,15 @@ private struct SettingsView: View {
                         }
                     }
                     .accessibilityIdentifier("bolt-hit")
-                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena, peg pull and bolt hit apply to solo and doubles matches and to any online match you host. Bolt hit is what an enemy bolt does to a hull: shove it, stun its controls for a moment, or spin it round.")
+                    TuningSlider(
+                        title: "Beam lock",
+                        value: $tuning.beamLock,
+                        range: FlightTuningSnapshot.beamLockRange,
+                        step: 0.05,
+                        readout: { $0.formatted(.number.precision(.fractionLength(2))) + " s" }
+                    )
+                    .accessibilityIdentifier("beam-lock")
+                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena, peg pull, bolt hit and beam lock apply to solo and doubles matches and to any online match you host. Bolt hit is what an enemy bolt does to a hull: shove it, stun its controls for a moment, or spin it round. Beam lock is how long the beam holds the ball before it locks on: you and the ball then turn as one body until you let go. Let go sooner and it flies on in.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

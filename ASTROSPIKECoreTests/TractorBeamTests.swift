@@ -139,4 +139,108 @@ struct TractorBeamTests {
         let data = try WireCodec().encode(WireEnvelope(sequence: 1, payload: .snapshot(engine.state)))
         #expect(data.count < 1000, "singles snapshot is \\(data.count) bytes")
     }
+
+    // MARK: Beam lock
+
+    /// Weightless, with the beam set to lock after `seconds`, the hull
+    /// clear of every wall and the ball straight off its nose.
+    private func lockable(after seconds: Double) -> SimulationEngine {
+        var engine = weightless()
+        var configuration = engine.configuration
+        configuration.beamLockTime = seconds
+        engine.updateConfiguration(configuration)
+        engine.state.ships[.cyan]!.position = .init(-0.5, 0)
+        engine.state.ball.position = .init(-0.5, 0.25)
+        engine.state.ball.velocity = .zero
+        return engine
+    }
+
+    private func hold(_ engine: inout SimulationEngine, tractor: Bool = true) {
+        engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, tractor: tractor)])
+    }
+
+    /// Angular momentum of hull and ball about their shared centre of mass,
+    /// the hull's own turn included.
+    private func spinMomentum(_ engine: SimulationEngine) -> Double {
+        let ship = engine.state.ships[.cyan]!
+        let ball = engine.state.ball
+        let ms = SimulationEngine.shipMass
+        let mb = SimulationEngine.ballMass
+        let centre = (ship.position * ms + ball.position * mb) / (ms + mb)
+        let drift = (ship.velocity * ms + ball.velocity * mb) / (ms + mb)
+        func cross(_ a: SIMD2<Double>, _ b: SIMD2<Double>) -> Double { a.x * b.y - a.y * b.x }
+        let reach = ShipHitbox.shared.reach
+        let own = SimulationEngine.lockedHullInertia * ms * reach * reach * (ball.beamLock?.spin ?? 0)
+        return ms * cross(ship.position - centre, ship.velocity - drift)
+            + mb * cross(ball.position - centre, ball.velocity - drift) + own
+    }
+
+    private func pairMomentum(_ engine: SimulationEngine) -> SIMD2<Double> {
+        engine.state.ball.velocity * SimulationEngine.ballMass
+            + engine.state.ships[.cyan]!.velocity * SimulationEngine.shipMass
+    }
+
+    @Test("A beam held long enough locks the ball on: the pair turns as one body, momentum and angular momentum kept")
+    func heldBeamLocksAndSpins() throws {
+        var engine = lockable(after: 0.3)
+        var steps = 0
+        while engine.state.ball.beamLock == nil, steps < 120 {
+            hold(&engine)
+            steps += 1
+        }
+        let lock = try #require(engine.state.ball.beamLock, "the beam never locked on")
+        #expect(lock.seat == .cyan)
+        #expect(Double(steps) * engine.configuration.stepDuration >= 0.3 - 1e-9, "locked before the hold time")
+        // Flick the ball sideways: the weld has to turn that into a spin.
+        engine.state.ball.velocity += .init(0.6, 0)
+        let angularBefore = spinMomentum(engine)
+        let linearBefore = pairMomentum(engine)
+        let angleBefore = engine.state.ships[.cyan]!.angle
+        for _ in 0 ..< 45 { hold(&engine) }
+        let ship = engine.state.ships[.cyan]!
+        let ball = engine.state.ball
+        let held = try #require(ball.beamLock, "the lock let go with the beam still held")
+        #expect(abs(simd_length(ball.position - ship.position) - lock.length) < 1e-9, "the distance is locked")
+        #expect(abs(spinMomentum(engine) - angularBefore) < 1e-9, "angular momentum drifted")
+        #expect(simd_length(pairMomentum(engine) - linearBefore) < 1e-9, "linear momentum drifted")
+        #expect(abs(ship.angle - angleBefore) > 0.3, "the pair barely turned")
+        let line = ball.position - ship.position
+        #expect(abs(remainder(atan2(line.y, line.x) - ship.angle - held.bearing, 2 * .pi)) < 1e-9, "the nose stays on the ball")
+    }
+
+    @Test("Let go before the lock and the ball flies on in to a headbutt")
+    func earlyReleaseNeverLocks() {
+        var engine = lockable(after: 0.7)
+        for _ in 0 ..< 30 { hold(&engine) } // half a second
+        #expect(engine.state.ball.beamLock == nil)
+        let contact = ShipHitbox.shared.noseReach + engine.state.ball.radius + 0.01
+        var touched = false
+        for _ in 0 ..< 240 where !touched {
+            hold(&engine, tractor: false)
+            #expect(engine.state.ball.beamLock == nil)
+            touched = simd_length(engine.state.ball.position - engine.state.ships[.cyan]!.position) < contact
+        }
+        #expect(touched, "the ball never reached the hull")
+    }
+
+    @Test("Letting go drops the lock; the ball flies off along the spin and the hull keeps turning")
+    func releaseFlingsTheBall() throws {
+        var engine = lockable(after: 0.3)
+        for _ in 0 ..< 120 where engine.state.ball.beamLock == nil { hold(&engine) }
+        engine.state.ball.velocity += .init(0.6, 0)
+        for _ in 0 ..< 10 { hold(&engine) }
+        let lock = try #require(engine.state.ball.beamLock)
+        let flung = engine.state.ball.velocity
+        hold(&engine, tractor: false)
+        #expect(engine.state.ball.beamLock == nil)
+        #expect(simd_length(engine.state.ball.velocity - flung) < 1e-9, "the ball keeps the speed the spin gave it")
+        #expect(engine.state.ships[.cyan]!.knockSpin == lock.spin, "the hull's spin carries on and winds down")
+    }
+
+    @Test("The shipped match rules lock the beam on; a bare configuration never does")
+    func lockIsAMatchRule() {
+        #expect(SimulationConfiguration().beamLockTime == 0)
+        #expect(FlightTuningSnapshot.defaults.configuration.beamLockTime == FlightTuningSnapshot.defaults.beamLock)
+        #expect(FlightTuningSnapshot.beamLockRange.contains(FlightTuningSnapshot.defaults.beamLock))
+    }
 }

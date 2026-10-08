@@ -1,6 +1,26 @@
 import Foundation
 import simd
 
+/// A ball welded to a hull by its beam. The distance between them is
+/// frozen, and so is where the ball sits off the nose, so the pair turns as
+/// one rigid body about its shared centre of mass.
+public struct BeamLock: Codable, Equatable, Sendable {
+    public var seat: Seat
+    /// Centre to centre, ship to ball.
+    public var length: Double
+    /// The ball's bearing off the nose, radians, fixed at the moment of lock.
+    public var bearing: Double
+    /// The pair's turn rate, radians a second, counter-clockwise positive.
+    public var spin: Double
+
+    public init(seat: Seat, length: Double, bearing: Double, spin: Double) {
+        self.seat = seat
+        self.length = length
+        self.bearing = bearing
+        self.spin = spin
+    }
+}
+
 public struct BallState: Codable, Equatable, Sendable {
     /// The radius every ball is created with. The arena is dimensioned against
     /// it -- the portal collar in particular -- so it belongs here rather than
@@ -34,6 +54,9 @@ public struct BallState: Codable, Equatable, Sendable {
     /// The last beam to grip the ball, so a bolt can tell a slam dunk from a
     /// plain shot.
     public var beamHold: BeamHold?
+    /// A beam held on long enough welds the ball to the hull: the two fly
+    /// as one body until the pilot lets go. A fresh ball is never locked.
+    public var beamLock: BeamLock?
 
     public init(
         position: SIMD2<Double>,
@@ -41,7 +64,8 @@ public struct BallState: Codable, Equatable, Sendable {
         radius: Double = BallState.nominalRadius,
         spin: Double = 0,
         lastPlay: BallPlay? = nil,
-        beamHold: BeamHold? = nil
+        beamHold: BeamHold? = nil,
+        beamLock: BeamLock? = nil
     ) {
         self.position = position
         self.velocity = velocity
@@ -49,6 +73,7 @@ public struct BallState: Codable, Equatable, Sendable {
         self.spin = spin
         self.lastPlay = lastPlay
         self.beamHold = beamHold
+        self.beamLock = beamLock
     }
 
     /// One step of flight under spin. The turn only rotates the velocity, so

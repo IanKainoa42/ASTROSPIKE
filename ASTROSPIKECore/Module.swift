@@ -452,6 +452,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// How hard the tractor beam hauls a Bumpers peg along its track, as a
     /// multiple of the baked pull. The host's choice, like the arena.
     public var pegPull: Double = 1.0
+    /// Seconds a beam has to hold the ball before it locks on; zero never
+    /// locks. Let go sooner and the ball just flies on in.
+    public var beamLockTime: Double = 0
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var serveDelay: Double
@@ -930,7 +933,12 @@ public struct SimulationEngine: Sendable {
             let input = ship.stunTicks > 0 ? .idle(tick: state.tick) : inputs[seat] ?? .idle(tick: state.tick)
             if ship.stunTicks > 0 { ship.stunTicks -= 1 }
             if ship.stunGuardTicks > 0 { ship.stunGuardTicks -= 1 }
-            ship.angularVelocity = input.torque * configuration.torqueAcceleration + ship.knockSpin
+            if let locked = lockedBall(of: seat), let lock = state.balls[locked].beamLock {
+                // Welded to a ball, the hull turns with the pair, not the stick.
+                ship.angularVelocity = lock.spin
+            } else {
+                ship.angularVelocity = input.torque * configuration.torqueAcceleration + ship.knockSpin
+            }
             ship.angle += ship.angularVelocity * dt
             if ship.knockSpin != 0 {
                 ship.knockSpin *= exp(-dt / Self.knockSpinDecay)
@@ -1053,6 +1061,7 @@ public struct SimulationEngine: Sendable {
             }
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
+        solveBeamLocks(effects: &collisionEffects)
         advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects)
         resolveBallBallCollisions(effects: &collisionEffects)
         for ballIndex in state.balls.indices {
@@ -1673,6 +1682,9 @@ public struct SimulationEngine: Sendable {
     private mutating func applyTractorBeam(dt: Double, ballIndex: Int) {
         let range = configuration.tractorRange
         guard range > 0, configuration.tractorStrength > 0 else { return }
+        // A locked ball answers to the lock alone; no beam pulls it, its own
+        // included, or the pull and the drag would fight the weld.
+        guard state.balls[ballIndex].beamLock == nil else { return }
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed, ship.tractorActive else { continue }
             let nose = SIMD2(cos(ship.angle), sin(ship.angle))
@@ -1703,14 +1715,100 @@ public struct SimulationEngine: Sendable {
             ship.velocity += bleed * Self.tractorMassRatio
             if grip >= Self.slamGrip {
                 let held = state.balls[ballIndex].beamHold
-                if held?.seat != seat || state.tick &- (held?.tick ?? 0) > 1 {
+                let fresh = held?.seat != seat || state.tick &- (held?.tick ?? 0) > 1
+                if fresh {
                     defencePlays.append((ballIndex, seat, .beam))
                 }
-                state.balls[ballIndex].beamHold = BeamHold(seat: seat, tick: state.tick)
+                let since = fresh ? state.tick : held?.since ?? state.tick
+                state.balls[ballIndex].beamHold = BeamHold(seat: seat, tick: state.tick, since: since)
+                let lockTicks = UInt64((configuration.beamLockTime / configuration.stepDuration).rounded())
+                if configuration.beamLockTime > 0, state.tick &- since >= lockTicks, lockedBall(of: seat) == nil {
+                    // Held long enough: the ball welds on where it is, never
+                    // closer than just off the nose.
+                    let reach = (shipHitboxes[seat] ?? .shared).noseReach + state.balls[ballIndex].radius + 0.005
+                    let bearing = remainder(atan2(toward.y, toward.x) - ship.angle, 2 * .pi)
+                    state.balls[ballIndex].beamLock = BeamLock(
+                        seat: seat,
+                        length: max(distance, reach),
+                        bearing: bearing,
+                        spin: ship.angularVelocity
+                    )
+                    state.ships[seat] = ship
+                    return
+                }
             }
             state.ships[seat] = ship
         }
     }
+
+    /// The ball `seat`'s beam has locked on, if any. A beam holds one ball.
+    private func lockedBall(of seat: Seat) -> Int? {
+        state.balls.indices.first { state.balls[$0].beamLock?.seat == seat }
+    }
+
+    /// Every lock flies its hull and ball as one rigid body. Whatever each
+    /// felt this step on its own -- thrust, gravity, drag -- is pooled: the
+    /// pair keeps the linear momentum and the angular momentum about its
+    /// centre of mass the two had between them, the distance snaps back to
+    /// the locked length, and the turn rate is whatever that angular
+    /// momentum comes to over the pair's moment of inertia. Thrust along the
+    /// line pushes the pair; anything off the line spins it. Letting go of
+    /// the beam (or a stun, which lets go for you) drops the lock, and both
+    /// fly on at the speeds the spin left them, the hull still turning.
+    private mutating func solveBeamLocks(effects: inout [SimulationEvent]) {
+        for ballIndex in state.balls.indices {
+            guard var lock = state.balls[ballIndex].beamLock else { continue }
+            guard var ship = state.ships[lock.seat], !ship.isDestroyed, ship.tractorActive else {
+                state.balls[ballIndex].beamLock = nil
+                if var ship = state.ships[lock.seat] {
+                    // The hull's share of the spin winds down like a knock.
+                    ship.knockSpin = lock.spin
+                    state.ships[lock.seat] = ship
+                }
+                continue
+            }
+            var ball = state.balls[ballIndex]
+            let shipMass = Self.shipMass
+            let ballMass = Self.ballMass
+            let mass = shipMass + ballMass
+            let hitbox = shipHitboxes[lock.seat] ?? .shared
+            let shipInertia = Self.lockedHullInertia * shipMass * hitbox.reach * hitbox.reach
+            let centre = (ship.position * shipMass + ball.position * ballMass) / mass
+            let drift = (ship.velocity * shipMass + ball.velocity * ballMass) / mass
+            func cross(_ a: SIMD2<Double>, _ b: SIMD2<Double>) -> Double { a.x * b.y - a.y * b.x }
+            let angularMomentum = shipMass * cross(ship.position - centre, ship.velocity - drift)
+                + ballMass * cross(ball.position - centre, ball.velocity - drift)
+                + shipInertia * lock.spin
+            let line = ball.position - ship.position
+            let span = simd_length(line)
+            let axis = span > 0.000_001
+                ? line / span
+                : SIMD2(cos(ship.angle + lock.bearing), sin(ship.angle + lock.bearing))
+            let shipArm = -axis * (lock.length * ballMass / mass)
+            let ballArm = axis * (lock.length * shipMass / mass)
+            let inertia = shipInertia + shipMass * simd_length_squared(shipArm) + ballMass * simd_length_squared(ballArm)
+            let spin = angularMomentum / inertia
+            let from = ship.position
+            ship.position = centre + shipArm
+            ship.velocity = drift + SIMD2(-shipArm.y, shipArm.x) * spin
+            ball.position = centre + ballArm
+            ball.velocity = drift + SIMD2(-ballArm.y, ballArm.x) * spin
+            ship.angle = atan2(axis.y, axis.x) - lock.bearing
+            ship.angularVelocity = spin
+            lock.spin = spin
+            // The weld moved the hull; the walls still have the last word.
+            resolveArenaCollision(for: &ship, hitbox: hitbox, from: from, effects: &effects)
+            ball.beamLock = lock
+            // Still the beam's ball, for a slam dunk or a beam-pull goal.
+            ball.beamHold = BeamHold(seat: lock.seat, tick: state.tick, since: ball.beamHold?.since)
+            state.balls[ballIndex] = ball
+            state.ships[lock.seat] = ship
+        }
+    }
+
+    /// A hull's own moment of inertia as a share of mass times reach
+    /// squared: a uniform disc the size of the hull.
+    static let lockedHullInertia = 0.5
 
     /// How hard `ship`'s beam holds whatever sits at `point`, and the unit
     /// direction from the ship out to it. Nil with the beam off, or outside

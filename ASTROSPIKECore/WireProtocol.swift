@@ -147,7 +147,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 42: ring tuning carries the puck toggle and the ring's own fire rate.
     // 43: the ring's goals sit on bell-curve bumps (height + width replace depth).
     // 44: the ring can fly two balls (Two balls toggle in its tuning).
-    public static let currentVersion: UInt16 = 44
+    // 45: a held beam locks the ball on (BallState.beamLock, beam lock time
+    //     in the tuning, BeamHold.since).
+    public static let currentVersion: UInt16 = 45
 
     public var version: UInt16
     public var sequence: UInt64
