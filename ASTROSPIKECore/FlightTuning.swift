@@ -35,8 +35,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// How long, in seconds, a beam holds the ball before it locks on and
     /// the hull and ball turn as one body. A match rule: the host's number
     /// rides the wire.
-    public var beamLock: Double = 0.7
-    public static let beamLockRange: ClosedRange<Double> = 0.3 ... 2.0
+    public var beamLock: Double = 0.5
+    public static let beamLockRange: ClosedRange<Double> = 0.1 ... 2.0
     /// The free-for-all ring: how it flies, where its lines and bumpers
     /// stand. The host's sliders, so an online ring is the host's table on
     /// every board; offline the pilot's own.
@@ -219,7 +219,7 @@ public final class FlightTuningStore {
         static let arenaLayout = "tuning.arenaLayout"
         static let pegPull = "tuning.pegPull"
         static let boltHit = "tuning.boltHit"
-        static let beamLock = "tuning.beamLock"
+        static let beamLock = "tuning.beamLock2"
         /// Keys earlier builds wrote from sliders that no longer exist. The
         /// touch cap went in build 94: touches are free now, so a stepper
         /// value from before would set a rule that no longer exists.

@@ -57,6 +57,9 @@ final class ArenaScene: SKScene {
     /// One hull and one exhaust per seat, built up front and hidden while
     /// the seat is empty.
     private var shipNodes: [Seat: SKShapeNode] = [:]
+    /// A hull with its beam locked on wears the same solid rim as its ball,
+    /// so the pair reads as one body.
+    private var hullLockRings: [Seat: SKShapeNode] = [:]
     /// YOU and ALLY over the two ships on the pilot's side in doubles, where
     /// two hulls share a colour and nothing else says which one you fly.
     private var markerNodes: [Seat: SKLabelNode] = [:]
@@ -145,6 +148,13 @@ final class ArenaScene: SKScene {
             shipNodes[seat] = ship
             exhaustNodes[seat] = exhaust
             actorLayer.addChild(ship)
+            let lockRing = SKShapeNode()
+            lockRing.fillColor = .clear
+            lockRing.glowWidth = 0
+            lockRing.zPosition = 0.5
+            lockRing.isHidden = true
+            hullLockRings[seat] = lockRing
+            actorLayer.addChild(lockRing)
             let marker = SKLabelNode(fontNamed: "Menlo-Bold")
             marker.fontSize = 11
             marker.fontColor = Self.hullColor(for: seat)
@@ -203,6 +213,8 @@ final class ArenaScene: SKScene {
         let tether = SKShapeNode()
         let edge = SKShapeNode()
         var budget = 0.0
+        /// The hull look's tether width, put back when a lock lets go.
+        var restingTetherWidth: CGFloat = 3
 
         init() {
             mask.fillColor = .white
@@ -240,6 +252,7 @@ final class ArenaScene: SKScene {
             case .twin, .dashes: tether.lineWidth = 2.2; edge.lineWidth = 1.5
             case .ripples, .chevrons, .glitch, .sparkle: tether.lineWidth = 3; edge.lineWidth = 1.5
             }
+            restingTetherWidth = tether.lineWidth
         }
     }
 
@@ -1183,14 +1196,18 @@ final class ArenaScene: SKScene {
             ring.isHidden = grip <= 0
             if grip > 0 {
                 ring.strokeColor = ballGripColors[index]
-                let wobble = reduceMotion ? 0 : CGFloat(sin(now * 12)) * fx
+                // Locked on, the rim stops breathing and thickens: a clamp,
+                // not a pull.
+                let locked = ball.beamLock != nil
+                ring.lineWidth = locked ? 4 * max(fx, 1) : 2
+                let wobble = reduceMotion || locked ? 0 : CGFloat(sin(now * 12)) * fx
                 let radius = CGFloat(ball.radius) * pointsPerWorldUnit + 4 * fx + wobble
                 ring.path = CGPath(
                     ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
                     transform: nil
                 )
                 ring.position = node.position
-                ring.alpha = 0.75 * CGFloat(grip)
+                ring.alpha = locked ? 1 : 0.75 * CGFloat(grip)
             }
         }
         updateTrails(snapshot)
@@ -1937,6 +1954,7 @@ final class ArenaScene: SKScene {
         guard let state else {
             shipNode.isHidden = true
             marker?.isHidden = true
+            hullLockRings[seat]?.isHidden = true
             beamRigs[seat]?.crop.isHidden = true
             beamRigs[seat]?.tether.isHidden = true
             beamPulls[seat] = nil
@@ -1957,6 +1975,21 @@ final class ArenaScene: SKScene {
         }
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
+        if let lockRing = hullLockRings[seat] {
+            let locked = !state.isDestroyed && (snapshot?.balls.contains { $0.beamLock?.seat == seat } ?? false)
+            lockRing.isHidden = !locked
+            if locked {
+                let fx = labScale
+                let radius = CGFloat(ShipHitbox.shared.reach) * pointsPerWorldUnit + 4 * fx
+                lockRing.path = CGPath(
+                    ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
+                    transform: nil
+                )
+                lockRing.strokeColor = Self.color(hullLook(seat).primary)
+                lockRing.lineWidth = 4 * max(fx, 1)
+                lockRing.position = shipNode.position
+            }
+        }
         // Stunned: the hull stutters dim and bright until the controls come
         // back, so a dead stick reads as a hit, not as broken controls.
         shipNode.alpha = state.stunTicks > 0 && (state.stunTicks / 5) % 2 == 0 ? 0.3 : 1
@@ -2044,6 +2077,12 @@ final class ArenaScene: SKScene {
         rig.edge.path = path
         rig.edge.isHidden = false
         let tipPoint = point(tip.x, tip.y)
+        if let locked = snapshot.balls.firstIndex(where: { $0.beamLock?.seat == seat }) {
+            drawLock(rig: rig, seat: seat, ball: snapshot.balls[locked], index: locked, tip: tipPoint, lights: &lights)
+            return
+        }
+        lockedSeats.remove(seat)
+        rig.tether.lineWidth = rig.restingTetherWidth
         let reach = point(tip.x + range * 1.08, tip.y + range * 1.08)
         rig.glow.position = tipPoint
         rig.glow.size = CGSize(width: 2 * (reach.x - tipPoint.x), height: 2 * (reach.y - tipPoint.y))
@@ -2225,6 +2264,54 @@ final class ArenaScene: SKScene {
                 flash(at: start, color: color, size: look.beam == .pulses ? size * 1.4 : size * 0.8,
                       grow: 0.2, life: life, alpha: alpha, z: 3.1, destination: end)
             }
+        }
+    }
+
+    /// Seats whose beam was locked on last frame, so the lock flashes once
+    /// as it closes.
+    private var lockedSeats: Set<Seat> = []
+
+    /// A locked beam is a rod, not a cone: the cone and its motes go, and a
+    /// straight, steady, heavy bar in the hull's beam colour joins the hull
+    /// to the ball, which wears a solid rim. The moment it closes, the ball
+    /// flashes.
+    private func drawLock(
+        rig: BeamRig,
+        seat: Seat,
+        ball: BallState,
+        index: Int,
+        tip: CGPoint,
+        lights: inout [FloorLight]
+    ) {
+        let fx = labScale
+        let color = Self.color(hullLook(seat).primary)
+        rig.crop.isHidden = true
+        rig.edge.isHidden = true
+        let to = point(ball.position.x, ball.position.y)
+        let span = max(hypot(to.x - tip.x, to.y - tip.y), 1)
+        let from = CGPoint(x: tip.x + (to.x - tip.x) / span * 18 * fx, y: tip.y + (to.y - tip.y) / span * 18 * fx)
+        let rod = CGMutablePath()
+        rod.move(to: from)
+        rod.addLine(to: to)
+        rig.tether.path = rod
+        rig.tether.lineWidth = 5 * max(fx, 1)
+        rig.tether.alpha = 1
+        rig.tether.isHidden = false
+        beamPulls[seat] = BeamPull(grip: 1, x: ball.position.x)
+        if index < ballGrips.count {
+            ballGrips[index] = 1
+            ballGripColors[index] = color
+        }
+        lights.append(FloorLight(
+            position: CGPoint(x: (tip.x + to.x) / 2, y: (tip.y + to.y) / 2),
+            radius: 110 * fx,
+            color: color,
+            intensity: 0.8
+        ))
+        if !lockedSeats.contains(seat) {
+            lockedSeats.insert(seat)
+            flash(at: to, color: color, size: 40 * fx, grow: 2.2, life: 0.35, alpha: 1, z: 5)
+            flash(at: to, color: .white, size: 18 * fx, grow: 1.6, life: 0.2, alpha: 0.9, z: 5.1)
         }
     }
 

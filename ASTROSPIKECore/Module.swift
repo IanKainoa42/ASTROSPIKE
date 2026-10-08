@@ -1046,8 +1046,10 @@ public struct SimulationEngine: Sendable {
             } else {
                 state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
             }
-            // A puck slides dead straight: its spin is only for show.
-            if !(arena.ring != nil && configuration.ring.puck) {
+            // A puck slides dead straight: its spin is only for show. A
+            // locked ball turns with its hull, so it neither curves nor
+            // winds down on its own.
+            if !(arena.ring != nil && configuration.ring.puck), state.balls[ballIndex].beamLock == nil {
                 (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
                     state.balls[ballIndex].velocity,
                     spin: state.balls[ballIndex].spin,
@@ -1777,12 +1779,17 @@ public struct SimulationEngine: Sendable {
             let mass = shipMass + ballMass
             let hitbox = shipHitboxes[lock.seat] ?? .shared
             let shipInertia = Self.lockedHullInertia * shipMass * hitbox.reach * hitbox.reach
+            // The ball's own turn counts too, as the solid ball the grip
+            // treats it as: whatever it was spinning at the lock goes into
+            // the pair, and from then on it turns with the hull.
+            let ballInertia = Self.lockedBallInertia * ballMass * ball.radius * ball.radius
             let centre = (ship.position * shipMass + ball.position * ballMass) / mass
             let drift = (ship.velocity * shipMass + ball.velocity * ballMass) / mass
             func cross(_ a: SIMD2<Double>, _ b: SIMD2<Double>) -> Double { a.x * b.y - a.y * b.x }
             let angularMomentum = shipMass * cross(ship.position - centre, ship.velocity - drift)
                 + ballMass * cross(ball.position - centre, ball.velocity - drift)
                 + shipInertia * lock.spin
+                + ballInertia * ball.spin
             let line = ball.position - ship.position
             let span = simd_length(line)
             let axis = span > 0.000_001
@@ -1790,13 +1797,14 @@ public struct SimulationEngine: Sendable {
                 : SIMD2(cos(ship.angle + lock.bearing), sin(ship.angle + lock.bearing))
             let shipArm = -axis * (lock.length * ballMass / mass)
             let ballArm = axis * (lock.length * shipMass / mass)
-            let inertia = shipInertia + shipMass * simd_length_squared(shipArm) + ballMass * simd_length_squared(ballArm)
+            let inertia = shipInertia + ballInertia + shipMass * simd_length_squared(shipArm) + ballMass * simd_length_squared(ballArm)
             let spin = angularMomentum / inertia
             let from = ship.position
             ship.position = centre + shipArm
             ship.velocity = drift + SIMD2(-shipArm.y, shipArm.x) * spin
             ball.position = centre + ballArm
             ball.velocity = drift + SIMD2(-ballArm.y, ballArm.x) * spin
+            ball.spin = spin
             ship.angle = atan2(axis.y, axis.x) - lock.bearing
             ship.angularVelocity = spin
             lock.spin = spin
@@ -1813,6 +1821,9 @@ public struct SimulationEngine: Sendable {
     /// A hull's own moment of inertia as a share of mass times reach
     /// squared: a uniform disc the size of the hull.
     static let lockedHullInertia = 0.5
+    /// A solid ball's moment of inertia as a share of mass times radius
+    /// squared -- the 2/5 the contact grip's 2/7 roll assumes.
+    static let lockedBallInertia = 0.4
     /// The longest hold the engine will honour; past it the beam never locks.
     static let longestBeamLock = 60.0
 

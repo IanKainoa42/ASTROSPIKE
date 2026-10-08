@@ -149,7 +149,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 44: the ring can fly two balls (Two balls toggle in its tuning).
     // 45: a held beam locks the ball on (BallState.beamLock, beam lock time
     //     in the tuning, BeamHold.since).
-    public static let currentVersion: UInt16 = 45
+    // 46: a locked ball turns with its hull (its own spin joins the pair's),
+    // and the beam lock time may now be as short as 0.1 s.
+    public static let currentVersion: UInt16 = 46
 
     public var version: UInt16
     public var sequence: UInt64

@@ -171,6 +171,7 @@ struct TractorBeamTests {
         func cross(_ a: SIMD2<Double>, _ b: SIMD2<Double>) -> Double { a.x * b.y - a.y * b.x }
         let reach = ShipHitbox.shared.reach
         let own = SimulationEngine.lockedHullInertia * ms * reach * reach * (ball.beamLock?.spin ?? 0)
+            + SimulationEngine.lockedBallInertia * mb * ball.radius * ball.radius * ball.spin
         return ms * cross(ship.position - centre, ship.velocity - drift)
             + mb * cross(ball.position - centre, ball.velocity - drift) + own
     }
@@ -235,6 +236,30 @@ struct TractorBeamTests {
         #expect(engine.state.ball.beamLock == nil)
         #expect(simd_length(engine.state.ball.velocity - flung) < 1e-9, "the ball keeps the speed the spin gave it")
         #expect(engine.state.ships[.cyan]!.knockSpin == lock.spin, "the hull's spin carries on and winds down")
+    }
+
+    @Test("A locked ball turns with the hull: its own spin goes into the pair, and it never spins on its own")
+    func lockedBallSpinTurnsWithThePair() throws {
+        func locked(spinning spin: Double) throws -> SimulationEngine {
+            var engine = lockable(after: 0.3)
+            engine.state.ball.spin = spin
+            for _ in 0 ..< 120 where engine.state.ball.beamLock == nil { hold(&engine) }
+            _ = try #require(engine.state.ball.beamLock, "the beam never locked on")
+            return engine
+        }
+        let still = try locked(spinning: 0)
+        #expect(abs(still.state.ball.beamLock!.spin) < 1e-6, "a still ball pulled straight in sets nothing turning")
+        var engine = try locked(spinning: 30)
+        let lock = engine.state.ball.beamLock!
+        #expect(lock.spin > 0.05, "the ball's own spin never reached the pair")
+        #expect(engine.state.ball.spin == lock.spin)
+        let angleBefore = engine.state.ships[.cyan]!.angle
+        for _ in 0 ..< 60 { hold(&engine) }
+        let held = try #require(engine.state.ball.beamLock)
+        #expect(engine.state.ball.spin == held.spin, "the ball spins on its own while locked")
+        #expect(engine.state.ships[.cyan]!.angularVelocity == held.spin, "the hull turns at the pair's rate")
+        #expect(abs(held.spin - lock.spin) < 1e-9, "nothing outside touched the pair, so its turn holds")
+        #expect(engine.state.ships[.cyan]!.angle - angleBefore > 0.05, "the hull did not turn with the ball")
     }
 
     @Test("The shipped match rules lock the beam on; a bare configuration never does")

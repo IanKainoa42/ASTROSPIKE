@@ -179,6 +179,8 @@ final class GameSession {
     /// The guest's own recent inputs by tick, so a snapshot that lands behind
     /// the local clock can be rolled forward through what the thumb did since.
     private var localInputHistory: [UInt64: PlayerInput] = [:]
+    private static let holdBeamPreview = ProcessInfo.processInfo.arguments.contains("--hold-beam")
+    private var holdBeamStaged = false
     private var smoothing = GuestSmoothing()
     /// How many ticks of the guest's own inputs are kept for replaying a
     /// snapshot. Past the longest roll-forward, with room to spare.
@@ -622,6 +624,21 @@ final class GameSession {
                     tick: tick, torque: held.torque, thrust: held.thrust,
                     fire: held.fire, tractor: held.tractor
                 )
+            }
+        }
+        if Self.holdBeamPreview, let seat = flownSeat, let ship = engine.state.ships[seat],
+           engine.state.match.phase == .playing {
+            // `--hold-beam`: for screenshots of the beam lock. The pilot's
+            // beam is held throughout, and the first live ball is set just
+            // off the nose so the lock closes on it.
+            localInput = PlayerInput(
+                tick: tick, torque: localInput.torque, thrust: localInput.thrust,
+                fire: localInput.fire, tractor: true
+            )
+            if !holdBeamStaged {
+                holdBeamStaged = true
+                engine.state.balls[0].position = ship.position + SIMD2(cos(ship.angle), sin(ship.angle)) * 0.3
+                engine.state.balls[0].velocity = .zero
             }
         }
         latestLocalInput = localInput
