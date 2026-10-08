@@ -453,9 +453,10 @@ final class ArenaScene: SKScene {
         }
     }
 
-    /// The free-for-all ring: the rim the ball rolls round, open at each
-    /// flush mouth, a rounded barrier in every corner, and every pilot's net
-    /// hung outside the rim, mouth to the open middle.
+    /// The free-for-all ring: the rim the ball rolls round, a bell-curve
+    /// bump rising off it under every goal with the net sunk in its crown,
+    /// mouth to the open middle. With no bumps each mouth is a flush gap in
+    /// the rim and the net hangs outside it.
     private func addRing(_ ring: RingField) {
         func disk(at centre: SIMD2<Double>, radius: Double) -> CGPath {
             let path = CGMutablePath()
@@ -468,13 +469,15 @@ final class ArenaScene: SKScene {
             path.closeSubpath()
             return path
         }
-        // The rim, in arcs from post to post, so each mouth is a gap.
+        // The rim, in arcs from post to post, so each mouth is a gap; whole
+        // when every pocket is sunk inside its bump.
         let rimPath = CGMutablePath()
         let count = ring.spokeAngles.count
+        let slot = ring.pocketsPastRim ? ring.postHalfAngle : 0
         for index in ring.spokeAngles.indices {
-            let start = ring.spokeAngles[index] + ring.postHalfAngle
-            var end = ring.spokeAngles[(index + 1) % count] - ring.postHalfAngle
-            if end < start { end += 2 * .pi }
+            let start = ring.spokeAngles[index] + slot
+            var end = ring.spokeAngles[(index + 1) % count] - slot
+            if end <= start { end += 2 * .pi }
             let steps = 24
             for step in 0 ... steps {
                 let angle = start + (end - start) * Double(step) / Double(steps)
@@ -488,29 +491,48 @@ final class ArenaScene: SKScene {
         rim.glowWidth = 1
         arenaLayer.addChild(rim)
 
-        // Each corner barrier: along its face rim to rim, then back round
-        // the rim behind it, filled solid.
-        if !ring.corners.isEmpty {
-            for index in ring.gapBearings.indices {
-                let face = ring.cornerFace(index)
-                let path = CGMutablePath()
-                for (step, sample) in face.enumerated() {
+        // Each goal's bump: filled solid from the rim up the bell, across
+        // the crown and down the far side, with the pocket left open; only
+        // the flanks are stroked, so the mouth reads open.
+        if ring.hasBumps {
+            for index in ring.spokeAngles.indices {
+                let down = ring.bumpFlank(index, side: -1)
+                let up = ring.bumpFlank(index, side: 1)
+                let body = CGMutablePath()
+                for (step, sample) in down.reversed().enumerated() {
                     let screen = point(sample.x, sample.y)
-                    if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
+                    if step == 0 { body.move(to: screen) } else { body.addLine(to: screen) }
                 }
-                let reach = ring.cornerHalfAngle
-                let steps = 16
+                for sample in ring.netOutline {
+                    let world = ring.toWorld(sample, net: index)
+                    body.addLine(to: point(world.x, world.y))
+                }
+                for sample in up { body.addLine(to: point(sample.x, sample.y)) }
+                let low = ring.spokeAngles[index] + ring.flankEndAngle
+                let steps = 24
                 for step in 0 ... steps {
-                    let angle = ring.gapBearings[index] - reach + 2 * reach * Double(step) / Double(steps)
-                    path.addLine(to: point(ring.rimRadius * cos(angle), ring.rimRadius * sin(angle)))
+                    let angle = low - 2 * ring.flankEndAngle * Double(step) / Double(steps)
+                    body.addLine(to: point(ring.rimRadius * cos(angle), ring.rimRadius * sin(angle)))
                 }
-                path.closeSubpath()
-                let fill = SKShapeNode(path: path)
+                body.closeSubpath()
+                let fill = SKShapeNode(path: body)
                 fill.fillColor = SKColor(white: 0.16, alpha: 1)
-                fill.strokeColor = .white.withAlphaComponent(0.55)
-                fill.lineWidth = 3
-                fill.glowWidth = 1
+                fill.strokeColor = .clear
                 arenaLayer.addChild(fill)
+
+                for flank in [down, up] {
+                    let edge = CGMutablePath()
+                    for (step, sample) in flank.enumerated() {
+                        let screen = point(sample.x, sample.y)
+                        if step == 0 { edge.move(to: screen) } else { edge.addLine(to: screen) }
+                    }
+                    let stroke = SKShapeNode(path: edge)
+                    stroke.strokeColor = .white.withAlphaComponent(0.55)
+                    stroke.lineWidth = 3
+                    stroke.glowWidth = 1
+                    stroke.lineCap = .round
+                    arenaLayer.addChild(stroke)
+                }
             }
         }
 
@@ -546,7 +568,7 @@ final class ArenaScene: SKScene {
             let screen = point(radius * cos(angle), radius * sin(angle))
             if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
         }
-        let tip = ring.rimRadius - ring.cornerDepth - 0.04
+        let tip = ring.rimRadius - 0.04
         for bearing in [low, high] {
             path.move(to: point(radius * cos(bearing), radius * sin(bearing)))
             path.addLine(to: point(tip * cos(bearing), tip * sin(bearing)))
@@ -2591,7 +2613,7 @@ final class ArenaScene: SKScene {
         if let ring = arena.ring {
             // Flush mouths put the goal pockets outside the rim. Fit their
             // outer edge too, keeping the top and bottom pockets on screen.
-            let extent = ring.netBackRadius + RingField.netWall
+            let extent = max(ring.rimRadius, ring.netBackRadius + RingField.netWall)
             let side = min(size.width - sideInset * 2, availableHeight)
                 * CGFloat(ring.rimRadius / extent)
             return CGRect(x: -side / 2, y: -side / 2, width: side, height: side)

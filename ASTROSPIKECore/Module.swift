@@ -2347,13 +2347,13 @@ public struct SimulationEngine: Sendable {
         }
     }
 
-    /// The ball on the ring: the nets' frames, the corner barriers, the
+    /// The ball on the ring: the nets' frames, the bump flanks, the
     /// centre bumper and the rim. The rim opens through a live mouth, so
     /// the ball can leave the circle into the pocket. A net whose pilot is
     /// out has a bar across its mouth and the rim stays shut there. A ball
     /// whose centre crosses a net's goal line -- all of it over -- is in.
     ///
-    /// A corner barrier meets the rim, and a net's frame has inside corners,
+    /// A bump flank meets the rim and a post, and a net's frame has inside corners,
     /// so a ball can be touching two surfaces at once; resolving one can push
     /// it into the other. A few passes settle it.
     private mutating func resolveRingBallCollision(

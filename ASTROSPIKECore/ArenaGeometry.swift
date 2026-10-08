@@ -405,7 +405,7 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// The free-for-all field: the round one, a net per pilot cut flush in
     /// the rim, facing in. The rectangle it carries is only the box the
     /// ring fits in, for drawing and for bolts; its obstacles are the
-    /// corner barriers and the centre bumper when it is up (the nets
+    /// bump flanks and the centre bumper when it is up (the nets
     /// themselves come from the ring), and with no net style the duel's
     /// hump, lips and portal stay out of it.
     public static func freeForAll(pilots: Int, ballRadius: Double, tuning: RingTuning = RingTuning()) -> ArenaGeometry {

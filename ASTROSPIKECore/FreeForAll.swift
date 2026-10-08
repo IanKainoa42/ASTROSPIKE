@@ -84,7 +84,7 @@ public struct FreeForAllState: Codable, Equatable, Sendable {
 ///
 /// Known gap: it defends weakly. It clears a ball in the lane in front of
 /// its own mouth out sideways but keeps no goal, so its misses that rebound
-/// off the corner bumpers and rim can still go into its own net. It keeps short of every MAX CROSS line
+/// off the bump flanks and rim can still go into its own net. It keeps short of every MAX CROSS line
 /// and shoots a ball out on a rival's ground that it cannot reach. Alone
 /// against idle hulls (two-hour samples) it takes about 1.3 rival lives a
 /// minute at three pilots and 2.0 at four, and gives up 0.1-0.2 (default ring tuning).
@@ -167,11 +167,11 @@ public struct FreeForAllPilot: Sendable {
     /// no clear line through the slot.
     static let ringStagingRoom = 0.25
 
-    /// The ring bot. Every mouth sits flush in the rim, facing the middle.
+    /// The ring bot. Every mouth faces the middle, on its bump's crown.
     /// A ball with a clear line through a rival slot the bot strikes straight
     /// at the mouth, from behind the ball, or from the MAX CROSS line if the
     /// ball is past it; one off to the side it first moves round in front of
-    /// the mouth; one on the rim it runs along to a corner bumper. A ball in
+    /// the mouth; one on the rim it runs along toward the target's bump. A ball in
     /// front of its own mouth it clears back out to the middle. It never
     /// knocks the ball on a line that runs into its own mouth.
     private mutating func input(for state: WorldState, seat: Seat, ring: RingField, tick: UInt64) -> PlayerInput {
@@ -207,13 +207,11 @@ public struct FreeForAllPilot: Sendable {
                 aim = mouth
                 speed = min(difficulty.strikeSpeed * 0.6, configuration.ringTopSpeed * 0.9)
             } else if simd_length(spot) > ring.rimRadius - ring.ballRadius - Self.ringRimBand {
-                // On the rim: run it along to the nearest corner, whose
-                // barrier turns it back in. Nothing can get under it to push.
+                // On the rim: run it along toward the target, up its bump's
+                // flank and back in. Nothing can get under it to push.
                 let bearing = atan2(spot.y, spot.x)
-                func away(_ corner: Double) -> Double { abs(remainder(corner - bearing, 2 * .pi)) }
-                let corner = ring.gapBearings.min { away($0) < away($1) } ?? bearing
                 let out = ring.outward(at: spot)
-                aim = spot + SIMD2(-out.y, out.x) * (remainder(corner - bearing, 2 * .pi) >= 0 ? 0.5 : -0.5)
+                aim = spot + SIMD2(-out.y, out.x) * (remainder(ring.spokeAngles[goal] - bearing, 2 * .pi) >= 0 ? 0.5 : -0.5)
             } else {
                 // Off to the side of the slot: move it on round in front of
                 // the mouth, for a clear line next time.

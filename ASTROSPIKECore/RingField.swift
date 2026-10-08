@@ -1,16 +1,18 @@
 import Foundation
 import simd
 
-/// The free-for-all field: a round air-hockey table. Every pilot's goal is
-/// a slot cut flush in the rim, mouth on the circle and pocket behind it,
-/// outside the play. Between each pair of goals a corner barrier fills the
-/// rim: a flat face with rounded ends that meet the rim tangent, like the
-/// corners of an air-hockey table, so a ball running the wall rides up the
-/// end and is turned back in. An optional bumper can stand in the middle.
+/// The free-for-all field: a round air-hockey table. Under every pilot's
+/// goal a bell-curve bump rises off the rim toward the middle, peak on the
+/// goal's line; the net is sunk in the top of the bell, mouth cut across
+/// it with both posts on the curve and the pocket inside the bump, and the
+/// flanks fall smoothly away either side to the rim in the valley between. A shot that misses the
+/// mouth glances off a flank and is sent on round toward a neighbour. With
+/// the Bump height at zero the goals are slots flush in a plain round rim.
+/// An optional bumper can stand in the middle.
 ///
 /// Each net is drawn and collided in its own frame: x across the mouth, y
 /// pointing in from the back of the pocket (outside the rim), through the
-/// mouth, toward the middle. Nets and corner barriers are `ArenaObstacle`
+/// mouth, toward the middle. Nets and bump flanks are `ArenaObstacle`
 /// capsules. The ball meets a live net's frame and goes in only through the
 /// mouth; the rim itself opens there. A hull meets every net shut, so
 /// nobody parks behind a goal line.
@@ -32,12 +34,19 @@ public struct RingField: Equatable, Sendable {
     public static let netWall = 0.014
     /// Radius of the round bumper in the middle.
     public static let centreBumperRadius = 0.09
-    /// Radius of the rounded ends of each corner barrier, where its face
-    /// turns down to meet the rim.
-    public static let cornerFillet = 0.20
-    /// How far each corner barrier's flat face stands in off the rim, after
-    /// the Corners setting is held clear of the posts.
+    /// How far the peak of each goal's bell stands in off the rim, on the
+    /// goal's line: the Bump height setting, a share of the rim radius,
+    /// held to its cap. Zero (or too low to clear the slot) is a plain rim,
+    /// goals flush. The mouth is cut across the top, a little short of it.
     public var cornerDepth: Double
+    /// The bell's standard deviation, as a share of the rim from a goal's
+    /// line to the valley: the Bump width setting.
+    public var bumpSigma: Double
+    /// Distance from the centre to the middle of every mouth. On a bump the
+    /// mouth is cut across the bell where both posts sit on the curve. With
+    /// no bumps the mouth's ends sit on the rim and the middle of the chord
+    /// is a hair inside, so the slot reads flush with the wall.
+    public var mouthRadius: Double
 
     public var rimRadius: Double
     /// The way each net sits, out from the centre. Net 0 is at the bottom of
@@ -54,8 +63,8 @@ public struct RingField: Equatable, Sendable {
     public var posts: [ArenaObstacle]
     /// Each net's back, post to post round the rounded corners.
     public var backs: [[ArenaObstacle]]
-    /// Every corner barrier's face, rim to rim, one between each pair of
-    /// goals. Empty when the Corners setting is zero: a plain round rim.
+    /// Every bump's two flanks, each from a post down to the rim in the
+    /// valley. Empty when the Bump height is zero: a plain round rim.
     public var corners: [ArenaObstacle]
     /// The centre bumper, when it is standing. Empty when the toggle is off.
     public var centre: [ArenaObstacle]
@@ -75,15 +84,30 @@ public struct RingField: Equatable, Sendable {
         corners = []
         centre = []
         cornerDepth = 0
-        cornerDepth = min(max(0, tuning.cornerDepth), maxCornerDepth)
+        bumpSigma = 0
+        let depth = min(max(0, tuning.bumpHeight) * rimRadius, 0.40 * rimRadius)
+        cornerDepth = depth > Self.leastBump ? depth : 0
+        bumpSigma = max(0.05, tuning.bumpWidth)
+        mouthRadius = (rimRadius * rimRadius - netHalfWidth * netHalfWidth).squareRoot()
+        if cornerDepth > 0 {
+            // Where the posts' ends meet the bell: settle the mouth's
+            // distance in until each end sits on the curve.
+            mouthRadius = rimRadius - cornerDepth
+            for _ in 0 ..< 40 {
+                let post = rimRadius - bumpHeight(at: atan2(netHalfWidth, mouthRadius))
+                mouthRadius = max(post * post - netHalfWidth * netHalfWidth, 0.01).squareRoot()
+            }
+        }
         for index in spokeAngles.indices {
             let outline = Self.segments(netOutline.map { toWorld($0, net: index) }, radius: Self.netWall)
             posts += [outline[0], outline[outline.count - 1]]
             backs.append(Array(outline[1 ..< outline.count - 1]))
         }
-        if cornerDepth > 0.005 {
+        if hasBumps {
             for index in spokeAngles.indices {
-                corners += Self.segments(cornerFace(index), radius: Self.netWall)
+                for side in [-1.0, 1.0] {
+                    corners += Self.segments(bumpFlank(index, side: side), radius: Self.netWall)
+                }
             }
         }
         if centreBumper {
@@ -91,7 +115,7 @@ public struct RingField: Equatable, Sendable {
         }
     }
 
-    /// What the ball meets: the corner barriers, the centre bumper, every
+    /// What the ball meets: the bump flanks, the centre bumper, every
     /// net's frame, and a bar across the mouth of every net in `solid` (a
     /// knocked-out pilot's).
     public func ballWalls(solid: (Int) -> Bool) -> [ArenaObstacle] {
@@ -99,7 +123,7 @@ public struct RingField: Equatable, Sendable {
     }
 
     /// Every net in `solid`, shut all round: frame and mouth. A hull meets
-    /// every net this way, live or not, as well as the corner barriers.
+    /// every net this way, live or not, as well as the bump flanks.
     public func closedNets(_ solid: (Int) -> Bool) -> [ArenaObstacle] {
         spokeAngles.indices.filter(solid).flatMap { index in
             [posts[2 * index], posts[2 * index + 1], mouthBar(index)] + backs[index]
@@ -111,16 +135,20 @@ public struct RingField: Equatable, Sendable {
     /// Straight out from the centre at `bearing`.
     static func outward(_ bearing: Double) -> SIMD2<Double> { SIMD2(cos(bearing), sin(bearing)) }
 
-    /// Distance from the centre to the back of every net's frame. The pocket
-    /// hangs outside the rim, so the back is past it.
+    /// Distance from the centre to the back of every net's frame. Sunk in a
+    /// bump the pocket is inside the rim; flush, it hangs outside.
     public var netBackRadius: Double { mouthRadius + netDepth }
 
-    /// Distance from the centre to the middle of every mouth. The mouth's
-    /// ends sit on the rim; the middle of the chord is a hair inside, so
-    /// the slot reads flush with the wall.
-    public var mouthRadius: Double {
-        (rimRadius * rimRadius - netHalfWidth * netHalfWidth).squareRoot()
-    }
+    /// The least bump height that clears a flush slot's chord; any lower
+    /// is a plain rim.
+    static let leastBump = 0.03
+
+    /// Whether the goals stand on bumps, or sit flush in a plain rim.
+    public var hasBumps: Bool { cornerDepth > 0 }
+
+    /// Whether the pocket hangs outside the rim, so the rim must open at
+    /// the mouth. A pocket sunk deep enough in its bump is walled all round.
+    public var pocketsPastRim: Bool { netBackRadius + Self.netWall > rimRadius - 0.001 }
 
     /// How far round the rim each post stands, out to the middle of the post.
     public var postHalfAngle: Double { asin(min(0.95, netHalfWidth / rimRadius)) }
@@ -132,6 +160,7 @@ public struct RingField: Equatable, Sendable {
     /// True when `point` lies in an open goal's slot, the wedge the rim
     /// gives up so the ball can leave the circle into the pocket.
     public func admitsThroughRim(_ point: SIMD2<Double>, open: (Int) -> Bool) -> Bool {
+        guard pocketsPastRim else { return false }
         let bearing = atan2(point.y, point.x)
         return spokeAngles.indices.contains { index in
             open(index) && abs(remainder(bearing - spokeAngles[index], 2 * .pi)) < mouthHalfAngle
@@ -152,61 +181,49 @@ public struct RingField: Equatable, Sendable {
         return SIMD2(simd_dot(point, across), netBackRadius - simd_dot(point, out))
     }
 
-    /// How far round from its corner each barrier reaches along the rim, to
-    /// where its rounded end meets the rim tangent.
-    public var cornerHalfAngle: Double {
-        let r = Self.cornerFillet
-        return acos(min(1, (rimRadius - cornerDepth - r) / (rimRadius - r)))
+    /// How far round from its goal a post's mouth end stands: where the
+    /// flank starts, down off the cut across the top of the bell.
+    public var flankStartAngle: Double { atan2(netHalfWidth, mouthRadius) }
+
+    /// How far round from its goal a bump reaches: half way to the next
+    /// goal, the bottom of the valley, where it meets the neighbour's flank.
+    public var flankEndAngle: Double { Double.pi / Double(spokeAngles.count) }
+
+    /// How far in off the rim the bell under a goal stands `offset` radians
+    /// round from the goal's line: peak `cornerDepth` on the line, falling
+    /// smoothly to the rim in the valley either side.
+    public func bumpHeight(at offset: Double) -> Double {
+        let end = flankEndAngle
+        guard cornerDepth > 0, abs(offset) < end else { return 0 }
+        let sigma = bumpSigma * end
+        let bell = { (x: Double) in exp(-x * x / (2 * sigma * sigma)) }
+        // Lowered by the bell's height at the valley so it lands on the rim.
+        let foot = bell(end)
+        return cornerDepth * (bell(offset) - foot) / (1 - foot)
     }
 
-    /// The deepest the Corners setting may stand a barrier: its rounded end
-    /// stays a little round the rim from the post, so the slot is never
-    /// crowded and the wall either side of a goal is plain rim.
-    public var maxCornerDepth: Double {
-        let r = Self.cornerFillet
-        let reach = max(0, Double.pi / Double(spokeAngles.count) - postHalfAngle - cornerPostClearance)
-        return rimRadius - r - (rimRadius - r) * cos(reach)
-    }
-
-    /// The least rim, in radians, between a barrier's end and a post: room
-    /// for the ball to roll down the wall into the mouth, at any ball size.
-    public var cornerPostClearance: Double {
-        max(0.08, (2 * ballRadius + 2 * Self.netWall + 0.02) / rimRadius)
-    }
-
-    /// The face of the corner barrier after net `index` (anticlockwise), rim
-    /// to rim: a rounded end tangent to the rim, the flat face square to the
-    /// corner's bearing `cornerDepth` in off the rim, and the other rounded
-    /// end back down. Each end is an arc whose centre is inside the field, so
-    /// the field's edge is convex all round and nothing pinches the ball.
-    public func cornerFace(_ index: Int) -> [SIMD2<Double>] {
-        let bearing = gapBearings[index]
-        let r = Self.cornerFillet
-        let reach = cornerHalfAngle
-        let steps = 8
-        var points: [SIMD2<Double>] = []
-        for side in [1.0, -1.0] {
-            let centre = Self.outward(bearing + side * reach) * (rimRadius - r)
-            for step in 0 ... steps {
-                // Anticlockwise end: from the rim down to the face; the other
-                // end from the face back down to the rim.
-                let share = Double(step) / Double(steps)
-                let angle = side > 0 ? bearing + reach * (1 - share) : bearing - reach * share
-                points.append(centre + Self.outward(angle) * r)
-            }
+    /// One flank of net `index`'s bump: from the post's mouth end (`side`
+    /// -1 is the clockwise post) down the bell to the rim in the valley.
+    /// Sampled finely enough that the chain reads as a smooth curve.
+    public func bumpFlank(_ index: Int, side: Double) -> [SIMD2<Double>] {
+        let start = flankStartAngle, end = flankEndAngle
+        let steps = 40
+        return (0 ... steps).map { step in
+            let offset = start + (end - start) * Double(step) / Double(steps)
+            if step == 0 { return toWorld(SIMD2(side * netHalfWidth, netDepth), net: index) }
+            return Self.outward(spokeAngles[index] + side * offset) * (rimRadius - bumpHeight(at: offset))
         }
-        return points
     }
 
     /// Where a pilot starts: just inside the rim, beside their own mouth,
-    /// nose to the middle. Clear of the corner barrier, so an idle hull is
+    /// nose to the middle. Clear of the bump's flank, so an idle hull is
     /// not a keeper parked in its own goal.
     public func spawnPoint(bay: Int) -> SIMD2<Double> {
         toWorld(SIMD2(netHalfWidth + 0.18, netDepth + 0.28), net: bay)
     }
 
-    /// The bearings of the corners, midway between neighbouring mouths,
-    /// where the barriers stand. The face-off drifts out toward one of these.
+    /// The bearings of the valleys, midway between neighbouring mouths,
+    /// where two bumps' flanks meet the rim. The face-off drifts out toward one of these.
     public var gapBearings: [Double] {
         spokeAngles.map { $0 + .pi / Double(spokeAngles.count) }
     }
@@ -359,9 +376,12 @@ public struct RingTuning: Equatable, Sendable, Codable {
     public var lineShare = 0.6
     /// The round bumper in the middle. Off leaves the face-off clear.
     public var centreBumper = false
-    /// How far each corner barrier's flat face stands in off the rim. Zero
-    /// is a plain round rim. Held clear of the posts whatever the setting.
-    public var cornerDepth = 0.10
+    /// How far each goal's bump stands in off the rim, rim to mouth, as a
+    /// share of the rim radius. Zero is a plain round rim, goals flush.
+    public var bumpHeight = 0.25
+    /// How wide each bump's bell is: its standard deviation as a share of
+    /// the rim from the goal's line to the valley.
+    public var bumpWidth = 0.25
     /// The ball is an air-hockey puck: it slides dead straight whatever
     /// spin a hit leaves on it, and it is drawn as a flat disc.
     public var puck = false
@@ -403,7 +423,8 @@ public struct RingTuning: Equatable, Sendable, Codable {
             Knob(key: "ring.linePush", title: "MAX CROSS push", range: 0 ... 30, step: 0.5, percent: false, keyPath: \.linePush),
             Knob(key: "ring.lineBrake", title: "MAX CROSS brake", range: 0 ... 8, step: 0.1, percent: false, keyPath: \.lineBrake),
             Knob(key: "ring.lineShare", title: "MAX CROSS line", range: 0.3 ... 1.0, step: 0.02, percent: true, keyPath: \.lineShare),
-            Knob(key: "ring.cornerDepth", title: "Corners", range: 0 ... 0.24, step: 0.01, percent: false, keyPath: \.cornerDepth),
+            Knob(key: "ring.bumpHeight", title: "Bump height", range: 0 ... 0.40, step: 0.01, percent: true, keyPath: \.bumpHeight),
+            Knob(key: "ring.bumpWidth", title: "Bump width", range: 0.15 ... 0.70, step: 0.01, percent: true, keyPath: \.bumpWidth),
             Knob(key: "ring.fireCooldown", title: "Fire rate", range: 0.45 ... 4.0, step: 0.05, percent: false, keyPath: \.fireCooldown, seconds: true),
         ]
     }
