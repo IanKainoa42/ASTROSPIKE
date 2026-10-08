@@ -2373,7 +2373,7 @@ struct RingTuningControls: View {
     var changed: (RingTuning) -> Void = { _ in }
     @State private var tuning = RingTuning.stored()
 
-    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Corners is how far each corner barrier stands in off the rim (0 is a plain round rim). The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Gravity tilts the table out to the rim. All of it applies the moment you resume."
+    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Corners is how far each corner barrier stands in off the rim (0 is a plain round rim). Fire rate is the seconds between your bolts on the ring, apart from the duel's. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Puck turns the ball into a flat air-hockey puck that slides dead straight: spin never bends it. Gravity tilts the table out to the rim. All of it applies the moment you resume."
 
     var body: some View {
         ForEach(RingTuning.knobs) { knob in
@@ -2385,7 +2385,7 @@ struct RingTuningControls: View {
                 ),
                 range: knob.range,
                 step: knob.step,
-                readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : knob.degrees ? "\(Int($0.rounded()))°" : $0.formatted(.number.precision(.fractionLength(2))) }
+                readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : knob.degrees ? "\(Int($0.rounded()))°" : knob.seconds ? "\($0.formatted(.number.precision(.fractionLength(2)))) s" : $0.formatted(.number.precision(.fractionLength(2))) }
             )
             .accessibilityIdentifier(knob.key)
             if knob.keyPath == \RingTuning.hullDrag {
@@ -2400,6 +2400,11 @@ struct RingTuningControls: View {
             set: { tuning.centreBumper = $0 }
         ))
         .accessibilityIdentifier(RingTuning.centreBumperKey)
+        Toggle("Puck", isOn: Binding(
+            get: { tuning.puck },
+            set: { tuning.puck = $0 }
+        ))
+        .accessibilityIdentifier(RingTuning.puckKey)
         Button("Reset ring to default") { tuning = RingTuning() }
             .disabled(tuning == RingTuning())
             .onChange(of: tuning) { _, tuning in

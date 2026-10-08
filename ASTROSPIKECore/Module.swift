@@ -1038,11 +1038,14 @@ public struct SimulationEngine: Sendable {
             } else {
                 state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
             }
-            (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
-                state.balls[ballIndex].velocity,
-                spin: state.balls[ballIndex].spin,
-                over: dt
-            )
+            // A puck slides dead straight: its spin is only for show.
+            if !(arena.ring != nil && configuration.ring.puck) {
+                (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
+                    state.balls[ballIndex].velocity,
+                    spin: state.balls[ballIndex].spin,
+                    over: dt
+                )
+            }
             applyExhaustWash(dt: dt, ballIndex: ballIndex)
             applyTractorBeam(dt: dt, ballIndex: ballIndex)
             if arena.ring != nil {
@@ -1592,7 +1595,9 @@ public struct SimulationEngine: Sendable {
             ticksRemaining: lifetime
         ))
         state.nextBoltID &+= 1
-        ship.fireCooldownTicks = UInt64((configuration.boltCooldown / configuration.stepDuration).rounded())
+        // The ring keeps its own, much slower, fire rate.
+        let cooldown = arena.ring == nil ? configuration.boltCooldown : configuration.ring.fireCooldown
+        ship.fireCooldownTicks = UInt64((cooldown / configuration.stepDuration).rounded())
     }
 
     /// The exhaust is a real jet: a ball sitting in it gets shoved down the

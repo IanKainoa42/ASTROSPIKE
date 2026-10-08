@@ -144,7 +144,8 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // Older boards have different collision geometry and ring tuning.
     // 41: ring tuning carries the corner barriers' depth; a build 141
     // board would cut pegs where the host has barriers.
-    public static let currentVersion: UInt16 = 41
+    // 42: ring tuning carries the puck toggle and the ring's own fire rate.
+    public static let currentVersion: UInt16 = 42
 
     public var version: UInt16
     public var sequence: UInt64

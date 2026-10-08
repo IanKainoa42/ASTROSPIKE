@@ -25,6 +25,9 @@ public struct RingField: Equatable, Sendable {
     public var maxCrossShare: Double
     /// Whether the round bumper in the middle is standing.
     public var centreBumper: Bool
+    /// The ball plays as an air-hockey puck: drawn flat, and spin never
+    /// bends its path.
+    public var puck: Bool
     /// Thickness of a net's frame, as a capsule radius.
     public static let netWall = 0.014
     /// Radius of the round bumper in the middle.
@@ -62,6 +65,7 @@ public struct RingField: Equatable, Sendable {
         self.ballRadius = ballRadius
         maxCrossShare = tuning.lineShare
         centreBumper = tuning.centreBumper
+        puck = tuning.puck
         rimRadius = Self.rimRadius
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
         netHalfWidth = ballRadius + 0.10 + Self.netWall
@@ -358,6 +362,12 @@ public struct RingTuning: Equatable, Sendable, Codable {
     /// How far each corner barrier's flat face stands in off the rim. Zero
     /// is a plain round rim. Held clear of the posts whatever the setting.
     public var cornerDepth = 0.10
+    /// The ball is an air-hockey puck: it slides dead straight whatever
+    /// spin a hit leaves on it, and it is drawn as a flat disc.
+    public var puck = false
+    /// Seconds between one bolt and the next on the ring, apart from the
+    /// duel's own fire rate. A ring is a crowd, so it fires much slower.
+    public var fireCooldown = 1.5
 
     public init() {}
 
@@ -372,11 +382,15 @@ public struct RingTuning: Equatable, Sendable, Codable {
         public let keyPath: WritableKeyPath<RingTuning, Double>
         /// Shown in whole degrees.
         public var degrees = false
+        /// Shown in seconds.
+        public var seconds = false
         public var id: String { key }
     }
 
     /// The defaults key for the centre bumper. Not a slider.
     public static let centreBumperKey = "ring.centreBumper"
+    /// The defaults key for the puck. Not a slider.
+    public static let puckKey = "ring.puck"
 
     /// Every knob, in the order the sliders stand. Ring gravity keeps the key
     /// it had when it was the only one, so a stored setting carries over.
@@ -390,6 +404,7 @@ public struct RingTuning: Equatable, Sendable, Codable {
             Knob(key: "ring.lineBrake", title: "MAX CROSS brake", range: 0 ... 8, step: 0.1, percent: false, keyPath: \.lineBrake),
             Knob(key: "ring.lineShare", title: "MAX CROSS line", range: 0.3 ... 1.0, step: 0.02, percent: true, keyPath: \.lineShare),
             Knob(key: "ring.cornerDepth", title: "Corners", range: 0 ... 0.24, step: 0.01, percent: false, keyPath: \.cornerDepth),
+            Knob(key: "ring.fireCooldown", title: "Fire rate", range: 0.45 ... 4.0, step: 0.05, percent: false, keyPath: \.fireCooldown, seconds: true),
         ]
     }
 
@@ -402,6 +417,7 @@ public struct RingTuning: Equatable, Sendable, Codable {
             tuning[keyPath: knob.keyPath] = min(knob.range.upperBound, max(knob.range.lowerBound, value))
         }
         tuning.centreBumper = defaults.object(forKey: centreBumperKey) as? Bool ?? false
+        tuning.puck = defaults.object(forKey: puckKey) as? Bool ?? false
         return tuning
     }
 
@@ -419,6 +435,11 @@ public struct RingTuning: Equatable, Sendable, Codable {
             defaults.removeObject(forKey: Self.centreBumperKey)
         } else {
             defaults.set(centreBumper, forKey: Self.centreBumperKey)
+        }
+        if puck == RingTuning().puck {
+            defaults.removeObject(forKey: Self.puckKey)
+        } else {
+            defaults.set(puck, forKey: Self.puckKey)
         }
     }
 }

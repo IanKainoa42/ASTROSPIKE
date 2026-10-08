@@ -545,7 +545,11 @@ struct FreeForAllTests {
         defaults.set(99.0, forKey: "ring.linePush")
         defaults.set(0.25, forKey: "ringGravity")
         defaults.set(true, forKey: RingTuning.centreBumperKey)
+        defaults.set(true, forKey: RingTuning.puckKey)
+        defaults.set(0.1, forKey: "ring.fireCooldown")
         var stored = RingTuning.stored(in: defaults)
+        #expect(stored.puck, "the puck is stored")
+        #expect(stored.fireCooldown == 0.45, "fire rate clamped to its slider")
         #expect(stored.linePush == 30, "clamped to the slider")
         #expect(stored.centreBumper, "the toggle is stored")
         #expect(stored.gravity == 0.25, "Ring gravity keeps its old key")
@@ -553,7 +557,48 @@ struct FreeForAllTests {
         stored.store(in: defaults)
         #expect(defaults.object(forKey: "ring.linePush") == nil, "a default is cleared, not written")
         #expect(defaults.object(forKey: RingTuning.centreBumperKey) == nil)
+        #expect(defaults.object(forKey: RingTuning.puckKey) == nil)
         #expect(RingTuning.stored(in: defaults) == RingTuning())
+    }
+
+    @Test("The puck slides dead straight: the spin a hit leaves on it never bends its path, where the ball's curves")
+    func puckSlidesStraight() {
+        for puck in [false, true] {
+            var (engine, _) = field(pilots: 3)
+            var configuration = engine.configuration
+            configuration.ring.puck = puck
+            engine.updateConfiguration(configuration)
+            for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+            engine.state.ball = BallState(position: SIMD2(-0.3, 0), velocity: SIMD2(0.8, 0), radius: engine.configuration.ballRadius)
+            engine.state.ball.spin = BoltState.spinKick
+            engine.state.serveTicksRemaining = 0
+            for _ in 0 ..< 60 { engine.step(inputs: [:]) }
+            let drift = abs(engine.state.ball.velocity.y)
+            if puck {
+                #expect(drift < 1e-9, "puck bent by \(drift)")
+            } else {
+                #expect(drift > 0.01, "ball curved only \(drift)")
+            }
+        }
+    }
+
+    @Test("The ring keeps its own fire rate: a bolt holds the gun for Fire rate seconds, not the duel's")
+    func ringFireRate() {
+        for cooldown in [RingTuning().fireCooldown, 3.0] {
+            var (engine, _) = field(pilots: 3)
+            var configuration = engine.configuration
+            configuration.ring.fireCooldown = cooldown
+            engine.updateConfiguration(configuration)
+            let seat = engine.state.freeForAll!.bays[0]
+            var held: UInt64 = 0
+            for _ in 0 ..< 1200 where held == 0 {
+                engine.step(inputs: [seat: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, fire: true)])
+                held = engine.state.ships[seat]!.fireCooldownTicks
+            }
+            let expected = UInt64((cooldown / engine.configuration.stepDuration).rounded())
+            #expect(held == expected, "held \(held) ticks, want \(expected)")
+            #expect(Double(held) * engine.configuration.stepDuration > engine.configuration.boltCooldown * 2, "much slower than the duel")
+        }
     }
 
     /// Flies `seat` flat out from `start` toward `target` for three seconds,

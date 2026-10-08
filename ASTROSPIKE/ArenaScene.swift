@@ -1152,6 +1152,7 @@ final class ArenaScene: SKScene {
             // The node is built 10pt in radius; scale it to the ball's world
             // radius so what you see is what the ship hits.
             node.setScale(CGFloat(ball.radius) * pointsPerWorldUnit / 10)
+            node.setPuck(arena.ring?.puck ?? false)
             node.spin(by: ball.spin * spunTicks * Self.tickDuration)
             // Ball tint by last touch (possession cue)
             node.tint(tint)
@@ -2639,6 +2640,12 @@ final class BallNode: SKShapeNode {
     /// shine stay where the light is; only the seam shows the spin.
     private let seam = SKShapeNode()
     private var spinAngle = 0.0
+    /// The ball's own layers, hidden while it plays as a puck.
+    private var ballLayers: [SKNode] = []
+    /// The puck: a dark flat disc with a raised inner ring and one notch
+    /// that turns with the spin.
+    private let puckFace = SKNode()
+    private(set) var isPuck = false
 
     override init() {
         super.init()
@@ -2689,6 +2696,31 @@ final class BallNode: SKShapeNode {
         shine.glowWidth = 0
         shine.zPosition = 0.3
         addChild(shine)
+        ballLayers = [lit, seam, shine]
+        let inner = SKShapeNode(circleOfRadius: 6.2)
+        inner.fillColor = SKColor(white: 0.20, alpha: 1)
+        inner.strokeColor = SKColor(white: 0.46, alpha: 1)
+        inner.lineWidth = 1.4
+        inner.glowWidth = 0
+        puckFace.addChild(inner)
+        let notch = SKShapeNode(rectOf: CGSize(width: 2.2, height: 3.4), cornerRadius: 1.1)
+        notch.position = CGPoint(x: 0, y: 7.9)
+        notch.fillColor = SKColor(white: 0.85, alpha: 1)
+        notch.strokeColor = .clear
+        notch.glowWidth = 0
+        puckFace.addChild(notch)
+        puckFace.zPosition = 0.1
+        puckFace.isHidden = true
+        addChild(puckFace)
+    }
+
+    /// Plays the ball as a flat air-hockey puck, or back as a ball.
+    func setPuck(_ puck: Bool) {
+        guard puck != isPuck else { return }
+        isPuck = puck
+        for layer in ballLayers { layer.isHidden = puck }
+        puckFace.isHidden = !puck
+        fillColor = puck ? SKColor(white: 0.10, alpha: 1) : SKColor(white: 0.72, alpha: 1)
     }
 
     @available(*, unavailable)
@@ -2698,6 +2730,7 @@ final class BallNode: SKShapeNode {
         guard radians != 0 else { return }
         spinAngle = (spinAngle + radians).truncatingRemainder(dividingBy: 2 * .pi)
         seam.zRotation = CGFloat(spinAngle)
+        puckFace.zRotation = CGFloat(spinAngle)
     }
 
     /// Rim colour by whoever touched a ball last: the possession cue.
@@ -2706,7 +2739,8 @@ final class BallNode: SKShapeNode {
             strokeColor = color.withAlphaComponent(0.95)
             lineWidth = 3
         } else {
-            strokeColor = SKColor(white: 0.30, alpha: 1)
+            // A dark puck needs a light rim to stand off the dark table.
+            strokeColor = SKColor(white: isPuck ? 0.62 : 0.30, alpha: 1)
             lineWidth = 2
         }
         glowWidth = 0
