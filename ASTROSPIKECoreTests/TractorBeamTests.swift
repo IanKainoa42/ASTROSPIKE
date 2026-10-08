@@ -226,6 +226,38 @@ struct TractorBeamTests {
         #expect(abs(remainder(atan2(line.y, line.x) - ship.angle - held.bearing, 2 * .pi)) < 1e-9, "the nose stays on the ball")
     }
 
+    @Test("A locked ball dragged along the deck is one bounce per touch-down, not one a step")
+    func lockedBallScrapingIsOneBounce() throws {
+        var engine = lockable(after: 0.3)
+        try lockOn(&engine)
+        var configuration = engine.configuration
+        configuration.gravity = SimulationEngine.testing().configuration.gravity
+        engine.updateConfiguration(configuration)
+        var lock = try #require(engine.state.ball.beamLock)
+        lock.spin = 0
+        // Hang the pair ball-down, the ball just off the deck and nothing
+        // moving: gravity sets it down and the hull's weight holds it there.
+        let rest = engine.arena.floorY + engine.state.ball.radius
+        engine.state.ball.position = .init(-0.5, rest + 0.002)
+        engine.state.ball.velocity = .zero
+        engine.state.ball.spin = 0
+        engine.state.ball.beamLock = lock
+        engine.state.ships[.cyan]!.position = .init(-0.5, rest + 0.002 + lock.length)
+        engine.state.ships[.cyan]!.velocity = .zero
+        engine.state.ships[.cyan]!.angularVelocity = 0
+        let score = engine.state.match.score
+        var onDeck = 0
+        for _ in 0 ..< 240 {
+            hold(&engine)
+            if engine.state.ball.position.y - rest < 0.001 { onDeck += 1 }
+        }
+        #expect(engine.state.ball.beamLock != nil, "the lock let go with the beam still held")
+        #expect(onDeck > 60, "the ball never sat on the deck (\(onDeck) steps)")
+        let floor = engine.state.match.floorContacts
+        #expect(floor[.cyan] + floor[.orange] == 1, "one touch-down, counted \(floor[.cyan] + floor[.orange])")
+        #expect(engine.state.match.score == score, "the scrape gave away a point")
+    }
+
     @Test("Let go before the lock and the ball flies on in to a headbutt")
     func earlyReleaseNeverLocks() {
         var engine = lockable(after: 0.7)

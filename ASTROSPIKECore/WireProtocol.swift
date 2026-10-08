@@ -153,7 +153,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // and the beam lock time may now be as short as 0.1 s.
     // 47: a beam lock's catch keeps the ball's run as swing, and the stick
     //     pumps a locked pair (beam swing in the tuning).
-    public static let currentVersion: UInt16 = 47
+    // 48: a locked ball scraping the deck counts one bounce per touch-down
+    //     (BeamLock.grounded).
+    public static let currentVersion: UInt16 = 48
 
     public var version: UInt16
     public var sequence: UInt64

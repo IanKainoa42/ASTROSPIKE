@@ -2732,6 +2732,7 @@ public struct SimulationEngine: Sendable {
         // and so the floor clamp cannot double-count a touch the arc has
         // already reported.
         var floorRegistered = false
+        let floorMark = contacts.count
         if let hump = arena.humpContact(
             from: previousPosition,
             to: state.balls[ballIndex].position,
@@ -2795,6 +2796,19 @@ public struct SimulationEngine: Sendable {
                 contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
                 floorRegistered = true
             }
+        }
+        // A locked ball is held to the deck by the weld, so it touches every
+        // step it scrapes along; only the step it touches down is a bounce.
+        // Without this a single touch ran the allowance out in a few steps.
+        if var lock = state.balls[ballIndex].beamLock {
+            if floorRegistered, lock.grounded,
+               let touch = contacts[floorMark...].lastIndex(where: {
+                   if case .ballTouchedFloor = $0 { true } else { false }
+               }) {
+                contacts.remove(at: touch)
+            }
+            lock.grounded = floorRegistered
+            state.balls[ballIndex].beamLock = lock
         }
         // Nothing on the hoop court ends a rally except the rim, so a ball
         // that runs out of bounce just lies there and the match never
