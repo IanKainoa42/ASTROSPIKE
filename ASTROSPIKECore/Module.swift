@@ -1721,8 +1721,12 @@ public struct SimulationEngine: Sendable {
                 }
                 let since = fresh ? state.tick : held?.since ?? state.tick
                 state.balls[ballIndex].beamHold = BeamHold(seat: seat, tick: state.tick, since: since)
-                let lockTicks = UInt64((configuration.beamLockTime / configuration.stepDuration).rounded())
-                if configuration.beamLockTime > 0, state.tick &- since >= lockTicks, lockedBall(of: seat) == nil {
+                // The time can come off the wire: anything not a sane number
+                // of seconds never locks rather than trapping the conversion.
+                let lockTime = configuration.beamLockTime
+                if lockTime > 0, lockTime <= Self.longestBeamLock,
+                   state.tick &- since >= UInt64((lockTime / configuration.stepDuration).rounded()),
+                   lockedBall(of: seat) == nil {
                     // Held long enough: the ball welds on where it is, never
                     // closer than just off the nose.
                     let reach = (shipHitboxes[seat] ?? .shared).noseReach + state.balls[ballIndex].radius + 0.005
@@ -1809,6 +1813,8 @@ public struct SimulationEngine: Sendable {
     /// A hull's own moment of inertia as a share of mass times reach
     /// squared: a uniform disc the size of the hull.
     static let lockedHullInertia = 0.5
+    /// The longest hold the engine will honour; past it the beam never locks.
+    static let longestBeamLock = 60.0
 
     /// How hard `ship`'s beam holds whatever sits at `point`, and the unit
     /// direction from the ship out to it. Nil with the beam off, or outside

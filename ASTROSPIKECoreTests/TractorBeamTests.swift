@@ -243,4 +243,18 @@ struct TractorBeamTests {
         #expect(FlightTuningSnapshot.defaults.configuration.beamLockTime == FlightTuningSnapshot.defaults.beamLock)
         #expect(FlightTuningSnapshot.beamLockRange.contains(FlightTuningSnapshot.defaults.beamLock))
     }
+
+    @Test("A host's beam lock time off the wire is clamped, and nonsense never traps the engine")
+    func beamLockFromTheWireIsSafe() {
+        var snapshot = FlightTuningSnapshot.defaults
+        snapshot.beamLock = .nan
+        #expect(snapshot.configuration.beamLockTime == FlightTuningSnapshot.defaults.beamLock)
+        snapshot.beamLock = 1e300
+        #expect(snapshot.configuration.beamLockTime == FlightTuningSnapshot.beamLockRange.upperBound)
+        for nonsense in [Double.nan, .infinity, 1e300] {
+            var engine = lockable(after: nonsense)
+            for _ in 0 ..< 30 { hold(&engine) }
+            #expect(engine.state.ball.beamLock == nil)
+        }
+    }
 }

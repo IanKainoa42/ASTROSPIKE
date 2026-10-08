@@ -76,7 +76,9 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         configuration.arenaLayout = arenaLayout
         configuration.pegPull = pegPull
         configuration.boltHit = boltHit
-        configuration.beamLockTime = beamLock
+        configuration.beamLockTime = beamLock.isFinite
+            ? min(Self.beamLockRange.upperBound, max(Self.beamLockRange.lowerBound, beamLock))
+            : Self.defaults.beamLock
         configuration.ring = ring
         return configuration
     }
