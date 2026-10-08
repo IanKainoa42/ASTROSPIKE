@@ -148,6 +148,7 @@ struct TractorBeamTests {
         var engine = weightless()
         var configuration = engine.configuration
         configuration.beamLockTime = seconds
+        configuration.beamSwing = 1
         engine.updateConfiguration(configuration)
         engine.state.ships[.cyan]!.position = .init(-0.5, 0)
         engine.state.ball.position = .init(-0.5, 0.25)
@@ -155,8 +156,23 @@ struct TractorBeamTests {
         return engine
     }
 
-    private func hold(_ engine: inout SimulationEngine, tractor: Bool = true) {
-        engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, tractor: tractor)])
+    private func hold(_ engine: inout SimulationEngine, tractor: Bool = true, torque: Double = 0) {
+        engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: torque, thrust: false, tractor: tractor)])
+    }
+
+    /// Holds the beam stick-free until the step that locks it, and takes
+    /// that one step with `torque` on the stick.
+    private func lockOn(_ engine: inout SimulationEngine, torque: Double = 0) throws {
+        for _ in 0 ..< 240 {
+            var trial = engine
+            hold(&trial, torque: torque)
+            if trial.state.ball.beamLock != nil {
+                engine = trial
+                return
+            }
+            hold(&engine)
+        }
+        Issue.record("the beam never locked on")
     }
 
     /// Angular momentum of hull and ball about their shared centre of mass,
@@ -192,8 +208,9 @@ struct TractorBeamTests {
         let lock = try #require(engine.state.ball.beamLock, "the beam never locked on")
         #expect(lock.seat == .cyan)
         #expect(Double(steps) * engine.configuration.stepDuration >= 0.3 - 1e-9, "locked before the hold time")
-        // Flick the ball sideways: the weld has to turn that into a spin.
-        engine.state.ball.velocity += .init(0.6, 0)
+        // Flick the ball sideways, with the catch's swing (the ball sits
+        // above the hull): the weld has to turn that into more spin.
+        engine.state.ball.velocity += .init(lock.spin >= 0 ? -0.6 : 0.6, 0)
         let angularBefore = spinMomentum(engine)
         let linearBefore = pairMomentum(engine)
         let angleBefore = engine.state.ships[.cyan]!.angle
@@ -243,15 +260,16 @@ struct TractorBeamTests {
         func locked(spinning spin: Double) throws -> SimulationEngine {
             var engine = lockable(after: 0.3)
             engine.state.ball.spin = spin
-            for _ in 0 ..< 120 where engine.state.ball.beamLock == nil { hold(&engine) }
+            // The stick sets the catch's way, so the two differ only by the
+            // ball's own spin.
+            try lockOn(&engine, torque: 1)
             _ = try #require(engine.state.ball.beamLock, "the beam never locked on")
             return engine
         }
         let still = try locked(spinning: 0)
-        #expect(abs(still.state.ball.beamLock!.spin) < 1e-6, "a still ball pulled straight in sets nothing turning")
         var engine = try locked(spinning: 30)
         let lock = engine.state.ball.beamLock!
-        #expect(lock.spin > 0.05, "the ball's own spin never reached the pair")
+        #expect(lock.spin - still.state.ball.beamLock!.spin > 0.05, "the ball's own spin never reached the pair")
         #expect(engine.state.ball.spin == lock.spin)
         let angleBefore = engine.state.ships[.cyan]!.angle
         for _ in 0 ..< 60 { hold(&engine) }
@@ -260,6 +278,66 @@ struct TractorBeamTests {
         #expect(engine.state.ships[.cyan]!.angularVelocity == held.spin, "the hull turns at the pair's rate")
         #expect(abs(held.spin - lock.spin) < 1e-9, "nothing outside touched the pair, so its turn holds")
         #expect(engine.state.ships[.cyan]!.angle - angleBefore > 0.05, "the hull did not turn with the ball")
+    }
+
+    @Test("The catch keeps the ball's run: the closing speed turns into swing, the way the stick is held")
+    func catchSwings() throws {
+        for torque in [1.0, -1.0] {
+            var engine = lockable(after: 0.3)
+            try lockOn(&engine, torque: torque)
+            let lock = try #require(engine.state.ball.beamLock)
+            #expect(lock.spin * torque > 1, "the catch died instead of swinging (spin \(lock.spin))")
+        }
+        // Stick-free, the catch still swings, and the swing keeps its
+        // momentum from then on.
+        var engine = lockable(after: 0.3)
+        try lockOn(&engine)
+        let caught = try #require(engine.state.ball.beamLock).spin
+        #expect(abs(caught) > 1, "a stick-free catch died (spin \(caught))")
+        let linear = pairMomentum(engine)
+        for _ in 0 ..< 30 { hold(&engine) }
+        #expect(abs(engine.state.ball.beamLock!.spin - caught) < 1e-9)
+        #expect(simd_length(pairMomentum(engine) - linear) < 1e-9)
+    }
+
+    @Test("The stick pumps a locked pair's swing up to twice the hull's turn, brakes it the other way, and beam swing 0 never pumps")
+    func stickPumpsTheSwing() throws {
+        var engine = lockable(after: 0.3)
+        try lockOn(&engine)
+        let start = try #require(engine.state.ball.beamLock).spin
+        let way: Double = start >= 0 ? 1 : -1
+        let linear = pairMomentum(engine)
+        let steps = 20
+        for _ in 0 ..< steps { hold(&engine, torque: way) }
+        let pumped = engine.state.ball.beamLock!.spin
+        let expected = SimulationEngine.beamSwingAcceleration * Double(steps) * engine.configuration.stepDuration
+        #expect(abs((pumped - start) * way - expected) < 1e-6, "pumped \(pumped - start), expected \(expected)")
+        #expect(simd_length(pairMomentum(engine) - linear) < 1e-9, "pumping moved the pair")
+        for _ in 0 ..< 1200 { hold(&engine, torque: way) }
+        let top = SimulationEngine.beamSwingTopRate * engine.configuration.torqueAcceleration
+        #expect(abs(engine.state.ball.beamLock!.spin * way - top) < 1e-6, "the swing did not top out")
+        for _ in 0 ..< 20 { hold(&engine, torque: -way) }
+        #expect(engine.state.ball.beamLock!.spin * way < top - 1, "the stick against the swing did not brake it")
+
+        var still = lockable(after: 0.3)
+        var configuration = still.configuration
+        configuration.beamSwing = 0
+        still.updateConfiguration(configuration)
+        try lockOn(&still)
+        let free = still.state.ball.beamLock!.spin
+        for _ in 0 ..< 30 { hold(&still, torque: 1) }
+        #expect(abs(still.state.ball.beamLock!.spin - free) < 1e-9, "beam swing 0 still pumped")
+    }
+
+    @Test("Beam swing is a match rule, clamped off the wire")
+    func beamSwingIsAMatchRule() {
+        #expect(SimulationConfiguration().beamSwing == 0)
+        #expect(FlightTuningSnapshot.defaults.configuration.beamSwing == FlightTuningSnapshot.defaults.beamSwing)
+        var snapshot = FlightTuningSnapshot.defaults
+        snapshot.beamSwing = .nan
+        #expect(snapshot.configuration.beamSwing == FlightTuningSnapshot.defaults.beamSwing)
+        snapshot.beamSwing = 1e300
+        #expect(snapshot.configuration.beamSwing == FlightTuningSnapshot.beamSwingRange.upperBound)
     }
 
     @Test("The shipped match rules lock the beam on; a bare configuration never does")

@@ -455,6 +455,9 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// Seconds a beam has to hold the ball before it locks on; zero never
     /// locks. Let go sooner and the ball just flies on in.
     public var beamLockTime: Double = 0
+    /// How hard the stick swings a locked pair, times
+    /// `SimulationEngine.beamSwingAcceleration`; zero never pumps.
+    public var beamSwing: Double = 0
     public var ballDropHeight: Double
     public var ballDropSpeed: Double
     public var serveDelay: Double
@@ -650,6 +653,9 @@ public struct SimulationEngine: Sendable {
     /// rulebook's path alone, or a guest replaying ticks would count every
     /// hit twice.
     private var playsThisStep: [StatPlay] = []
+    /// Each pilot's stick this step, for the beam lock: it picks the way a
+    /// catch swings and pumps a locked pair.
+    private var stickTorques: [Seat: Double] = [:]
     private enum StatPlay {
         case hit(Seat)
         case boltHit(Seat, slam: Bool)
@@ -925,6 +931,7 @@ public struct SimulationEngine: Sendable {
         var contacts: [RuleContact] = []
         var collisionEffects: [SimulationEvent] = []
         playsThisStep.removeAll()
+        stickTorques.removeAll()
         defencePlays.removeAll()
         let previousShipPositions = state.ships.mapValues(\.position)
         for seat in Seat.allCases {
@@ -933,6 +940,7 @@ public struct SimulationEngine: Sendable {
             let input = ship.stunTicks > 0 ? .idle(tick: state.tick) : inputs[seat] ?? .idle(tick: state.tick)
             if ship.stunTicks > 0 { ship.stunTicks -= 1 }
             if ship.stunGuardTicks > 0 { ship.stunGuardTicks -= 1 }
+            stickTorques[seat] = input.torque
             if let locked = lockedBall(of: seat), let lock = state.balls[locked].beamLock {
                 // Welded to a ball, the hull turns with the pair, not the stick.
                 ship.angularVelocity = lock.spin
@@ -1739,6 +1747,24 @@ public struct SimulationEngine: Sendable {
                         bearing: bearing,
                         spin: ship.angularVelocity
                     )
+                    // The catch keeps the ball's run: the speed it was closing
+                    // at turns into swing instead of dying against the weld.
+                    // Momentum and the pair's energy are kept; the swing goes
+                    // the way the stick is held, else the way the ball was
+                    // already drifting across the line, else the side it sits.
+                    let ball = state.balls[ballIndex]
+                    let mass = Self.shipMass + Self.ballMass
+                    let drift = (ship.velocity * Self.shipMass + ball.velocity * Self.ballMass) / mass
+                    let relative = ball.velocity - ship.velocity
+                    let across = SIMD2(-toward.y, toward.x)
+                    let sideways = simd_dot(relative, across)
+                    let stick = stickTorques[seat] ?? 0
+                    let way: Double = stick != 0 ? (stick > 0 ? 1 : -1)
+                        : abs(sideways) > 0.02 ? (sideways > 0 ? 1 : -1)
+                        : bearing < 0 ? -1 : 1
+                    let swing = across * (way * simd_length(relative))
+                    ship.velocity = drift - swing * (Self.ballMass / mass)
+                    state.balls[ballIndex].velocity = drift + swing * (Self.shipMass / mass)
                     state.ships[seat] = ship
                     return
                 }
@@ -1798,14 +1824,28 @@ public struct SimulationEngine: Sendable {
             let shipArm = -axis * (lock.length * ballMass / mass)
             let ballArm = axis * (lock.length * shipMass / mass)
             let inertia = shipInertia + ballInertia + shipMass * simd_length_squared(shipArm) + ballMass * simd_length_squared(ballArm)
-            let spin = angularMomentum / inertia
+            var spin = angularMomentum / inertia
+            // The stick pumps the swing, up to twice the hull's own turn;
+            // against the swing it brakes. Let go of the beam at the top of
+            // it to whip the ball off.
+            if let stick = stickTorques[lock.seat], stick != 0, configuration.beamSwing > 0 {
+                let top = Self.beamSwingTopRate * configuration.torqueAcceleration
+                let push = stick * Self.beamSwingAcceleration * configuration.beamSwing * configuration.stepDuration
+                if push > 0, spin < top {
+                    spin = min(top, spin + push)
+                } else if push < 0, spin > -top {
+                    spin = max(-top, spin + push)
+                }
+            }
             let from = ship.position
             ship.position = centre + shipArm
             ship.velocity = drift + SIMD2(-shipArm.y, shipArm.x) * spin
             ball.position = centre + ballArm
             ball.velocity = drift + SIMD2(-ballArm.y, ballArm.x) * spin
             ball.spin = spin
-            ship.angle = atan2(axis.y, axis.x) - lock.bearing
+            // Snapped without a wrap, so a hull swung past half a turn never
+            // jumps a whole one for anything that smooths its angle.
+            ship.angle += remainder(atan2(axis.y, axis.x) - lock.bearing - ship.angle, 2 * .pi)
             ship.angularVelocity = spin
             lock.spin = spin
             // The weld moved the hull; the walls still have the last word.
@@ -1826,6 +1866,11 @@ public struct SimulationEngine: Sendable {
     static let lockedBallInertia = 0.4
     /// The longest hold the engine will honour; past it the beam never locks.
     static let longestBeamLock = 60.0
+    /// Radians a second, each second, a full stick adds to a locked pair's
+    /// swing at Beam swing 1.
+    static let beamSwingAcceleration = 12.0
+    /// A pumped swing tops out at this many times the hull's own turn rate.
+    static let beamSwingTopRate = 2.0
 
     /// How hard `ship`'s beam holds whatever sits at `point`, and the unit
     /// direction from the ship out to it. Nil with the beam off, or outside

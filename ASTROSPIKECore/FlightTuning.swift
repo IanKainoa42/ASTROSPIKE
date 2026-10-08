@@ -37,6 +37,11 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// rides the wire.
     public var beamLock: Double = 0.5
     public static let beamLockRange: ClosedRange<Double> = 0.1 ... 2.0
+    /// How hard the stick swings a locked pair, times the baked pump. Zero
+    /// leaves the swing to the catch and whatever hits it. A match rule: the
+    /// host's number rides the wire.
+    public var beamSwing: Double = 1.0
+    public static let beamSwingRange: ClosedRange<Double> = 0 ... 2.5
     /// The free-for-all ring: how it flies, where its lines and bumpers
     /// stand. The host's sliders, so an online ring is the host's table on
     /// every board; offline the pilot's own.
@@ -79,6 +84,9 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         configuration.beamLockTime = beamLock.isFinite
             ? min(Self.beamLockRange.upperBound, max(Self.beamLockRange.lowerBound, beamLock))
             : Self.defaults.beamLock
+        configuration.beamSwing = beamSwing.isFinite
+            ? min(Self.beamSwingRange.upperBound, max(Self.beamSwingRange.lowerBound, beamSwing))
+            : Self.defaults.beamSwing
         configuration.ring = ring
         return configuration
     }
@@ -121,6 +129,9 @@ public final class FlightTuningStore {
     public var beamLock: Double {
         didSet { defaults.set(beamLock, forKey: Keys.beamLock) }
     }
+    public var beamSwing: Double {
+        didSet { defaults.set(beamSwing, forKey: Keys.beamSwing) }
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -151,6 +162,10 @@ public final class FlightTuningStore {
         beamLock = defaults.object(forKey: Keys.beamLock) == nil
             ? baked.beamLock
             : min(lockRange.upperBound, max(lockRange.lowerBound, defaults.double(forKey: Keys.beamLock)))
+        let swingRange = FlightTuningSnapshot.beamSwingRange
+        beamSwing = defaults.object(forKey: Keys.beamSwing) == nil
+            ? baked.beamSwing
+            : min(swingRange.upperBound, max(swingRange.lowerBound, defaults.double(forKey: Keys.beamSwing)))
     }
 
     public var snapshot: FlightTuningSnapshot {
@@ -169,6 +184,7 @@ public final class FlightTuningStore {
             pegPull: pegPull,
             boltHit: boltHit,
             beamLock: beamLock,
+            beamSwing: beamSwing,
             ring: RingTuning.stored(in: defaults)
         )
     }
@@ -191,6 +207,7 @@ public final class FlightTuningStore {
         pegPull = baked.pegPull
         boltHit = baked.boltHit
         beamLock = baked.beamLock
+        beamSwing = baked.beamSwing
         Keys.all.forEach(defaults.removeObject(forKey:))
     }
 
@@ -220,6 +237,7 @@ public final class FlightTuningStore {
         static let pegPull = "tuning.pegPull"
         static let boltHit = "tuning.boltHit"
         static let beamLock = "tuning.beamLock2"
+        static let beamSwing = "tuning.beamSwing"
         /// Keys earlier builds wrote from sliders that no longer exist. The
         /// touch cap went in build 94: touches are free now, so a stepper
         /// value from before would set a rule that no longer exists.
@@ -241,6 +259,7 @@ public final class FlightTuningStore {
             pegPull,
             boltHit,
             beamLock,
+            beamSwing,
         ]
     }
 }

@@ -151,7 +151,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     in the tuning, BeamHold.since).
     // 46: a locked ball turns with its hull (its own spin joins the pair's),
     // and the beam lock time may now be as short as 0.1 s.
-    public static let currentVersion: UInt16 = 46
+    // 47: a beam lock's catch keeps the ball's run as swing, and the stick
+    //     pumps a locked pair (beam swing in the tuning).
+    public static let currentVersion: UInt16 = 47
 
     public var version: UInt16
     public var sequence: UInt64

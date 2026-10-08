@@ -2308,7 +2308,15 @@ private struct SettingsView: View {
                         readout: { $0.formatted(.number.precision(.fractionLength(2))) + " s" }
                     )
                     .accessibilityIdentifier("beam-lock")
-                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena, peg pull, bolt hit and beam lock apply to solo and doubles matches and to any online match you host. Bolt hit is what an enemy bolt does to a hull: shove it, stun its controls for a moment, or spin it round. Beam lock is how long the beam holds the ball before it locks on: you and the ball then turn as one body until you let go. Let go sooner and it flies on in.")
+                    TuningSlider(
+                        title: "Beam swing",
+                        value: $tuning.beamSwing,
+                        range: FlightTuningSnapshot.beamSwingRange,
+                        step: 0.05,
+                        readout: { $0.formatted(.number.precision(.fractionLength(2))) + "x" }
+                    )
+                    .accessibilityIdentifier("beam-swing")
+                    Text("Touches are unlimited. Bounces apply to solo matches; online uses three. Match length, arena, peg pull, bolt hit, beam lock and beam swing apply to solo and doubles matches and to any online match you host. Bolt hit is what an enemy bolt does to a hull: shove it, stun its controls for a moment, or spin it round. Beam lock is how long the beam holds the ball before it locks on: you and the ball then turn as one body until you let go. Let go sooner and it flies on in. The catch keeps the ball's run as swing; beam swing is how hard the stick pumps it while locked. Let go at speed to whip the ball off.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
