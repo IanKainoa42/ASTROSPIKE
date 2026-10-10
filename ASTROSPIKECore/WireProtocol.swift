@@ -155,7 +155,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     pumps a locked pair (beam swing in the tuning).
     // 48: a locked ball scraping the deck counts one bounce per touch-down
     //     (BeamLock.grounded).
-    public static let currentVersion: UInt16 = 48
+    // 49: a beam lock breaks when the hull touches the ground, when another
+    //     hull touches the locked ball, or when any bolt hits the hull or the
+    //     ball; a grounded hull does not lock on; every goal is shut to a
+    //     locked ball. No new fields: the host's solve decides, guests follow.
+    public static let currentVersion: UInt16 = 49
 
     public var version: UInt16
     public var sequence: UInt64

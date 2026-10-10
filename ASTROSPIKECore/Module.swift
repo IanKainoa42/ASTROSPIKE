@@ -656,6 +656,10 @@ public struct SimulationEngine: Sendable {
     /// Each pilot's stick this step, for the beam lock: it picks the way a
     /// catch swings and pumps a locked pair.
     private var stickTorques: [Seat: Double] = [:]
+    /// Every hull that met the ground this step: the deck, a floor corner, a
+    /// ledge cut at the floor, or the ring's rim. A beam lock does not
+    /// survive it, and a grounded hull never locks on.
+    private var groundedSeats: Set<Seat> = []
     private enum StatPlay {
         case hit(Seat)
         case boltHit(Seat, slam: Bool)
@@ -932,6 +936,7 @@ public struct SimulationEngine: Sendable {
         var collisionEffects: [SimulationEvent] = []
         playsThisStep.removeAll()
         stickTorques.removeAll()
+        groundedSeats.removeAll()
         defencePlays.removeAll()
         let previousShipPositions = state.ships.mapValues(\.position)
         for seat in Seat.allCases {
@@ -992,12 +997,14 @@ public struct SimulationEngine: Sendable {
             }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
-            resolveArenaCollision(
+            if resolveArenaCollision(
                 for: &ship,
                 hitbox: shipHitboxes[seat] ?? .shared,
                 from: previousShipPositions[seat] ?? ship.position,
                 effects: &collisionEffects
-            )
+            ) {
+                groundedSeats.insert(seat)
+            }
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
             if ship.ballTouchCooldownTicks > 0 { ship.ballTouchCooldownTicks -= 1 }
             // The trigger works anywhere short of the MAX CROSS line, the
@@ -1736,7 +1743,7 @@ public struct SimulationEngine: Sendable {
                 let lockTime = configuration.beamLockTime
                 if lockTime > 0, lockTime <= Self.longestBeamLock,
                    state.tick &- since >= UInt64((lockTime / configuration.stepDuration).rounded()),
-                   lockedBall(of: seat) == nil {
+                   lockedBall(of: seat) == nil, !groundedSeats.contains(seat) {
                     // Held long enough: the ball welds on where it is, never
                     // closer than just off the nose.
                     let reach = (shipHitboxes[seat] ?? .shared).noseReach + state.balls[ballIndex].radius + 0.005
@@ -1790,13 +1797,11 @@ public struct SimulationEngine: Sendable {
     private mutating func solveBeamLocks(effects: inout [SimulationEvent]) {
         for ballIndex in state.balls.indices {
             guard var lock = state.balls[ballIndex].beamLock else { continue }
-            guard var ship = state.ships[lock.seat], !ship.isDestroyed, ship.tractorActive else {
-                state.balls[ballIndex].beamLock = nil
-                if var ship = state.ships[lock.seat] {
-                    // The hull's share of the spin winds down like a knock.
-                    ship.knockSpin = lock.spin
-                    state.ships[lock.seat] = ship
-                }
+            guard var ship = state.ships[lock.seat], !ship.isDestroyed, ship.tractorActive,
+                  !groundedSeats.contains(lock.seat) else {
+                // Let go, stunned, or the hull touched the ground: the weld
+                // does not hold a hull that is on the deck.
+                breakBeamLock(ballIndex)
                 continue
             }
             var ball = state.balls[ballIndex]
@@ -1849,12 +1854,36 @@ public struct SimulationEngine: Sendable {
             ship.angularVelocity = spin
             lock.spin = spin
             // The weld moved the hull; the walls still have the last word.
-            resolveArenaCollision(for: &ship, hitbox: hitbox, from: from, effects: &effects)
+            let grounded = resolveArenaCollision(for: &ship, hitbox: hitbox, from: from, effects: &effects)
             ball.beamLock = lock
             // Still the beam's ball, for a slam dunk or a beam-pull goal.
             ball.beamHold = BeamHold(seat: lock.seat, tick: state.tick, since: ball.beamHold?.since)
             state.balls[ballIndex] = ball
             state.ships[lock.seat] = ship
+            // The swing set the hull down on the deck: the lock lets go, and
+            // both fly on at the speeds the weld just gave them.
+            if grounded {
+                groundedSeats.insert(lock.seat)
+                breakBeamLock(ballIndex)
+            }
+        }
+    }
+
+    /// Drops the lock on `ballIndex`'s ball, if any. The hull's share of the
+    /// spin winds down like a knock, and the hold starts over: the beam has
+    /// to be held the full lock time again before it welds on, so a lock
+    /// knocked off is not back the next step. The ball stays the beam's for a
+    /// slam dunk or a beam-pull goal. Nothing is sent: the weld is a per-step
+    /// solve, so a broken lock is simply a free ball from here on.
+    private mutating func breakBeamLock(_ ballIndex: Int) {
+        guard let lock = state.balls[ballIndex].beamLock else { return }
+        state.balls[ballIndex].beamLock = nil
+        if var ship = state.ships[lock.seat] {
+            ship.knockSpin = lock.spin
+            state.ships[lock.seat] = ship
+        }
+        if let hold = state.balls[ballIndex].beamHold {
+            state.balls[ballIndex].beamHold = BeamHold(seat: hold.seat, tick: hold.tick, since: state.tick)
         }
     }
 
@@ -2017,6 +2046,12 @@ public struct SimulationEngine: Sendable {
             if let shipHit, earliest.map({ shipHit.contact <= $0.contact }) ?? true,
                var ship = state.ships[shipHit.seat] {
                 let touch = previous + (bolt.position - previous) * shipHit.contact
+                // A bolt on a hull holding a lock knocks the lock off, caught
+                // by the beam or not, shoved or not.
+                if let locked = lockedBall(of: shipHit.seat) {
+                    breakBeamLock(locked)
+                    ship = state.ships[shipHit.seat] ?? ship
+                }
                 if tractorGrip(of: ship, at: previous) != nil || ringInOwnZone(ship.position, seat: shipHit.seat) {
                     effects.append(.collisionEffect(position: touch, intensity: configuration.boltPunch))
                 } else {
@@ -2054,6 +2089,10 @@ public struct SimulationEngine: Sendable {
                 let ballIndex = earliest.ballIndex
                 let contact = earliest.contact
                 struckBalls.insert(ballIndex)
+                // Anyone's bolt on a locked ball, the holder's own included,
+                // breaks the lock: the punch sends the ball off instead of
+                // being swallowed by the weld.
+                breakBeamLock(ballIndex)
                 let speed = simd_length(bolt.velocity)
                 let travel = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
                 // Off the centre the hit glances: the ball is knocked partway
@@ -2371,16 +2410,20 @@ public struct SimulationEngine: Sendable {
         }
     }
 
+    /// Returns whether the hull met the ground: the deck, a floor corner, a
+    /// ledge cut at the floor, or the ring's rim. Walls, roof, hump and pegs
+    /// are not ground.
+    @discardableResult
     private mutating func resolveArenaCollision(
         for ship: inout ShipState,
         hitbox: ShipHitbox,
         from previousPosition: SIMD2<Double>,
         effects: inout [SimulationEvent]
-    ) {
+    ) -> Bool {
         if let ring = arena.ring {
-            resolveRingCollision(for: &ship, hitbox: hitbox, from: previousPosition, ring: ring, effects: &effects)
-            return
+            return resolveRingCollision(for: &ship, hitbox: hitbox, from: previousPosition, ring: ring, effects: &effects)
         }
+        var grounded = false
         // Curved parts meet the hull's bounding circle; the flat walls meet
         // whatever part of the drawn hull points at them.
         let radius = hitbox.reach
@@ -2450,6 +2493,7 @@ public struct SimulationEngine: Sendable {
                     intensity: abs(inwardSpeed)
                 ))
             }
+            if obstacle.isGround, obstacle.normal.y > 0.5 { grounded = true }
         }
 
         if let corner = arena.cornerContact(position: ship.position, radius: radius) {
@@ -2458,6 +2502,7 @@ public struct SimulationEngine: Sendable {
             if inwardSpeed < 0 {
                 ship.velocity -= corner.normal * ((1 + 0.3) * inwardSpeed)
             }
+            if corner.normal.y > 0.5 { grounded = true }
         }
 
         let below = hitbox.extent(along: SIMD2(0, -1), angle: ship.angle)
@@ -2467,6 +2512,7 @@ public struct SimulationEngine: Sendable {
         if ship.position.y - below <= arena.floorY {
             ship.position.y = arena.floorY + below
             ship.velocity.y = max(0, -ship.velocity.y * 0.12)
+            grounded = true
         }
         if ship.position.y + above >= arena.ceilingY {
             ship.position.y = arena.ceilingY - above
@@ -2480,21 +2526,26 @@ public struct SimulationEngine: Sendable {
             ship.position.x = arena.halfWidth - right
             ship.velocity.x = min(0, -ship.velocity.x * 0.3)
         }
+        return grounded
     }
 
     /// The ring's rim meets a hull like the duel's floor, dead: whatever part
     /// of the drawn hull points at it. The fins are solid; a live net is not.
+    /// Returns whether the hull met the ring's boundary: the rim, or a bump,
+    /// flank or net frame standing off it. The ring has no deck, so its wall
+    /// all round is its ground.
     private func resolveRingCollision(
         for ship: inout ShipState,
         hitbox: ShipHitbox,
         from previousPosition: SIMD2<Double>,
         ring: RingField,
         effects: inout [SimulationEvent]
-    ) {
+    ) -> Bool {
         // A hull meets every net shut, live or not: it can fly up to a
         // mouth and keep it, but never park behind a goal line.
         var solid = arena
         solid.obstacles += ring.closedNets { _ in true }
+        var grounded = false
         if let wall = solid.obstacleContact(from: previousPosition, to: ship.position, radius: hitbox.reach) {
             ship.position = wall.position
             let inwardSpeed = simd_dot(ship.velocity, wall.normal)
@@ -2504,6 +2555,7 @@ public struct SimulationEngine: Sendable {
             if inwardSpeed < -Self.effectImpactSpeed {
                 effects.append(.collisionEffect(position: ship.position, intensity: abs(inwardSpeed)))
             }
+            grounded = true
         }
         let out = ring.outward(at: ship.position)
         let towardRim = hitbox.extent(along: out, angle: ship.angle)
@@ -2511,7 +2563,9 @@ public struct SimulationEngine: Sendable {
             ship.position = out * (ring.rimRadius - towardRim)
             let speed = simd_dot(ship.velocity, out)
             if speed > 0 { ship.velocity -= out * ((1 + 0.12) * speed) }
+            grounded = true
         }
+        return grounded
     }
 
     /// The ball on the ring: the nets' frames, the bump flanks, the
@@ -2530,7 +2584,10 @@ public struct SimulationEngine: Sendable {
     ) {
         var solid = arena
         let field = state.freeForAll
-        solid.obstacles = ring.ballWalls { field?.isSolid(goal: $0) ?? false }
+        // A locked ball meets every net shut, like a hull does: a knocked-out
+        // pilot's net is shut to every ball.
+        let locked = state.balls[ballIndex].beamLock != nil
+        solid.obstacles = ring.ballWalls { locked || (field?.isSolid(goal: $0) ?? false) }
         let r = state.balls[ballIndex].radius
         var from = previousPosition
         for _ in 0 ..< 3 {
@@ -2546,7 +2603,9 @@ public struct SimulationEngine: Sendable {
                 }
             }
             let out = ring.outward(at: state.balls[ballIndex].position)
-            let openMouth = ring.admitsThroughRim(state.balls[ballIndex].position) { !(field?.isSolid(goal: $0) ?? true) }
+            let openMouth = ring.admitsThroughRim(state.balls[ballIndex].position) {
+                !locked && !(field?.isSolid(goal: $0) ?? true)
+            }
             if !openMouth, simd_length(state.balls[ballIndex].position) + r >= ring.rimRadius {
                 touched = true
                 state.balls[ballIndex].position = out * (ring.rimRadius - r)
@@ -2563,7 +2622,7 @@ public struct SimulationEngine: Sendable {
 
         // A live net's frame is open to the ball; only crossing the goal
         // line coming back in from the mouth counts.
-        if let goal = ring.goalCrossing(from: previousPosition, to: state.balls[ballIndex].position),
+        if !locked, let goal = ring.goalCrossing(from: previousPosition, to: state.balls[ballIndex].position),
            !(field?.isSolid(goal: goal) ?? false) {
             freeForAllGoalsThisStep[ballIndex] = goal
         }
@@ -2671,8 +2730,10 @@ public struct SimulationEngine: Sendable {
         ) {
             let goal = arena.goalIndex(nearest: previousPosition.x)
             // A knocked-out pilot's goal is closed: the mouth is as solid as
-            // the collar above it.
-            let closed = state.freeForAll?.isSolid(goal: goal) ?? false
+            // the collar above it. So is every goal to a locked ball: nobody
+            // welds the ball on and flies it in. Let go and throw it.
+            let closed = (state.freeForAll?.isSolid(goal: goal) ?? false)
+                || state.balls[ballIndex].beamLock != nil
             if netHit.crossedFace, !blockedByLip, !closed, netHit.position.y <= arena.portalMouthTopY,
                isFreeForAll {
                 state.balls[ballIndex].position = netHit.position
@@ -2977,6 +3038,12 @@ public struct SimulationEngine: Sendable {
 
         guard let hit = earliest, var ship = state.ships[hit.seat],
               let previousShipPosition = previousShipPositions[hit.seat] else { return }
+        // The lock is weak against anyone else: another hull so much as
+        // touching the locked ball knocks it off, and the knock below plays
+        // out on a free ball.
+        if let lock = state.balls[ballIndex].beamLock, lock.seat != hit.seat {
+            breakBeamLock(ballIndex)
+        }
         let hitbox = shipHitboxes[hit.seat] ?? .shared
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let left = SIMD2(-axis.y, axis.x)
