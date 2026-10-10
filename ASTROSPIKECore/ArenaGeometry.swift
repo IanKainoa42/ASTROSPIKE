@@ -12,16 +12,12 @@ public struct BeamLock: Codable, Equatable, Sendable {
     public var bearing: Double
     /// The pair's turn rate, radians a second, counter-clockwise positive.
     public var spin: Double
-    /// The ball was on the deck last step. A locked ball scrapes rather
-    /// than bounces, so only the step it touches down counts as a bounce.
-    public var grounded: Bool
 
-    public init(seat: Seat, length: Double, bearing: Double, spin: Double, grounded: Bool = false) {
+    public init(seat: Seat, length: Double, bearing: Double, spin: Double) {
         self.seat = seat
         self.length = length
         self.bearing = bearing
         self.spin = spin
-        self.grounded = grounded
     }
 }
 

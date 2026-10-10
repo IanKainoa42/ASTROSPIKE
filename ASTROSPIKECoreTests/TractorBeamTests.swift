@@ -226,36 +226,73 @@ struct TractorBeamTests {
         #expect(abs(remainder(atan2(line.y, line.x) - ship.angle - held.bearing, 2 * .pi)) < 1e-9, "the nose stays on the ball")
     }
 
-    @Test("A locked ball dragged along the deck is one bounce per touch-down, not one a step")
-    func lockedBallScrapingIsOneBounce() throws {
+    @Test("A locked ball that touches down drops the lock, and the touch-down is one bounce")
+    func lockedBallTouchingDownDropsTheLock() throws {
         var engine = lockable(after: 0.3)
         try lockOn(&engine)
-        var configuration = engine.configuration
-        configuration.gravity = SimulationEngine.testing().configuration.gravity
-        engine.updateConfiguration(configuration)
         var lock = try #require(engine.state.ball.beamLock)
         lock.spin = 0
-        // Hang the pair ball-down, the ball just off the deck and nothing
-        // moving: gravity sets it down and the hull's weight holds it there.
-        let rest = engine.arena.floorY + engine.state.ball.radius
-        engine.state.ball.position = .init(-0.5, rest + 0.002)
-        engine.state.ball.velocity = .zero
-        engine.state.ball.spin = 0
-        engine.state.ball.beamLock = lock
-        engine.state.ships[.cyan]!.position = .init(-0.5, rest + 0.002 + lock.length)
-        engine.state.ships[.cyan]!.velocity = .zero
-        engine.state.ships[.cyan]!.angularVelocity = 0
-        let score = engine.state.match.score
-        var onDeck = 0
-        for _ in 0 ..< 240 {
-            hold(&engine)
-            if engine.state.ball.position.y - rest < 0.001 { onDeck += 1 }
-        }
-        #expect(engine.state.ball.beamLock != nil, "the lock let go with the beam still held")
-        #expect(onDeck > 60, "the ball never sat on the deck (\(onDeck) steps)")
+        // Hang the pair ball-down and drop it onto the deck.
+        let r = engine.state.ball.radius
+        let ball = SIMD2(-0.5, engine.arena.floorY + r + 0.01)
+        try strike(&engine, lock: lock, ballAt: ball, shipOffset: .init(0, lock.length), velocity: .init(0, -1))
         let floor = engine.state.match.floorContacts
         #expect(floor[.cyan] + floor[.orange] == 1, "one touch-down, counted \(floor[.cyan] + floor[.orange])")
-        #expect(engine.state.match.score == score, "the scrape gave away a point")
+    }
+
+    /// Sets the stilled pair flying at `velocity`, the ball at `ballAt` and
+    /// the hull `shipOffset` off it, and holds the beam until the ball's
+    /// first contact drops the lock. Fails if it is still on after a second.
+    private func strike(
+        _ engine: inout SimulationEngine,
+        lock: BeamLock,
+        ballAt ball: SIMD2<Double>,
+        shipOffset: SIMD2<Double>,
+        velocity: SIMD2<Double>
+    ) throws {
+        engine.state.ball.position = ball
+        engine.state.ball.velocity = velocity
+        engine.state.ball.spin = 0
+        engine.state.ball.beamLock = lock
+        engine.state.ships[.cyan]!.position = ball + shipOffset
+        engine.state.ships[.cyan]!.velocity = velocity
+        engine.state.ships[.cyan]!.angularVelocity = 0
+        for _ in 0 ..< 60 where engine.state.ball.beamLock != nil {
+            #expect(engine.state.ball.beamLock?.seat == .cyan)
+            hold(&engine)
+        }
+        #expect(engine.state.ball.beamLock == nil, "the locked ball touched it and kept the lock")
+        #expect(!engine.state.ships[.cyan]!.isDestroyed)
+    }
+
+    @Test("A locked ball that lands on a lip drops the lock", arguments: [1.0, -1.0])
+    func lockedBallOnTheLipDropsTheLock(side: Double) throws {
+        let (stilled, lock) = try stilledLock()
+        var engine = stilled
+        let arena = engine.arena
+        let root = arena.lipRoot(sign: side)
+        let tip = arena.lipTip(sign: side)
+        let mid = (root + tip) / 2
+        let edge = simd_normalize(tip - root)
+        var up = SIMD2(-edge.y, edge.x)
+        if up.y < 0 { up = -up }
+        let r = engine.state.ball.radius
+        // The hull hangs straight up off the ball, clear of the slab.
+        try strike(&engine, lock: lock, ballAt: mid + up * (r + 0.01), shipOffset: .init(0, lock.length), velocity: -up)
+    }
+
+    @Test("A locked ball that hits a ledge drops the lock")
+    func lockedBallOnALedgeDropsTheLock() throws {
+        let (stilled, lock) = try stilledLock()
+        var engine = stilled
+        engine.updateArena(engine.arena.laidOut(.ledges))
+        let ledge = try #require(engine.arena.obstacles.first { !$0.isGround && $0.start.x > 0 })
+        let mid = (ledge.start + ledge.end) / 2
+        let edge = simd_normalize(ledge.end - ledge.start)
+        var up = SIMD2(-edge.y, edge.x)
+        if up.y < 0 { up = -up }
+        let r = engine.state.ball.radius
+        try strike(&engine, lock: lock, ballAt: mid + up * (ledge.radius + r + 0.01), shipOffset: .init(0, lock.length), velocity: -up)
     }
 
     @Test("Let go before the lock and the ball flies on in to a headbutt")
@@ -570,8 +607,41 @@ struct TractorBeamTests {
             hold(&engine)
             hold(&free)
             #expect(engine.state.match.score == before, "a locked ball went in on side \(side)")
-            #expect(engine.state.ball.beamLock != nil, "the goal face broke the lock on side \(side)")
+            #expect(engine.state.ball.beamLock == nil, "the goal face kept the lock on side \(side)")
             #expect(free.state.match.score != before, "the free ball did not score on side \(side), so this proved nothing")
+        }
+    }
+
+    @Test("A locked pair shoved at the goal never slips the ball through the slot", arguments: [1.0, -1.0])
+    func lockedPairNeverTunnelsTheGoal(side: Double) throws {
+        let (stilled, lock) = try stilledLock()
+        let arena = stilled.arena
+        let limit = arena.netHalfWidth + stilled.state.ball.radius
+        for fraction in [0.3, 0.5, 0.7, 0.9] {
+            for speed in [0.3, 1.0, 2.5] {
+                var engine = stilled
+                let ball = SIMD2(
+                    side * (limit + 0.05),
+                    arena.netBottomY + (arena.portalMouthTopY - arena.netBottomY) * fraction
+                )
+                engine.state.ball.position = ball
+                engine.state.ships[.cyan]!.position = ball - .init(0, lock.length)
+                let before = engine.state.match.score
+                var inside = 0
+                // Two seconds of the pair, and then the freed ball, driven
+                // flat at the face every step.
+                for _ in 0 ..< 120 where engine.state.match.score == before {
+                    let run = SIMD2(-side * speed, 0)
+                    engine.state.ball.velocity = run
+                    if engine.state.ball.beamLock != nil { engine.state.ships[.cyan]!.velocity = run }
+                    hold(&engine)
+                    let p = engine.state.ball.position
+                    if abs(p.x) < limit - 1e-6, p.y > arena.netBottomY, p.y < arena.portalMouthTopY { inside += 1 }
+                }
+                let scored = engine.state.match.score != before
+                #expect(inside == 0, "mouth \(fraction), speed \(speed): the ball sat in the slot \(inside) steps")
+                #expect(scored || engine.state.ball.position.x * side > 0, "mouth \(fraction), speed \(speed): out the far side unscored")
+            }
         }
     }
 

@@ -2608,10 +2608,18 @@ public struct SimulationEngine: Sendable {
         solid.obstacles = ring.ballWalls { locked || (field?.isSolid(goal: $0) ?? false) }
         let r = state.balls[ballIndex].radius
         var from = previousPosition
+        var struckFrame = false
+        defer {
+            if struckFrame { breakBeamLock(ballIndex) }
+        }
         for _ in 0 ..< 3 {
             var touched = false
             if let wall = solid.obstacleContact(from: from, to: state.balls[ballIndex].position, radius: r) {
                 touched = true
+                // The nets, the coves and the bumper end a lock, as the goal
+                // and the ledges do on the court. The rim does not: it is the
+                // ring's wall.
+                struckFrame = true
                 state.balls[ballIndex].position = wall.position
                 let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, wall.normal)
                 if inwardSpeed < 0 {
@@ -2657,6 +2665,13 @@ public struct SimulationEngine: Sendable {
         }
         let r = state.balls[ballIndex].radius
         var struckNet = false
+        // A locked ball that meets the deck, the goal or a ledge drops the
+        // lock: the weld is for carrying it through the air, not for
+        // dragging it along a surface or prying it into a net.
+        var struckSurface = false
+        defer {
+            if struckSurface { breakBeamLock(ballIndex) }
+        }
 
         // The floor-mounted net: one solid slab standing up out of the middle
         // of the court, capped with a half-round. Nothing goes through it, so
@@ -2675,6 +2690,7 @@ public struct SimulationEngine: Sendable {
                 grip(wall.normal, from: incoming, ballIndex: ballIndex)
             }
             struckNet = true
+            struckSurface = true
         }
 
         // The hoop. The bucket is judged before the rim, because a ball that
@@ -2696,6 +2712,7 @@ public struct SimulationEngine: Sendable {
                 state.balls[ballIndex].velocity -= rim.normal * ((1 + Self.ballRestitution) * inwardSpeed)
                 grip(rim.normal, from: incoming, ballIndex: ballIndex)
             }
+            struckSurface = true
         }
 
         // The lip is the bottom bar of the goal, and from underneath it is
@@ -2717,6 +2734,7 @@ public struct SimulationEngine: Sendable {
                 state.balls[ballIndex].velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
                 grip(lip.normal, from: incoming, ballIndex: ballIndex)
                 blockedByLip = true
+                struckSurface = true
             }
         }
 
@@ -2739,6 +2757,7 @@ public struct SimulationEngine: Sendable {
                 grip(capHit.normal, from: incoming, ballIndex: ballIndex)
             }
             struckNet = true
+            struckSurface = true
         } else if arena.netStyle == .roofPortal, let netHit = sweptNetHit(
             ballIndex: ballIndex,
             from: previousPosition,
@@ -2766,10 +2785,12 @@ public struct SimulationEngine: Sendable {
                 goalsThisStep[ballIndex] = defending
                 return
             }
-            if netHit.position.y > arena.portalMouthTopY || (closed && netHit.crossedFace) {
+            if netHit.position.y > arena.portalMouthTopY || closed || !netHit.crossedFace {
                 // Above the mouth the slab is a solid collar hanging from the
                 // hump. A ball that has ridden the roof down the slope arrives
                 // here, and it bounces off rather than sneaking in over the top.
+                // A shut mouth is as solid, and so is a face to a ball found
+                // already inside the slot.
                 state.balls[ballIndex].position = netHit.position
                 let normal = SIMD2(netHit.fromLeft ? -1.0 : 1.0, 0)
                 let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, normal)
@@ -2779,10 +2800,12 @@ public struct SimulationEngine: Sendable {
                     grip(normal, from: incoming, ballIndex: ballIndex)
                 }
                 struckNet = true
+                struckSurface = true
             }
-            // Otherwise the ball is inside the open mouth without having been
-            // driven at either face. The mouth is a window, so it falls back
-            // out and the rally goes on.
+            // A ball found inside the slot was never driven in through a
+            // face, so it is no goal: it is put back out at the face it is
+            // nearest and the rally goes on. Left in there it drifted out the
+            // far side with nothing scored.
         }
 
         if !struckNet, previousPosition.x.sign != state.balls[ballIndex].position.x.sign {
@@ -2804,6 +2827,7 @@ public struct SimulationEngine: Sendable {
                 state.balls[ballIndex].velocity -= lip.normal * ((1 + 0.55) * inwardSpeed)
                 grip(lip.normal, from: incoming, ballIndex: ballIndex)
             }
+            struckSurface = true
         }
 
         // The hump and the corner arcs run before the flat clamps so that where
@@ -2811,7 +2835,6 @@ public struct SimulationEngine: Sendable {
         // and so the floor clamp cannot double-count a touch the arc has
         // already reported.
         var floorRegistered = false
-        let floorMark = contacts.count
         if let hump = arena.humpContact(
             from: previousPosition,
             to: state.balls[ballIndex].position,
@@ -2846,6 +2869,7 @@ public struct SimulationEngine: Sendable {
                 state.balls[ballIndex].velocity -= obstacle.normal * ((1 + Self.ballRestitution) * inwardSpeed)
                 grip(obstacle.normal, from: incoming, ballIndex: ballIndex)
             }
+            struckSurface = true
             if obstacle.isGround, obstacle.normal.y > 0.5, !floorRegistered {
                 floorRegistered = true
                 contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
@@ -2876,19 +2900,9 @@ public struct SimulationEngine: Sendable {
                 floorRegistered = true
             }
         }
-        // A locked ball is held to the deck by the weld, so it touches every
-        // step it scrapes along; only the step it touches down is a bounce.
-        // Without this a single touch ran the allowance out in a few steps.
-        if var lock = state.balls[ballIndex].beamLock {
-            if floorRegistered, lock.grounded,
-               let touch = contacts[floorMark...].lastIndex(where: {
-                   if case .ballTouchedFloor = $0 { true } else { false }
-               }) {
-                contacts.remove(at: touch)
-            }
-            lock.grounded = floorRegistered
-            state.balls[ballIndex].beamLock = lock
-        }
+        // Any touch of the deck -- floor, corner or a ground cut -- is one
+        // bounce like any other ball's, and it ends the lock.
+        if floorRegistered { struckSurface = true }
         // Nothing on the hoop court ends a rally except the rim, so a ball
         // that runs out of bounce just lies there and the match never
         // finishes. It comes off the deck live instead.
@@ -2964,6 +2978,9 @@ public struct SimulationEngine: Sendable {
         return (center + normal * combinedRadius, normal)
     }
 
+    /// How far inside a goal face a ball can start and still be on it.
+    static let faceTolerance = 0.000_001
+
     private func sweptNetHit(
         ballIndex: Int,
         from start: SIMD2<Double>,
@@ -2981,6 +2998,13 @@ public struct SimulationEngine: Sendable {
             let fromLeft = startOffset <= 0
             let penetration = limit - abs(startOffset)
             let movingTowardNet = fromLeft ? delta.x > 0 : delta.x < 0
+            // Sitting on the face -- left there by a bounce off it -- and
+            // moving in is a shot at the face from right here, not a ball
+            // already inside. Reported as nothing, it walked into the slot
+            // unscored and out the far side.
+            if penetration <= Self.faceTolerance, movingTowardNet, start.y >= arena.netBottomY {
+                return (SIMD2(postCenterX + (fromLeft ? -limit : limit), start.y), fromLeft, true)
+            }
             if penetration > 0.000_000_1 || movingTowardNet {
                 return (
                     SIMD2(postCenterX + (fromLeft ? -limit : limit), start.y),

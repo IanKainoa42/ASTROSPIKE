@@ -162,7 +162,11 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 50: a goal within a second of the beam letting go is the puller's slam
     //     dunk (was a tenth), and a rival playing the ball drops the hold,
     //     which also restarts any lock it was building. No new fields.
-    public static let currentVersion: UInt16 = 50
+    // 51: a locked ball that touches the deck, the goal, a lip or a ledge
+    //     drops the lock (BeamLock.grounded is gone: no scrape to count), and
+    //     a ball sitting on a goal face and moving in now crosses it instead
+    //     of slipping into the slot and out the far side unscored.
+    public static let currentVersion: UInt16 = 51
 
     public var version: UInt16
     public var sequence: UInt64
