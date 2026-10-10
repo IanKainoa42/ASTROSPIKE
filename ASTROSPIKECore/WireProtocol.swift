@@ -159,7 +159,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     hull touches the locked ball, or when any bolt hits the hull or the
     //     ball; a grounded hull does not lock on; every goal is shut to a
     //     locked ball. No new fields: the host's solve decides, guests follow.
-    public static let currentVersion: UInt16 = 49
+    // 50: a goal within a second of the beam letting go is the puller's slam
+    //     dunk (was a tenth), and a rival playing the ball drops the hold,
+    //     which also restarts any lock it was building. No new fields.
+    public static let currentVersion: UInt16 = 50
 
     public var version: UInt16
     public var sequence: UInt64

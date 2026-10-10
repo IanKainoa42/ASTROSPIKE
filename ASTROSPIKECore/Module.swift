@@ -1685,15 +1685,32 @@ public struct SimulationEngine: Sendable {
     /// sitting where the beam left it.
     public static let slamWindow = 0.6
     /// A goal still counts as beamed in for this long after the grip lapses:
-    /// the ball leaving the cone on its way through the face is still the
-    /// beam's goal.
-    public static let slamPullGrace = 0.1
+    /// let go of a ball you were pulling or holding and it flies on in, and
+    /// that is the beam's slam dunk. Longer than the bolt's window because a
+    /// thrown ball has to cross to the face under its own speed. Another
+    /// pilot playing the ball in between takes it off the beam (the hold is
+    /// dropped), so a rival's deflection is never the pull's goal.
+    public static let slamThrowWindow = 1.0
 
-    /// The pilot whose beam has this ball right now, or had it a moment ago.
+    /// The pilot whose beam has this ball right now, or let it go within the
+    /// throw window.
     private func beamPuller(of ballIndex: Int) -> Seat? {
         guard state.balls.indices.contains(ballIndex), let hold = state.balls[ballIndex].beamHold else { return nil }
-        let grace = UInt64((Self.slamPullGrace / configuration.stepDuration).rounded())
-        return state.tick &- hold.tick <= grace ? hold.seat : nil
+        let window = UInt64((Self.slamThrowWindow / configuration.stepDuration).rounded())
+        return state.tick &- hold.tick <= window ? hold.seat : nil
+    }
+
+    /// Whether `seat` plays against `other`: another side in a duel or
+    /// doubles, anyone else on the ring.
+    private func isRival(_ seat: Seat, of other: Seat) -> Bool {
+        isFreeForAll ? seat != other : seat.team != other.team
+    }
+
+    /// A rival has played the ball: it is no longer the beam's for a slam
+    /// dunk or a beam-pull goal, and any lock it was building starts over.
+    private mutating func takeBallOffBeam(_ ballIndex: Int, playedBy seat: Seat) {
+        guard let hold = state.balls[ballIndex].beamHold, isRival(hold.seat, of: seat) else { return }
+        state.balls[ballIndex].beamHold = nil
     }
 
     private mutating func applyTractorBeam(dt: Double, ballIndex: Int) {
@@ -2125,6 +2142,7 @@ public struct SimulationEngine: Sendable {
                 state.balls[ballIndex].lastPlay = BallPlay(seat: bolt.seat, kind: slam ? .slamDunk : .bolt)
                 playsThisStep.append(.boltHit(bolt.seat, slam: slam))
                 defencePlays.append((ballIndex, bolt.seat, .bolt))
+                takeBallOffBeam(ballIndex, playedBy: bolt.seat)
                 effects.append(.collisionEffect(
                     position: state.balls[ballIndex].position,
                     intensity: configuration.boltPunch
@@ -3044,6 +3062,7 @@ public struct SimulationEngine: Sendable {
         if let lock = state.balls[ballIndex].beamLock, lock.seat != hit.seat {
             breakBeamLock(ballIndex)
         }
+        takeBallOffBeam(ballIndex, playedBy: hit.seat)
         let hitbox = shipHitboxes[hit.seat] ?? .shared
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let left = SIMD2(-axis.y, axis.x)

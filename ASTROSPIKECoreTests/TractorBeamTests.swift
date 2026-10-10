@@ -493,8 +493,8 @@ struct TractorBeamTests {
         hold(&engine)
         #expect(engine.state.ball.beamLock == nil, "the lock held through a rival's touch")
         #expect(engine.state.ball.lastPlay == BallPlay(seat: .orange, kind: .hull), "the touch did not play the ball")
-        #expect(engine.state.ball.beamHold?.since == engine.state.tick - 1, "the hold did not start over")
-        #expect(engine.state.ball.beamHold?.seat == lock.seat)
+        #expect(engine.state.ball.beamHold == nil, "a rival played the ball and it is still the beam's")
+        _ = lock
     }
 
     @Test("A rival's bolt on the locked ball breaks the lock and punches the ball")
@@ -510,6 +510,7 @@ struct TractorBeamTests {
         hold(&engine)
         #expect(engine.state.ball.beamLock == nil, "the lock held through a bolt on the ball")
         #expect(engine.state.ball.velocity.x < -0.1, "the punch never landed, so this proved nothing")
+        #expect(engine.state.ball.beamHold == nil, "a rival played the ball and it is still the beam's")
     }
 
     @Test("The holder's own bolt on the locked ball breaks the lock too")
@@ -571,6 +572,54 @@ struct TractorBeamTests {
             #expect(engine.state.match.score == before, "a locked ball went in on side \(side)")
             #expect(engine.state.ball.beamLock != nil, "the goal face broke the lock on side \(side)")
             #expect(free.state.match.score != before, "the free ball did not score on side \(side), so this proved nothing")
+        }
+    }
+
+    @Test("Let go of the lock and the thrown ball's goal is a slam dunk")
+    func thrownLockedBallScoresASlam() throws {
+        let (stilled, lock) = try stilledLock()
+        let arena = stilled.arena
+        let configuration = stilled.configuration
+        for side in [1.0, -1.0] {
+            var engine = stilled
+            // The pair flying flat at the face, ball first, far enough off
+            // the mouth that the ball is in the air well past the old tenth
+            // of a second after the beam lets go.
+            let speed = 2.0
+            let flight = 0.4
+            let mouth = SIMD2(
+                side * (arena.netHalfWidth + engine.state.ball.radius + speed * flight),
+                (arena.netBottomY + arena.portalMouthTopY) / 2
+            )
+            let run = SIMD2(-side * speed, 0)
+            engine.state.ball.position = mouth
+            engine.state.ball.velocity = run
+            engine.state.ships[.cyan]!.position = mouth - .init(0, lock.length)
+            engine.state.ships[.cyan]!.velocity = run
+            let before = engine.state.match.score
+            let release = engine.state.tick
+            // Let go: the lock breaks this step and the ball flies on.
+            hold(&engine, tractor: false)
+            try #require(engine.state.ball.beamLock == nil)
+            var credit: (seat: Seat, style: GoalStyle)?
+            for _ in 0 ..< 120 where engine.state.match.score == before {
+                hold(&engine, tractor: false)
+                for event in engine.lastEvents {
+                    if case let .goalScored(seat, style) = event { credit = (seat, style) }
+                }
+            }
+            #expect(engine.state.match.score != before, "the thrown ball never scored on side \(side)")
+            let elapsed = Double(engine.state.tick - release) * configuration.stepDuration
+            #expect(elapsed > 0.25, "the goal came too soon to tell the window apart on side \(side)")
+            if side > 0 {
+                // Into the rival's face: cyan's slam dunk.
+                #expect(credit?.seat == .cyan, "the throw was credited to \(String(describing: credit))")
+                #expect(credit?.style == .slamDunk, "a thrown goal was no slam dunk")
+            } else {
+                // Into its own face: the defender's beam is never a slam.
+                #expect(credit?.style != .slamDunk, "throwing it into your own goal was called a slam dunk")
+                #expect(engine.state.stats[.cyan].slamDunks == 0)
+            }
         }
     }
 }

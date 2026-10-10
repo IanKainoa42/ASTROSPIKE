@@ -103,12 +103,29 @@ struct MatchStatsTests {
         #expect(goalScored(engine.lastEvents)?.style == .slamDunk)
     }
 
+    @Test("A goal within the throw window of the beam letting go is the puller's slam dunk")
+    func thrownGoalInsideTheWindowIsASlam() {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        ballIntoCyanGoal(&engine, lastPlay: BallPlay(seat: .orange, kind: .hull))
+        // Let go three quarters of a second ago, the ball flying since: a
+        // fixed age, inside the throw window and far past the tenth of a
+        // second a beamed goal used to get.
+        let age = UInt64((0.75 / engine.configuration.stepDuration).rounded())
+        engine.state.ball.beamHold = BeamHold(seat: .orange, tick: engine.state.tick &- age)
+        engine.step(inputs: [:])
+        #expect(engine.state.match.score.orange == 1)
+        #expect(goalScored(engine.lastEvents)?.style == .slamDunk)
+        #expect(engine.state.stats[.orange].slamDunks == 1)
+    }
+
     @Test("A beam that let go long ago, or a defender's beam, makes no slam")
     func staleOrDefendingBeamIsNoSlam() {
         var engine = SimulationEngine.testing()
         engine.beginPlay()
+        let window = UInt64((SimulationEngine.slamThrowWindow / engine.configuration.stepDuration).rounded())
         ballIntoCyanGoal(&engine, lastPlay: BallPlay(seat: .orange, kind: .hull))
-        engine.state.ball.beamHold = BeamHold(seat: .orange, tick: engine.state.tick &- 60)
+        engine.state.ball.beamHold = BeamHold(seat: .orange, tick: engine.state.tick &- (window + 10))
         engine.step(inputs: [:])
         #expect(goalScored(engine.lastEvents)?.style == .hull)
 
