@@ -99,6 +99,17 @@ final class OnlineMatchCoordinator: NSObject,
     private(set) var isAuthoritative = false
     /// The host we stood in for after its link went quiet, not dropped.
     private var silentHostTakenFrom: String?
+    /// Pilots GameKit called disconnected mid-match, each with the grace
+    /// timer that decides whether that was real.
+    private var pendingDisconnects: [String: Task<Void, Never>] = [:]
+    /// When each peer last sent a packet that only a seated, flying board
+    /// sends (inputs, snapshots, events, pings). A handshake or profile is
+    /// not enough: a pilot rejoining from scratch sends those before it has
+    /// a seat.
+    private var lastPlayHeard: [String: TimeInterval] = [:]
+    /// Dropped pilots heard playing at the previous heartbeat. Two beats in a
+    /// row, with GameKit listing them in the match again, closes the hold.
+    private var droppedButHeard: Set<String> = []
     private(set) var localSeat: Seat?
     var localTeam: Team? { localSeat?.team }
     /// Bumped each time a fresh table is seated. The arena keys on it: a
@@ -401,6 +412,14 @@ final class OnlineMatchCoordinator: NSObject,
     /// Total silence this long from a seated pilot is a dropped link, whatever
     /// GameKit still says. Pings go out every second, so this is five missed.
     private static let peerSilenceSeconds: TimeInterval = 5
+    /// A heartbeat that wakes this long after the last one means this board
+    /// was not running, not that anyone else went quiet.
+    private static let localStallSeconds: TimeInterval = 2.5
+    /// How long a mid-match `.disconnected` from GameKit is given to take
+    /// itself back (a `.connected`, or packets still arriving) before the
+    /// chair is held. A notification banner, a radio hiccup or a Game Center
+    /// blip reports a peer gone for a moment and back again.
+    private static let disconnectGraceSeconds: TimeInterval = 4
     private var snapshotGate = AuthoritativeSnapshotGate()
     private var eventGate = MonotonicSequenceGate()
     private var lifecycle = OnlineMatchLifecycle()
@@ -1623,10 +1642,23 @@ final class OnlineMatchCoordinator: NSObject,
         heartbeatTask?.cancel()
         liveness.begin(peers: watchedPeers, at: Self.now)
         heartbeatTask = Task { @MainActor [weak self] in
+            var lastBeat = Self.now
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !Task.isCancelled, self.match != nil else { return }
+                let beat = Self.now
+                let gap = beat - lastBeat
+                lastBeat = beat
                 self.sendPing()
+                // This board was the one not running (suspended, or the main
+                // thread stalled): its own gap is not the peers' silence, and
+                // their packets from that gap are still queued behind this
+                // wake-up. Re-seed the clock instead of calling them gone.
+                if gap > Self.localStallSeconds {
+                    self.note("LOCAL STALL \(String(format: "%.1f", gap))s · SILENCE CLOCK RESET")
+                    self.liveness.begin(peers: self.watchedPeers, at: beat)
+                    continue
+                }
                 self.checkPeerLiveness()
             }
         }
@@ -1703,6 +1735,7 @@ final class OnlineMatchCoordinator: NSObject,
 
         switch liveness.check(peers: watchedPeers, at: Self.now) {
         case .unchanged:
+            reclaimSeatsStillHeard()
             return
         case .wentSilent(let gone):
             // Longest-silent first, so the pilot the forfeit is awarded
@@ -1739,20 +1772,47 @@ final class OnlineMatchCoordinator: NSObject,
         case .resumed(let returned):
             guard case .reconnecting = status else { return }
             note("PACKETS RESUMED · SEAT RECLAIMED")
-            if let host = silentHostTakenFrom, returned.contains(host) {
-                // The host never left its match and still runs it: two
-                // boards running the rules would fight over every snapshot.
-                isAuthoritative = false
-                hostID = host
-                snapshotGate.reset()
-                eventGate.reset()
-                note("HOST BACK ON THE LINK · RULES HANDED BACK")
-            }
-            silentHostTakenFrom = nil
-            readyPeers.formUnion(returned)
-            _ = lifecycle.acceptConnection()
-            completeReconnect()
+            reclaimSeats(Set(returned))
         }
+    }
+
+    /// A held chair whose pilot never really left: their packets are coming
+    /// in again (or never stopped). Hand the rules back if we stood in for
+    /// their host, and close the hold without a re-invite.
+    private func reclaimSeats(_ returned: Set<String>) {
+        if let host = silentHostTakenFrom, returned.contains(host) {
+            // The host never left its match and still runs it: two
+            // boards running the rules would fight over every snapshot.
+            isAuthoritative = false
+            hostID = host
+            snapshotGate.reset()
+            eventGate.reset()
+            note("HOST BACK ON THE LINK · RULES HANDED BACK")
+        }
+        silentHostTakenFrom = nil
+        readyPeers.formUnion(returned)
+        _ = lifecycle.acceptConnection()
+        completeReconnect()
+    }
+
+    /// A hold opened by GameKit's `.disconnected` never sees the silence
+    /// detector's `.resumed`, because the pilot was never silent. Close it
+    /// once every dropped pilot has been heard at every heartbeat since.
+    private func reclaimSeatsStillHeard() {
+        guard case .reconnecting = status, !droppedPilots.isEmpty, let match else {
+            droppedButHeard = []
+            return
+        }
+        let now = Self.now
+        let inMatch = Set(match.players.map(\.gamePlayerID))
+        let playing = Set(lastPlayHeard.filter { now - $0.value < Self.recentlyHeardSeconds }.keys)
+            .intersection(inMatch)
+        let heardTwice = droppedButHeard.intersection(playing)
+        droppedButHeard = playing
+        guard heardTwice.isSuperset(of: droppedPilots), liveness.silentPeers.isEmpty else { return }
+        let names = droppedPilots.map { seatedPilotNames[$0] ?? "PILOT" }.joined(separator: ", ")
+        note("STILL HEARING \(names) · HOLD CLOSED")
+        reclaimSeats(droppedPilots)
     }
 
     /// The peer only learns we are ready from a message, and a message sent
@@ -1926,6 +1986,12 @@ final class OnlineMatchCoordinator: NSObject,
             return
         } catch {
             return
+        }
+        switch envelope.payload {
+        case .input, .inputs, .snapshot, .event, .ping, .emote:
+            lastPlayHeard[playerID] = Self.now
+        default:
+            break
         }
         switch envelope.payload {
         case let .input(seat, value):
@@ -2195,6 +2261,7 @@ final class OnlineMatchCoordinator: NSObject,
         reconnectTask?.cancel()
         reconnectTask = nil
         droppedPilots = []
+        droppedButHeard = []
         seatPoolGroup = nil
         silentHostTakenFrom = nil
         returnTicket = nil
@@ -2387,6 +2454,10 @@ final class OnlineMatchCoordinator: NSObject,
         note("PEER \(displayName): \(word) · \(match?.players.count ?? 0) IN · EXPECTING \(match?.expectedPlayerCount ?? 0)")
         switch state {
         case .connected:
+            if let pending = pendingDisconnects.removeValue(forKey: playerID) {
+                pending.cancel()
+                note("\(displayName) BACK WITHIN GRACE · NOTHING HELD")
+            }
             // The pool a held chair is open to is a number anyone with the
             // lobby can work out: only the pilot the chair is held for gets it.
             if seatPoolGroup != nil, case .reconnecting = status, !droppedPilots.contains(playerID) {
@@ -2438,31 +2509,60 @@ final class OnlineMatchCoordinator: NSObject,
                 return
             }
             if leaveTable(playerID, displayName: displayName) { return }
-            readyPeers.remove(playerID)
-            droppedPilots.insert(playerID)
-            // Whoever left loses it for their side, whichever side that is.
-            pendingForfeitWinner = seating[playerID]?.team.opponent
-            let localID = GKLocalPlayer.local.gamePlayerID
-            let remaining = seating.keys.filter { $0 != localID }
-            // Only a board flying the duel can take it over: the bench has
-            // no ship, and no seat in the plan to run the rules from.
-            if seating[localID] != nil, OnlineSeating.localTakesOverHosting(
-                localID: localID, hostID: hostID, droppedID: playerID, remainingPeerIDs: remaining
-            ) {
-                // The host walked out of a live match. Somebody has to run
-                // the rules while their chair is held, and it is us.
-                isAuthoritative = true
-                hostID = localID
-                snapshotGate.reset()
-                eventGate.reset()
-                note("HOST \(displayName) DROPPED · LOCAL NOW HOSTS")
+            guard !droppedPilots.contains(playerID), pendingDisconnects[playerID] == nil else { return }
+            if lifecycle.phase == .active, seating[playerID] != nil {
+                // Mid-match: give GameKit a moment to take it back before
+                // freezing the table and asking for a re-invite.
+                note("GAMEKIT: \(displayName) DISCONNECTED · \(Int(Self.disconnectGraceSeconds))s GRACE")
+                let matchIdentifier = match.map(ObjectIdentifier.init)
+                pendingDisconnects[playerID] = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(Self.disconnectGraceSeconds))
+                    guard let self, !Task.isCancelled, self.pendingDisconnects[playerID] != nil,
+                          self.match.map(ObjectIdentifier.init) == matchIdentifier else { return }
+                    self.pendingDisconnects[playerID] = nil
+                    // The silence detector may have taken it already.
+                    guard self.lifecycle.phase == .active, !self.droppedPilots.contains(playerID) else { return }
+                    let stillHere = self.match?.players.contains { $0.gamePlayerID == playerID } ?? false
+                    let heard = self.liveness.heard(within: Self.recentlyHeardSeconds, at: Self.now).contains(playerID)
+                    if stillHere || heard {
+                        self.note("\(displayName) STILL ON THE LINK · DISCONNECT IGNORED")
+                        return
+                    }
+                    self.dropPeer(playerID, displayName: displayName)
+                }
+                return
             }
-            beginReconnectWindow()
+            dropPeer(playerID, displayName: displayName)
         case .unknown:
             break
         @unknown default:
             break
         }
+    }
+
+    /// A pilot is gone from a live match: hold their chair, and take over
+    /// the rules if it was the host.
+    private func dropPeer(_ playerID: String, displayName: String) {
+        readyPeers.remove(playerID)
+        droppedPilots.insert(playerID)
+        // Whoever left loses it for their side, whichever side that is.
+        pendingForfeitWinner = seating[playerID]?.team.opponent
+        let localID = GKLocalPlayer.local.gamePlayerID
+        let remaining = seating.keys.filter { $0 != localID }
+        // Only a board flying the duel can take it over: the bench has
+        // no ship, and no seat in the plan to run the rules from.
+        if seating[localID] != nil, OnlineSeating.localTakesOverHosting(
+            localID: localID, hostID: hostID, droppedID: playerID, remainingPeerIDs: remaining
+        ) {
+            // The host walked out of a live match. Somebody has to run
+            // the rules while their chair is held, and it is us.
+            isAuthoritative = true
+            hostID = localID
+            snapshotGate.reset()
+            eventGate.reset()
+            note("HOST \(displayName) DROPPED · LOCAL NOW HOSTS")
+        }
+        beginReconnectWindow()
     }
 
     // MARK: - Open table
@@ -2873,6 +2973,10 @@ final class OnlineMatchCoordinator: NSObject,
         inputBuffers = [:]
         heardSeats = []
         liveness.reset()
+        for pending in pendingDisconnects.values { pending.cancel() }
+        pendingDisconnects = [:]
+        lastPlayHeard = [:]
+        droppedButHeard = []
         mismatchedPeers = []
         mismatchReason = nil
         isMatchReady = false
