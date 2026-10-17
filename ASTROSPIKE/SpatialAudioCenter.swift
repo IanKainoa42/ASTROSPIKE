@@ -23,6 +23,25 @@ final class SpatialAudioCenter {
         environment.distanceAttenuationParameters.referenceDistance = 1
         player.renderingAlgorithm = .HRTF
         try? engine.start()
+        #if os(iOS)
+        // An interruption stops the engine and leaves it stopped. Start it
+        // again when the interruption ends rather than on the next cue.
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+            MainActor.assumeIsolated {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                self?.ensureRunning()
+            }
+        }
+        #endif
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { _ = self?.ensureRunning() }
+        }
     }
 
     /// The format everything on this graph speaks. Handed out so recorded
@@ -32,8 +51,14 @@ final class SpatialAudioCenter {
             ?? engine.mainMixerNode.outputFormat(forBus: 0)
     }
 
-    func ensureRunning() {
+    /// Whether a node on this graph may be told to play. `play()` on a node
+    /// whose engine is stopped raises an Objective-C exception (a crash),
+    /// and the engine is stopped for us by any audio interruption or
+    /// configuration change -- a notification sound, a call, a route change.
+    @discardableResult
+    func ensureRunning() -> Bool {
         if !engine.isRunning { try? engine.start() }
+        return engine.isRunning
     }
 
     /// Another player node on the same environment, so a caller can hold its

@@ -84,7 +84,7 @@ final class SoundBank {
     /// Fire and forget. `positionX` is the arena x, -1 to 1.
     func play(_ cue: Cue, positionX: Float = 0, volume: Float = 1) {
         guard enabled, let buffer = buffers[cue], !voices.isEmpty else { return }
-        SpatialAudioCenter.shared.ensureRunning()
+        guard SpatialAudioCenter.shared.ensureRunning() else { return }
         let voice = voices[nextVoice % voices.count]
         nextVoice += 1
         voice.stop()
@@ -125,7 +125,7 @@ final class SoundBank {
         voice.volume = Self.loopPeakVolume * pow(level, 0.45)
         loopSpeeds[cue]?.rate = Self.loopBaseRate + Self.loopRateClimb * level
         if !voice.isPlaying {
-            SpatialAudioCenter.shared.ensureRunning()
+            guard SpatialAudioCenter.shared.ensureRunning() else { return }
             voice.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts])
             voice.play()
         }
@@ -154,7 +154,7 @@ final class SoundBank {
         voice.volume = Self.humVolume * (0.55 + 0.45 * g) * level
         filter.bands[0].frequency = 320 + 1400 * g
         if !voice.isPlaying {
-            SpatialAudioCenter.shared.ensureRunning()
+            guard SpatialAudioCenter.shared.ensureRunning() else { return }
             voice.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts])
             voice.play()
         }
