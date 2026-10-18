@@ -195,8 +195,13 @@ struct MatchStatsTests {
 
     /// Holds the beam for `holdTicks`, waits `waitTicks` with it off, then
     /// fires and steps until the bolt has landed or gone.
+    /// Weightless, so a long wait leaves the hull in the air: a hull that
+    /// has sunk to the deck cannot fire.
     private func beamThenFire(holdTicks: Int, waitTicks: Int) -> SimulationEngine {
         var engine = ballOverCyan(gap: 0.22)
+        var configuration = engine.configuration
+        configuration.gravity = .zero
+        engine.updateConfiguration(configuration)
         var tick: UInt64 = 0
         func step(_ input: PlayerInput) {
             engine.step(inputs: [.cyan: input])

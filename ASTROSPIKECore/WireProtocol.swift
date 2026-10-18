@@ -166,7 +166,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     drops the lock (BeamLock.grounded is gone: no scrape to count), and
     //     a ball sitting on a goal face and moving in now crosses it instead
     //     of slipping into the slot and out the far side unscored.
-    public static let currentVersion: UInt16 = 51
+    // 52: a hull on the deck cannot fire (the ring has no deck). No new
+    //     fields: the host's step decides.
+    public static let currentVersion: UInt16 = 52
 
     public var version: UInt16
     public var sequence: UInt64

@@ -24,6 +24,23 @@ struct BoltAndWashTests {
         #expect(engine.state.bolts.first!.velocity.y > 2)
     }
 
+    @Test("A hull on the deck cannot fire; lifted off it, it can")
+    func noFireFromTheDeck() {
+        var engine = playing()
+        engine.state.ball.position = .init(0.5, 0.3)
+        // The hull's middle on the deck line: the deck holds it there.
+        engine.state.ships[.cyan]!.position.y = engine.arena.floorY
+        engine.state.ships[.cyan]!.velocity = .zero
+        for _ in 0 ..< 90 {
+            engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, fire: true)])
+        }
+        #expect(engine.state.nextBoltID == 0, "fired \(engine.state.nextBoltID) bolts sitting on the deck")
+        engine.state.ships[.cyan]!.position.y = 0
+        engine.state.ships[.cyan]!.velocity = .zero
+        engine.step(inputs: [.cyan: PlayerInput(tick: engine.state.tick, torque: 0, thrust: false, fire: true)])
+        #expect(engine.state.nextBoltID == 1, "a hull in the air did not fire")
+    }
+
     @Test("A held trigger auto-repeats only once the cooldown has elapsed")
     func heldTriggerRepeatsAtCooldown() {
         var engine = playing()

@@ -1015,7 +1015,11 @@ public struct SimulationEngine: Sendable {
             let shortOfTheLine = isFreeForAll
                 ? ringOffside(ship.position, seat: seat) == nil
                 : ship.position.x * homeSign >= -arena.opponentCrossingLimit
-            if input.fire, shortOfTheLine, ship.fireCooldownTicks == 0, state.match.phase == .playing {
+            // Nor from the deck: a hull sat on the ground does not fire, so
+            // nobody parks and spams bolts. The ring has no deck -- its rim
+            // is a wall, and walls do not stop the trigger.
+            let onTheDeck = !isFreeForAll && groundedSeats.contains(seat)
+            if input.fire, shortOfTheLine, !onTheDeck, ship.fireCooldownTicks == 0, state.match.phase == .playing {
                 fireBolt(from: &ship, seat: seat)
             }
             // Unlike the cannon, the beam works anywhere on the court — a
