@@ -81,6 +81,13 @@ struct LobbyView: View {
                     .font(.caption).foregroundStyle(.orange)
                     .accessibilityIdentifier("lobby-notice")
             }
+            // What became of the last ask -- a no, or taken back -- so the
+            // row going away is explained rather than just gone.
+            if let word = lobby.inviteNotice {
+                Label(word, systemImage: "person.crop.circle.badge.xmark")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("lobby-invite-notice")
+            }
         }
     }
 

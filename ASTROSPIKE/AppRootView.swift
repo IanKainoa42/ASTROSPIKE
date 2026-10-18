@@ -187,6 +187,11 @@ struct AppRootView: View {
             }
         }
         .onChange(of: online.meetingTag) { _, _ in syncLobbyActivity() }
+        // The pilot asked said no on Apple's banner: close the standing ask
+        // behind it, or the lobby keeps showing it as waiting.
+        .onChange(of: online.refusedInvite) { _, refusal in
+            if let refusal { lobby.liveInviteRefused(refusal) }
+        }
         // Holding a dropped pilot's chair: watch for them searching their
         // way back in, and open the chair to them when they are.
         .task(id: isWatchingReturns) {
@@ -207,6 +212,13 @@ struct AppRootView: View {
                 if ProcessInfo.processInfo.arguments.contains("--return-preview") { online.previewReturn() }
                 if ProcessInfo.processInfo.arguments.contains("--joining-preview") {
                     online.previewMatchmaking(headline: PlayerNetworkCopy.Matchmaking.joining("Ian"))
+                    return
+                }
+                if ProcessInfo.processInfo.arguments.contains("--inviting-preview") {
+                    online.previewMatchmaking(
+                        headline: PlayerNetworkCopy.Matchmaking.waiting(for: ["Noa"]),
+                        waitingOn: "gc:preview-out"
+                    )
                     return
                 }
                 #endif
@@ -883,6 +895,13 @@ private struct InviteHubSections: View {
         let outbox = lobby.standingInviteOutbox
         let localID = lobby.localID ?? ""
         let pilots = lobby.snapshot.onlinePilots(at: .now, friends: lobby.friends, excluding: localID)
+        if let word = lobby.inviteNotice {
+            Section {
+                Label(word, systemImage: "person.crop.circle.badge.xmark")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("invites-notice")
+            }
+        }
         if !inbox.isEmpty {
             Section("WAITING ON YOU · \(inbox.count)") {
                 ForEach(inbox) { invite in
@@ -1211,7 +1230,11 @@ private struct GameView: View {
                 .ignoresSafeArea().accessibilityHidden(true)
             VStack(spacing: 0) {
                 if mode.isBay {
-                    WarmupHUD(session: session, online: mode == .warmup ? online : nil) { showLeaveConfirmation = true }
+                    WarmupHUD(session: session, online: mode == .warmup ? online : nil) {
+                        // A search that already ended (every invite refused)
+                        // has nothing left to cancel: no dialog, just out.
+                        if mode == .warmup, case .failed = online.status { leaveGame() } else { showLeaveConfirmation = true }
+                    }
                 } else if session.isFreeForAll {
                     FreeForAllHUD(state: session.state, localSeat: session.localSeat, name: session.callSign) {
                         if mode.isOffline {
@@ -1427,7 +1450,18 @@ private struct GameView: View {
             isPresented: $showLeaveConfirmation,
             titleVisibility: .visible
         ) {
-            Button(leaveButton, role: .destructive, action: leaveGame)
+            if let ask = askBehindTheWait {
+                // Leaving the bay is one thing; the ask is another. Keeping
+                // it is the invite-once, join-later the lobby promised;
+                // withdrawing it clears both phones.
+                Button("Withdraw Invite", role: .destructive) {
+                    Task { await lobby.withdrawStandingInvite(ask) }
+                    leaveGame()
+                }
+                Button("Keep Invite", action: leaveGame)
+            } else {
+                Button(leaveButton, role: .destructive, action: leaveGame)
+            }
             Button(mode == .warmup ? "Keep Warming Up" : mode == .practice ? "Keep Practising" : isSpectating ? "Keep Watching" : "Keep Playing", role: .cancel) {}
         } message: {
             Text(leaveMessage)
@@ -1577,7 +1611,14 @@ private struct GameView: View {
         )
     }
 
+    /// The standing ask behind the bay's wait, if any: the leave dialog
+    /// then asks whether it keeps.
+    private var askBehindTheWait: StandingInvite? {
+        mode == .warmup ? lobby.standingInvite(behind: online.meetingTag) : nil
+    }
+
     private var leaveTitle: String {
+        if let ask = askBehindTheWait { return "Stop Waiting for \(ask.guestName)?" }
         if mode == .warmup { return "Leave the Bay?" }
         if mode == .practice { return "Leave Practice?" }
         if table != nil { return online.isTableHost ? "Close the Table?" : "Leave the Table?" }
@@ -1592,6 +1633,10 @@ private struct GameView: View {
     }
 
     private var leaveMessage: String {
+        if let ask = askBehindTheWait {
+            let hours = max(1, Int((ask.expiresAt.timeIntervalSinceNow / 3600).rounded(.up)))
+            return "Keep it and \(ask.guestName) can still join from the app for the next \(hours)h. Withdrawing takes it back on both phones."
+        }
         if mode == .warmup { return "Leaving withdraws the invite or search." }
         if mode == .practice { return "Your longest keep-up and hoops post to Game Center." }
         if table != nil {

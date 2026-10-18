@@ -269,4 +269,41 @@ private func presence(
         #expect(InviteRouting.join(ask, host: presence("ian", .matching, tag: ask.rendezvousTag, age: 46), at: epoch) == .gameCenter)
         #expect(InviteRouting.join(ask, host: nil, at: epoch) == .gameCenter)
     }
+
+    @Test func aDeclineOnThePushTakesTheAskBack() {
+        let ask = invite()
+        #expect(InviteRouting.guestRefused(ask, waitingOn: ask.pushTag, reason: .declined))
+        // Game Center giving up, the invite not arriving, an old build: not
+        // an answer. The ask keeps for when they next open the app.
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: ask.pushTag, reason: .noAnswer))
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: ask.pushTag, reason: .failed))
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: ask.pushTag, reason: .incompatible))
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: ask.pushTag, reason: .unableToConnect))
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: ask.pushTag, reason: .other))
+        // A no in the pool arrives as a reply, not from Game Center; a no to
+        // some other ask's push is not this ask's.
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: ask.rendezvousTag, reason: .declined))
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: "gc:other", reason: .declined))
+        #expect(!InviteRouting.guestRefused(ask, waitingOn: nil, reason: .declined))
+    }
+
+    @Test func theHostsWaitNamesTheAskBehindIt() {
+        let maya = invite(guest: "maya")
+        let noa = invite(guest: "noa")
+        let book = StandingInviteBook(invites: [maya, noa])
+        #expect(book.invite(from: "ian", waitingOn: maya.pushTag, at: epoch) == maya)
+        #expect(book.invite(from: "ian", waitingOn: noa.rendezvousTag, at: epoch) == noa)
+        #expect(book.invite(from: "ian", waitingOn: "gc:other", at: epoch) == nil)
+        #expect(book.invite(from: "ian", waitingOn: nil, at: epoch) == nil)
+        // Only the host's own asks: a guest never waits on one.
+        #expect(book.invite(from: "maya", waitingOn: maya.pushTag, at: epoch) == nil)
+        // An ask already taken back, answered or aged out is not being waited on.
+        let taken = StandingInviteBook(invites: [invite(withdrawn: true)])
+        #expect(taken.invite(from: "ian", waitingOn: maya.pushTag, at: epoch) == nil)
+        let no = StandingInviteReply(inviteID: maya.id, guestID: "maya", accepted: false, repliedAt: epoch)
+        let declined = StandingInviteBook(invites: [maya], replies: [no])
+        #expect(declined.invite(from: "ian", waitingOn: maya.pushTag, at: epoch) == nil)
+        let later = epoch.addingTimeInterval(StandingInviteBook.lifetime + 1)
+        #expect(book.invite(from: "ian", waitingOn: maya.pushTag, at: later) == nil)
+    }
 }

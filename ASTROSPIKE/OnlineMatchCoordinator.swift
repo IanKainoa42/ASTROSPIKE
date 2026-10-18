@@ -88,8 +88,10 @@ final class OnlineMatchCoordinator: NSObject,
 
     #if DEBUG
     /// `--joining-preview`: the bay as an invitee sees it, without Game Center.
-    func previewMatchmaking(headline: String) {
+    /// `--inviting-preview`: the host's bay waiting on a standing ask's push.
+    func previewMatchmaking(headline: String, waitingOn tag: String? = nil) {
         matchmakingHeadlineText = headline
+        meetingTag = tag
         status = .matching
     }
     #endif
@@ -452,6 +454,18 @@ final class OnlineMatchCoordinator: NSObject,
     /// instead of sending a second invite that crosses the first. Nil for
     /// every other search.
     private(set) var meetingTag: String?
+    /// Game Center's final no from the pilot this board invited for a
+    /// standing ask, with the tag it was waiting on, so the lobby can take
+    /// the ask back. The latest only; the next search clears it.
+    private(set) var refusedInvite: RefusedInvite?
+
+    struct RefusedInvite: Equatable {
+        let tag: String
+        let pilotID: String
+        let name: String
+        let reason: InviteRefusalReason
+        let at: Date
+    }
     /// The pilots a private-pool search is for: the one an in-game invite
     /// asked, or the ones holding this pilot's chair. GameKit can hand the
     /// match back before they are on it, so whoever connects is checked
@@ -1181,6 +1195,14 @@ final class OnlineMatchCoordinator: NSObject,
                     self.tryStartAsHost()
                     return
                 }
+                // Waiting on the push for a standing ask: this is the guest's
+                // answer to it, and nothing else will ever record one.
+                if let tag = self.meetingTag {
+                    self.refusedInvite = RefusedInvite(
+                        tag: tag, pilotID: player.gamePlayerID, name: player.displayName,
+                        reason: refusalReason, at: .now
+                    )
+                }
                 self.declinedInvites += 1
                 // Everyone we asked said no, so there is nothing to wait for.
                 // GameKit hands the inviter a match before anyone answers, so
@@ -1210,6 +1232,7 @@ final class OnlineMatchCoordinator: NSObject,
             }
         }
         inviteNotice = nil
+        refusedInvite = nil
         matchmakingHeadlineText = meeting.map { meeting in
             meeting.hostTag != nil
                 ? PlayerNetworkCopy.Matchmaking.waiting(for: [meeting.name])

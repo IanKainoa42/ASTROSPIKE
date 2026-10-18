@@ -11,13 +11,14 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["Tune the Ring"].tap()
         let bumper = app.switches["Centre bumper"]
         reveal(bumper, in: app.scrollViews.firstMatch)
-        if bumper.value as? String == "1" { bumper.tap() }
+        // The bumper stands by default (build 146), so the persisted value is the off position.
+        if bumper.value as? String == "0" { bumper.tap() }
         bumper.tap()
-        XCTAssertEqual(bumper.value as? String, "1")
+        XCTAssertEqual(bumper.value as? String, "0")
         app.buttons["Done"].tap()
         app.buttons["Resume"].tap()
         let capture = XCTAttachment(screenshot: app.screenshot())
-        capture.name = "Four-pilot ring with centre bumper"
+        capture.name = "Four-pilot ring, centre bumper off"
         capture.lifetime = .keepAlways
         add(capture)
         app.terminate()
@@ -26,11 +27,11 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["Pause match"].tap()
         app.buttons["Tune the Ring"].tap()
         reveal(bumper, in: app.scrollViews.firstMatch)
-        XCTAssertEqual(bumper.value as? String, "1")
+        XCTAssertEqual(bumper.value as? String, "0")
         let reset = app.buttons["Reset ring to default"]
         reveal(reset, in: app.scrollViews.firstMatch)
         reset.tap()
-        XCTAssertEqual(bumper.value as? String, "0")
+        XCTAssertEqual(bumper.value as? String, "1")
     }
 
     @MainActor

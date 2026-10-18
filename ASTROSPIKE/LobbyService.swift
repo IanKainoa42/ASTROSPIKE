@@ -66,9 +66,22 @@ final class LobbyService {
     /// Standing invites this pilot has answered on this device, so a reply
     /// that has not round-tripped through CloudKit yet still clears the row.
     private var answeredLocally: Set<String> = []
+    /// Asks this pilot has taken back on this device, so the row clears the
+    /// instant they do rather than after the write round-trips.
+    private var withdrawnLocally: Set<String> = []
+    /// Asks written from this device that the next read has not shown yet:
+    /// CloudKit's query can lag its own save by a few seconds, and a guest
+    /// can decline inside them. Each drops out as the book picks it up.
+    private var sentAsks: [String: StandingInvite] = [:]
+    /// The last word on this pilot's own asks -- who declined, which one
+    /// was taken back -- shown in the lobby until the next ask goes out.
+    private(set) var inviteNotice: String?
     /// `--invite-preview` asks: a simulator is never signed in to Game
     /// Center, so this is the only way the banner and INVITES get drawn.
     private var previewInbox: [StandingInvite] = []
+    /// `--invite-preview` also puts one of this pilot's own asks out, so the
+    /// outbox row and the bay's leave dialog can be drawn too.
+    private var previewOutbox: [StandingInvite] = []
 
     init() {}
 
@@ -81,6 +94,12 @@ final class LobbyService {
             guestID: "preview-guest", guestName: "You",
             createdAt: now, expiresAt: now.addingTimeInterval(6 * 3600)
         )]
+        previewOutbox = [StandingInvite(
+            id: "preview-out", hostID: "preview-guest", hostName: "You", hostHull: .lancet,
+            guestID: "preview-noa", guestName: "Noa",
+            createdAt: now, expiresAt: now.addingTimeInterval(6 * 3600)
+        )]
+        inviteNotice = "KAI DECLINED YOUR INVITE"
     }
     #endif
 
@@ -254,6 +273,14 @@ final class LobbyService {
             // INVITE WAITING lines for invites that arrived yesterday.
             if lastRefresh != nil { noteInviteChanges(from: inviteBook, to: book, at: now) }
             inviteBook = book
+            // A withdrawal the book now shows is spent; one still in flight
+            // keeps hiding its row.
+            withdrawnLocally = withdrawnLocally.filter { id in
+                book.invites.contains { $0.id == id && book.status(of: $0, at: now).isLive }
+            }
+            sentAsks = sentAsks.filter { id, ask in
+                ask.expiresAt > now && !book.invites.contains { $0.id == id }
+            }
             snapshot = LobbySnapshot(
                 pilots: try await pilots.compactMap(Records.pilot(from:)),
                 matches: try await duels.compactMap(Records.duel(from:)),
@@ -550,6 +577,7 @@ final class LobbyService {
     /// down first, so it survives both apps closing; the live invite that
     /// follows is the optimistic case, not the only one.
     func inviteAnytime(pilotID: String, name: String, format: OnlineFormat = .duel, using online: OnlineMatchCoordinator) {
+        inviteNotice = nil
         // Durable first, live second, in that order and not concurrently.
         // Both paths report failure through `notice`, and the ask that
         // keeps is the one Ian asked for -- it must not have its message
@@ -667,6 +695,8 @@ final class LobbyService {
             // A fresh ask supersedes whatever the last one was answered, so
             // drop the stale reply rather than leaving the row pre-declined.
             answeredLocally.remove(invite.id)
+            withdrawnLocally.remove(invite.id)
+            sentAsks[invite.id] = invite
             await refresh()
             return invite
         } catch {
@@ -679,7 +709,42 @@ final class LobbyService {
 
     /// Takes an unanswered ask back. Only the host can: it is their record.
     func withdrawStandingInvite(_ invite: StandingInvite) async {
+        await withdraw(invite, saying: "INVITE TO \(invite.guestName.uppercased()) WITHDRAWN")
+    }
+
+    /// The ask behind the wait this board is in, if any: the bay's leave
+    /// dialog names it and offers to keep it or take it back.
+    func standingInvite(behind tag: String?) -> StandingInvite? {
+        guard let tag else { return nil }
+        guard let localID else {
+            return previewOutbox.first { $0.pushTag == tag && !withdrawnLocally.contains($0.id) }
+        }
+        // The book's word when it has the ask at all (open or not); the
+        // copy this device wrote while the read still lags the save.
+        let known = inviteBook.invites.contains { $0.pushTag == tag || $0.rendezvousTag == tag }
+        let ask = known
+            ? inviteBook.invite(from: localID, waitingOn: tag, at: .now)
+            : sentAsks.values.first { $0.hostID == localID && ($0.pushTag == tag || $0.rendezvousTag == tag) }
+        guard let ask, !withdrawnLocally.contains(ask.id) else { return nil }
+        return ask
+    }
+
+    /// Game Center's final word from the pilot this board asked. A decline
+    /// on Apple's banner is their answer to the standing ask behind the
+    /// push, and only this board can record it (declining a banner writes
+    /// no reply), so take the ask back and say who said no. Anything short
+    /// of a decline leaves the ask standing for them to find in the app.
+    func liveInviteRefused(_ refusal: OnlineMatchCoordinator.RefusedInvite) {
+        guard let ask = standingInvite(behind: refusal.tag),
+              InviteRouting.guestRefused(ask, waitingOn: refusal.tag, reason: refusal.reason) else { return }
+        note("\(ask.guestName.uppercased()) DECLINED ON GAME CENTER · TAKING THE ASK BACK")
+        Task { await withdraw(ask, saying: "\(ask.guestName.uppercased()) DECLINED YOUR INVITE") }
+    }
+
+    private func withdraw(_ invite: StandingInvite, saying word: String) async {
         guard canPublish, invite.hostID == localID else { return }
+        // Clear the row now; the write may be slow. A failed write puts it back.
+        withdrawnLocally.insert(invite.id)
         let record = CKRecord(recordType: Records.standingInvite, recordID: CKRecord.ID(recordName: invite.id))
         var pulled = invite
         pulled.withdrawn = true
@@ -687,8 +752,10 @@ final class LobbyService {
         do {
             _ = try await save(record, policy: .allKeys)
             note("STANDING INVITE WITHDRAWN · \(invite.guestName.uppercased())")
+            inviteNotice = word
             await refresh()
         } catch {
+            withdrawnLocally.remove(invite.id)
             note("WITHDRAW FAILED: \(describe(error))")
             notice = playerFacing(error)
         }
@@ -782,13 +849,18 @@ final class LobbyService {
 
     /// Asks this pilot has out that nobody has answered yet.
     var standingInviteOutbox: [StandingInvite] {
-        guard let localID else { return [] }
-        return inviteBook.outbox(from: localID, at: .now)
+        guard let localID else { return previewOutbox.filter { !withdrawnLocally.contains($0.id) } }
+        let shown = inviteBook.outbox(from: localID, at: .now)
+        // An ask just sent shows its row at once, before the read catches up.
+        let inBook = Set(inviteBook.invites.map(\.id))
+        let pending = sentAsks.values
+            .filter { $0.hostID == localID && !inBook.contains($0.id) }
+            .sorted { $0.createdAt < $1.createdAt }
+        return (shown + pending).filter { !withdrawnLocally.contains($0.id) }
     }
 
     func hasStandingInvite(to pilotID: String) -> Bool {
-        guard let localID else { return false }
-        return inviteBook.hasOpenInvite(from: localID, to: pilotID, at: .now)
+        standingInviteOutbox.contains { $0.guestID == pilotID }
     }
 
     /// Says out loud what changed between two polls, so the log reads as a
@@ -802,6 +874,8 @@ final class LobbyService {
         let settledBefore = Set(old.answers(for: localID, at: now).map(\.invite.id))
         for (invite, status) in new.answers(for: localID, at: now) where !settledBefore.contains(invite.id) {
             note("\(invite.guestName.uppercased()) \(status.label) YOUR INVITE")
+            // A yes turns into a match on its own; a no is only ever this line.
+            if status == .declined { inviteNotice = "\(invite.guestName.uppercased()) DECLINED YOUR INVITE" }
         }
     }
 

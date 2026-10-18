@@ -215,6 +215,14 @@ public struct StandingInviteBook: Equatable, Sendable {
         outbox(from: localID, at: now).contains { $0.guestID == guestID }
     }
 
+    /// The ask behind the wait this pilot is in, if its presence tag names
+    /// one still open: the push it sent for the ask, or the pool it sits
+    /// in for it. The bay reads this to know whose invite it is leaving.
+    public func invite(from hostID: String, waitingOn tag: String?, at now: Date) -> StandingInvite? {
+        guard let tag else { return nil }
+        return outbox(from: hostID, at: now).first { $0.pushTag == tag || $0.rendezvousTag == tag }
+    }
+
     /// Answers this pilot's own asks have collected since they last looked,
     /// so the lobby can say "Maya declined" instead of going quiet. Only
     /// settled ones: an open invite has nothing to report.
@@ -311,5 +319,17 @@ public enum InviteRouting {
     /// in the app, stop waiting on the push and meet them in the pool.
     public static func hostMovesToPool(_ invite: StandingInvite, waitingOn tag: String?, status: StandingInviteStatus) -> Bool {
         tag == invite.pushTag && status == .accepted
+    }
+
+    /// The host waiting on the push for `invite` hears Game Center's word
+    /// on it. A decline on Apple's banner is the guest answering this ask,
+    /// and only the host's board can act on it: declining a banner tells
+    /// the guest's app nothing, so no reply is ever written, and without
+    /// this the ask sat open on both phones with WITHDRAW on the host's.
+    /// Anything else Game Center reports -- it gave up delivering, the
+    /// invite never arrived, they are on an old build -- is not an answer,
+    /// and the ask keeps for when the guest next opens the app.
+    public static func guestRefused(_ invite: StandingInvite, waitingOn tag: String?, reason: InviteRefusalReason) -> Bool {
+        tag == invite.pushTag && reason == .declined
     }
 }
