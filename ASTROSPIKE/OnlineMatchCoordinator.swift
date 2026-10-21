@@ -1147,7 +1147,8 @@ final class OnlineMatchCoordinator: NSObject,
         request.maxPlayers = partySize
         request.defaultNumberOfPlayers = partySize
         request.inviteMessage = asOpenTable ? Self.openTableInviteMessage
-            : format.isFreeForAll ? "Free-for-all in ASTROSPIKE"
+            : format.isFreeForAll ? "ASTROPUCK in ASTROSPIKE"
+            : format.isAstroball ? "ASTROBALL in ASTROSPIKE"
             : format == .teamUp ? "Team up with me in ASTROSPIKE"
             : partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
         request.recipients = recipients
@@ -1372,10 +1373,11 @@ final class OnlineMatchCoordinator: NSObject,
         request.maxPlayers = format == .duel ? 2 : 4
         request.defaultNumberOfPlayers = 2
         request.inviteMessage = switch format {
-        case .freeForAll, .freeForAll4: "Free-for-all in ASTROSPIKE"
+        case .freeForAll, .freeForAll4: "ASTROPUCK in ASTROSPIKE"
         case .doublesVersus: "Versus match in ASTROSPIKE"
         case .teamUp: "Team up with me in ASTROSPIKE"
         case .duel: "Duel me in ASTROSPIKE"
+        case .astroball: "ASTROBALL in ASTROSPIKE"
         }
         self.format = format
         request.recipientResponseHandler = { [weak self] player, response in
@@ -1593,6 +1595,7 @@ final class OnlineMatchCoordinator: NSObject,
         // The ring sliders write straight to the defaults, so read them now
         // rather than trust a snapshot taken before Settings was opened.
         if format.isFreeForAll { hostTuning.ring = RingTuning.stored() }
+        if format.isAstroball { hostTuning.astroball = AstroballTuning.stored() }
         isAuthoritative = true
         startConfiguredMatch()
     }

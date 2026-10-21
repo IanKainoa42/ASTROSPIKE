@@ -436,6 +436,12 @@ public struct AIController: InputSource, Sendable {
     /// clearly the farther of the two.
     private func supportsPartner(state: WorldState, seat: Seat, ship: ShipState) -> Bool {
         guard let partner = state.ships[seat.partner], !partner.isDestroyed else { return false }
+        // ASTROBALL: nobody on a side of two plays the ball twice running,
+        // so whoever touched it last leaves the next one to the partner.
+        if configuration.astroball != nil, let last = state.match.lastTouch {
+            if last == seat { return true }
+            if last == seat.partner { return false }
+        }
         let mine = simd_distance(ship.position, state.ball.position)
         let theirs = simd_distance(partner.position, state.ball.position)
         return seat.isWing ? theirs < mine + 0.06 : theirs + 0.10 < mine

@@ -154,7 +154,7 @@ private func invite(
         let decoded = StandingInvite.decodeHostHull(sent.encodedHostHull)
         #expect(decoded.hull == sent.hostHull)
         #expect(decoded.format == .freeForAll4)
-        #expect(sent.matchLabel == "FOUR-PILOT FREE-FOR-ALL")
+        #expect(sent.matchLabel == "FOUR-PILOT ASTROPUCK")
 
         // Invites written by earlier builds have only a hull; they still
         // open as duels and show the host's original ship.

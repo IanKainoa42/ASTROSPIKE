@@ -54,6 +54,15 @@ final class ArenaScene: SKScene {
             buildArena()
         }
     }
+    /// ASTROBALL's book, so each half's scoring zone is drawn where the
+    /// rules call it. Nil on every other court.
+    var astroball: AstroballTuning? {
+        didSet {
+            guard astroball != oldValue else { return }
+            didBuild = false
+            buildArena()
+        }
+    }
     /// One hull and one exhaust per seat, built up front and hidden while
     /// the seat is empty.
     private var shipNodes: [Seat: SKShapeNode] = [:]
@@ -464,6 +473,38 @@ final class ArenaScene: SKScene {
         case .floorWall: addStandingNet()
         case .none: addHoop()
         }
+        if let astroball {
+            addScoringZone(astroball, for: leftTeam, onHalfAt: -1)
+            addScoringZone(astroball, for: leftTeam.opponent, onHalfAt: 1)
+        }
+    }
+
+    /// The stretch of a half's wall path the ball must not touch, glowing in
+    /// the colour of the side that loses the point on it.
+    private func addScoringZone(_ tuning: AstroballTuning, for owningTeam: Team, onHalfAt sign: Double) {
+        guard let zone = tuning.zoneRange else { return }
+        let low = zone.lowerBound
+        let high = zone.upperBound
+        let steps = max(2, Int(((high - low) * 120).rounded(.up)))
+        let path = CGMutablePath()
+        for index in 0 ... steps {
+            let world = arena.wallPathPoint(at: low + (high - low) * Double(index) / Double(steps))
+            let position = point(sign * world.x, world.y)
+            if index == 0 { path.move(to: position) } else { path.addLine(to: position) }
+        }
+        let color = Self.color(owningTeam)
+        let glow = SKShapeNode(path: path)
+        glow.strokeColor = color.withAlphaComponent(0.35)
+        glow.lineWidth = 12
+        glow.lineCap = .round
+        glow.zPosition = -0.5
+        arenaLayer.addChild(glow)
+        let line = SKShapeNode(path: path)
+        line.strokeColor = color.withAlphaComponent(0.9)
+        line.lineWidth = 4
+        line.lineCap = .round
+        line.glowWidth = 2
+        arenaLayer.addChild(line)
     }
 
     /// The free-for-all ring: the rim the ball rolls round, a bell-curve

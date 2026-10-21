@@ -14,9 +14,10 @@ enum GameMode: Hashable {
     case warmup
     /// The same bay with no invite behind it, for as long as the pilot likes.
     case practice
-    /// The net comes off the roof and stands up out of the floor, covering
-    /// the bottom half of the arena. Play it over the top; the floor is live.
-    case volleyball(AIDifficulty)
+    /// ASTROBALL: the net stands up out of the floor, three touches a side
+    /// (or the Settings cap for a side of one), no doubles, and a zone on
+    /// each half that ends the rally. One a side, or two with bots.
+    case astroball(pilots: Int, AIDifficulty)
     /// One rim at centre court that both halves shoot at. First ball through
     /// it takes the match, for whoever touched it last.
     case basketball(AIDifficulty)
@@ -28,7 +29,7 @@ enum GameMode: Hashable {
     /// own tuning applies.
     var isOffline: Bool {
         switch self {
-        case .solo, .doubles, .volleyball, .basketball, .practice, .freeForAll: true
+        case .solo, .doubles, .astroball, .basketball, .practice, .freeForAll: true
         case .online, .warmup: false
         }
     }
@@ -49,7 +50,7 @@ enum GameMode: Hashable {
     /// to be taller than the ball is wide, and the ball is a slider now.
     func court(ballRadius: Double, ring: RingTuning = RingTuning()) -> ArenaGeometry {
         switch self {
-        case .volleyball: .volleyball
+        case let .astroball(pilots, _): .astroball(doubles: pilots > 2)
         case .basketball: .basketball(ballRadius: ballRadius)
         case let .freeForAll(pilots, _): .freeForAll(pilots: pilots, ballRadius: ballRadius, tuning: ring)
         case .solo, .doubles, .online, .warmup, .practice: .standard(ballRadius: ballRadius)
@@ -64,9 +65,9 @@ enum GameMode: Hashable {
         case .online: "ONLINE DUEL"
         case .warmup: "WARM-UP BAY"
         case .practice: "PRACTICE"
-        case .volleyball: "VOLLEYBALL"
+        case .astroball: "ASTROBALL"
         case .basketball: "BASKETBALL"
-        case .freeForAll: "FREE-FOR-ALL"
+        case .freeForAll: "ASTROPUCK"
         }
     }
 
@@ -74,7 +75,7 @@ enum GameMode: Hashable {
     var rivalDifficulty: AIDifficulty? {
         switch self {
         case let .solo(difficulty), let .doubles(difficulty),
-             let .volleyball(difficulty), let .basketball(difficulty),
+             let .astroball(_, difficulty), let .basketball(difficulty),
              let .freeForAll(_, difficulty):
             difficulty
         case .online, .warmup, .practice:
@@ -86,7 +87,7 @@ enum GameMode: Hashable {
         switch self {
         case .solo: .solo(difficulty)
         case .doubles: .doubles(difficulty)
-        case .volleyball: .volleyball(difficulty)
+        case let .astroball(pilots, _): .astroball(pilots: pilots, difficulty)
         case .basketball: .basketball(difficulty)
         case let .freeForAll(pilots, _): .freeForAll(pilots: pilots, difficulty)
         case .online, .warmup, .practice: self
@@ -197,6 +198,8 @@ final class GameSession {
     /// Offline it is its own mode; online it is the host's call, carried in
     /// the seating plan, so a `.online` session can be a ring too.
     let isFreeForAll: Bool
+    /// ASTROBALL, offline or online: the touch cap and the zone are on.
+    let isAstroball: Bool
     /// How many nets the ring has, or nil off it.
     private let ringPilots: Int?
 
@@ -231,7 +234,10 @@ final class GameSession {
         case let .doubles(difficulty):
             roster = Seat.doubles
             for seat in Seat.doubles where seat != localSeat { botSeats[seat] = difficulty }
-        case let .volleyball(difficulty), let .basketball(difficulty):
+        case let .astroball(pilots, difficulty):
+            roster = pilots > 2 ? Seat.doubles : Seat.singles
+            for seat in roster where seat != localSeat { botSeats[seat] = difficulty }
+        case let .basketball(difficulty):
             roster = Seat.singles
             botSeats[.orange] = difficulty
         case let .freeForAll(pilots, difficulty):
@@ -261,6 +267,7 @@ final class GameSession {
         self.ringPilots = ringPilots
         let configuration = Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll)
         let court = Self.court(for: configuration, mode: mode, isDoubles: isDoubles, ringPilots: ringPilots)
+        self.isAstroball = configuration.astroball != nil
         initialEngine.updateConfiguration(configuration)
         // The court goes on before the roster: the opening ball is staged as
         // part of seating, and it is staged into this arena.
@@ -319,6 +326,7 @@ final class GameSession {
         scene.scaleMode = .resizeFill
         scene.seatColors = isFreeForAll ? .freeForAll : .teams
         scene.arena = court
+        scene.astroball = configuration.astroball
         scene.tractorRange = engine.configuration.tractorRange
         scene.boltPunch = engine.configuration.boltPunch
         scene.snapshot = state
@@ -437,6 +445,8 @@ final class GameSession {
         if let ringPilots {
             return .freeForAll(pilots: ringPilots, ballRadius: configuration.ballRadius, tuning: configuration.ring)
         }
+        // Online ASTROBALL arrives as `.online`; the configuration says so.
+        if configuration.astroball != nil { return .astroball(doubles: isDoubles) }
         let court = isDoubles ? ArenaGeometry.doubles(ballRadius: configuration.ballRadius)
             : mode.court(ballRadius: configuration.ballRadius, ring: configuration.ring)
         guard court.netStyle == .roofPortal else { return court }
@@ -460,8 +470,15 @@ final class GameSession {
         isDoubles: Bool,
         isFreeForAll: Bool
     ) -> SimulationConfiguration {
-        if isDoubles { return .doubles(from: configuration) }
         var configuration = configuration
+        // ASTROBALL offline flies the pilot's own touches and zone, read
+        // fresh so a Settings change lands on resume; online they are the
+        // host's, already in the configuration.
+        if case .astroball = mode {
+            configuration = .astroball(from: configuration, tuning: AstroballTuning.stored())
+        }
+        // One ball on ASTROBALL's two-a-side court, at the pilot's size.
+        if isDoubles, configuration.astroball == nil { return .doubles(from: configuration) }
         if isFreeForAll {
             if mode.isOffline { configuration.ring = RingTuning.stored() }
             configuration.ballCount = configuration.ring.twoBalls ? 2 : 1
@@ -477,6 +494,7 @@ final class GameSession {
         // the court under the ball in the same breath.
         engine.updateArena(court(for: configuration))
         scene.arena = engine.arena
+        scene.astroball = configuration.astroball
         scene.tractorRange = engine.configuration.tractorRange
         scene.boltPunch = engine.configuration.boltPunch
         for seat in pilots.keys { pilots[seat]?.updateConfiguration(configuration) }
@@ -688,7 +706,7 @@ final class GameSession {
         }
 
         switch mode {
-        case .solo, .doubles, .warmup, .practice, .volleyball, .basketball, .freeForAll:
+        case .solo, .doubles, .warmup, .practice, .astroball, .basketball, .freeForAll:
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
@@ -726,7 +744,7 @@ final class GameSession {
             }
         }
         let presentsLocalEvents = switch mode {
-        case .solo, .doubles, .warmup, .practice, .volleyball, .basketball, .freeForAll: true
+        case .solo, .doubles, .warmup, .practice, .astroball, .basketball, .freeForAll: true
         case .online: online?.isAuthoritative == true
         }
         if presentsLocalEvents, !events.isEmpty { scene.present(events) }
@@ -875,7 +893,7 @@ final class GameSession {
         guard flownSeat != nil else { return false }
         return switch mode {
         case .solo, .doubles, .online, .freeForAll: true
-        case .warmup, .practice, .volleyball, .basketball: false
+        case .warmup, .practice, .astroball, .basketball: false
         }
     }
 
@@ -1157,6 +1175,9 @@ private extension SimulationEvent {
         case .crash: return "CRASH — \(scorer)"
         case .netContact: return "NET / CROSS — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"
+        case .touchLimit: return "TOO MANY TOUCHES — \(scorer)"
+        case .doubleTouch: return "DOUBLE TOUCH — \(scorer)"
+        case .zone: return "IN THE ZONE — \(scorer)"
         }
     }
 

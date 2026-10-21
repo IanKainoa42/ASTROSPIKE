@@ -23,6 +23,7 @@
 		1C9BF2BE88472A99D82848CB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */; };
 		1D659B5B59B22184796127C4 /* ASTROSPIKEUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */; };
 		1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */; };
+		23C5362B8CC3686EED574F4F /* Astroball.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C6A2F3C222DA16B79BBD16 /* Astroball.swift */; };
 		2B482102C2AED82F18584933 /* ResultsLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */; };
 		318100B7ABCAE5B2B6FB116B /* GoalTunnelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA7723069A5B6DCC746B144 /* GoalTunnelTests.swift */; };
 		31CD55BF79EEFC98208554A6 /* TractorBeamTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF892C2F78B1E1D131AA816C /* TractorBeamTests.swift */; };
@@ -51,6 +52,7 @@
 		5FDBD922385FBE76ECC83174 /* MatchStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8847B49FA60A3480960EF2FC /* MatchStats.swift */; };
 		694B4410F85276442F78FF96 /* ShipDesigns.swift in Sources */ = {isa = PBXBuildFile; fileRef = 645D1FA24033CE1191F24341 /* ShipDesigns.swift */; };
 		73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1B8626DC31C39D591ACBE8 /* OnboardingFlow.swift */; };
+		74A9C735946912E3E9F9587F /* AstroballTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A0370D4E4DBEB15FC2F045 /* AstroballTests.swift */; };
 		767F7EA0C4E9B984FB5F99F1 /* DoublesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACCBC1253D91A47299D2645 /* DoublesTests.swift */; };
 		769772E92AAAF8CC70934C89 /* LobbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07221F436E712100C50841C1 /* LobbyTests.swift */; };
 		76C35341EAA8B9C83AEF7ACF /* MatchRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6C209D8015028776DDD2A2 /* MatchRules.swift */; };
@@ -215,6 +217,7 @@
 		415B202192D985A9E29E73E1 /* LobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyView.swift; sourceTree = "<group>"; };
 		41855EAC4267C34A9A445242 /* OpenTableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenTableTests.swift; sourceTree = "<group>"; };
 		42CF56D00F48564D9FCECE1C /* FreeForAll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeForAll.swift; sourceTree = "<group>"; };
+		43A0370D4E4DBEB15FC2F045 /* AstroballTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroballTests.swift; sourceTree = "<group>"; };
 		4405102C04B2CE798F18AD89 /* WarmupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmupTests.swift; sourceTree = "<group>"; };
 		48DA3D13B8CAF39A6BAFDC8A /* ASTROSPIKE.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ASTROSPIKE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineDiagnosticsSnapshot.swift; sourceTree = "<group>"; };
@@ -275,6 +278,7 @@
 		C302876D4085238255061DF4 /* StatsReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsReporter.swift; sourceTree = "<group>"; };
 		CF08260D34E017255668BDB7 /* ShipHitboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipHitboxTests.swift; sourceTree = "<group>"; };
 		D2E0D253FE310DD9B613C53A /* GuestPrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestPrediction.swift; sourceTree = "<group>"; };
+		D6C6A2F3C222DA16B79BBD16 /* Astroball.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Astroball.swift; sourceTree = "<group>"; };
 		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
 		E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsLoopTests.swift; sourceTree = "<group>"; };
@@ -337,6 +341,7 @@
 				A3A9B354B5E4A268F1331755 /* AIController.swift */,
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
 				9889197C7F993ABB89039F0E /* ArenaLayout.swift */,
+				D6C6A2F3C222DA16B79BBD16 /* Astroball.swift */,
 				9E7824A8B02D40366234B000 /* Emotes.swift */,
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				42CF56D00F48564D9FCECE1C /* FreeForAll.swift */,
@@ -444,6 +449,7 @@
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
 				B4719289BA07891CDC9CFD53 /* ArenaLayoutTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
+				43A0370D4E4DBEB15FC2F045 /* AstroballTests.swift */,
 				1718C582551AF16144D011A9 /* BallContactTests.swift */,
 				3E941EC8185B45535616EEAF /* BoltAndWashTests.swift */,
 				59789ED6BD3380F1CF173747 /* BoltShipTests.swift */,
@@ -653,6 +659,7 @@
 				EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */,
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
 				A12CC34BF17A32569673F600 /* ArenaLayout.swift in Sources */,
+				23C5362B8CC3686EED574F4F /* Astroball.swift in Sources */,
 				80AAF95DAC953B7A45D6D7ED /* Emotes.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				AA0D5D73FC62AF90F2EA35DE /* FreeForAll.swift in Sources */,
@@ -723,6 +730,7 @@
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
 				48720106053A8B5076C1A1F6 /* ArenaLayoutTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
+				74A9C735946912E3E9F9587F /* AstroballTests.swift in Sources */,
 				F9182CDFF749B4D8C21C8CCA /* BallContactTests.swift in Sources */,
 				BE3B16B254F02EDFEBD103A2 /* BoltAndWashTests.swift in Sources */,
 				394DEEE48E48248DF260C595 /* BoltShipTests.swift in Sources */,
@@ -917,7 +925,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 157;
+				CURRENT_PROJECT_VERSION = 158;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -977,7 +985,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 157;
+				CURRENT_PROJECT_VERSION = 158;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

@@ -139,9 +139,13 @@ public enum OnlineFormat: String, Codable, Equatable, Sendable {
     case freeForAll
     case doublesVersus
     case freeForAll4
+    /// ASTROBALL, seated like a duel: one across the net, a third pilot
+    /// makes it two against one and a bot, a fourth two a side.
+    case astroball
 
     /// Every seat flies for itself.
     public var isFreeForAll: Bool { self == .freeForAll || self == .freeForAll4 }
+    public var isAstroball: Bool { self == .astroball }
 }
 
 /// The two decisions the table needs that must come out the same on every
@@ -185,7 +189,7 @@ public enum OnlineSeating {
         case .freeForAll: FreeForAllState.seats(pilots: ringSize(seated: filled.count))
         case .freeForAll4: FreeForAllState.seats(pilots: 4)
         case .doublesVersus: Seat.doubles
-        case .duel, .teamUp: format == .teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
+        case .duel, .teamUp, .astroball: format == .teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
         }
     }
 

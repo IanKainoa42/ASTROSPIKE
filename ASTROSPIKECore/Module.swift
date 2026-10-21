@@ -508,6 +508,8 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// hold. The pilot's sliders offline; online the host's, which reach
     /// every board with the seating plan.
     public var ring = RingTuning()
+    /// ASTROBALL's touches, zone and wall bounce. Nil on every other court.
+    public var astroball: AstroballTuning?
     /// What the motor pushes a ring hull with.
     public var ringThrust: Double { maximumThrustAcceleration * ring.speed }
     /// The speed a ring hull settles at with the motor held.
@@ -611,6 +613,18 @@ public struct SimulationConfiguration: Equatable, Sendable {
         return configuration
     }
 
+    /// ASTROBALL: volleyball's high serve, the touch book and the zone. Off
+    /// the zone the floor is the duel's -- a few bounces between touches --
+    /// so a ball dead on the back floor cannot stall a rally. One ball, even
+    /// on the two-a-side court.
+    public static func astroball(from base: SimulationConfiguration, tuning: AstroballTuning) -> SimulationConfiguration {
+        var configuration = base
+        configuration.ballDropHeight = 0.34
+        configuration.ballCount = 1
+        configuration.astroball = tuning
+        return configuration
+    }
+
     /// Basketball. The ball is put in play well under the rim so a serve can
     /// never drop through it on its own, and the bounce cap is moot -- the
     /// hoop court keeps its own book, where nothing is a fault.
@@ -705,6 +719,9 @@ public struct SimulationEngine: Sendable {
     /// collar. Below the old 0.94 so the ball feels like it has some weight
     /// to it instead of pinging around the arena.
     static let ballRestitution = 0.82
+    /// The walls, roof and corners: ASTROBALL's slider, the duel's 0.82
+    /// everywhere else.
+    private var wallRestitution: Double { configuration.astroball?.clampedWallBounce ?? Self.ballRestitution }
     /// Slowest hull-on-arena or hull-on-hull knock that counts as an impact.
     static let effectImpactSpeed = 0.25
     /// The floor takes a little more out of it than the walls do.
@@ -1083,7 +1100,7 @@ public struct SimulationEngine: Sendable {
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
         solveBeamLocks(effects: &collisionEffects)
-        advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects)
+        advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects, contacts: &contacts)
         resolveBallBallCollisions(effects: &collisionEffects)
         for ballIndex in state.balls.indices {
             resolveBallShipCollisions(
@@ -1138,6 +1155,11 @@ public struct SimulationEngine: Sendable {
             return
         }
 
+        rules.volley = configuration.astroball.map { tuning in
+            var pilots = SideCounts()
+            for seat in state.ships.keys { pilots[seat.team] += 1 }
+            return VolleyRules(tuning: tuning, pilots: pilots)
+        }
         let wasPlaying = rules.state.phase == .playing
         var ruleEvents = rules.resolve(contacts, goalsKeepPlaying: state.balls.count > 1)
         if wasPlaying { ruleEvents = bookStats(contacts: contacts, ruleEvents: ruleEvents, before: beforeBall) }
@@ -1557,7 +1579,7 @@ public struct SimulationEngine: Sendable {
                 }
                 state.match.phase = .serve
                 stageServe(on: pilot)
-            case .ballCrossedCenter, .shipDestroyed:
+            case .ballCrossedCenter, .shipDestroyed, .ballPlayed, .ballTouchedZone:
                 break
             }
         }
@@ -1588,7 +1610,7 @@ public struct SimulationEngine: Sendable {
                 events.append(.matchEnded(winner: scorer))
             case let .shipDestroyed(team, _):
                 destroyed.insert(team)
-            case .ballCrossedCenter, .ballEnteredGoal:
+            case .ballCrossedCenter, .ballEnteredGoal, .ballPlayed, .ballTouchedZone:
                 break
             }
         }
@@ -2007,7 +2029,8 @@ public struct SimulationEngine: Sendable {
 
     private mutating func advanceBolts(
         previousShipPositions: [Seat: SIMD2<Double>],
-        effects: inout [SimulationEvent]
+        effects: inout [SimulationEvent],
+        contacts: inout [RuleContact]
     ) {
         guard !state.bolts.isEmpty else { return }
         let dt = configuration.stepDuration
@@ -2136,8 +2159,11 @@ public struct SimulationEngine: Sendable {
                 // A bolt plays the ball but is not a touch: it neither spends
                 // one nor refreshes the bounce allowance, or a cannon on your
                 // own half could keep a rally alive forever. It still marks who
-                // played the ball last.
+                // played the ball last. ASTROBALL is the exception: there a
+                // bolt is a touch like a hull's, or a side could cannon the
+                // ball about all day without spending any.
                 state.lastBallToucher = bolt.owner
+                if configuration.astroball != nil { contacts.append(.ballPlayed(seat: bolt.seat)) }
                 let windowTicks = UInt64((Self.slamWindow / configuration.stepDuration).rounded())
                 let slam = state.balls[ballIndex].beamHold.map {
                     (isFreeForAll ? $0.seat == bolt.seat : $0.seat.team == bolt.owner)
@@ -2885,9 +2911,10 @@ public struct SimulationEngine: Sendable {
             let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, corner.normal)
             if inwardSpeed < 0 {
                 let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= corner.normal * ((1 + Self.ballRestitution) * inwardSpeed)
+                state.balls[ballIndex].velocity -= corner.normal * ((1 + wallRestitution) * inwardSpeed)
                 grip(corner.normal, from: incoming, ballIndex: ballIndex)
             }
+            noteZone(at: corner.position - corner.normal * r, contacts: &contacts)
             if corner.normal.y > 0.5, !floorRegistered {
                 floorRegistered = true
                 contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
@@ -2899,6 +2926,7 @@ public struct SimulationEngine: Sendable {
             state.balls[ballIndex].position.y = arena.floorY + r
             state.balls[ballIndex].velocity.y = abs(state.balls[ballIndex].velocity.y) * Self.floorRestitution
             grip(SIMD2(0, 1), from: incoming, ballIndex: ballIndex)
+            noteZone(at: SIMD2(state.balls[ballIndex].position.x, arena.floorY), contacts: &contacts)
             if !floorRegistered {
                 contacts.append(.ballTouchedFloor(side: state.team(onHalfAt: state.balls[ballIndex].position.x)))
                 floorRegistered = true
@@ -2916,21 +2944,33 @@ public struct SimulationEngine: Sendable {
         if state.balls[ballIndex].position.y + r >= arena.ceilingY {
             let incoming = state.balls[ballIndex].velocity
             state.balls[ballIndex].position.y = arena.ceilingY - r
-            state.balls[ballIndex].velocity.y = -abs(state.balls[ballIndex].velocity.y) * Self.ballRestitution
+            state.balls[ballIndex].velocity.y = -abs(state.balls[ballIndex].velocity.y) * wallRestitution
             grip(SIMD2(0, -1), from: incoming, ballIndex: ballIndex)
+            noteZone(at: SIMD2(state.balls[ballIndex].position.x, arena.ceilingY), contacts: &contacts)
         }
         if state.balls[ballIndex].position.x - r <= -arena.halfWidth {
             let incoming = state.balls[ballIndex].velocity
             state.balls[ballIndex].position.x = -arena.halfWidth + r
-            state.balls[ballIndex].velocity.x = abs(state.balls[ballIndex].velocity.x) * Self.ballRestitution
+            state.balls[ballIndex].velocity.x = abs(state.balls[ballIndex].velocity.x) * wallRestitution
             grip(SIMD2(1, 0), from: incoming, ballIndex: ballIndex)
+            noteZone(at: SIMD2(-arena.halfWidth, state.balls[ballIndex].position.y), contacts: &contacts)
         }
         if state.balls[ballIndex].position.x + r >= arena.halfWidth {
             let incoming = state.balls[ballIndex].velocity
             state.balls[ballIndex].position.x = arena.halfWidth - r
-            state.balls[ballIndex].velocity.x = -abs(state.balls[ballIndex].velocity.x) * Self.ballRestitution
+            state.balls[ballIndex].velocity.x = -abs(state.balls[ballIndex].velocity.x) * wallRestitution
             grip(SIMD2(-1, 0), from: incoming, ballIndex: ballIndex)
+            noteZone(at: SIMD2(arena.halfWidth, state.balls[ballIndex].position.y), contacts: &contacts)
         }
+    }
+
+    /// ASTROBALL: the ball just met the court's skin at `surface`; if that
+    /// is in the scoring zone, it is the half's point against.
+    private func noteZone(at surface: SIMD2<Double>, contacts: inout [RuleContact]) {
+        guard let tuning = configuration.astroball,
+              let fraction = arena.wallPathFraction(at: surface),
+              tuning.zoneContains(fraction) else { return }
+        contacts.append(.ballTouchedZone(side: state.team(onHalfAt: surface.x)))
     }
 
     /// The surface with outward `normal` has just pushed the ball off
@@ -3155,6 +3195,8 @@ public struct SimulationEngine: Sendable {
         let counted = fresh && (usesEngineRules || ballSide == ship.homeSide)
         state.ships[hit.seat] = ship
         contacts.append(.ballTouchedShip(team: hit.seat.team, counted: counted))
+        // ASTROBALL counts every fresh hull touch, either half.
+        if fresh, configuration.astroball != nil { contacts.append(.ballPlayed(seat: hit.seat)) }
         // Any hull contact played the ball, counted or not: a deflection off
         // the far half still sends it where it goes.
         state.balls[ballIndex].lastPlay = BallPlay(seat: hit.seat, kind: .hull)

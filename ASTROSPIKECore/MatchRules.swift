@@ -18,6 +18,12 @@ public enum PointReason: String, Codable, Equatable, Sendable {
     case crash
     case netContact
     case forfeit
+    /// ASTROBALL: a side played the ball more times than it gets.
+    case touchLimit
+    /// ASTROBALL: the same pilot of a side of two played it twice running.
+    case doubleTouch
+    /// ASTROBALL: the ball touched the side's scoring zone.
+    case zone
 }
 
 public struct Score: Codable, Equatable, Sendable {
@@ -76,6 +82,9 @@ public struct MatchRuleState: Codable, Equatable, Sendable {
     /// Who took the match, once it is finished. Set by the last set point or
     /// by a forfeit, so the result screen never has to infer it from points.
     public var winner: Team?
+    /// ASTROBALL: who played the ball last this possession, for the
+    /// no-doubles rule. Nil once it crosses the net.
+    public var lastTouch: Seat?
 
     public init(
         score: Score = Score(),
@@ -149,6 +158,11 @@ public enum RuleContact: Codable, Equatable, Sendable {
     /// tracks on the world state.
     case ballEnteredHoop
     case shipDestroyed(team: Team, reason: PointReason)
+    /// ASTROBALL: `seat` played the ball -- a fresh hull touch or a bolt
+    /// hit, either half. Only the ASTROBALL court sends it.
+    case ballPlayed(seat: Seat)
+    /// ASTROBALL: the ball touched `side`'s scoring zone.
+    case ballTouchedZone(side: Team)
 }
 
 public enum SimulationEvent: Codable, Equatable, Sendable {
@@ -180,6 +194,9 @@ public enum SimulationEvent: Codable, Equatable, Sendable {
 public struct MatchRules: Sendable {
     public private(set) var state: MatchRuleState
     public private(set) var allowedFloorBounces: Int
+    /// ASTROBALL's touch book. Nil everywhere else, where touches are a
+    /// tally and never a fault.
+    public var volley: VolleyRules?
 
     public init(
         state: MatchRuleState = MatchRuleState(),
@@ -204,6 +221,7 @@ public struct MatchRules: Sendable {
         guard state.phase != .finished else { return }
         state.floorContacts = SideCounts()
         state.shipTouches = SideCounts()
+        state.lastTouch = nil
         state.phase = .playing
     }
 
@@ -211,6 +229,7 @@ public struct MatchRules: Sendable {
         guard state.phase != .finished else { return }
         state.floorContacts = SideCounts()
         state.shipTouches = SideCounts()
+        state.lastTouch = nil
         state.phase = .countdown
     }
 
@@ -247,6 +266,14 @@ public struct MatchRules: Sendable {
         if let goal = goals.first, !goalsKeepPlaying {
             return awardPoint(to: goal.opponent, reason: .goal)
         }
+        // The zone ends the rally whatever else touched the ball this step:
+        // a floor bounce in the zone is the zone's point, not the bounce's.
+        if volley != nil, let side = contacts.lazy.compactMap({ contact -> Team? in
+            guard case let .ballTouchedZone(side) = contact else { return nil }
+            return side
+        }).first {
+            return awardPoint(to: side.opponent, reason: .zone)
+        }
         if !goals.isEmpty {
             var events: [SimulationEvent] = []
             for defending in goals {
@@ -267,7 +294,9 @@ public struct MatchRules: Sendable {
                 // The refresh happens even on a free contact -- a rattle
                 // that does not count as a touch must not spend a bounce.
                 state.floorContacts = SideCounts()
-                if counted {
+                // ASTROBALL keeps its touches off `ballPlayed`, which bolts
+                // send too.
+                if counted, volley == nil {
                     // A real touch by the other side is a change of hands
                     // even when the ball never crossed the line.
                     state.shipTouches[team.opponent] = 0
@@ -277,12 +306,26 @@ public struct MatchRules: Sendable {
                 state.floorContacts[team] = 0
                 // Sending it over ends the possession for both sides.
                 state.shipTouches = SideCounts()
+                state.lastTouch = nil
+            case let .ballPlayed(seat):
+                guard let volley else { break }
+                let team = seat.team
+                if volley.pilots[team] > 1, state.lastTouch == seat {
+                    return awardPoint(to: team.opponent, reason: .doubleTouch)
+                }
+                state.floorContacts = SideCounts()
+                state.shipTouches[team.opponent] = 0
+                state.shipTouches[team] += 1
+                state.lastTouch = seat
+                if state.shipTouches[team] > volley.touchLimit[team] {
+                    return awardPoint(to: team.opponent, reason: .touchLimit)
+                }
             case let .ballTouchedFloor(side):
                 state.floorContacts[side] += 1
                 if state.floorContacts[side] > allowedFloorBounces {
                     return awardPoint(to: side.opponent, reason: .thirdBounce)
                 }
-            case .ballEnteredGoal, .ballEnteredHoop, .shipDestroyed:
+            case .ballEnteredGoal, .ballEnteredHoop, .shipDestroyed, .ballTouchedZone:
                 break
             }
         }
@@ -295,6 +338,7 @@ public struct MatchRules: Sendable {
         if destroyedTeams.count == 2 {
             state.floorContacts = SideCounts()
             state.shipTouches = SideCounts()
+            state.lastTouch = nil
             state.phase = .serve
             return [.rallyReset]
         }
@@ -308,6 +352,7 @@ public struct MatchRules: Sendable {
         state.score[team] += 1
         state.floorContacts = SideCounts()
         state.shipTouches = SideCounts()
+        state.lastTouch = nil
         var events: [SimulationEvent] = [.point(scoringTeam: team, reason: reason)]
         if hasWonSet(team) {
             state.sets[team] += 1

@@ -170,7 +170,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     fields: the host's step decides.
     // 53: three more arena layouts (Pillars, Mounds, Fins); an older board
     //     cannot read the host's layout.
-    public static let currentVersion: UInt16 = 53
+    // 54: ASTROBALL -- a new online format, the host's touches/zone/wall
+    //     bounce in its tuning, two rule contacts, three point reasons and
+    //     the last-touch seat on the match state.
+    public static let currentVersion: UInt16 = 54
 
     public var version: UInt16
     public var sequence: UInt64

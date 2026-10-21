@@ -46,6 +46,8 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
     /// stand. The host's sliders, so an online ring is the host's table on
     /// every board; offline the pilot's own.
     public var ring = RingTuning()
+    /// ASTROBALL's touches, zone and wall bounce. The host's, online.
+    public var astroball = AstroballTuning()
 
     /// The one baseline every mode flies. The online preset and the warm-up
     /// bay are built from these same numbers, so a quick game against a bot

@@ -72,6 +72,9 @@ struct AppRootView: View {
         // `--ffa 3` / `--ffa 4` drops onto the free-for-all field.
         let freeForAllPilots = arguments.firstIndex(of: "--ffa")
             .flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil }
+        // `--astroball 2` / `--astroball 4` drops onto the volleyball court.
+        let astroballPilots = arguments.firstIndex(of: "--astroball")
+            .flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil }
         _resultsPreviewWinner = State(
             initialValue: arguments.contains("--results-win") ? .cyan
                 : arguments.contains("--results-lose") ? .orange
@@ -83,6 +86,7 @@ struct AppRootView: View {
             : resultsPreview ? .solo(.rookie)
             : doublesMode ? .doubles(.pilot)
             : freeForAllPilots.map { GameMode.freeForAll(pilots: $0, .pilot) }
+            ?? astroballPilots.map { GameMode.astroball(pilots: $0, .pilot) }
             ?? (demoMode ? .solo(.pilot) : nil))
         // Automation and UI tests land on the home screen; a fresh install lands
         // on the intro.
@@ -92,7 +96,7 @@ struct AppRootView: View {
         let trackMode = arguments.contains("--track")
         _showTrack = State(initialValue: trackMode)
         let bypass = demoMode || warmupMode || practiceMode || diagnosticsPreviewMode || lobbyMode || trackMode
-            || freeForAllPilots != nil
+            || freeForAllPilots != nil || astroballPilots != nil
             || resultsPreview
             || arguments.contains("--skip-onboarding")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
@@ -310,6 +314,18 @@ struct AppRootView: View {
                     }
                 }
                 .presentationDetents([.large])
+            case .astroball:
+                AstroballSheet(online: online) { pilots, difficulty in
+                    sheet = nil
+                    gameMode = .astroball(pilots: pilots, difficulty)
+                } openPicker: { format in
+                    sheet = nil
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        online.presentFriendInvite(format: format)
+                    }
+                }
+                .presentationDetents([.large])
             case .tutorial:
                 FlightTutorial()
             case .settings:
@@ -357,7 +373,7 @@ struct AppRootView: View {
         let activity: PilotActivity = switch gameMode {
         case .online: .playing
         case .warmup: .matching
-        case .solo, .doubles, .practice, .volleyball, .basketball, .freeForAll: .solo
+        case .solo, .doubles, .practice, .astroball, .basketball, .freeForAll: .solo
         case nil: if case .matching = online.status { .matching } else { .idle }
         }
         // While hosting an in-game invite, the presence names it: that is
@@ -407,7 +423,7 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, doubles, freeForAll, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
+    case difficulty, doubles, freeForAll, astroball, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
     var id: String { rawValue }
 }
 
@@ -476,7 +492,7 @@ private struct FreeForAllSheet: View {
         switch rivals {
         case nil:
             VStack(alignment: .leading, spacing: 16) {
-                Text("FREE-FOR-ALL").font(.title.bold())
+                Text("ASTROPUCK").font(.title.bold())
                 Text("One round arena on an air-hockey table. Every net sits in the top of a smooth bell-curve bump rising off the rim, mouth to the middle: score straight in. Miss the mouth and the bump's slope sends the ball on round to a neighbour. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
                     .font(.footnote).foregroundStyle(.secondary)
                 HStack(spacing: 12) {
@@ -489,7 +505,7 @@ private struct FreeForAllSheet: View {
             .padding(28)
         case .bots:
             VStack(alignment: .leading, spacing: 16) {
-                Text("FREE-FOR-ALL").font(.title.bold())
+                Text("ASTROPUCK").font(.title.bold())
                 Picker("Pilots", selection: $pilots) {
                     Text("3 PILOTS").tag(3)
                     Text("4 PILOTS").tag(4)
@@ -503,6 +519,66 @@ private struct FreeForAllSheet: View {
             .padding(28)
         case .friends:
             InviteSheet(online: online, format: .freeForAll, openPicker: openPicker)
+        }
+    }
+
+    private func choice(_ title: String, detail: String, icon: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Image(systemName: icon).font(.title)
+                Text(title).font(.headline)
+                Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 140)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+/// ASTROBALL asks who is on the court: bots, one on one or two a side, or
+/// friends over Game Center with bots in the seats nobody takes.
+private struct AstroballSheet: View {
+    let online: OnlineMatchCoordinator
+    let start: (_ pilots: Int, AIDifficulty) -> Void
+    let openPicker: (_ format: OnlineFormat) -> Void
+    @State private var rivals: Rivals?
+    @State private var pilots = 2
+
+    private enum Rivals { case bots, friends }
+
+    var body: some View {
+        switch rivals {
+        case nil:
+            VStack(alignment: .leading, spacing: 16) {
+                Text("ASTROBALL").font(.title.bold())
+                Text("Volleyball in zero-g. A wall of a net stands up out of the floor. Hull and bolts both count as touches: three a side to get it back over, and on a side of two nobody plays it twice running. Let the ball touch the glowing zone on your half and the point goes across. The walls soak a spike up instead of firing it back. Zone, touches and wall bounce are in Settings.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    choice("AGAINST BOTS", detail: "One on one, or two a side with a bot beside you. Pick their level next.",
+                           icon: "cpu", identifier: "astroball-bots") { rivals = .bots }
+                    choice("WITH FRIENDS", detail: "Invite up to three pilots. Bots fill the seats nobody takes; your ASTROBALL settings fly on every phone.",
+                           icon: "person.3.fill", identifier: "astroball-friends") { rivals = .friends }
+                }
+            }
+            .padding(28)
+        case .bots:
+            VStack(alignment: .leading, spacing: 16) {
+                Text("ASTROBALL").font(.title.bold())
+                Picker("Pilots", selection: $pilots) {
+                    Text("1 V 1").tag(2)
+                    Text("2 V 2").tag(4)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("astroball-pilots")
+                DifficultyPicker(title: "CHOOSE THE BOTS") { start(pilots, $0) }
+                    .padding(-28)
+                    .padding(.top, 28)
+            }
+            .padding(28)
+        case .friends:
+            InviteSheet(online: online, format: .astroball, openPicker: openPicker)
         }
     }
 
@@ -683,6 +759,9 @@ private enum InviteFormat: Hashable {
     case teamUp
     /// Up to three round the ring with you, bots in the chairs nobody takes.
     case freeForAll
+    /// Up to three on the volleyball court with you, bots in the seats
+    /// nobody takes.
+    case astroball
     /// Ask up to five at once. The first to join flies you; everyone after
     /// watches the game in progress and flies the next: three is two
     /// against one and a bot, four is two a side.
@@ -694,7 +773,7 @@ private enum InviteFormat: Hashable {
     var pickLimit: Int {
         switch self {
         case .duel: 1
-        case .teamUp, .freeForAll: 3
+        case .teamUp, .freeForAll, .astroball: 3
         case .openTable, .addToTable: OpenTable.maxInvitees
         }
     }
@@ -704,6 +783,7 @@ private enum InviteFormat: Hashable {
         switch self {
         case .teamUp: .teamUp
         case .freeForAll: .freeForAll
+        case .astroball: .astroball
         case .duel, .openTable, .addToTable: .duel
         }
     }
@@ -740,6 +820,7 @@ private struct InviteSheet: View {
         case .duel: "Pick a pilot. If they are in the app it rings in game; if not, the ask keeps for a day and Game Center taps them."
         case .teamUp: "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
         case .freeForAll: "Pick up to three. Everyone gets a net and five lives on the ring; two of you fly against a bot, four fill the ring. Your ring settings fly on every phone."
+        case .astroball: "Pick up to three. One is a duel across the net; two or three make it two a side, a bot in any empty seat. Your ASTROBALL settings fly on every phone."
         case .openTable: "Pick up to five. The first to join starts a duel with you; anyone after watches the game in progress, then everyone flies the next: three is two against one and a bot, four is two a side. Past four, winners stay on."
         case .addToTable: "They watch the game in progress and fly the next one. Past four pilots, they wait their turn on the bench."
         }
@@ -749,7 +830,8 @@ private struct InviteSheet: View {
         switch format {
         case .duel: lobby == nil ? "INVITE A PILOT" : "INVITES"
         case .teamUp: "TEAM UP"
-        case .freeForAll: "FREE-FOR-ALL"
+        case .freeForAll: "ASTROPUCK"
+        case .astroball: "ASTROBALL"
         case .openTable: "OPEN TABLE"
         case .addToTable: "INVITE TO THE TABLE"
         }
@@ -765,6 +847,7 @@ private struct InviteSheet: View {
                             Text("DUEL").tag(InviteFormat.duel)
                             Text("TEAM UP").tag(InviteFormat.teamUp)
                             Text("RING").tag(InviteFormat.freeForAll)
+                            Text("BALL").tag(InviteFormat.astroball)
                             Text("OPEN TABLE").tag(InviteFormat.openTable)
                         }
                         .pickerStyle(.segmented)
@@ -829,7 +912,8 @@ private struct InviteSheet: View {
                         }
                         .disabled(picked.isEmpty)
                         .accessibilityIdentifier(format == .teamUp ? "invite-team-up-send"
-                            : format == .freeForAll ? "invite-free-for-all-send" : "invite-open-table-send")
+                            : format == .freeForAll ? "invite-free-for-all-send"
+                            : format == .astroball ? "invite-astroball-send" : "invite-open-table-send")
                     } footer: {
                         if format == .openTable {
                             Text("Everyone gets the invite at once, so nobody waits on the slowest phone.")
@@ -838,7 +922,7 @@ private struct InviteSheet: View {
                 }
                 // Apple's picker seats whoever it returns in one go, so it
                 // has no bench to put a late arrival on.
-                if format == .duel || format == .teamUp || format == .freeForAll {
+                if format == .duel || format == .teamUp || format == .freeForAll || format == .astroball {
                     Section {
                         Button { openPicker(format.online) } label: {
                             Label("Game Center picker", systemImage: "person.2.wave.2.fill")
@@ -863,7 +947,8 @@ private struct InviteSheet: View {
         guard !picked.isEmpty else { return format == .teamUp ? "PICK A TEAMMATE" : "PICK PILOTS" }
         switch format {
         case .teamUp: return "SEND TEAM-UP (\(picked.count))"
-        case .freeForAll: return "SEND FREE-FOR-ALL (\(picked.count))"
+        case .freeForAll: return "SEND ASTROPUCK (\(picked.count))"
+        case .astroball: return "SEND ASTROBALL (\(picked.count))"
         case .addToTable: return "INVITE TO THE TABLE (\(picked.count))"
         case .duel, .openTable: return "OPEN THE TABLE (\(picked.count))"
         }
@@ -876,6 +961,7 @@ private struct InviteSheet: View {
         case .duel: break
         case .teamUp: online.invite(players, format: .teamUp)
         case .freeForAll: online.invite(players, format: .freeForAll)
+        case .astroball: online.invite(players, format: .astroball)
         case .openTable: online.openTable(inviting: players)
         case .addToTable:
             online.inviteToTable(players)
@@ -1078,7 +1164,8 @@ private struct HomeView: View {
                     HStack(spacing: 12) {
                         MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
                         MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true) { sheet = .doubles }
-                        MenuButton(title: "FREE-FOR-ALL", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true) { sheet = .freeForAll }
+                        MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true) { sheet = .freeForAll }
+                        MenuButton(title: "ASTROBALL", subtitle: "1V1 OR 2V2", icon: "volleyball.fill", compact: true) { sheet = .astroball }
                     }
                     // Friend-first: invite and rematch above automatch.
                     MenuButton(
@@ -1192,12 +1279,13 @@ private struct GameView: View {
         self.exit = exit
         _builtGeneration = State(initialValue: online.seatingGeneration)
         let configuration = switch mode {
-        case .solo, .doubles, .freeForAll: tuning.configuration
-        case .volleyball: SimulationConfiguration.volleyball(from: tuning.configuration)
+        case .solo, .doubles, .freeForAll, .astroball: tuning.configuration
         case .basketball: SimulationConfiguration.basketball(from: tuning.configuration)
         // The host's sliders reach the guest with the seating plan; the host
         // seeded them from its own store, so both read the same numbers.
-        case .online: online.hostTuning.configuration
+        case .online: online.format.isAstroball
+            ? .astroball(from: online.hostTuning.configuration, tuning: online.hostTuning.astroball)
+            : online.hostTuning.configuration
         case .warmup, .practice: SimulationConfiguration.warmup(from: tuning.configuration)
         }
         _session = State(initialValue: GameSession(
@@ -1650,10 +1738,8 @@ private struct GameView: View {
 
     private var allowedBounces: Int {
         switch mode {
-        case .solo, .doubles, .freeForAll: tuning.allowedBouncesPerHit
-        // Volleyball's floor is live and the hoop court has no faults at all;
-        // both come off `SimulationConfiguration`, not the pilot's sliders.
-        case .volleyball: 0
+        case .solo, .doubles, .freeForAll, .astroball: tuning.allowedBouncesPerHit
+        // The hoop court has no faults at all.
         case .basketball, .online, .warmup, .practice: 3
         }
     }
@@ -1751,7 +1837,7 @@ private struct GameView: View {
             if session.state.match.phase != .finished { online.stepAway() }
             online.leaveMatch()
         case .warmup: online.cancelMatchmaking()
-        case .solo, .doubles, .practice, .volleyball, .basketball, .freeForAll: break
+        case .solo, .doubles, .practice, .astroball, .basketball, .freeForAll: break
         }
         exit()
     }
@@ -2156,13 +2242,6 @@ private struct ModePicker: View {
                 .accessibilityIdentifier("mode-difficulty")
 
                 ModeCard(
-                    title: "VOLLEYBALL",
-                    icon: "volleyball.fill",
-                    tint: .cyan,
-                    detail: "The net stands up out of the floor and covers the bottom half of the arena. Nothing goes through it — play it over the top. Touch it as often as you like, but the first time the ball touches the ground the rally is over."
-                ) { start(.volleyball(difficulty)) }
-
-                ModeCard(
                     title: "BASKETBALL",
                     icon: "basketball.fill",
                     tint: .orange,
@@ -2368,9 +2447,16 @@ private struct SettingsView: View {
                 Section {
                     RingTuningControls(thrust: tuning.configuration.maximumThrustAcceleration)
                 } header: {
-                    Text("Free-for-all")
+                    Text("ASTROPUCK")
                 } footer: {
                     Text(RingTuningControls.footer)
+                }
+                Section {
+                    AstroballTuningControls()
+                } header: {
+                    Text("ASTROBALL")
+                } footer: {
+                    Text(AstroballTuningControls.footer)
                 }
                 if let replayIntro {
                     Section("Intro") {
@@ -2390,6 +2476,36 @@ private struct SettingsView: View {
             }.navigationTitle("Settings")
         }
         .accessibilityIdentifier("settings-screen")
+    }
+}
+
+/// ASTROBALL's knobs, written straight to the pilot's defaults. A host's
+/// settings ride the seating plan, so they fly on every phone.
+struct AstroballTuningControls: View {
+    @State private var tuning = AstroballTuning.stored()
+
+    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three, and nobody plays it twice running. Hull and bolts both count. The zone is a stretch of each half's wall path, from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Elsewhere the floor plays as in the duel. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. Takes effect next match, and online when you host."
+
+    private var court: ArenaGeometry { .volleyball }
+
+    var body: some View {
+        Picker("Solo touches", selection: $tuning.soloTouches) {
+            ForEach(Array(AstroballTuning.soloTouchesRange), id: \.self) { Text("\($0)").tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier(AstroballTuning.soloTouchesKey)
+        TuningSlider(title: "Zone from", value: $tuning.zoneStart, range: 0 ... 1, step: 0.01,
+                     readout: { court.wallPathPlace(at: $0) })
+            .accessibilityIdentifier(AstroballTuning.zoneStartKey)
+        TuningSlider(title: "Zone to", value: $tuning.zoneEnd, range: 0 ... 1, step: 0.01,
+                     readout: { court.wallPathPlace(at: $0) })
+            .accessibilityIdentifier(AstroballTuning.zoneEndKey)
+        TuningSlider(title: "Wall bounce", value: $tuning.wallBounce, range: AstroballTuning.wallBounceRange, step: 0.01,
+                     readout: { "\(Int(($0 * 100).rounded()))%" })
+            .accessibilityIdentifier(AstroballTuning.wallBounceKey)
+        Button("Reset ASTROBALL to default") { tuning = AstroballTuning() }
+            .disabled(tuning == AstroballTuning())
+            .onChange(of: tuning) { _, tuning in tuning.store() }
     }
 }
 
