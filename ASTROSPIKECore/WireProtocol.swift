@@ -168,7 +168,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     of slipping into the slot and out the far side unscored.
     // 52: a hull on the deck cannot fire (the ring has no deck). No new
     //     fields: the host's step decides.
-    public static let currentVersion: UInt16 = 52
+    // 53: three more arena layouts (Pillars, Mounds, Fins); an older board
+    //     cannot read the host's layout.
+    public static let currentVersion: UInt16 = 53
 
     public var version: UInt16
     public var sequence: UInt64

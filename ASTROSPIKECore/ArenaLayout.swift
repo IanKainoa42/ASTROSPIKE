@@ -94,6 +94,16 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
     case bumpers
     /// A shelf out of each side wall, sloping down toward the net.
     case ledges
+    /// A fixed round post a side, out in the open between the goal and the
+    /// wall: a ball off it comes back at an angle nobody aimed.
+    case pillars
+    /// A low hump in the floor a side. It is floor -- a ball landing on it
+    /// has bounced, and a hull sat on it is on the deck -- but a floor roll
+    /// kicks up off it.
+    case mounds
+    /// A short fin hanging from the roof a side, out past the goal: a ball
+    /// run up the wall into the corner drops back off it short of the goal.
+    case fins
 
     public var title: String {
         switch self {
@@ -101,6 +111,9 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
         case .diamond: "Diamond"
         case .bumpers: "Bumpers"
         case .ledges: "Ledges"
+        case .pillars: "Pillars"
+        case .mounds: "Mounds"
+        case .fins: "Fins"
         }
     }
 
@@ -130,6 +143,15 @@ public enum ArenaLayout: String, Codable, CaseIterable, Sendable {
             [
                 ArenaObstacle(start: SIMD2(0.99, 0.14), end: SIMD2(0.68, -0.01), radius: 0.022),
             ]
+        case .pillars:
+            [.peg(SIMD2(0.60, 0.06), radius: 0.05)]
+        case .mounds:
+            // Centre buried under the deck, so only the cap stands proud
+            // and there is no gap beneath it.
+            [ArenaObstacle(start: SIMD2(0.46, -0.74), end: SIMD2(0.46, -0.74), radius: 0.16, isGround: true)]
+        case .fins:
+            // Rooted in the roof, so nothing gets above it.
+            [ArenaObstacle(start: SIMD2(0.68, 0.66), end: SIMD2(0.68, 0.40), radius: 0.025)]
         }
     }
 }

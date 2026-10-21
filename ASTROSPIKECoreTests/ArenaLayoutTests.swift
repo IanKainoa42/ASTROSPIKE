@@ -202,15 +202,21 @@ struct ArenaLayoutTests {
         #expect(engine.state.match.floorContacts == floorBefore)
     }
 
-    @Test("Landing on a floor cut is a bounce, like a corner")
-    func floorCutIsFloor() {
-        var engine = Self.engine(.diamond)
+    @Test("Landing on a floor cut or a mound is a bounce, like a corner", arguments: [ArenaLayout.diamond, .mounds])
+    func floorCutIsFloor(_ layout: ArenaLayout) {
+        var engine = Self.engine(layout)
         for _ in 0 ..< 600 where engine.state.match.phase != .playing { engine.step(inputs: [:]) }
         let cut = engine.arena.obstacles.first { $0.isGround && $0.start.x > 0 }!
         let r = engine.configuration.ballRadius
         let middle = (cut.start + cut.end) / 2
-        let normal = simd_normalize(SIMD2(-(cut.end - cut.start).y, (cut.end - cut.start).x))
-        let up = normal.y > 0 ? normal : -normal
+        // A mound is round: straight down onto its crown.
+        let up: SIMD2<Double>
+        if cut.start == cut.end {
+            up = SIMD2(0, 1)
+        } else {
+            let normal = simd_normalize(SIMD2(-(cut.end - cut.start).y, (cut.end - cut.start).x))
+            up = normal.y > 0 ? normal : -normal
+        }
         engine.state.balls[0] = BallState(position: middle + up * (cut.radius + r + 0.01), velocity: -up * 1.5, radius: r)
         var touched = false
         for _ in 0 ..< 10 {
