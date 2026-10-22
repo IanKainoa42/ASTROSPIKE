@@ -2746,7 +2746,11 @@ final class ArenaScene: SKScene {
                 * CGFloat(ring.rimRadius / extent)
             return CGRect(x: -side / 2, y: -side / 2, width: side, height: side)
         }
-        let stretchAmount: CGFloat = 0.6
+        // A portrait window (iPhone Duo's inner display turned on its side)
+        // is far taller than the court: blended, the court would stretch to
+        // near twice its height and the hoops draw as ellipses. There it
+        // keeps its true shape, filling the width, centred in the height.
+        let stretchAmount: CGFloat = landscape ? 0.6 : 0
         let blendedScaleX = uniform + (scaleX - uniform) * stretchAmount
         let blendedScaleY = uniform + (scaleY - uniform) * stretchAmount
         let width = min(CGFloat(worldWidth) * blendedScaleX, size.width - sideInset * 2)

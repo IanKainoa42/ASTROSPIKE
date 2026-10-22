@@ -13,6 +13,7 @@ struct OnboardingFlow: View {
 
     @State private var page = Self.launchPage
     private let pageCount = 5
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     /// `--intro-page N` opens the intro on a given page, for screenshots.
     private static var launchPage: Int {
@@ -148,9 +149,10 @@ struct OnboardingFlow: View {
             IntroLine(icon: "flame.fill", tint: .orange, title: "THRUST", text: "Hold to burn. Gravity pulls you down the whole time, and your exhaust shoves the ball.")
             IntroLine(icon: "bolt.fill", tint: .yellow, title: "FIRE", text: "Tap to shoot a bolt from the nose. It knocks the ball where you point and is not a touch.")
             IntroLine(icon: "arrow.down.to.line.compact", tint: .purple, title: "PULL", text: "Hold to reel the ball in with the tractor beam. Not a touch until it lands on your hull.")
-            // Phones almost never have a keyboard and do not have the height
-            // for a fourth line; iPads and Macs get the hint.
-            if UIDevice.current.userInterfaceIdiom != .phone {
+            // A phone on its side has no height for a fourth line and almost
+            // never a keyboard; a window of regular height (iPad, Mac, an
+            // open iPhone Duo, which is still a phone by idiom) gets the hint.
+            if verticalSizeClass == .regular {
                 IntroLine(icon: "keyboard", tint: .white.opacity(0.8), title: "KEYBOARD", text: "A and D steer, W thrusts, space fires, S pulls. Touch and keys work together.")
             }
         } side: {
@@ -218,22 +220,48 @@ private struct IntroPage<Content: View, Side: View>: View {
     @ViewBuilder let side: Side
 
     var body: some View {
-        HStack(alignment: .top, spacing: 32) {
-            // A phone in landscape has less height than these pages need, so
-            // there the column scrolls rather than losing its last line under
-            // the BACK and NEXT buttons. An iPad has height to spare: take the
-            // column as it comes and let the page centre it, instead of a
-            // scroll view that fills the screen and strands the text at the top.
-            ViewThatFits(in: .vertical) {
-                column
-                ScrollView(.vertical, showsIndicators: false) { column }
-                    .scrollBounceBehavior(.basedOnSize)
+        GeometryReader { geometry in
+            // A portrait window (iPhone Duo's inner display turned on its
+            // side) has no width for two columns: the text goes over the
+            // diagram there, and the pair scrolls if it is taller than the page.
+            let portrait = geometry.size.height > geometry.size.width
+            Group {
+                if portrait {
+                    ViewThatFits(in: .vertical) {
+                        stacked
+                        ScrollView(.vertical, showsIndicators: false) { stacked }
+                            .scrollBounceBehavior(.basedOnSize)
+                    }
+                } else {
+                    HStack(alignment: .top, spacing: 32) {
+                        // A phone in landscape has less height than these pages need, so
+                        // there the column scrolls rather than losing its last line under
+                        // the BACK and NEXT buttons. An iPad has height to spare: take the
+                        // column as it comes and let the page centre it, instead of a
+                        // scroll view that fills the screen and strands the text at the top.
+                        ViewThatFits(in: .vertical) {
+                            column
+                            ScrollView(.vertical, showsIndicators: false) { column }
+                                .scrollBounceBehavior(.basedOnSize)
+                        }
+                        side
+                            .frame(maxWidth: sideWidth)
+                    }
+                }
             }
+            .padding(.horizontal, 28).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The portrait page: text first, the diagram centred beneath it.
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            column
             side
                 .frame(maxWidth: sideWidth)
+                .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 28).padding(.vertical, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private var column: some View {

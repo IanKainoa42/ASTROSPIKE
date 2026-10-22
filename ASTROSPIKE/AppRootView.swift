@@ -1123,84 +1123,123 @@ private struct HomeView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            HStack(spacing: min(52, geometry.size.width * 0.055)) {
-                VStack(alignment: .leading, spacing: 10) {
-                    (Text("ASTRO").foregroundStyle(.cyan) + Text("SPIKE").foregroundStyle(.orange))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.62)
-                        .allowsTightening(true)
-                    Text("ZERO-G. ONE NET. NO BRAKES.")
-                        .font(.caption.weight(.bold)).tracking(2.4)
-                        .foregroundStyle(.white.opacity(0.62))
-                    Spacer().frame(height: 14)
-                    TeamMarkRow()
-                    Spacer()
-                    Button { sheet = .hangar } label: {
-                        HStack(spacing: 12) {
-                            HullBadge(hull: profile.selectedHull, team: .cyan).frame(width: 48, height: 52)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("YOUR HULL").font(.caption2.monospaced().weight(.bold)).tracking(2)
-                                    .foregroundStyle(.white.opacity(0.5))
-                                Text(profile.selectedHull.spec.name.uppercased())
-                                    .font(.headline.weight(.black)).tracking(1).foregroundStyle(.cyan)
-                            }
+            // iPhone Duo's inner display turned on its side hands the app a
+            // portrait window (see OrientationPolicy): the brand stacks over
+            // the menu there instead of both squeezing into one short row.
+            let portrait = geometry.size.height > geometry.size.width
+            Group {
+                if portrait {
+                    VStack(alignment: .leading, spacing: 10) {
+                        // The title font stays on the brand: the menu rows
+                        // leave their chevron to inherit, and 58pt is too much.
+                        brandBlock.font(titleFont(for: geometry))
+                        Spacer(minLength: 18)
+                        menu
+                        Spacer(minLength: 18)
+                        hullBlock
+                    }
+                } else {
+                    HStack(spacing: min(52, geometry.size.width * 0.055)) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            brandBlock
+                            Spacer()
+                            hullBlock
                         }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Your hull: \(profile.selectedHull.spec.name). Open hangar")
-                    .accessibilityIdentifier("home-hull")
-                    Spacer().frame(height: 10)
-                    Label(online.statusLabel, systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption2.monospaced().weight(.bold))
-                        .foregroundStyle(statusColor).lineLimit(1)
-                }
-                .font(.system(size: min(58, geometry.size.height * 0.13), weight: .black, design: .rounded))
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(spacing: 12) {
-                    // Side by side: a fifth full-width row pushes the bottom
-                    // of the menu off an iPhone in landscape.
-                    HStack(spacing: 12) {
-                        MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
-                        MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true) { sheet = .doubles }
-                        MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true) { sheet = .freeForAll }
-                        MenuButton(title: "ASTROBALL", subtitle: "1V1 OR 2V2", icon: "volleyball.fill", compact: true) { sheet = .astroball }
-                    }
-                    // Friend-first: invite and rematch above automatch.
-                    MenuButton(
-                        title: "INVITES",
-                        subtitle: invitesWaiting > 0
-                            ? "\(invitesWaiting) WAITING ON YOU · ANSWER OR ASK"
-                            : "ASK A FRIEND · ANSWER IN GAME",
-                        icon: invitesWaiting > 0 ? "envelope.badge.fill" : "person.2.wave.2.fill"
-                    ) { sheet = .invite }
-                    if online.canRematch {
-                        MenuButton(
-                            title: "REMATCH",
-                            subtitle: rematchSubtitle,
-                            icon: "arrow.triangle.2.circlepath"
-                        ) { online.rematch() }
-                    }
-                    MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
-                    MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
-                    // Volleyball, basketball and the circuit are parked (Ian may spin them into
-                    // their own game); `sheet = .modes` still opens them if ever wanted back.
-                    // One row: a second row of tiles ran off the bottom of an
-                    // iPhone in landscape (SETTINGS and STATS were half cut).
-                    HStack(spacing: 8) {
-                        SmallMenuButton(title: "PRACTICE", icon: "scope") { startGame(.practice) }
-                        SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
-                        SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
-                        SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
-                        SmallMenuButton(title: "STATS", icon: "trophy") { sheet = .stats }
+                        .font(titleFont(for: geometry))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        menu
                     }
                 }
-                .frame(maxWidth: 430)
             }
             .padding(.horizontal, max(36, geometry.size.width * 0.07))
             .padding(.vertical, max(24, geometry.size.height * 0.08))
         }
+    }
+
+    private func titleFont(for geometry: GeometryProxy) -> Font {
+        .system(size: min(58, geometry.size.height * 0.13), weight: .black, design: .rounded)
+    }
+
+    /// Title, tagline and the two team marks.
+    private var brandBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            (Text("ASTRO").foregroundStyle(.cyan) + Text("SPIKE").foregroundStyle(.orange))
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+                .allowsTightening(true)
+            Text("ZERO-G. ONE NET. NO BRAKES.")
+                .font(.caption.weight(.bold)).tracking(2.4)
+                .foregroundStyle(.white.opacity(0.62))
+            Spacer().frame(height: 14)
+            TeamMarkRow()
+        }
+    }
+
+    /// The hangar button and the Game Center status line.
+    private var hullBlock: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { sheet = .hangar } label: {
+                HStack(spacing: 12) {
+                    HullBadge(hull: profile.selectedHull, team: .cyan).frame(width: 48, height: 52)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("YOUR HULL").font(.caption2.monospaced().weight(.bold)).tracking(2)
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text(profile.selectedHull.spec.name.uppercased())
+                            .font(.headline.weight(.black)).tracking(1).foregroundStyle(.cyan)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Your hull: \(profile.selectedHull.spec.name). Open hangar")
+            .accessibilityIdentifier("home-hull")
+            Spacer().frame(height: 10)
+            Label(online.statusLabel, systemImage: "dot.radiowaves.left.and.right")
+                .font(.caption2.monospaced().weight(.bold))
+                .foregroundStyle(statusColor).lineLimit(1)
+        }
+    }
+
+    private var menu: some View {
+        VStack(spacing: 12) {
+            // Side by side: a fifth full-width row pushes the bottom
+            // of the menu off an iPhone in landscape.
+            HStack(spacing: 12) {
+                MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
+                MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true) { sheet = .doubles }
+                MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true) { sheet = .freeForAll }
+                MenuButton(title: "ASTROBALL", subtitle: "1V1 OR 2V2", icon: "volleyball.fill", compact: true) { sheet = .astroball }
+            }
+            // Friend-first: invite and rematch above automatch.
+            MenuButton(
+                title: "INVITES",
+                subtitle: invitesWaiting > 0
+                    ? "\(invitesWaiting) WAITING ON YOU · ANSWER OR ASK"
+                    : "ASK A FRIEND · ANSWER IN GAME",
+                icon: invitesWaiting > 0 ? "envelope.badge.fill" : "person.2.wave.2.fill"
+            ) { sheet = .invite }
+            if online.canRematch {
+                MenuButton(
+                    title: "REMATCH",
+                    subtitle: rematchSubtitle,
+                    icon: "arrow.triangle.2.circlepath"
+                ) { online.rematch() }
+            }
+            MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
+            MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
+            // Volleyball, basketball and the circuit are parked (Ian may spin them into
+            // their own game); `sheet = .modes` still opens them if ever wanted back.
+            // One row: a second row of tiles ran off the bottom of an
+            // iPhone in landscape (SETTINGS and STATS were half cut).
+            HStack(spacing: 8) {
+                SmallMenuButton(title: "PRACTICE", icon: "scope") { startGame(.practice) }
+                SmallMenuButton(title: "HANGAR", icon: "airplane.circle") { sheet = .hangar }
+                SmallMenuButton(title: "HOW TO FLY", icon: "questionmark.circle") { sheet = .tutorial }
+                SmallMenuButton(title: "SETTINGS", icon: "slider.horizontal.3") { sheet = .settings }
+                SmallMenuButton(title: "STATS", icon: "trophy") { sheet = .stats }
+            }
+        }
+        .frame(maxWidth: 430)
     }
 
     private var statusColor: Color {

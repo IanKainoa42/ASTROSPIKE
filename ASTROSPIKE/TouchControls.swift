@@ -449,20 +449,49 @@ struct TouchControls: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Fire over thrust, and the beam over fire, all for the one thumb.
+    /// The engine thumb's three pads, clustered in the bottom corner of its
+    /// half like a gamepad's face buttons: thrust where the thumb rests, fire
+    /// one pad inboard and a touch higher, the beam straight above thrust.
+    /// Ian: a stack that shared the whole height put fire and the beam over
+    /// the court on a portrait window (the Duo's inner display on its side).
     private var thrustZone: some View {
-        VStack(spacing: 0) {
-            tractorPad(chrome: fireChrome)
-            if loadout == .ship {
+        GeometryReader { geometry in
+            let thrust = thrustChrome
+            let fire = fireChrome
+            let edge: CGFloat = 6
+            let gap: CGFloat = 10
+            let slop: CGFloat = 16
+            // Inboard is toward the court: left of a right thumb, right of a left one.
+            let inboard: CGFloat = leftHanded ? 1 : -1
+            let corner = leftHanded ? edge : geometry.size.width - edge
+            let bottom = geometry.size.height - edge
+            let thrustX = corner + inboard * (thrust.width + slop) / 2
+            let thrustY = bottom - (thrust.height + slop) / 2
+            let fireX = thrustX + inboard * ((thrust.width + fire.width) / 2 + slop + gap)
+            let fireY = thrustY - 16
+            let tractorY = thrustY - (thrust.height + fire.height) / 2 - slop - gap
+            ZStack(alignment: .topLeading) {
+                tractorPad(chrome: fire)
+                    .frame(width: fire.width + slop, height: fire.height + slop)
+                    .position(x: thrustX, y: tractorY)
+                if loadout == .ship {
+                    ControlZone(
+                        icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
+                        active: firePressed, chrome: fire, bottomPadding: 0,
+                        pressChanged: setFirePressed
+                    )
+                    .frame(width: fire.width + slop, height: fire.height + slop)
+                    .position(x: fireX, y: fireY)
+                }
                 ControlZone(
-                    icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
-                    active: firePressed, chrome: fireChrome, pressChanged: setFirePressed
+                    icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
+                    active: thrustPressed, chrome: thrust, bottomPadding: 0,
+                    pressChanged: setThrustPressed
                 )
+                .frame(width: thrust.width + slop, height: thrust.height + slop)
+                .position(x: thrustX, y: thrustY)
             }
-            ControlZone(
-                icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
-                active: thrustPressed, chrome: thrustChrome, pressChanged: setThrustPressed
-            )
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
