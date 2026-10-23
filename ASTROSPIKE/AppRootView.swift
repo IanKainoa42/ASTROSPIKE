@@ -2472,7 +2472,7 @@ private struct SettingsView: View {
     @AppStorage("haptics") private var haptics = true
     @AppStorage(Soundscape.enabledKey) private var music = true
     @AppStorage(GameSession.muteEmotesKey) private var muteEmotes = false
-    @AppStorage("arrangePads") private var arrangePads = false
+    @State private var arrangingControls = false
     @AppStorage(PadLayout.key) private var padLayout = PadLayout.diamond
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
@@ -2503,7 +2503,12 @@ private struct SettingsView: View {
                     Text("Classic").tag(PadLayout.classic)
                 }
                 .accessibilityIdentifier("pad-layout")
-                Toggle("Arrange pads (drag them in a match)", isOn: $arrangePads)
+                Button {
+                    arrangingControls = true
+                } label: {
+                    Label("Arrange Touch Controls", systemImage: "hand.draw.fill")
+                }
+                .accessibilityIdentifier("arrange-controls")
                 Button("Reset pad layout") {
                     UserDefaults.standard.removeObject(forKey: "padOffsets2")
                     UserDefaults.standard.removeObject(forKey: "padOffsetsDiamond")
@@ -2598,7 +2603,69 @@ private struct SettingsView: View {
                 }
             }.navigationTitle("Settings")
         }
+        .fullScreenCover(isPresented: $arrangingControls) {
+            ControlLayoutEditor()
+        }
         .accessibilityIdentifier("settings-screen")
+    }
+}
+
+/// The match's pads over an empty court, ready to drag: the very
+/// `TouchControls` a match draws, in the same frame, with arranging on.
+/// Its banner's DONE puts them back to work and closes this.
+struct ControlLayoutEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("arrangePads") private var arranging = false
+    @AppStorage("largeControls") private var largeControls = false
+    @AppStorage("leftHanded") private var leftHanded = false
+    @State private var torque = 0.0
+    @State private var thrust = false
+    @State private var fire = false
+    @State private var tractor = false
+
+    /// Stands in for the match HUD over the pads, so they land where a
+    /// match puts them.
+    private static let hudHeight: CGFloat = 54
+
+    var body: some View {
+        GeometryReader { geometry in
+            let window = TouchControls.windowFrame(in: geometry)
+            let centred = ArenaScene.arenaRect(in: window.size)
+            let arena = centred.offsetBy(dx: window.midX, dy: window.midY)
+            ZStack(alignment: .topLeading) {
+                // The court: the pads should leave it clear.
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 2)
+                    .frame(width: arena.width, height: arena.height)
+                    .position(
+                        x: arena.midX - geometry.frame(in: .global).minX,
+                        y: arena.midY - geometry.frame(in: .global).minY
+                    )
+                    .allowsHitTesting(false)
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: Self.hudHeight)
+                    TouchControls(
+                        torque: $torque,
+                        thrust: $thrust,
+                        fire: $fire,
+                        tractor: $tractor,
+                        largeControls: largeControls,
+                        leftHanded: leftHanded,
+                        arenaFrame: arena,
+                        windowFrame: window,
+                        saberChanged: { _ in },
+                        saberFlicked: { _ in }
+                    )
+                }
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .onAppear { arranging = true }
+        .onChange(of: arranging) { _, on in
+            if !on { dismiss() }
+        }
+        .onDisappear { arranging = false }
+        .accessibilityIdentifier("control-layout-editor")
     }
 }
 
@@ -2607,7 +2674,7 @@ private struct SettingsView: View {
 struct AstroballTuningControls: View {
     @State private var tuning = AstroballTuning.stored()
 
-    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. The zone is a stretch of each half's wall path, from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Elsewhere the floor plays as in the duel. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; push is how hard it shoves you back (the duel uses 18). Takes effect next match, and online when you host."
+    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. The zone is a stretch of each half's wall path, from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Elsewhere the floor plays as in the duel. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; fly past it and it slings you back. Takes effect next match, and online when you host."
 
     private var court: ArenaGeometry { .astroball(doubles: false) }
 

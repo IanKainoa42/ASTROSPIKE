@@ -128,7 +128,7 @@ struct TouchControls: View {
         rightMargin: CGFloat
     ) -> some View {
         let wall = leftHanded ? arenaFrame.minX - local.minX : arenaFrame.maxX - local.minX
-        let edge: CGFloat = 6
+        let edge = Self.edgeInset
         let gap: CGFloat = 10
         let slop: CGFloat = 16
         let bottom = local.height - edge
@@ -203,8 +203,23 @@ struct TouchControls: View {
                     .position(x: emptyX, y: local.height - 40)
             }
             placeable("steering", scale: bakedScale) {
-                steeringPad(chrome: CGSize(width: steeringSpan - 8, height: steeringHeight - 8))
-                    .frame(width: steeringSpan, height: steeringHeight)
+                // The touch strip keeps the screen corner; only the drawn pad
+                // shrinks, sat on the thumb's rest level with thrust.
+                let drawn = CGSize(width: steeringChrome.width * 2, height: steeringChrome.height)
+                let steeringOnLeft = clusterControls ? thumbSideIsLeft : !leftHanded
+                let insetX = steeringOnLeft ? local.minX - window.minX : window.maxX - local.maxX
+                let restX = insetX + edge + drawn.width / 2
+                // Level with thrust after the diamond's window-scaled lift, so
+                // both thumbs rest at one height on an iPad too.
+                let lift = padLayout == PadLayout.diamond ? Self.diamondBakedOffset.height * bakedScale.height : 0
+                steeringPad(
+                    chrome: drawn,
+                    centre: CGPoint(
+                        x: steeringOnLeft ? restX : steeringSpan - restX,
+                        y: min(steeringHeight - drawn.height / 2, max(drawn.height / 2, thrustY + lift - steeringY))
+                    )
+                )
+                .frame(width: steeringSpan, height: steeringHeight)
             }
             .offset(x: steeringX, y: steeringY)
             placeable("tractor", scale: bakedScale) {
@@ -276,12 +291,13 @@ struct TouchControls: View {
 
     /// The diamond's spacing, from its centre column: how far out the side
     /// pads sit, and how far above thrust the side row and the top pad sit.
-    /// Neighbours clear each other's chrome by `gap`; the side pads clear
-    /// thrust sideways and the top pad clears it upward.
+    /// Neighbours clear each other's touch frame (chrome plus slop) by
+    /// `diamondGap`, so a fast thumb never lands on two pads at once; the
+    /// side pads clear thrust sideways and the top pad clears it upward.
     static func diamond(thrust: CGSize, fire: CGSize, gap: CGFloat, slop: CGFloat)
         -> (side: CGFloat, row: CGFloat, top: CGFloat) {
-        let side = (thrust.width + fire.width) / 2 + gap
-        let top = (thrust.height + fire.height) / 2 + gap + slop
+        let side = (thrust.width + fire.width) / 2 + slop + diamondGap
+        let top = (thrust.height + fire.height) / 2 + slop + diamondGap
         return (side, top / 2, top)
     }
 
@@ -386,9 +402,14 @@ struct TouchControls: View {
     /// pad on the screen and sits in the bottom corner, so the court it covers
     /// is court the ball is rarely in.
     private let steeringReach: CGFloat = 190
+    /// Pads stand this far in from the safe area's edges (the mobile-game norm
+    /// is 16-24 pt), and diamond neighbours this far apart (8-16 pt).
+    static let edgeInset: CGFloat = 20
+    static let diamondGap: CGFloat = 12
 
-    private func steeringPad(chrome: CGSize) -> some View {
+    private func steeringPad(chrome: CGSize, centre: CGPoint) -> some View {
         ZStack {
+            ZStack {
             RoundedRectangle(cornerRadius: 26)
                 .fill(padWash(tint: playerTint, active: leftPressed || rightPressed))
                 .frame(width: chrome.width, height: chrome.height)
@@ -410,7 +431,9 @@ struct TouchControls: View {
                 trimSliderIndicator(width: chrome.width - 24)
             }
             .frame(width: chrome.width, height: chrome.height)
+            }
             .allowsHitTesting(false)
+            .position(centre)
             SteeringCapture(
                 onTorque: { torque = $0 },
                 onActive: { left, right in leftPressed = left; rightPressed = right }
@@ -531,7 +554,7 @@ struct TouchControls: View {
         GeometryReader { geometry in
             let thrust = thrustChrome
             let fire = fireChrome
-            let edge: CGFloat = 6
+            let edge = Self.edgeInset
             let gap: CGFloat = 10
             let slop: CGFloat = 16
             // Inboard is toward the court: left of a right thumb, right of a left one.
@@ -610,13 +633,13 @@ struct TouchControls: View {
     }
 
     private var steeringChrome: CGSize {
-        largeControls ? CGSize(width: 132, height: 132) : CGSize(width: 104, height: 108)
+        largeControls ? CGSize(width: 100, height: 100) : CGSize(width: 80, height: 80)
     }
     private var thrustChrome: CGSize {
-        largeControls ? CGSize(width: 132, height: 148) : CGSize(width: 108, height: 122)
+        largeControls ? CGSize(width: 100, height: 100) : CGSize(width: 80, height: 80)
     }
     private var fireChrome: CGSize {
-        largeControls ? CGSize(width: 104, height: 118) : CGSize(width: 84, height: 96)
+        largeControls ? CGSize(width: 84, height: 84) : CGSize(width: 68, height: 68)
     }
 
     private func setThrustPressed(_ pressed: Bool) {
