@@ -139,8 +139,9 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(steering.waitForExistence(timeout: 3))
         XCTAssertGreaterThanOrEqual(steering.frame.width, 96)
         XCTAssertGreaterThanOrEqual(steering.frame.height, 96)
-        XCTAssertGreaterThanOrEqual(thrustControl.frame.width, 112)
-        XCTAssertGreaterThanOrEqual(thrustControl.frame.height, 96)
+        // Thrust is drawn 80pt with 16pt of slop around it (build 165).
+        XCTAssertGreaterThanOrEqual(thrustControl.frame.width, 95)
+        XCTAssertGreaterThanOrEqual(thrustControl.frame.height, 95)
         XCTAssertTrue(app.staticTexts["Your side: Cyan"].exists)
 
         app.buttons["Pause match"].tap()
@@ -280,6 +281,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["PRACTICE"].waitForExistence(timeout: 5), "practice bay did not open")
         XCTAssertFalse(app.descendants(matching: .any)["matchmaking-headline"].exists)
         app.buttons["Leave practice"].tap()
+        XCTAssertTrue(app.buttons["Leave"].waitForExistence(timeout: 5), "leave confirmation did not appear")
         app.buttons["Leave"].tap()
         XCTAssertTrue(app.buttons["practice"].waitForExistence(timeout: 5), "leaving practice did not return home")
     }
