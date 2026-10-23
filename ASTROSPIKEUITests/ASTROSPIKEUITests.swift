@@ -39,24 +39,28 @@ final class ASTROSPIKEUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments.append("--skip-onboarding")
         app.launch()
-        XCTAssertTrue(app.buttons["SOLO FLIGHT, ONE ON ONE"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["DOUBLES, BOT OR FRIEND"].exists)
-        XCTAssertTrue(app.buttons["QUICK MATCH, AUTOMATIC ONLINE DUEL"].exists)
-        XCTAssertTrue(app.buttons["LOBBY, WHO'S ONLINE • LIVE DUELS • BRACKETS"].exists)
-        XCTAssertTrue(app.buttons["INVITES, ASK A FRIEND · ANSWER IN GAME"].exists)
+        XCTAssertTrue(app.buttons["DUEL, ONE ON ONE"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["DOUBLES, TWO A SIDE"].exists)
+        XCTAssertTrue(app.buttons["ASTROPUCK, 3-4 PILOTS"].exists)
+        XCTAssertTrue(app.buttons["ASTROBALL, VOLLEYBALL"].exists)
+        // Online play is one question inside the duel, not more home rows.
+        app.buttons["DUEL, ONE ON ONE"].tap()
+        XCTAssertTrue(app.buttons["duel-anyone"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["duel-friends"].exists)
+        XCTAssertTrue(app.buttons["duel-lobby"].exists)
         XCTAssertTrue(app.frame.width > app.frame.height)
     }
 
     @MainActor
-    func testDoublesAsksWhoFliesBesideYou() throws {
+    func testDoublesAsksWhoYouPlay() throws {
         let app = XCUIApplication()
         app.launchArguments.append("--skip-onboarding")
         app.launch()
-        app.buttons["DOUBLES, BOT OR FRIEND"].tap()
-        XCTAssertTrue(app.staticTexts["WHO FLIES BESIDE YOU?"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["doubles-friend"].exists)
-        app.buttons["doubles-bot"].tap()
-        XCTAssertTrue(app.staticTexts["CHOOSE THE RIVAL PAIR"].waitForExistence(timeout: 3))
+        app.buttons["DOUBLES, TWO A SIDE"].tap()
+        XCTAssertTrue(app.buttons["doubles-friends"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["duel-anyone"].exists)
+        app.buttons["doubles-bots"].tap()
+        XCTAssertTrue(app.staticTexts["CHOOSE THE BOTS"].waitForExistence(timeout: 3))
     }
 
     @MainActor
@@ -125,7 +129,8 @@ final class ASTROSPIKEUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments.append("--skip-onboarding")
         app.launch()
-        app.buttons["SOLO FLIGHT, ONE ON ONE"].tap()
+        app.buttons["DUEL, ONE ON ONE"].tap()
+        app.buttons["duel-bots"].tap()
         XCTAssertTrue(app.buttons["ROOKIE, Patient learner"].waitForExistence(timeout: 3))
         app.buttons["ROOKIE, Patient learner"].tap()
         XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
@@ -305,7 +310,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["BACK TO MENU"].waitForExistence(timeout: 5))
         app.buttons["BACK TO MENU"].tap()
-        XCTAssertTrue(app.buttons["SOLO FLIGHT, ONE ON ONE"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["DUEL, ONE ON ONE"].waitForExistence(timeout: 5))
     }
 
     @MainActor

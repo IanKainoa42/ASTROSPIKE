@@ -30,10 +30,9 @@ struct TouchControls: View {
     /// does nothing.
     var loadout: Loadout = .ship
     var playerTint: Color = .cyan
-    /// The SABER pad, ASTROBALL only: hold to draw the blade, flick the
-    /// held thumb left, right, up or down for a move. Nil hides the pad.
+    /// The SABER pad: hold to draw the blade, let go to sheathe it. Nil
+    /// hides the pad.
     var saberChanged: ((Bool) -> Void)?
-    var saberFlicked: ((SaberFlick) -> Void)?
 
     @AppStorage("clusterControls") private var clusterControls = false
     @State private var leftPressed = false
@@ -291,14 +290,15 @@ struct TouchControls: View {
 
     /// The diamond's spacing, from its centre column: how far out the side
     /// pads sit, and how far above thrust the side row and the top pad sit.
-    /// Neighbours clear each other's touch frame (chrome plus slop) by
-    /// `diamondGap`, so a fast thumb never lands on two pads at once; the
-    /// side pads clear thrust sideways and the top pad clears it upward.
+    /// A true diamond, a square on its point: each side pad sits up and out
+    /// from thrust at 45 degrees, the top pad straight above. The touch zones
+    /// are round, so a side pad's clears thrust's by `diamondGap` along the
+    /// diagonal, and the top pad clears each side pad by more.
     static func diamond(thrust: CGSize, fire: CGSize, gap: CGFloat, slop: CGFloat)
         -> (side: CGFloat, row: CGFloat, top: CGFloat) {
-        let side = (thrust.width + fire.width) / 2 + slop + diamondGap
-        let top = (thrust.height + fire.height) / 2 + slop + diamondGap
-        return (side, top / 2, top)
+        let reach = (min(thrust.width, thrust.height) + min(fire.width, fire.height)) / 2 + slop + diamondGap
+        let side = (reach / 2.squareRoot()).rounded(.up)
+        return (side, side, side * 2)
     }
 
     /// While arranging, the pad stops taking presses and can be dragged
@@ -458,20 +458,10 @@ struct TouchControls: View {
     }
 
     private func saberPad(chrome: CGSize) -> some View {
-        ZStack {
-            ControlZone(
-                icon: "line.diagonal", label: "Saber", identifier: "saber-control", tint: playerTint,
-                active: saberPressed, chrome: chrome, bottomPadding: 12, pressChanged: nil
-            )
-            SaberCapture(
-                pressChanged: setSaberPressed,
-                flicked: { flick in
-                    FeedbackCenter.shared.controlPressed()
-                    saberFlicked?(flick)
-                }
-            )
-            .accessibilityHidden(true)
-        }
+        ControlZone(
+            icon: "line.diagonal", label: "Saber", identifier: "saber-control", tint: playerTint,
+            active: saberPressed, chrome: chrome, bottomPadding: 12, pressChanged: setSaberPressed
+        )
     }
 
     // MARK: Full-bleed fallback
@@ -878,6 +868,14 @@ private final class PressCaptureView: UIView {
     var pressChanged: ((Bool) -> Void)?
     private var pressTracker = ControlPressTracker<ObjectIdentifier>()
 
+    /// Round, the size of the zone: it covers the drawn pad, and the
+    /// diamond's neighbours sit closer than square zones would allow.
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        let radius = min(bounds.width, bounds.height) / 2
+        let dx = point.x - bounds.midX, dy = point.y - bounds.midY
+        return dx * dx + dy * dy <= radius * radius
+    }
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
         updateTrackedTouches(touches) { pressTracker.began($0) }
@@ -902,80 +900,6 @@ private final class PressCaptureView: UIView {
         super.didMoveToWindow()
         guard window == nil else { return }
         pressTracker.cancelAll()
-        pressChanged?(false)
-    }
-}
-
-/// The SABER pad's touch: down draws the blade, up sheathes it, and the held
-/// thumb sliding `flickDistance` from where it landed is a flick, read to
-/// the nearest of the four directions. The origin moves to the thumb after
-/// each flick, so a second slide is a second move.
-private struct SaberCapture: UIViewRepresentable {
-    let pressChanged: (Bool) -> Void
-    let flicked: (SaberFlick) -> Void
-
-    func makeUIView(context: Context) -> SaberCaptureView {
-        let view = SaberCaptureView()
-        view.isAccessibilityElement = false
-        view.pressChanged = pressChanged
-        view.flicked = flicked
-        return view
-    }
-
-    func updateUIView(_ view: SaberCaptureView, context: Context) {
-        view.pressChanged = pressChanged
-        view.flicked = flicked
-    }
-}
-
-private final class SaberCaptureView: UIView {
-    var pressChanged: ((Bool) -> Void)?
-    var flicked: ((SaberFlick) -> Void)?
-    private let flickDistance: CGFloat = 14
-    private var activeTouchID: ObjectIdentifier?
-    private var origin: CGPoint = .zero
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesBegan(touches, with: event)
-        guard activeTouchID == nil, let touch = touches.first else { return }
-        activeTouchID = ObjectIdentifier(touch)
-        origin = touch.location(in: self)
-        pressChanged?(true)
-    }
-
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesMoved(touches, with: event)
-        guard let activeID = activeTouchID,
-              let touch = touches.first(where: { ObjectIdentifier($0) == activeID }) else { return }
-        let location = touch.location(in: self)
-        let dx = location.x - origin.x
-        let dy = location.y - origin.y
-        guard dx * dx + dy * dy >= flickDistance * flickDistance else { return }
-        origin = location
-        // Screen y runs down.
-        flicked?(abs(dx) > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down))
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesEnded(touches, with: event)
-        release(touches)
-    }
-
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesCancelled(touches, with: event)
-        release(touches)
-    }
-
-    private func release(_ touches: Set<UITouch>) {
-        guard let activeID = activeTouchID, touches.contains(where: { ObjectIdentifier($0) == activeID }) else { return }
-        activeTouchID = nil
-        pressChanged?(false)
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        guard window == nil, activeTouchID != nil else { return }
-        activeTouchID = nil
         pressChanged?(false)
     }
 }

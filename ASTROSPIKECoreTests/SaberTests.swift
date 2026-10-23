@@ -163,11 +163,11 @@ struct SaberTests {
         #expect(engine.state.match.lastTouchRun == 1)
     }
 
-    @Test("No saber outside ASTROBALL; the blade drops the beam; a stun drops the move")
+    @Test("The saber flies in a duel too; the blade drops the beam; a stun drops the move")
     func limits() {
         var duel = engine(astroball: false)
         duel.step(inputs: [.cyan: held(0)])
-        #expect(duel.state.ships[.cyan]!.saber.drawn == 0)
+        #expect(duel.state.ships[.cyan]!.saber.isOut)
 
         var engine = engine()
         engine.step(inputs: [.cyan: held(0, tractor: true)])

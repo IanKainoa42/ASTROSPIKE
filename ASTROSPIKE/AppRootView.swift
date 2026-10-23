@@ -284,40 +284,20 @@ struct AppRootView: View {
         }
         .sheet(item: $sheet) { item in
             switch item {
-            case .difficulty:
-                DifficultyPicker { difficulty in
+            case .duel, .doubles, .freeForAll, .astroball:
+                GameSheet(game: item, online: online, lobby: lobby) { pilots, difficulty in
                     sheet = nil
-                    gameMode = .solo(difficulty)
-                }
-                .presentationDetents([.medium])
-            case .doubles:
-                DoublesSheet(online: online) { difficulty in
-                    sheet = nil
-                    gameMode = .doubles(difficulty)
-                } openPicker: { format in
-                    sheet = nil
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(450))
-                        online.presentFriendInvite(format: format)
+                    gameMode = switch item {
+                    case .doubles: .doubles(difficulty)
+                    case .freeForAll: .freeForAll(pilots: pilots, difficulty)
+                    case .astroball: .astroball(pilots: pilots, difficulty)
+                    default: .solo(difficulty)
                     }
-                }
-                .presentationDetents([.large])
-            case .freeForAll:
-                FreeForAllSheet(online: online) { pilots, difficulty in
+                } quickMatch: {
                     sheet = nil
-                    gameMode = .freeForAll(pilots: pilots, difficulty)
-                } openPicker: { format in
-                    sheet = nil
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(450))
-                        online.presentFriendInvite(format: format)
-                    }
-                }
-                .presentationDetents([.large])
-            case .astroball:
-                AstroballSheet(online: online) { pilots, difficulty in
-                    sheet = nil
-                    gameMode = .astroball(pilots: pilots, difficulty)
+                    online.startQuickMatch()
+                } openLobby: {
+                    sheet = .lobby
                 } openPicker: { format in
                     sheet = nil
                     Task {
@@ -423,42 +403,143 @@ struct AppRootView: View {
 }
 
 private enum MenuSheet: String, Identifiable {
-    case difficulty, doubles, freeForAll, astroball, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
+    case duel, doubles, freeForAll, astroball, tutorial, settings, hangar, invite, tableInvite, lobby, modes, stats
     var id: String { rawValue }
 }
 
-/// DOUBLES asks one question first: who flies beside you. A bot wingman
-/// drops into the difficulty picker; a friend goes to the team-up invite
-/// with TEAM UP already chosen.
-private struct DoublesSheet: View {
+/// Every game asks the same one question: who you play. Bots (their level,
+/// and how many where that varies), friends over Game Center, or for a duel
+/// anyone online. The rules live in HOW TO FLY, not here.
+private struct GameSheet: View {
+    let game: MenuSheet
     let online: OnlineMatchCoordinator
-    let chooseBot: (AIDifficulty) -> Void
+    let lobby: LobbyService
+    let startBots: (_ pilots: Int, AIDifficulty) -> Void
+    let quickMatch: () -> Void
+    let openLobby: () -> Void
     let openPicker: (_ format: OnlineFormat) -> Void
-    @State private var wingman: Wingman?
+    @State private var who: Who?
+    @State private var pilots: Int
 
-    private enum Wingman { case bot, friend }
+    private enum Who { case bots, friends }
+
+    init(
+        game: MenuSheet, online: OnlineMatchCoordinator, lobby: LobbyService,
+        startBots: @escaping (_ pilots: Int, AIDifficulty) -> Void,
+        quickMatch: @escaping () -> Void, openLobby: @escaping () -> Void,
+        openPicker: @escaping (_ format: OnlineFormat) -> Void
+    ) {
+        self.game = game
+        self.online = online
+        self.lobby = lobby
+        self.startBots = startBots
+        self.quickMatch = quickMatch
+        self.openLobby = openLobby
+        self.openPicker = openPicker
+        _pilots = State(initialValue: game == .freeForAll ? 3 : 2)
+    }
+
+    /// Identifier stem; the UI tests key on these.
+    private var key: String {
+        switch game {
+        case .doubles: "doubles"
+        case .freeForAll: "ffa"
+        case .astroball: "astroball"
+        default: "duel"
+        }
+    }
+
+    private var title: String {
+        switch game {
+        case .doubles: "DOUBLES"
+        case .freeForAll: "ASTROPUCK"
+        case .astroball: "ASTROBALL"
+        default: "DUEL"
+        }
+    }
+
+    private var tagline: String {
+        switch game {
+        case .doubles: "Two a side on the big court, two balls in play."
+        case .freeForAll: "Three or four pilots on an air-hockey ring. Five lives each; the last one flying wins."
+        case .astroball: "Volleyball in zero-g. Three touches a side; let the ball touch your zone and the point goes across."
+        default: "One on one across the court."
+        }
+    }
+
+    private var botsDetail: String {
+        switch game {
+        case .doubles: "A bot on your wing against two bots."
+        case .freeForAll: "Every other chair a bot."
+        case .astroball: "One on one, or two a side with a bot beside you."
+        default: "A bot across the court."
+        }
+    }
+
+    private var friendsDetail: String {
+        switch game {
+        case .doubles: "Invite a pilot to your side. Bots fill the far half, or invite three."
+        case .freeForAll, .astroball: "Invite up to three. Bots fill the seats nobody takes."
+        default: "Invite a pilot, or answer an invite."
+        }
+    }
 
     var body: some View {
-        switch wingman {
+        switch who {
         case nil:
             VStack(alignment: .leading, spacing: 16) {
-                Text("WHO FLIES BESIDE YOU?").font(.title.bold())
-                Text("Two a side on the big court, two balls in play.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Text(title).font(.title.bold())
+                Text(tagline).font(.footnote).foregroundStyle(.secondary)
                 HStack(spacing: 12) {
-                    choice("BOT WINGMAN", detail: "A bot on your wing against two bots. Pick their level next.",
-                           icon: "cpu", identifier: "doubles-bot") { wingman = .bot }
-                    choice("A FRIEND", detail: "Invite a pilot to your side. Bots fill the far half, or invite three.",
-                           icon: "person.2.wave.2.fill", identifier: "doubles-friend") { wingman = .friend }
+                    choice("VS BOTS", detail: botsDetail, icon: "cpu", identifier: "\(key)-bots") { who = .bots }
+                    choice("WITH FRIENDS", detail: friendsDetail, icon: "person.2.wave.2.fill", identifier: "\(key)-friends") { who = .friends }
+                    if game == .duel {
+                        choice("ANYONE ONLINE", detail: "Matched with the next pilot looking.",
+                               icon: "bolt.horizontal.circle.fill", identifier: "duel-anyone", action: quickMatch)
+                    }
+                }
+                if game == .duel {
+                    Button(action: openLobby) {
+                        Label("LOBBY · WHO'S ONLINE, LIVE DUELS, BRACKETS", systemImage: "person.3.fill")
+                            .font(.caption.monospaced().weight(.bold))
+                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("duel-lobby")
                 }
             }
-            // No identifier on the container: it would shadow the two
-            // buttons' own, and the test that drives this sheet keys on those.
+            // No identifier on the container: it would shadow the buttons'
+            // own, and the tests that drive this sheet key on those.
             .padding(28)
-        case .bot:
-            DifficultyPicker(title: "CHOOSE THE RIVAL PAIR", choose: chooseBot)
-        case .friend:
-            InviteSheet(online: online, format: .teamUp, openPicker: openPicker)
+        case .bots:
+            VStack(alignment: .leading, spacing: 16) {
+                if game == .freeForAll || game == .astroball {
+                    Text(title).font(.title.bold())
+                    Picker("Pilots", selection: $pilots) {
+                        if game == .freeForAll {
+                            Text("3 PILOTS").tag(3)
+                            Text("4 PILOTS").tag(4)
+                        } else {
+                            Text("1 V 1").tag(2)
+                            Text("2 V 2").tag(4)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("\(key)-pilots")
+                }
+                DifficultyPicker(title: game == .duel ? "CHOOSE YOUR RIVAL" : "CHOOSE THE BOTS") { startBots(pilots, $0) }
+                    .padding(-28)
+                    .padding(.top, game == .freeForAll || game == .astroball ? 28 : 0)
+            }
+            .padding(28)
+        case .friends:
+            switch game {
+            case .doubles: InviteSheet(online: online, format: .teamUp, openPicker: openPicker)
+            case .freeForAll: InviteSheet(online: online, format: .freeForAll, openPicker: openPicker)
+            case .astroball: InviteSheet(online: online, format: .astroball, openPicker: openPicker)
+            default: InviteSheet(online: online, lobby: lobby, openPicker: openPicker)
+            }
         }
     }
 
@@ -473,126 +554,6 @@ private struct DoublesSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.bordered).tint(.cyan)
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-/// FREE-FOR-ALL asks who is on the ring: bots (how many, how good) or
-/// friends over Game Center, with bots in the chairs nobody takes.
-private struct FreeForAllSheet: View {
-    let online: OnlineMatchCoordinator
-    let start: (_ pilots: Int, AIDifficulty) -> Void
-    let openPicker: (_ format: OnlineFormat) -> Void
-    @State private var rivals: Rivals?
-    @State private var pilots = 3
-
-    private enum Rivals { case bots, friends }
-
-    var body: some View {
-        switch rivals {
-        case nil:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("ASTROPUCK").font(.title.bold())
-                Text("One round arena on an air-hockey table. Every net sits in the top of a smooth bell-curve bump rising off the rim, mouth to the middle: score straight in. Miss the mouth and the bump's slope sends the ball on round to a neighbour. Each pilot owns the ground round their net: past their MAX CROSS line you are shoved back, so shoot from the line. A ball into yours costs a life. Lose all five and you're out. Last pilot flying wins.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    choice("AGAINST BOTS", detail: "Three or four on the ring, every other chair a bot. Pick their level next.",
-                           icon: "cpu", identifier: "ffa-bots") { rivals = .bots }
-                    choice("WITH FRIENDS", detail: "Invite up to three pilots. Bots fill the chairs nobody takes; your ring settings fly on every phone.",
-                           icon: "person.3.fill", identifier: "ffa-friends") { rivals = .friends }
-                }
-            }
-            .padding(28)
-        case .bots:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("ASTROPUCK").font(.title.bold())
-                Picker("Pilots", selection: $pilots) {
-                    Text("3 PILOTS").tag(3)
-                    Text("4 PILOTS").tag(4)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("ffa-pilots")
-                DifficultyPicker(title: "CHOOSE THE BOTS") { start(pilots, $0) }
-                    .padding(-28)
-                    .padding(.top, 28)
-            }
-            .padding(28)
-        case .friends:
-            InviteSheet(online: online, format: .freeForAll, openPicker: openPicker)
-        }
-    }
-
-    private func choice(_ title: String, detail: String, icon: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                Image(systemName: icon).font(.title)
-                Text(title).font(.headline)
-                Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, minHeight: 140)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-/// ASTROBALL asks who is on the court: bots, one on one or two a side, or
-/// friends over Game Center with bots in the seats nobody takes.
-private struct AstroballSheet: View {
-    let online: OnlineMatchCoordinator
-    let start: (_ pilots: Int, AIDifficulty) -> Void
-    let openPicker: (_ format: OnlineFormat) -> Void
-    @State private var rivals: Rivals?
-    @State private var pilots = 2
-
-    private enum Rivals { case bots, friends }
-
-    var body: some View {
-        switch rivals {
-        case nil:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("ASTROBALL").font(.title.bold())
-                Text("Volleyball in zero-g. A wall of a net stands up out of the floor. Hull and bolts both count as touches: three a side to get it back over, and on a side of two nobody plays it twice running. Let the ball touch the glowing zone on your half and the point goes across. The walls soak a spike up instead of firing it back. Zone, touches and wall bounce are in Settings.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    choice("AGAINST BOTS", detail: "One on one, or two a side with a bot beside you. Pick their level next.",
-                           icon: "cpu", identifier: "astroball-bots") { rivals = .bots }
-                    choice("WITH FRIENDS", detail: "Invite up to three pilots. Bots fill the seats nobody takes; your ASTROBALL settings fly on every phone.",
-                           icon: "person.3.fill", identifier: "astroball-friends") { rivals = .friends }
-                }
-            }
-            .padding(28)
-        case .bots:
-            VStack(alignment: .leading, spacing: 16) {
-                Text("ASTROBALL").font(.title.bold())
-                Picker("Pilots", selection: $pilots) {
-                    Text("1 V 1").tag(2)
-                    Text("2 V 2").tag(4)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("astroball-pilots")
-                DifficultyPicker(title: "CHOOSE THE BOTS") { start(pilots, $0) }
-                    .padding(-28)
-                    .padding(.top, 28)
-            }
-            .padding(28)
-        case .friends:
-            InviteSheet(online: online, format: .astroball, openPicker: openPicker)
-        }
-    }
-
-    private func choice(_ title: String, detail: String, icon: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                Image(systemName: icon).font(.title)
-                Text(title).font(.headline)
-                Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, minHeight: 140)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.bordered)
         .accessibilityIdentifier(identifier)
     }
 }
@@ -1238,23 +1199,27 @@ private struct HomeView: View {
 
     private func menu(narrow: Bool) -> some View {
         VStack(spacing: narrow ? 10 : 12) {
-            // Side by side: a fifth full-width row pushes the bottom
-            // of the menu off an iPhone in landscape.
-            HStack(spacing: 10) {
-                MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true, narrow: narrow) { sheet = .difficulty }
-                MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true, narrow: narrow) { sheet = .doubles }
-                MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true, narrow: narrow) { sheet = .freeForAll }
-                MenuButton(title: "ASTROBALL", subtitle: "1V1 OR 2V2", icon: "volleyball.fill", compact: true, narrow: narrow) { sheet = .astroball }
+            // Pick the game; its sheet asks who you play.
+            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                GridRow {
+                    MenuButton(title: "DUEL", subtitle: "ONE ON ONE", icon: "person.fill", narrow: narrow, tile: true) { sheet = .duel }
+                    MenuButton(title: "DOUBLES", subtitle: "TWO A SIDE", icon: "person.2.fill", narrow: narrow, tile: true) { sheet = .doubles }
+                }
+                GridRow {
+                    MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", narrow: narrow, tile: true) { sheet = .freeForAll }
+                    MenuButton(title: "ASTROBALL", subtitle: "VOLLEYBALL", icon: "volleyball.fill", narrow: narrow, tile: true) { sheet = .astroball }
+                }
             }
-            // Friend-first: invite and rematch above automatch.
-            MenuButton(
-                title: "INVITES",
-                subtitle: invitesWaiting > 0
-                    ? "\(invitesWaiting) WAITING ON YOU · ANSWER OR ASK"
-                    : "ASK A FRIEND · ANSWER IN GAME",
-                icon: invitesWaiting > 0 ? "envelope.badge.fill" : "person.2.wave.2.fill",
-                narrow: narrow
-            ) { sheet = .invite }
+            // Only when someone is waiting on an answer: asking lives in
+            // each game's WITH FRIENDS.
+            if invitesWaiting > 0 {
+                MenuButton(
+                    title: "INVITES",
+                    subtitle: "\(invitesWaiting) WAITING ON YOU",
+                    icon: "envelope.badge.fill",
+                    narrow: narrow
+                ) { sheet = .invite }
+            }
             if online.canRematch {
                 MenuButton(
                     title: "REMATCH",
@@ -1263,10 +1228,6 @@ private struct HomeView: View {
                     narrow: narrow
                 ) { online.rematch() }
             }
-            MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill", narrow: narrow) { online.startQuickMatch() }
-            MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill", narrow: narrow) { sheet = .lobby }
-            // Volleyball, basketball and the circuit are parked (Ian may spin them into
-            // their own game); `sheet = .modes` still opens them if ever wanted back.
             // One row: a second row of tiles ran off the bottom of an
             // iPhone in landscape (SETTINGS and STATS were half cut).
             HStack(spacing: 8) {
@@ -1488,8 +1449,7 @@ private struct GameView: View {
                                   arenaFrame: Self.arenaFrame(in: geometry),
                                   windowFrame: TouchControls.windowFrame(in: geometry),
                                   playerTint: session.teamHues.color(localTeam),
-                                  saberChanged: session.hasSaber ? { session.saber = $0 } : nil,
-                                  saberFlicked: session.hasSaber ? { session.flickSaber($0) } : nil)
+                                  saberChanged: { session.saber = $0 })
                 }
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
@@ -1500,8 +1460,7 @@ private struct GameView: View {
                 fire: $session.fire,
                 tractor: $session.tractor,
                 onCommand: keyCommandHandler,
-                saberChanged: session.hasSaber ? { session.saber = $0 } : nil,
-                saberFlicked: session.hasSaber ? { session.flickSaber($0) } : nil
+                saberChanged: { session.saber = $0 }
             )
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
@@ -2436,7 +2395,7 @@ private struct FlightTutorial: View {
                     TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
                     TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court, and you can fire from anywhere short of the MAX CROSS line, but not from the ground. A bolt that hits an enemy hull knocks it about: shoved, stunned or spun, as the host picks.")
-                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. In ASTROBALL, hold Shift for the saber and flick it with the arrows or WASD. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
+                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Hold Shift for the saber. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
                     TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Touch it as often as you like; three bounces on your floor between touches, and the fourth is theirs.")
                     TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
                     TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
@@ -2653,8 +2612,7 @@ struct ControlLayoutEditor: View {
                         leftHanded: leftHanded,
                         arenaFrame: arena,
                         windowFrame: window,
-                        saberChanged: { _ in },
-                        saberFlicked: { _ in }
+                        saberChanged: { _ in }
                     )
                 }
             }
@@ -3115,10 +3073,24 @@ private struct MenuButton: View {
     /// Shorter rows for a window with little height to spare (iPhone Duo
     /// folded), so the menu still ends above the bottom edge.
     var narrow = false
+    /// A home-grid game tile: icon over title over subtitle, no chevron, so
+    /// ASTROPUCK fits half the menu width without truncating.
+    var tile = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            if compact {
+            if tile {
+                VStack(spacing: 4) {
+                    Image(systemName: icon).font(.title2).frame(height: narrow ? 24 : 30)
+                    Text(title).font(.headline.weight(.black)).tracking(1).lineLimit(1).minimumScaleFactor(0.6)
+                    Text(subtitle).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.52)).lineLimit(1).minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 10).padding(.vertical, narrow ? 8 : 12).frame(minHeight: narrow ? 76 : 96)
+                .contentShape(RoundedRectangle(cornerRadius: 18))
+                .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
+            } else if compact {
                 VStack(alignment: .leading, spacing: 2) {
                     Image(systemName: icon).font(.body.weight(.semibold)).frame(height: 20)
                     // A fixed size that fits SOLO FLIGHT in a 100pt tile (430pt

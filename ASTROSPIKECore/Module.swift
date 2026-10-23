@@ -72,7 +72,7 @@ public struct PlayerInput: Codable, Equatable, Sendable {
     /// Holds the tractor beam on: the ball ahead of the nose is drawn in
     /// toward the ship while this is held. Continuous, no cooldown.
     public var tractor: Bool
-    /// Holds the saber out (ASTROBALL only).
+    /// Holds the saber out.
     public var saber: Bool
     /// The pilot's latest flick on the held SABER pad, and a count that
     /// steps once per flick: a new count is a new move, so a repeated or
@@ -258,7 +258,7 @@ public struct ShipState: Codable, Equatable, Sendable {
     /// second; the turn rate itself is set from input every step, so the
     /// knock has to live here or it would be gone the next tick.
     public var knockSpin: Double
-    /// The ASTROBALL saber: blade out, and any move it is swinging. Stored
+    /// The saber: blade out, and any move it is swinging. Stored
     /// only while the blade is out, so a sheathed hull costs the snapshot
     /// nothing.
     var saberState: SaberState?
@@ -998,12 +998,12 @@ public struct SimulationEngine: Sendable {
             if ship.stunTicks > 0 { ship.stunTicks -= 1 }
             if ship.stunGuardTicks > 0 { ship.stunGuardTicks -= 1 }
             stickTorques[seat] = input.torque
-            // The saber is ASTROBALL's, and only out while the ball is live.
-            // A stun knocks any swing off; drawing it lets go of the beam.
-            let saberHeld = configuration.astroball != nil && input.saber && state.match.phase == .playing
+            // The saber is only out while the ball is live. A stun knocks
+            // any swing off; drawing it lets go of the beam.
+            let saberHeld = input.saber && state.match.phase == .playing
             if stunned { ship.cancelSaberMove() }
             if saberHeld, let locked = lockedBall(of: seat) { breakBeamLock(locked) }
-            let saberTurns = configuration.astroball != nil && ship.stepSaber(
+            let saberTurns = ship.stepSaber(
                 held: saberHeld,
                 flick: input.saberFlick,
                 flickCount: input.saberFlickCount,
