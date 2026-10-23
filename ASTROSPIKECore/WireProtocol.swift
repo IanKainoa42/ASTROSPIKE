@@ -175,7 +175,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     the last-touch seat on the match state.
     // 55: ASTROBALL's same-pilot cap, leaning MAX CROSS line and its push, side colours
     //     in the host's tuning, and the same-pilot run on the match state.
-    public static let currentVersion: UInt16 = 55
+    // 56: the ASTROBALL saber: held, flick and flick count on the input, and
+    //     each hull's blade (draw, move, start angle) on the ship state.
+    public static let currentVersion: UInt16 = 56
 
     public var version: UInt16
     public var sequence: UInt64

@@ -30,6 +30,10 @@ struct TouchControls: View {
     /// does nothing.
     var loadout: Loadout = .ship
     var playerTint: Color = .cyan
+    /// The SABER pad, ASTROBALL only: hold to draw the blade, flick the
+    /// held thumb left, right, up or down for a move. Nil hides the pad.
+    var saberChanged: ((Bool) -> Void)?
+    var saberFlicked: ((SaberFlick) -> Void)?
 
     @AppStorage("clusterControls") private var clusterControls = false
     @State private var leftPressed = false
@@ -37,6 +41,7 @@ struct TouchControls: View {
     @State private var thrustPressed = false
     @State private var firePressed = false
     @State private var tractorPressed = false
+    @State private var saberPressed = false
     /// Ian places the pads himself: Settings → Arrange pads, then drag them
     /// in the bay. Offsets from the drawn default, in points, per pad.
     @AppStorage("arrangePads") private var arranging = false
@@ -53,6 +58,8 @@ struct TouchControls: View {
         "tractor": CGSize(width: -109, height: -303),
         "fire": CGSize(width: -49, height: -280),
         "thrust": CGSize(width: -123, height: -246),
+        // Rides fire's drag, a pad above it: the fourth face button.
+        "saber": CGSize(width: -49, height: -280),
     ]
     @State private var dragging: [String: CGSize] = [:]
     /// Where each pad actually landed on the glass, measured after every
@@ -144,6 +151,7 @@ struct TouchControls: View {
         let thrustTop = bottom - thrust.height
         let tractorY = thrustTop - gap - (fire.height + slop) / 2
         let fireY = thrustTop + 12 - (fire.height + slop) / 2
+        let saberY = fireY - fire.height - slop - gap
 
         // Steering owns the screen's outer bottom corner. A third of the screen
         // wide is the floor whatever the margin happens to be, and it stands
@@ -188,6 +196,13 @@ struct TouchControls: View {
                     .frame(width: fire.width + slop, height: fire.height + slop)
                 }
                 .position(x: fireX, y: fireY)
+            }
+            if loadout == .ship, saberChanged != nil {
+                placeable("saber", scale: bakedScale) {
+                    saberPad(chrome: fire)
+                        .frame(width: fire.width + slop, height: fire.height + slop)
+                }
+                .position(x: fireX, y: saberY)
             }
             placeable("thrust", scale: bakedScale) {
                 ControlZone(
@@ -378,6 +393,23 @@ struct TouchControls: View {
         )
     }
 
+    private func saberPad(chrome: CGSize) -> some View {
+        ZStack {
+            ControlZone(
+                icon: "line.diagonal", label: "Saber", identifier: "saber-control", tint: playerTint,
+                active: saberPressed, chrome: chrome, bottomPadding: 12, pressChanged: nil
+            )
+            SaberCapture(
+                pressChanged: setSaberPressed,
+                flicked: { flick in
+                    FeedbackCenter.shared.controlPressed()
+                    saberFlicked?(flick)
+                }
+            )
+            .accessibilityHidden(true)
+        }
+    }
+
     // MARK: Full-bleed fallback
 
     private var fullBleedLayout: some View {
@@ -470,6 +502,7 @@ struct TouchControls: View {
             let fireX = thrustX + inboard * ((thrust.width + fire.width) / 2 + slop + gap)
             let fireY = thrustY - 16
             let tractorY = thrustY - (thrust.height + fire.height) / 2 - slop - gap
+            let saberY = fireY - fire.height - slop - gap
             ZStack(alignment: .topLeading) {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
@@ -482,6 +515,11 @@ struct TouchControls: View {
                     )
                     .frame(width: fire.width + slop, height: fire.height + slop)
                     .position(x: fireX, y: fireY)
+                    if saberChanged != nil {
+                        saberPad(chrome: fire)
+                            .frame(width: fire.width + slop, height: fire.height + slop)
+                            .position(x: fireX, y: saberY)
+                    }
                 }
                 ControlZone(
                     icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
@@ -545,12 +583,20 @@ struct TouchControls: View {
         tractor = pressed
     }
 
+    private func setSaberPressed(_ pressed: Bool) {
+        if pressed, !saberPressed { FeedbackCenter.shared.controlPressed() }
+        saberPressed = pressed
+        saberChanged?(pressed)
+    }
+
     private func clearInput() {
         leftPressed = false
         rightPressed = false
         thrustPressed = false
         firePressed = false
         tractorPressed = false
+        if saberPressed { saberChanged?(false) }
+        saberPressed = false
         torque = 0
         thrust = false
         fire = false
@@ -779,6 +825,80 @@ private final class PressCaptureView: UIView {
         super.didMoveToWindow()
         guard window == nil else { return }
         pressTracker.cancelAll()
+        pressChanged?(false)
+    }
+}
+
+/// The SABER pad's touch: down draws the blade, up sheathes it, and the held
+/// thumb sliding `flickDistance` from where it landed is a flick, read to
+/// the nearest of the four directions. The origin moves to the thumb after
+/// each flick, so a second slide is a second move.
+private struct SaberCapture: UIViewRepresentable {
+    let pressChanged: (Bool) -> Void
+    let flicked: (SaberFlick) -> Void
+
+    func makeUIView(context: Context) -> SaberCaptureView {
+        let view = SaberCaptureView()
+        view.isAccessibilityElement = false
+        view.pressChanged = pressChanged
+        view.flicked = flicked
+        return view
+    }
+
+    func updateUIView(_ view: SaberCaptureView, context: Context) {
+        view.pressChanged = pressChanged
+        view.flicked = flicked
+    }
+}
+
+private final class SaberCaptureView: UIView {
+    var pressChanged: ((Bool) -> Void)?
+    var flicked: ((SaberFlick) -> Void)?
+    private let flickDistance: CGFloat = 28
+    private var activeTouchID: ObjectIdentifier?
+    private var origin: CGPoint = .zero
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        guard activeTouchID == nil, let touch = touches.first else { return }
+        activeTouchID = ObjectIdentifier(touch)
+        origin = touch.location(in: self)
+        pressChanged?(true)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        guard let activeID = activeTouchID,
+              let touch = touches.first(where: { ObjectIdentifier($0) == activeID }) else { return }
+        let location = touch.location(in: self)
+        let dx = location.x - origin.x
+        let dy = location.y - origin.y
+        guard dx * dx + dy * dy >= flickDistance * flickDistance else { return }
+        origin = location
+        // Screen y runs down.
+        flicked?(abs(dx) > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down))
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        release(touches)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        release(touches)
+    }
+
+    private func release(_ touches: Set<UITouch>) {
+        guard let activeID = activeTouchID, touches.contains(where: { ObjectIdentifier($0) == activeID }) else { return }
+        activeTouchID = nil
+        pressChanged?(false)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window == nil, activeTouchID != nil else { return }
+        activeTouchID = nil
         pressChanged?(false)
     }
 }

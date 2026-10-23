@@ -72,13 +72,32 @@ public struct PlayerInput: Codable, Equatable, Sendable {
     /// Holds the tractor beam on: the ball ahead of the nose is drawn in
     /// toward the ship while this is held. Continuous, no cooldown.
     public var tractor: Bool
+    /// Holds the saber out (ASTROBALL only).
+    public var saber: Bool
+    /// The pilot's latest flick on the held SABER pad, and a count that
+    /// steps once per flick: a new count is a new move, so a repeated or
+    /// dropped input never doubles or loses one.
+    public var saberFlick: SaberFlick?
+    public var saberFlickCount: UInt8
 
-    public init(tick: UInt64, torque: Double, thrust: Bool, fire: Bool = false, tractor: Bool = false) {
+    public init(
+        tick: UInt64,
+        torque: Double,
+        thrust: Bool,
+        fire: Bool = false,
+        tractor: Bool = false,
+        saber: Bool = false,
+        saberFlick: SaberFlick? = nil,
+        saberFlickCount: UInt8 = 0
+    ) {
         self.tick = tick
         self.torque = max(-1, min(1, torque))
         self.thrust = thrust
         self.fire = fire
         self.tractor = tractor
+        self.saber = saber
+        self.saberFlick = saberFlick
+        self.saberFlickCount = saberFlickCount
     }
 
     public static func idle(tick: UInt64) -> PlayerInput {
@@ -239,6 +258,14 @@ public struct ShipState: Codable, Equatable, Sendable {
     /// second; the turn rate itself is set from input every step, so the
     /// knock has to live here or it would be gone the next tick.
     public var knockSpin: Double
+    /// The ASTROBALL saber: blade out, and any move it is swinging. Stored
+    /// only while the blade is out, so a sheathed hull costs the snapshot
+    /// nothing.
+    var saberState: SaberState?
+    public var saber: SaberState {
+        get { saberState ?? SaberState() }
+        set { saberState = newValue.isOut || newValue.move != nil ? newValue : nil }
+    }
 
     public init(
         position: SIMD2<Double>,
@@ -956,20 +983,37 @@ public struct SimulationEngine: Sendable {
         groundedSeats.removeAll()
         defencePlays.removeAll()
         let previousShipPositions = state.ships.mapValues(\.position)
+        let previousShipAngles = state.ships.mapValues(\.angle)
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed else { continue }
             // A stunned hull flies with its hands off the stick.
+            let stunned = ship.stunTicks > 0
             let input = ship.stunTicks > 0 ? .idle(tick: state.tick) : inputs[seat] ?? .idle(tick: state.tick)
             if ship.stunTicks > 0 { ship.stunTicks -= 1 }
             if ship.stunGuardTicks > 0 { ship.stunGuardTicks -= 1 }
             stickTorques[seat] = input.torque
-            if let locked = lockedBall(of: seat), let lock = state.balls[locked].beamLock {
+            // The saber is ASTROBALL's, and only out while the ball is live.
+            // A stun knocks any swing off; drawing it lets go of the beam.
+            let saberHeld = configuration.astroball != nil && input.saber && state.match.phase == .playing
+            if stunned { ship.cancelSaberMove() }
+            if saberHeld, let locked = lockedBall(of: seat) { breakBeamLock(locked) }
+            let saberTurns = configuration.astroball != nil && ship.stepSaber(
+                held: saberHeld,
+                flick: input.saberFlick,
+                flickCount: input.saberFlickCount,
+                netward: ship.position.x < 0 ? 1 : -1,
+                dt: dt
+            )
+            if saberTurns {
+                // The move has set the angle and the turn rate itself.
+            } else if let locked = lockedBall(of: seat), let lock = state.balls[locked].beamLock {
                 // Welded to a ball, the hull turns with the pair, not the stick.
                 ship.angularVelocity = lock.spin
+                ship.angle += ship.angularVelocity * dt
             } else {
                 ship.angularVelocity = input.torque * configuration.torqueAcceleration + ship.knockSpin
+                ship.angle += ship.angularVelocity * dt
             }
-            ship.angle += ship.angularVelocity * dt
             if ship.knockSpin != 0 {
                 ship.knockSpin *= exp(-dt / Self.knockSpinDecay)
                 if abs(ship.knockSpin) < 0.05 { ship.knockSpin = 0 }
@@ -1046,7 +1090,7 @@ public struct SimulationEngine: Sendable {
             }
             // Unlike the cannon, the beam works anywhere on the court — a
             // pilot can reach into the far half and reel the ball back out.
-            ship.tractorActive = input.tractor && state.match.phase == .playing
+            ship.tractorActive = input.tractor && !saberHeld && state.match.phase == .playing
             state.ships[seat] = ship
         }
         applyTractorToShips(dt: dt)
@@ -1115,6 +1159,16 @@ public struct SimulationEngine: Sendable {
                 contacts: &contacts,
                 effects: &collisionEffects
             )
+            if configuration.astroball != nil {
+                resolveBallSaberCollisions(
+                    ballIndex: ballIndex,
+                    previousBallPosition: previousBallPositions[ballIndex],
+                    previousShipPositions: previousShipPositions,
+                    previousShipAngles: previousShipAngles,
+                    contacts: &contacts,
+                    effects: &collisionEffects
+                )
+            }
             resolveBallCollision(
                 ballIndex: ballIndex,
                 previousPosition: previousBallPositions[ballIndex],
@@ -3211,6 +3265,106 @@ public struct SimulationEngine: Sendable {
             position: state.balls[ballIndex].position,
             intensity: abs(inwardSpeed)
         ))
+    }
+
+    /// The blade as it stands for `ship`: a segment from the nose tip out
+    /// along the nose, as long as it is drawn.
+    func saberBlade(of seat: Seat) -> (base: SIMD2<Double>, tip: SIMD2<Double>)? {
+        guard let ship = state.ships[seat], !ship.isDestroyed, ship.saber.isOut else { return nil }
+        return saberBlade(seat: seat, position: ship.position, angle: ship.angle, reach: Saber.reach(ship.saber))
+    }
+
+    private func saberBlade(seat: Seat, position: SIMD2<Double>, angle: Double, reach: Double)
+        -> (base: SIMD2<Double>, tip: SIMD2<Double>) {
+        let axis = SIMD2(cos(angle), sin(angle))
+        let base = position + axis * (shipHitboxes[seat] ?? .shared).noseReach
+        return (base, base + axis * Saber.length * reach)
+    }
+
+    /// The ball against every drawn blade. The blade passes through walls,
+    /// the net and other hulls; only the ball feels it. It is a moving,
+    /// frictionless surface: the ball takes the normal impulse alone, so it
+    /// leaves along the angle it was met at, as fast as the blade was moving
+    /// there. Checked at several poses through the step, so a spinning tip
+    /// cannot skip over the ball.
+    private mutating func resolveBallSaberCollisions(
+        ballIndex: Int,
+        previousBallPosition: SIMD2<Double>,
+        previousShipPositions: [Seat: SIMD2<Double>],
+        previousShipAngles: [Seat: Double],
+        contacts: inout [RuleContact],
+        effects: inout [SimulationEvent]
+    ) {
+        let radius = state.balls[ballIndex].radius + Saber.radius
+        let ballEnd = state.balls[ballIndex].position
+        var hit: (seat: Seat, along: Double, normal: SIMD2<Double>, turnBack: Double)?
+        search: for sample in 1 ... Saber.samples {
+            let f = Double(sample) / Double(Saber.samples)
+            let ball = previousBallPosition + (ballEnd - previousBallPosition) * f
+            for seat in Seat.allCases {
+                guard let ship = state.ships[seat], !ship.isDestroyed, ship.saber.isOut else { continue }
+                let fromPosition = previousShipPositions[seat] ?? ship.position
+                let fromAngle = previousShipAngles[seat] ?? ship.angle
+                let angle = fromAngle + (ship.angle - fromAngle) * f
+                let blade = saberBlade(
+                    seat: seat,
+                    position: fromPosition + (ship.position - fromPosition) * f,
+                    angle: angle,
+                    reach: Saber.reach(ship.saber)
+                )
+                let span = blade.tip - blade.base
+                let spanLength = simd_length_squared(span)
+                let along = spanLength > 0 ? min(1, max(0, simd_dot(ball - blade.base, span) / spanLength)) : 0
+                let offset = ball - (blade.base + span * along)
+                let distance = simd_length(offset)
+                guard distance < radius else { continue }
+                let normal = distance > 0.000_001 ? offset / distance : SIMD2(-sin(angle), cos(angle))
+                hit = (seat, along, normal, ship.angle - angle)
+                break search
+            }
+        }
+        guard let hit, var ship = state.ships[hit.seat] else { return }
+        if let lock = state.balls[ballIndex].beamLock, lock.seat != hit.seat {
+            breakBeamLock(ballIndex)
+        }
+        takeBallOffBeam(ballIndex, playedBy: hit.seat)
+        // Carry the contact to the blade's pose at the end of the step.
+        let c = cos(hit.turnBack), s = sin(hit.turnBack)
+        let normal = SIMD2(c * hit.normal.x - s * hit.normal.y, s * hit.normal.x + c * hit.normal.y)
+        let blade = saberBlade(seat: hit.seat, position: ship.position, angle: ship.angle, reach: Saber.reach(ship.saber))
+        let point = blade.base + (blade.tip - blade.base) * hit.along
+        state.balls[ballIndex].position = point + normal * radius
+        let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+        let lever = point - ship.position
+        let bladeVelocity = ship.velocity
+            + ship.angularVelocity * SIMD2(-lever.y, lever.x)
+            + axis * Saber.reachRate(ship.saber) * Saber.length * hit.along
+        let inward = simd_dot(state.balls[ballIndex].velocity - bladeVelocity, normal)
+        guard inward < 0 else { return }
+        // The blade is flown, not knocked: its swing does not slow. The hull
+        // takes the push back.
+        let change = -(1 + Saber.restitution) * inward
+        state.balls[ballIndex].velocity += normal * change
+        ship.velocity -= normal * change * (Self.ballMass / Self.shipMass)
+        let separation = simd_dot(state.balls[ballIndex].velocity - bladeVelocity, normal)
+        if separation < configuration.minimumBallSeparationSpeed {
+            state.balls[ballIndex].velocity += normal * (configuration.minimumBallSeparationSpeed - separation)
+        }
+        // One touch per burst, shared with the hull: a blade and a bump in
+        // the same breath cost the side one touch.
+        let fresh = ship.ballTouchCooldownTicks == 0
+        if fresh {
+            ship.ballTouchCooldownTicks = UInt64(
+                (configuration.ballTouchDebounce / configuration.stepDuration).rounded()
+            )
+        }
+        state.ships[hit.seat] = ship
+        contacts.append(.ballTouchedShip(team: hit.seat.team, counted: fresh))
+        if fresh { contacts.append(.ballPlayed(seat: hit.seat)) }
+        state.balls[ballIndex].lastPlay = BallPlay(seat: hit.seat, kind: .hull)
+        if fresh { playsThisStep.append(.hit(hit.seat)) }
+        if fresh { defencePlays.append((ballIndex, hit.seat, .hull)) }
+        effects.append(.collisionEffect(position: state.balls[ballIndex].position, intensity: abs(inward)))
     }
 
     /// How far `ball` sits inside `seat`'s hull, skin included, and the way

@@ -1487,7 +1487,9 @@ private struct GameView: View {
                                   largeControls: largeControls, leftHanded: leftHanded,
                                   arenaFrame: Self.arenaFrame(in: geometry),
                                   windowFrame: TouchControls.windowFrame(in: geometry),
-                                  playerTint: session.teamHues.color(localTeam))
+                                  playerTint: session.teamHues.color(localTeam),
+                                  saberChanged: session.hasSaber ? { session.saber = $0 } : nil,
+                                  saberFlicked: session.hasSaber ? { session.flickSaber($0) } : nil)
                 }
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies

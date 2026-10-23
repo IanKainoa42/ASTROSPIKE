@@ -95,6 +95,10 @@ final class ArenaScene: SKScene {
     /// How far the beam reaches, taken from the engine that does the pulling
     /// so the drawing can never disagree with the grab.
     var tractorRange = SimulationConfiguration().tractorRange
+    /// Where each hull's nose tip sits, so the blade starts where the engine
+    /// starts it.
+    var noseReach: [Seat: Double] = [:]
+    private var saberRigs: [Seat: SaberRig] = [:]
     private var ballTrails: [[CGPoint]] = []
     private var plumeSeed = 0
     private var didBuild = false
@@ -197,6 +201,12 @@ final class ArenaScene: SKScene {
             actorLayer.addChild(ring)
         }
         for seat in Seat.allCases {
+            let saber = SaberRig()
+            saberRigs[seat] = saber
+            actorLayer.addChild(saber.trail)
+            actorLayer.addChild(saber.puff)
+            actorLayer.addChild(saber.glow)
+            actorLayer.addChild(saber.core)
             let rig = BeamRig()
             beamRigs[seat] = rig
             actorLayer.addChild(rig.crop)
@@ -2053,6 +2063,7 @@ final class ArenaScene: SKScene {
             beamRigs[seat]?.crop.isHidden = true
             beamRigs[seat]?.tether.isHidden = true
             beamPulls[seat] = nil
+            saberRigs[seat]?.hide()
             return
         }
         shipNode.isHidden = state.isDestroyed
@@ -2151,6 +2162,78 @@ final class ArenaScene: SKScene {
         emitSmoke(from: shipNode, seat: seat, state: state, dt: dt)
         emitBlast(seat: seat, state: state, dt: dt)
         updateBeam(seat: seat, state: state, dt: dt, lights: &lights)
+        updateSaber(seat: seat, state: state, lights: &lights)
+    }
+
+    /// The blade: a white core in a glow of the hull's colour, out from the
+    /// nose as far as the engine has it drawn. A move leaves a fading fan
+    /// behind the blade, and a spin or chop lights a side thruster at the
+    /// nose, blowing the opposite way to the turn.
+    private func updateSaber(seat: Seat, state: ShipState, lights: inout [FloorLight]) {
+        guard let rig = saberRigs[seat] else { return }
+        let reach = Saber.reach(state.saber)
+        guard reach > 0, !state.isDestroyed else {
+            rig.hide()
+            return
+        }
+        let worldToPoints = arenaRect.width / CGFloat(arena.halfWidth * 2)
+        let axis = SIMD2(cos(state.angle), sin(state.angle))
+        let base = state.position + axis * (noseReach[seat] ?? ShipHitbox.shared.noseReach)
+        let tip = base + axis * Saber.length * reach
+        let line = CGMutablePath()
+        line.move(to: point(base.x, base.y))
+        line.addLine(to: point(tip.x, tip.y))
+        let color = seatColor(seat)
+        let thickness = CGFloat(Saber.radius * 2) * worldToPoints
+        rig.glow.path = line
+        rig.glow.strokeColor = color
+        rig.glow.lineWidth = thickness + 3
+        rig.glow.glowWidth = 9 * labScale
+        rig.core.path = line
+        rig.core.lineWidth = max(1.5, thickness * 0.45)
+        rig.glow.isHidden = false
+        rig.core.isHidden = false
+        let middle = (base + tip) / 2
+        lights.append(FloorLight(position: point(middle.x, middle.y), radius: 95 * labScale, color: color, intensity: 0.7))
+
+        // The swing's trail: the last few blade poses, joined into a fan.
+        if state.saber.move != nil {
+            rig.poses.append((base, tip))
+            if rig.poses.count > 7 { rig.poses.removeFirst() }
+        } else if !rig.poses.isEmpty {
+            rig.poses.removeFirst()
+        }
+        if rig.poses.count > 1 {
+            let fan = CGMutablePath()
+            fan.move(to: point(rig.poses[0].base.x, rig.poses[0].base.y))
+            for pose in rig.poses { fan.addLine(to: point(pose.tip.x, pose.tip.y)) }
+            for pose in rig.poses.reversed() { fan.addLine(to: point(pose.base.x, pose.base.y)) }
+            fan.closeSubpath()
+            rig.trail.path = fan
+            rig.trail.fillColor = color.withAlphaComponent(0.22)
+            rig.trail.isHidden = false
+        } else {
+            rig.trail.isHidden = true
+        }
+
+        // The side thruster that swings it: a spin of 4 pi a second at its
+        // quickest, so the flame grows with how hard the hull is turning.
+        let turning = state.saber.move != nil && state.saber.turn != 0
+        let strength = min(1, abs(state.angularVelocity) / 20)
+        if turning, strength > 0.05 {
+            let side = SIMD2(-axis.y, axis.x) * -state.saber.turn
+            let from = state.position + axis * ((noseReach[seat] ?? ShipHitbox.shared.noseReach) * 0.55)
+            let to = from + side * (0.025 + 0.05 * strength)
+            let flame = CGMutablePath()
+            flame.move(to: point(from.x, from.y))
+            flame.addLine(to: point(to.x, to.y))
+            rig.puff.path = flame
+            rig.puff.lineWidth = 5 * labScale
+            rig.puff.alpha = 0.4 + 0.6 * strength
+            rig.puff.isHidden = false
+        } else {
+            rig.puff.isHidden = true
+        }
     }
 
     /// The flow beam: a violet cone brightest at the nose, with motes pouring
@@ -2981,5 +3064,41 @@ final class BallNode: SKShapeNode {
             lineWidth = 2
         }
         glowWidth = 0
+    }
+}
+
+/// One hull's saber as drawn. The engine owns where the blade is; this only
+/// keeps the last few poses for the swing's trail.
+@MainActor
+private final class SaberRig {
+    let glow = SKShapeNode()
+    let core = SKShapeNode()
+    let trail = SKShapeNode()
+    let puff = SKShapeNode()
+    var poses: [(base: SIMD2<Double>, tip: SIMD2<Double>)] = []
+
+    init() {
+        for node in [glow, core] {
+            node.lineCap = .round
+            node.fillColor = .clear
+            node.zPosition = 1.2
+        }
+        core.strokeColor = SKColor(white: 1, alpha: 0.95)
+        core.zPosition = 1.3
+        trail.strokeColor = .clear
+        trail.zPosition = 1.1
+        puff.strokeColor = SKColor(red: 1, green: 0.62, blue: 0.25, alpha: 1)
+        puff.lineCap = .round
+        puff.glowWidth = 4
+        puff.zPosition = 1.1
+        hide()
+    }
+
+    func hide() {
+        glow.isHidden = true
+        core.isHidden = true
+        trail.isHidden = true
+        puff.isHidden = true
+        poses.removeAll()
     }
 }
