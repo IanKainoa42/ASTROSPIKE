@@ -644,11 +644,17 @@ public struct SimulationConfiguration: Equatable, Sendable {
     /// the zone the floor is the duel's -- a few bounces between touches --
     /// so a ball dead on the back floor cannot stall a rally. One ball, even
     /// on the two-a-side court.
+    public static let astroballTouchDebounce = 0.3
+
     public static func astroball(from base: SimulationConfiguration, tuning: AstroballTuning) -> SimulationConfiguration {
         var configuration = base
         configuration.ballDropHeight = 0.34
         configuration.ballCount = 1
         configuration.astroball = tuning
+        // Every touch counts here, so a ball rolling along a hull or rattling
+        // off it must cost one. The duel's tenth of a second was tuned for
+        // wall rattles; a hull carrying the ball re-touches for longer.
+        configuration.ballTouchDebounce = Self.astroballTouchDebounce
         return configuration
     }
 
@@ -1044,13 +1050,33 @@ public struct SimulationEngine: Sendable {
             let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
             let depth = ship.position.x * intrusionSign
                 - arena.crossingLimit(atY: ship.position.y, astroball: configuration.astroball)
-            if depth > 0, !isFreeForAll {
-                // ASTROBALL's line is loose, push and drag alike.
-                let push = configuration.astroball?.clampedCrossPush ?? configuration.crossingPushBack
-                let drag = configuration.astroball?.crossDrag(duelDrag: configuration.crossingDrag)
-                    ?? configuration.crossingDrag
-                acceleration.x -= intrusionSign * push * depth
-                acceleration -= ship.velocity * (drag * min(1, depth / 0.20))
+            if depth > 0, !isFreeForAll, configuration.astroball == nil {
+                acceleration.x -= intrusionSign * configuration.crossingPushBack * depth
+                acceleration -= ship.velocity * (configuration.crossingDrag * min(1, depth / 0.20))
+            }
+            // ASTROBALL's MAX CROSS is a slingshot, not treacle: a hull may
+            // lean or fly past it, and a stiff, undamped spring flings it back.
+            // Under the top of the net on the far side the spring also lifts,
+            // and gravity is off, so a hull that drops over cannot sink down
+            // the far side and pin itself to the net: it rides up the net's
+            // face and is thrown back over.
+            if !isFreeForAll, configuration.astroball != nil {
+                let stiffness = AstroballTuning.crossSlingshot
+                // Just over the net the line leans out over the far side, so a
+                // hull hovering there is legal until it drops onto the net's
+                // face. Within a hull's height of the net top the far side is
+                // shut: the hull is lifted clear and thrown home, not left to
+                // bob against the net.
+                let lowRoof = arena.netTopY + AstroballTuning.crossNetClearance
+                let farSide = ship.position.x * intrusionSign
+                let over = ship.position.y < lowRoof && farSide > 0 ? max(depth, farSide) : depth
+                if over > 0 {
+                    acceleration.x -= intrusionSign * stiffness * over
+                    if ship.position.y < lowRoof {
+                        acceleration.y += stiffness * (lowRoof - ship.position.y) - configuration.gravity.y
+                            - ship.velocity.y * AstroballTuning.crossLiftDamping
+                    }
+                }
             }
             // The ring's MAX CROSS: the same treacle, shoving back toward the
             // nearest ground the pilot may fly.
@@ -2222,7 +2248,16 @@ public struct SimulationEngine: Sendable {
                 // bolt is a touch like a hull's, or a side could cannon the
                 // ball about all day without spending any.
                 state.lastBallToucher = bolt.owner
-                if configuration.astroball != nil { contacts.append(.ballPlayed(seat: bolt.seat)) }
+                // Its bolts share the pilot's touch debounce, so a hull bump
+                // and a bolt in the same breath are one touch, not two.
+                if configuration.astroball != nil, var shooter = state.ships[bolt.seat],
+                   shooter.ballTouchCooldownTicks == 0 {
+                    shooter.ballTouchCooldownTicks = UInt64(
+                        (configuration.ballTouchDebounce / configuration.stepDuration).rounded()
+                    )
+                    state.ships[bolt.seat] = shooter
+                    contacts.append(.ballPlayed(seat: bolt.seat))
+                }
                 let windowTicks = UInt64((Self.slamWindow / configuration.stepDuration).rounded())
                 let slam = state.balls[ballIndex].beamHold.map {
                     (isFreeForAll ? $0.seat == bolt.seat : $0.seat.team == bolt.owner)

@@ -30,17 +30,18 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// width. 0 is straight up off the net.
     public var crossLean = 0.3
     public static let crossLeanRange: ClosedRange<Double> = 0 ... 0.6
-    /// How hard the line shoves a hull back per unit past it. The duel's
-    /// is 18; ASTROBALL's is loose, so a hull can lean well over to spike.
-    public var crossPush = 4.0
+    /// How hard MAX CROSS flings a hull back per unit past it. Stiff and
+    /// undamped, so a hull can cross but is slung home; the duel's treacle
+    /// is 18 with drag.
+    public static let crossSlingshot = 30.0
+    /// How far above the net top the far side stays shut to a hull, and how
+    /// much the lift out of it is damped so the hull rises, not bobs.
+    public static let crossNetClearance = 0.1
+    public static let crossLiftDamping = 4.0
     /// The two sides' colours this match. Not a setting: drawn fresh each
     /// match (`withRandomHues`) and carried on the host's tuning so every
     /// phone paints the same court.
     public var hues = TeamHues()
-    public static let crossPushRange: ClosedRange<Double> = 0 ... 18
-    /// The duel's push the crossing drag was tuned against; the drag scales
-    /// with the push so a loose line is loose all the way.
-    static let duelCrossPush = 18.0
 
     /// The half of the floor nearest the net.
     public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.5)
@@ -74,7 +75,6 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public static let wallBounceKey = "astroball.wallBounce"
     public static let inARowKey = "astroball.inARow"
     public static let crossLeanKey = "astroball.crossLean"
-    public static let crossPushKey = "astroball.crossPush"
 
     /// The pilot's settings, each clamped to its slider; one never set reads
     /// its default.
@@ -94,9 +94,6 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if let value = defaults.object(forKey: crossLeanKey) as? Double {
             tuning.crossLean = min(crossLeanRange.upperBound, max(crossLeanRange.lowerBound, value))
         }
-        if let value = defaults.object(forKey: crossPushKey) as? Double {
-            tuning.crossPush = min(crossPushRange.upperBound, max(crossPushRange.lowerBound, value))
-        }
         return tuning
     }
 
@@ -109,7 +106,6 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if wallBounce == base.wallBounce { defaults.removeObject(forKey: Self.wallBounceKey) } else { defaults.set(wallBounce, forKey: Self.wallBounceKey) }
         if inARow == base.inARow { defaults.removeObject(forKey: Self.inARowKey) } else { defaults.set(inARow, forKey: Self.inARowKey) }
         if crossLean == base.crossLean { defaults.removeObject(forKey: Self.crossLeanKey) } else { defaults.set(crossLean, forKey: Self.crossLeanKey) }
-        if crossPush == base.crossPush { defaults.removeObject(forKey: Self.crossPushKey) } else { defaults.set(crossPush, forKey: Self.crossPushKey) }
     }
 
     public var clampedWallBounce: Double {
@@ -128,14 +124,6 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         crossLean.isFinite ? min(Self.crossLeanRange.upperBound, max(Self.crossLeanRange.lowerBound, crossLean)) : 0.3
     }
 
-    public var clampedCrossPush: Double {
-        crossPush.isFinite ? min(Self.crossPushRange.upperBound, max(Self.crossPushRange.lowerBound, crossPush)) : 4
-    }
-
-    /// The crossing drag that goes with this push.
-    public func crossDrag(duelDrag: Double) -> Double {
-        duelDrag * clampedCrossPush / Self.duelCrossPush
-    }
 }
 
 /// What the rulebook needs to know about the sides each step: how many

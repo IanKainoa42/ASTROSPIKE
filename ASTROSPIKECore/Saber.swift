@@ -62,7 +62,8 @@ public enum Saber {
     public static let length = 0.14
     /// The blade's half thickness.
     public static let radius = 0.006
-    /// Seconds to draw or sheathe the blade.
+    /// Seconds to sheathe the blade. Drawing it is instant: the press is
+    /// the blade.
     public static let drawTime = 0.12
     /// A blade at rest is a dead bat: a ball flown into it comes off soft.
     /// The moves are what put pace on it.
@@ -142,7 +143,7 @@ extension ShipState {
         // A press takes the pilot's count as it stands: the last flick of an
         // earlier press is not a new one.
         if held, !saber.isOut { saber.flickCount = flickCount }
-        saber.drawn = held ? min(1, saber.drawn + rate) : max(0, saber.drawn - rate)
+        saber.drawn = held ? 1 : max(0, saber.drawn - rate)
         // Only a held pad reads flicks, and only a new count starts a move:
         // a dropped packet repeats the last count, an idle tick sends none.
         if held {

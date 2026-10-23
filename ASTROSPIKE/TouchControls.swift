@@ -46,6 +46,10 @@ struct TouchControls: View {
     /// in the bay. Offsets from the drawn default, in points, per pad.
     @AppStorage("arrangePads") private var arranging = false
     @AppStorage("padOffsets2") private var padOffsetsData = Data()
+    /// The engine thumb's pads as a gamepad diamond (the default) or the
+    /// older climbing cluster. Each keeps its own hand-placed offsets.
+    @AppStorage(PadLayout.key) private var padLayout = PadLayout.diamond
+    @AppStorage("padOffsetsDiamond") private var diamondOffsetsData = Data()
 
     /// Where Ian dragged the pads on the Mac window (build 34, ~1323x1000 pt, 262 pt engine
     /// margin); the layout math below is the anchor, these ride on top after scaling to the
@@ -61,6 +65,9 @@ struct TouchControls: View {
         // Rides fire's drag, a pad above it: the fourth face button.
         "saber": CGSize(width: -49, height: -280),
     ]
+    /// The diamond rides only the lift of Ian's thrust drag: the whole
+    /// diamond climbs with the window, nothing slides sideways.
+    private static let diamondBakedOffset = CGSize(width: 0, height: -246)
     @State private var dragging: [String: CGSize] = [:]
     /// Where each pad actually landed on the glass, measured after every
     /// offset is applied. A drag is committed against this, so a pad can
@@ -149,9 +156,28 @@ struct TouchControls: View {
 
         let thrustY = bottom - (thrust.height + slop) / 2
         let thrustTop = bottom - thrust.height
-        let tractorY = thrustTop - gap - (fire.height + slop) / 2
-        let fireY = thrustTop + 12 - (fire.height + slop) / 2
-        let saberY = fireY - fire.height - slop - gap
+        var tractorY = thrustTop - gap - (fire.height + slop) / 2
+        var fireY = thrustTop + 12 - (fire.height + slop) / 2
+        var saberY = fireY - fire.height - slop - gap
+        var thrustAt = thrustX
+        var tractorAt = tractorX
+        var fireAt = fireX
+        var saberAt = fireX
+        if padLayout == PadLayout.diamond {
+            // Outboard pad flush with the screen side, the rest in from it; on
+            // a phone the margin is narrower than the diamond, so the inboard
+            // pad hangs over the court wall like the classic tractor does.
+            let diamond = Self.diamond(thrust: thrust, fire: fire, gap: gap, slop: slop)
+            let outer = engineWidth - edge - (fire.width + slop) / 2
+            let centre = wall + sign * (outer - diamond.side)
+            thrustAt = centre
+            saberAt = centre
+            tractorAt = centre - sign * diamond.side
+            fireAt = centre + sign * diamond.side
+            tractorY = thrustY - diamond.row
+            fireY = tractorY
+            saberY = thrustY - diamond.top
+        }
 
         // Steering owns the screen's outer bottom corner. A third of the screen
         // wide is the floor whatever the margin happens to be, and it stands
@@ -185,7 +211,7 @@ struct TouchControls: View {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
             }
-            .position(x: tractorX, y: tractorY)
+            .position(x: tractorAt, y: tractorY)
             if loadout == .ship {
                 placeable("fire", scale: bakedScale) {
                     ControlZone(
@@ -195,14 +221,14 @@ struct TouchControls: View {
                     )
                     .frame(width: fire.width + slop, height: fire.height + slop)
                 }
-                .position(x: fireX, y: fireY)
+                .position(x: fireAt, y: fireY)
             }
             if loadout == .ship, saberChanged != nil {
                 placeable("saber", scale: bakedScale) {
                     saberPad(chrome: fire)
                         .frame(width: fire.width + slop, height: fire.height + slop)
                 }
-                .position(x: fireX, y: saberY)
+                .position(x: saberAt, y: saberY)
             }
             placeable("thrust", scale: bakedScale) {
                 ControlZone(
@@ -212,7 +238,7 @@ struct TouchControls: View {
                 )
                 .frame(width: thrust.width + slop, height: thrust.height + slop)
             }
-            .position(x: thrustX, y: thrustY)
+            .position(x: thrustAt, y: thrustY)
             if arranging {
                 HStack(spacing: 10) {
                     Text("DRAG THE PADS")
@@ -237,13 +263,26 @@ struct TouchControls: View {
 
     private var padOffsets: [String: CGSize] {
         get {
-            guard let raw = try? JSONDecoder().decode([String: [Double]].self, from: padOffsetsData) else { return [:] }
+            let data = padLayout == PadLayout.diamond ? diamondOffsetsData : padOffsetsData
+            guard let raw = try? JSONDecoder().decode([String: [Double]].self, from: data) else { return [:] }
             return raw.compactMapValues { $0.count == 2 ? CGSize(width: $0[0], height: $0[1]) : nil }
         }
         nonmutating set {
             let raw = newValue.mapValues { [Double($0.width), Double($0.height)] }
-            padOffsetsData = (try? JSONEncoder().encode(raw)) ?? Data()
+            let data = (try? JSONEncoder().encode(raw)) ?? Data()
+            if padLayout == PadLayout.diamond { diamondOffsetsData = data } else { padOffsetsData = data }
         }
+    }
+
+    /// The diamond's spacing, from its centre column: how far out the side
+    /// pads sit, and how far above thrust the side row and the top pad sit.
+    /// Neighbours clear each other's chrome by `gap`; the side pads clear
+    /// thrust sideways and the top pad clears it upward.
+    static func diamond(thrust: CGSize, fire: CGSize, gap: CGFloat, slop: CGFloat)
+        -> (side: CGFloat, row: CGFloat, top: CGFloat) {
+        let side = (thrust.width + fire.width) / 2 + gap
+        let top = (thrust.height + fire.height) / 2 + gap + slop
+        return (side, top / 2, top)
     }
 
     /// While arranging, the pad stops taking presses and can be dragged
@@ -252,7 +291,9 @@ struct TouchControls: View {
     /// edge stops at the edge instead of disappearing off it -- the layout is
     /// shipped to everyone, and a stranger who loses a pad has no way back.
     private func placeable<Pad: View>(_ id: String, scale: CGSize, @ViewBuilder _ pad: () -> Pad) -> some View {
-        let raw = Self.bakedOffsets[id] ?? .zero
+        let raw = padLayout == PadLayout.diamond
+            ? (id == "steering" ? .zero : Self.diamondBakedOffset)
+            : Self.bakedOffsets[id] ?? .zero
         let baked = CGSize(width: raw.width * scale.width, height: raw.height * scale.height)
         let saved = padOffsets[id] ?? .zero
         let live = dragging[id] ?? .zero
@@ -503,10 +544,23 @@ struct TouchControls: View {
             let fireY = thrustY - 16
             let tractorY = thrustY - (thrust.height + fire.height) / 2 - slop - gap
             let saberY = fireY - fire.height - slop - gap
+            let diamond = Self.diamond(thrust: thrust, fire: fire, gap: gap, slop: slop)
+            let isDiamond = padLayout == PadLayout.diamond
+            // The diamond's outboard pad sits in the corner, thrust under the centre.
+            let centreX = corner + inboard * ((fire.width + slop) / 2 + diamond.side)
+            let pads = isDiamond
+                ? (thrust: CGPoint(x: centreX, y: thrustY),
+                   tractor: CGPoint(x: centreX + inboard * diamond.side, y: thrustY - diamond.row),
+                   fire: CGPoint(x: centreX - inboard * diamond.side, y: thrustY - diamond.row),
+                   saber: CGPoint(x: centreX, y: thrustY - diamond.top))
+                : (thrust: CGPoint(x: thrustX, y: thrustY),
+                   tractor: CGPoint(x: thrustX, y: tractorY),
+                   fire: CGPoint(x: fireX, y: fireY),
+                   saber: CGPoint(x: fireX, y: saberY))
             ZStack(alignment: .topLeading) {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
-                    .position(x: thrustX, y: tractorY)
+                    .position(pads.tractor)
                 if loadout == .ship {
                     ControlZone(
                         icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
@@ -514,11 +568,11 @@ struct TouchControls: View {
                         pressChanged: setFirePressed
                     )
                     .frame(width: fire.width + slop, height: fire.height + slop)
-                    .position(x: fireX, y: fireY)
+                    .position(pads.fire)
                     if saberChanged != nil {
                         saberPad(chrome: fire)
                             .frame(width: fire.width + slop, height: fire.height + slop)
-                            .position(x: fireX, y: saberY)
+                            .position(pads.saber)
                     }
                 }
                 ControlZone(
@@ -527,7 +581,7 @@ struct TouchControls: View {
                     pressChanged: setThrustPressed
                 )
                 .frame(width: thrust.width + slop, height: thrust.height + slop)
-                .position(x: thrustX, y: thrustY)
+                .position(pads.thrust)
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
@@ -854,7 +908,7 @@ private struct SaberCapture: UIViewRepresentable {
 private final class SaberCaptureView: UIView {
     var pressChanged: ((Bool) -> Void)?
     var flicked: ((SaberFlick) -> Void)?
-    private let flickDistance: CGFloat = 28
+    private let flickDistance: CGFloat = 14
     private var activeTouchID: ObjectIdentifier?
     private var origin: CGPoint = .zero
 
@@ -901,4 +955,15 @@ private final class SaberCaptureView: UIView {
         activeTouchID = nil
         pressChanged?(false)
     }
+}
+
+/// How the engine thumb's pads are laid out. Stored as a string so Settings
+/// and the pads read one `@AppStorage` key.
+enum PadLayout {
+    static let key = "padLayout"
+    /// Thrust at the bottom, saber at the top, the beam inboard and fire
+    /// outboard: a gamepad's face buttons.
+    static let diamond = "diamond"
+    /// Thrust on the floor, the beam above it, fire up and out (to build 163).
+    static let classic = "classic"
 }

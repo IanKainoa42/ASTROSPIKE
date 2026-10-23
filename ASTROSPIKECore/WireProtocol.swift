@@ -177,7 +177,10 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     in the host's tuning, and the same-pilot run on the match state.
     // 56: the ASTROBALL saber: held, flick and flick count on the input, and
     //     each hull's blade (draw, move, start angle) on the ship state.
-    public static let currentVersion: UInt16 = 56
+    // 57: ASTROBALL's MAX CROSS is a hard line (the push slider is gone from
+    //     its tuning), touches debounce for 0.3 s and bolts share it, and
+    //     the saber draws in one step.
+    public static let currentVersion: UInt16 = 57
 
     public var version: UInt16
     public var sequence: UInt64

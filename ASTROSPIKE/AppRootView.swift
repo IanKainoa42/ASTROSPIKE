@@ -2473,6 +2473,7 @@ private struct SettingsView: View {
     @AppStorage(Soundscape.enabledKey) private var music = true
     @AppStorage(GameSession.muteEmotesKey) private var muteEmotes = false
     @AppStorage("arrangePads") private var arrangePads = false
+    @AppStorage(PadLayout.key) private var padLayout = PadLayout.diamond
     @AppStorage(SteeringCurve.sensitivityKey) private var steeringSensitivity = 1.0
     @AppStorage(ShipHitbox.perHullKey) private var hullShapedHitboxes = false
     var body: some View {
@@ -2497,8 +2498,16 @@ private struct SettingsView: View {
                 Toggle("Large controls", isOn: $largeControls)
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
                 Toggle("Cluster controls to thumb side", isOn: $clusterControls)
+                Picker("Engine pads", selection: $padLayout) {
+                    Text("Diamond").tag(PadLayout.diamond)
+                    Text("Classic").tag(PadLayout.classic)
+                }
+                .accessibilityIdentifier("pad-layout")
                 Toggle("Arrange pads (drag them in a match)", isOn: $arrangePads)
-                Button("Reset pad layout") { UserDefaults.standard.removeObject(forKey: "padOffsets2") }
+                Button("Reset pad layout") {
+                    UserDefaults.standard.removeObject(forKey: "padOffsets2")
+                    UserDefaults.standard.removeObject(forKey: "padOffsetsDiamond")
+                }
                 Toggle("Haptics", isOn: $haptics)
                 Toggle("Music", isOn: $music)
                 Toggle("Hide other pilots' emotes", isOn: $muteEmotes)
@@ -2624,9 +2633,6 @@ struct AstroballTuningControls: View {
             .accessibilityIdentifier(AstroballTuning.wallBounceKey)
         TuningSlider(title: "MAX CROSS lean", value: $tuning.crossLean, range: AstroballTuning.crossLeanRange, step: 0.01)
             .accessibilityIdentifier(AstroballTuning.crossLeanKey)
-        TuningSlider(title: "MAX CROSS push", value: $tuning.crossPush, range: AstroballTuning.crossPushRange, step: 0.5,
-                     readout: { $0.formatted(.number.precision(.fractionLength(1))) })
-            .accessibilityIdentifier(AstroballTuning.crossPushKey)
         Button("Reset ASTROBALL to default") { tuning = AstroballTuning() }
             .disabled(tuning == AstroballTuning())
             .onChange(of: tuning) { _, tuning in tuning.store() }

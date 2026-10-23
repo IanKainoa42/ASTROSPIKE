@@ -278,18 +278,15 @@ struct AstroballTests {
         tuning.wallBounce = 0.4
         tuning.inARow = 3
         tuning.crossLean = 0.5
-        tuning.crossPush = 9
         tuning.store(in: defaults)
         #expect(AstroballTuning.stored(in: defaults) == tuning)
         defaults.set(9, forKey: AstroballTuning.soloTouchesKey)
         defaults.set(0, forKey: AstroballTuning.inARowKey)
         defaults.set(5.0, forKey: AstroballTuning.crossLeanKey)
-        defaults.set(-1.0, forKey: AstroballTuning.crossPushKey)
         let clamped = AstroballTuning.stored(in: defaults)
         #expect(clamped.soloTouches == 3)
         #expect(clamped.inARow == 1)
         #expect(clamped.crossLean == AstroballTuning.crossLeanRange.upperBound)
-        #expect(clamped.crossPush == 0)
     }
 
     // MARK: MAX CROSS
@@ -308,27 +305,73 @@ struct AstroballTests {
         #expect(court.crossingLimit(atY: court.ceilingY, astroball: nil) == court.opponentCrossingLimit)
     }
 
-    @Test("ASTROBALL's line is loose: a ship over it is pushed back far softer than the duel's")
-    func crossLineIsLoose() {
-        func pushedBack(_ tuning: AstroballTuning?) -> Double {
-            var engine = astroballEngine(tuning)
-            let court = engine.arena
-            // Cyan defends the left; park it well over the line on the right, high up.
-            let y = court.netTopY + (court.ceilingY - court.netTopY) * 0.5
-            let limit = court.crossingLimit(atY: y, astroball: tuning)
-            engine.state.ships[.cyan]!.position = .init(limit + 0.12, y)
-            engine.state.ships[.cyan]!.velocity = .zero
-            engine.state.ships[.orange]!.position = .init(court.halfWidth - 0.1, court.floorY + 0.1)
-            engine.state.ball = BallState(position: .init(-court.halfWidth + 0.15, court.floorY + 0.1), velocity: .zero)
-            for tick in UInt64(0) ..< 6 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
-            return -engine.state.ships[.cyan]!.velocity.x
+    @Test("MAX CROSS slings a hull back, and one that drops over the net cannot sink there")
+    func crossLineSlingshots() {
+        var engine = astroballEngine()
+        let court = engine.arena
+        // Cyan defends the left. Flat out at the line, high up: it crosses,
+        // then is flung back to its own side of the line.
+        let y = court.netTopY + (court.ceilingY - court.netTopY) * 0.5
+        let limit = court.crossingLimit(atY: y, astroball: AstroballTuning())
+        engine.state.ships[.cyan]!.position = .init(limit - 0.02, y)
+        engine.state.ships[.cyan]!.velocity = .init(3, 0)
+        engine.state.ships[.orange]!.position = .init(court.halfWidth - 0.1, court.floorY + 0.1)
+        engine.state.ball = BallState(position: .init(-court.halfWidth + 0.15, court.floorY + 0.1), velocity: .zero)
+        var crossed = false
+        for tick in UInt64(0) ..< 90 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            let ship = engine.state.ships[.cyan]!
+            if ship.position.x > court.crossingLimit(atY: ship.position.y, astroball: AstroballTuning()) { crossed = true }
         }
-        let loose = pushedBack(AstroballTuning())
-        var duelStrength = AstroballTuning()
-        duelStrength.crossPush = AstroballTuning.duelCrossPush
-        let firm = pushedBack(duelStrength)
-        #expect(loose > 0, "loose line never pushed: \(loose)")
-        #expect(firm > loose * 2.5, "firm \(firm) vs loose \(loose)")
+        #expect(crossed, "the line should give")
+        var ship = engine.state.ships[.cyan]!
+        #expect(ship.position.x <= court.crossingLimit(atY: ship.position.y, astroball: AstroballTuning()), "not slung back: \(ship.position)")
+        #expect(ship.velocity.x < 0, "the spring should throw it home")
+        // Dropped over the net, below its top on the far side and falling:
+        // it never reaches the far floor and comes back over to its own side.
+        engine.state.ships[.cyan]!.position = .init(0.15, court.netTopY - 0.05)
+        engine.state.ships[.cyan]!.velocity = .init(0, -1)
+        var lowest = Double.infinity
+        for tick in UInt64(90) ..< 330 {
+            engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            let s = engine.state.ships[.cyan]!
+            if s.position.x > 0 { lowest = min(lowest, s.position.y) }
+        }
+        ship = engine.state.ships[.cyan]!
+        #expect(lowest > court.floorY + 0.15, "sank to \(lowest) on the far side")
+        #expect(ship.position.x < 0, "still on the far side at \(ship.position)")
+    }
+
+    @Test("A ball that hits a hull again within the debounce is still one touch")
+    func astroballDebounceIsLonger() {
+        var engine = astroballEngine()
+        let home = SIMD2(-0.4, 0.2)
+        func drop() {
+            engine.state.ball = BallState(position: home + SIMD2(0, 0.16), velocity: .init(0, -2))
+        }
+        func step(_ ticks: Int) {
+            for _ in 0 ..< ticks {
+                engine.state.ships[.cyan]!.position = home
+                engine.state.ships[.cyan]!.velocity = .zero
+                let tick = engine.state.tick
+                engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            }
+        }
+        drop()
+        var waited = 0
+        while engine.state.match.shipTouches.cyan == 0, waited < 40 { step(1); waited += 1 }
+        #expect(engine.state.match.shipTouches.cyan == 1)
+        // Past the duel's tenth of a second, inside ASTROBALL's window.
+        step(18)
+        drop()
+        step(8)
+        #expect(engine.state.match.shipTouches.cyan == 1, "re-hit counted: \(engine.state.match.shipTouches.cyan)")
+        #expect(engine.state.match.lastTouchRun == 1)
+        // Long after, it is a second touch.
+        step(40)
+        drop()
+        step(10)
+        #expect(engine.state.match.shipTouches.cyan == 2)
     }
 
     @Test("The ring marks whose ball it is: the side under it, less a pilot whose run is spent")
