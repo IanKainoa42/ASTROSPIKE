@@ -1113,6 +1113,12 @@ private struct IncomingInviteBanner: View {
     }
 }
 
+/// Landscape windows narrower than this inside the safe area get the tight
+/// layouts: iPhone Duo's folded outer display (595pt; its 678pt window
+/// loses 83 to the camera). Every iPhone since the 11 is 734 or wider.
+/// A width, not a size class: the Duo's displays are both compact.
+private let narrowWindowWidth: CGFloat = 700
+
 private struct HomeView: View {
     let online: OnlineMatchCoordinator
     let profile: PilotProfileStore
@@ -1127,56 +1133,85 @@ private struct HomeView: View {
             // portrait window (see OrientationPolicy): the brand stacks over
             // the menu there instead of both squeezing into one short row.
             let portrait = geometry.size.height > geometry.size.width
+            // iPhone Duo's folded outer display is 595pt wide inside the
+            // safe area (an iPhone 17 is 734): the wordmark drops to two
+            // lines and the menu tightens so both still sit side by side.
+            let narrow = !portrait && geometry.size.width < narrowWindowWidth
+            let hPad = narrow ? 20 : max(36, geometry.size.width * 0.07)
+            let vPad = narrow ? 16 : max(24, geometry.size.height * 0.08)
             Group {
                 if portrait {
                     VStack(alignment: .leading, spacing: 10) {
                         // The title font stays on the brand: the menu rows
                         // leave their chevron to inherit, and 58pt is too much.
-                        brandBlock.font(titleFont(for: geometry))
+                        brandBlock(narrow: false).font(titleFont(for: geometry, narrow: false))
                         Spacer(minLength: 18)
-                        menu
+                        menu(narrow: false).frame(maxWidth: 430)
                         Spacer(minLength: 18)
-                        hullBlock
+                        hullBlock(narrow: false)
                     }
                 } else {
-                    HStack(spacing: min(52, geometry.size.width * 0.055)) {
+                    let spacing = narrow ? 16 : min(52, geometry.size.width * 0.055)
+                    // The menu takes its width first and the brand gets the
+                    // rest: the title scales down, the menu tiles never
+                    // truncate. The brand keeps 220pt (176 on the Duo's
+                    // outer display: ASTRO on one 48pt line), enough for
+                    // the tagline on one line.
+                    let menuWidth = min(430, geometry.size.width - hPad * 2 - spacing - (narrow ? 176 : 220))
+                    HStack(spacing: spacing) {
                         VStack(alignment: .leading, spacing: 10) {
-                            brandBlock
+                            brandBlock(narrow: narrow)
                             Spacer()
-                            hullBlock
+                            hullBlock(narrow: narrow)
                         }
-                        .font(titleFont(for: geometry))
+                        .font(titleFont(for: geometry, narrow: narrow))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        menu
+                        menu(narrow: narrow).frame(width: menuWidth)
                     }
                 }
             }
-            .padding(.horizontal, max(36, geometry.size.width * 0.07))
-            .padding(.vertical, max(24, geometry.size.height * 0.08))
+            .padding(.horizontal, hPad)
+            .padding(.vertical, vPad)
         }
     }
 
-    private func titleFont(for geometry: GeometryProxy) -> Font {
-        .system(size: min(58, geometry.size.height * 0.13), weight: .black, design: .rounded)
+    private func titleFont(for geometry: GeometryProxy, narrow: Bool) -> Font {
+        .system(size: min(narrow ? 48 : 58, geometry.size.height * (narrow ? 0.11 : 0.13)),
+                weight: .black, design: .rounded)
     }
 
     /// Title, tagline and the two team marks.
-    private var brandBlock: some View {
+    private func brandBlock(narrow: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            (Text("ASTRO").foregroundStyle(.cyan) + Text("SPIKE").foregroundStyle(.orange))
-                .lineLimit(1)
-                .minimumScaleFactor(0.62)
-                .allowsTightening(true)
+            if narrow {
+                // On one line beside the menu the wordmark would shrink to
+                // half its size; two lines keep it big.
+                VStack(alignment: .leading, spacing: -8) {
+                    Text("ASTRO").foregroundStyle(.cyan)
+                    Text("SPIKE").foregroundStyle(.orange)
+                }
+                .lineLimit(1).minimumScaleFactor(0.9)
+            } else {
+                (Text("ASTRO").foregroundStyle(.cyan) + Text("SPIKE").foregroundStyle(.orange))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+                    .allowsTightening(true)
+            }
             Text("ZERO-G. ONE NET. NO BRAKES.")
-                .font(.caption.weight(.bold)).tracking(2.4)
+                .font(narrow ? .caption2.weight(.bold) : .caption.weight(.bold))
+                .tracking(narrow ? 1.6 : 2.4)
+                .lineLimit(narrow ? 2 : 1)
+                .minimumScaleFactor(0.8)
                 .foregroundStyle(.white.opacity(0.62))
-            Spacer().frame(height: 14)
+            Spacer().frame(height: narrow ? 8 : 14)
             TeamMarkRow()
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
     }
 
     /// The hangar button and the Game Center status line.
-    private var hullBlock: some View {
+    private func hullBlock(narrow: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Button { sheet = .hangar } label: {
                 HStack(spacing: 12) {
@@ -1186,6 +1221,7 @@ private struct HomeView: View {
                             .foregroundStyle(.white.opacity(0.5))
                         Text(profile.selectedHull.spec.name.uppercased())
                             .font(.headline.weight(.black)).tracking(1).foregroundStyle(.cyan)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }
                 }
                 .contentShape(Rectangle())
@@ -1196,19 +1232,19 @@ private struct HomeView: View {
             Spacer().frame(height: 10)
             Label(online.statusLabel, systemImage: "dot.radiowaves.left.and.right")
                 .font(.caption2.monospaced().weight(.bold))
-                .foregroundStyle(statusColor).lineLimit(1)
+                .foregroundStyle(statusColor).lineLimit(2)
         }
     }
 
-    private var menu: some View {
-        VStack(spacing: 12) {
+    private func menu(narrow: Bool) -> some View {
+        VStack(spacing: narrow ? 10 : 12) {
             // Side by side: a fifth full-width row pushes the bottom
             // of the menu off an iPhone in landscape.
-            HStack(spacing: 12) {
-                MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true) { sheet = .difficulty }
-                MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true) { sheet = .doubles }
-                MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true) { sheet = .freeForAll }
-                MenuButton(title: "ASTROBALL", subtitle: "1V1 OR 2V2", icon: "volleyball.fill", compact: true) { sheet = .astroball }
+            HStack(spacing: 10) {
+                MenuButton(title: "SOLO FLIGHT", subtitle: "ONE ON ONE", icon: "person.fill", compact: true, narrow: narrow) { sheet = .difficulty }
+                MenuButton(title: "DOUBLES", subtitle: "BOT OR FRIEND", icon: "person.2.fill", compact: true, narrow: narrow) { sheet = .doubles }
+                MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", compact: true, narrow: narrow) { sheet = .freeForAll }
+                MenuButton(title: "ASTROBALL", subtitle: "1V1 OR 2V2", icon: "volleyball.fill", compact: true, narrow: narrow) { sheet = .astroball }
             }
             // Friend-first: invite and rematch above automatch.
             MenuButton(
@@ -1216,17 +1252,19 @@ private struct HomeView: View {
                 subtitle: invitesWaiting > 0
                     ? "\(invitesWaiting) WAITING ON YOU · ANSWER OR ASK"
                     : "ASK A FRIEND · ANSWER IN GAME",
-                icon: invitesWaiting > 0 ? "envelope.badge.fill" : "person.2.wave.2.fill"
+                icon: invitesWaiting > 0 ? "envelope.badge.fill" : "person.2.wave.2.fill",
+                narrow: narrow
             ) { sheet = .invite }
             if online.canRematch {
                 MenuButton(
                     title: "REMATCH",
                     subtitle: rematchSubtitle,
-                    icon: "arrow.triangle.2.circlepath"
+                    icon: "arrow.triangle.2.circlepath",
+                    narrow: narrow
                 ) { online.rematch() }
             }
-            MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill") { online.startQuickMatch() }
-            MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill") { sheet = .lobby }
+            MenuButton(title: "QUICK MATCH", subtitle: "AUTOMATIC ONLINE DUEL", icon: "bolt.horizontal.circle.fill", narrow: narrow) { online.startQuickMatch() }
+            MenuButton(title: "LOBBY", subtitle: "WHO'S ONLINE • LIVE DUELS • BRACKETS", icon: "person.3.fill", narrow: narrow) { sheet = .lobby }
             // Volleyball, basketball and the circuit are parked (Ian may spin them into
             // their own game); `sheet = .modes` still opens them if ever wanted back.
             // One row: a second row of tiles ran off the bottom of an
@@ -1239,7 +1277,6 @@ private struct HomeView: View {
                 SmallMenuButton(title: "STATS", icon: "trophy") { sheet = .stats }
             }
         }
-        .frame(maxWidth: 430)
     }
 
     private var statusColor: Color {
@@ -1383,6 +1420,7 @@ private struct GameView: View {
                         online: mode == .online && diagnosticsOverride == nil ? online : nil,
                         teamNames: courtNames,
                         spectating: isSpectating,
+                        narrow: geometry.size.width < narrowWindowWidth,
                         actionLabel: table != nil ? "Leave the table"
                             : mode == .online ? "Leave online match" : "Pause match",
                         actionIcon: mode == .online ? "xmark" : "pause.fill",
@@ -1412,7 +1450,11 @@ private struct GameView: View {
                 if mode == .online, case .reconnecting = online.status {
                     holdButton
                 }
-                if !mode.isBay, !session.isFreeForAll {
+                // Where the court leaves a band for the scoreboard (iPhone
+                // Duo) the badges have no room of their own: the HUD's YOU
+                // tag and the court's own side labels say the same thing.
+                if !mode.isBay, !session.isFreeForAll,
+                   ArenaScene.scoreboardBand(for: TouchControls.windowFrame(in: geometry).size) == 0 {
                     let left = session.state.team(onHalfAt: -1)
                     let right = left.opponent
                     let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
@@ -1919,7 +1961,9 @@ private struct WarmupHUD: View {
     let leave: () -> Void
 
     var body: some View {
-        HStack {
+        // Top-aligned: centred, the PRACTICE title dropped onto the court's
+        // collar on the Duo's squarer displays.
+        HStack(alignment: .top) {
             stat(title: "KEEP-UP", value: session.state.match.shipTouches.cyan,
                  detail: "BEST \(session.bestKeepUp)", tint: .cyan)
             Spacer()
@@ -2067,6 +2111,10 @@ private struct MatchHUD: View {
     var teamNames: [Team: String]? = nil
     /// Watching from the bench: neither side is YOU.
     var spectating = false
+    /// A window too narrow for the scores, the format chip and the buttons
+    /// at full size (iPhone Duo folded): the chip shrinks and the row
+    /// hugs the edges, so the chip stays on one line clear of the score.
+    var narrow = false
     let actionLabel: String
     let actionIcon: String
     var emote: EmoteButtonState? = nil
@@ -2077,7 +2125,7 @@ private struct MatchHUD: View {
     private var leftTeam: Team { state.team(onHalfAt: -1) }
 
     var body: some View {
-        HStack {
+        HStack(spacing: narrow ? 4 : nil) {
             score(team: leftTeam)
             Spacer()
             VStack(spacing: 2) {
@@ -2111,7 +2159,7 @@ private struct MatchHUD: View {
             .accessibilityLabel(actionLabel)
             .accessibilityIdentifier("match-action-button")
         }
-        .padding(.horizontal, 24).padding(.top, 10)
+        .padding(.horizontal, narrow ? 14 : 24).padding(.top, 10)
     }
 
     private var formatLabel: String {
@@ -2125,10 +2173,11 @@ private struct MatchHUD: View {
     private var rulesChip: some View {
         let isServe = state.match.phase == .serve
         return Text(formatLabel)
-            .font(.system(size: 12, weight: .black, design: .monospaced))
-            .tracking(1.2)
+            .font(.system(size: narrow ? 10 : 12, weight: .black, design: .monospaced))
+            .tracking(narrow ? 0.8 : 1.2)
+            .lineLimit(1).minimumScaleFactor(0.85)
             .foregroundStyle(isServe ? .white : .white.opacity(0.85))
-            .padding(.horizontal, 11)
+            .padding(.horizontal, narrow ? 8 : 11)
             .padding(.vertical, 4)
             .background(.black.opacity(0.55), in: Capsule())
             .overlay(
@@ -2187,13 +2236,13 @@ private struct MatchHUD: View {
         } else {
             "Rival side, "
         }
-        return HStack(spacing: 12) {
+        return HStack(spacing: narrow ? 8 : 12) {
             VStack(spacing: 3) {
                 Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
                 Text(tag)
                     .font(.system(size: 10, weight: .black, design: .monospaced))
                     .lineLimit(1).minimumScaleFactor(0.7)
-                    .frame(maxWidth: 76)
+                    .frame(maxWidth: narrow ? 64 : 76)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(tint, in: Capsule())
@@ -2953,17 +3002,23 @@ private struct MenuButton: View {
     /// A third of the width: icon over title, no chevron, and the title
     /// shrinks before it truncates.
     var compact = false
+    /// Shorter rows for a window with little height to spare (iPhone Duo
+    /// folded), so the menu still ends above the bottom edge.
+    var narrow = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             if compact {
                 VStack(alignment: .leading, spacing: 2) {
                     Image(systemName: icon).font(.body.weight(.semibold)).frame(height: 20)
-                    Text(title).font(.headline.weight(.black)).lineLimit(1).minimumScaleFactor(0.6)
+                    // A fixed size that fits SOLO FLIGHT in a 100pt tile (430pt
+                    // menu); a scaled subheadline left DOUBLES a size bigger
+                    // than its three neighbours.
+                    Text(title).font(.system(size: narrow ? 11 : 13, weight: .black)).lineLimit(1).minimumScaleFactor(0.6)
                     Text(subtitle).font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.52)).lineLimit(1).minimumScaleFactor(0.6)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12).padding(.vertical, 8).frame(minHeight: 68)
+                .padding(.horizontal, 8).padding(.vertical, 8).frame(minHeight: 68)
                 .contentShape(RoundedRectangle(cornerRadius: 18))
                 .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))
@@ -2984,7 +3039,7 @@ private struct MenuButton: View {
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
             }
-            .padding(.horizontal, 20).frame(minHeight: 68)
+            .padding(.horizontal, 20).frame(minHeight: narrow ? 56 : 68)
             .contentShape(RoundedRectangle(cornerRadius: 18))
             .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.12)))

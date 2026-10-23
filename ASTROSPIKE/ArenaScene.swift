@@ -2723,8 +2723,9 @@ final class ArenaScene: SKScene {
     /// court can never disagree about where its edge is.
     static func arenaRect(in size: CGSize, arena: ArenaGeometry = .standard) -> CGRect {
         let inset = min(size.width, size.height) * 0.055
+        let band = scoreboardBand(for: size)
         let availableWidth = size.width - inset * 2
-        let availableHeight = size.height - inset * 2
+        let availableHeight = size.height - inset * 2 - band
         let worldWidth = arena.halfWidth * 2
         let worldHeight = arena.ceilingY - arena.floorY
         let scaleX = availableWidth / CGFloat(worldWidth)
@@ -2744,7 +2745,7 @@ final class ArenaScene: SKScene {
             let extent = max(ring.rimRadius, ring.netBackRadius + RingField.netWall)
             let side = min(size.width - sideInset * 2, availableHeight)
                 * CGFloat(ring.rimRadius / extent)
-            return CGRect(x: -side / 2, y: -side / 2, width: side, height: side)
+            return CGRect(x: -side / 2, y: -side / 2 - band / 2, width: side, height: side)
         }
         // A portrait window (iPhone Duo's inner display turned on its side)
         // is far taller than the court: blended, the court would stretch to
@@ -2755,7 +2756,20 @@ final class ArenaScene: SKScene {
         let blendedScaleY = uniform + (scaleY - uniform) * stretchAmount
         let width = min(CGFloat(worldWidth) * blendedScaleX, size.width - sideInset * 2)
         let height = CGFloat(worldHeight) * blendedScaleY
-        return CGRect(x: -width / 2, y: -height / 2, width: width, height: height)
+        // The band is kept at the top: the court sits that much lower.
+        return CGRect(x: -width / 2, y: -height / 2 - band / 2, width: width, height: height)
+    }
+
+    /// Height kept clear above the court for the scoreboard. iPhone Duo's
+    /// displays (678x466 folded, 951x669 open) are far squarer than an
+    /// iPhone's: the court's top edge ran up under the HUD and the side
+    /// labels sat behind the score blocks. Zero on iPhones (longer than
+    /// 2:1, where the court clears the HUD) and iPads (1000pt or wider,
+    /// with room to spare), so nothing else moves. Window size, not size
+    /// class: both Duo displays are compact.
+    static func scoreboardBand(for size: CGSize) -> CGFloat {
+        guard size.width > size.height, size.width < 1000, size.height / size.width > 0.6 else { return 0 }
+        return 56
     }
 
     /// Share of the window width kept clear of the court on each side in
