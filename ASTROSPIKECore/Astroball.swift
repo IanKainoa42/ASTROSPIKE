@@ -8,9 +8,14 @@ import Foundation
 public struct AstroballTuning: Equatable, Sendable, Codable {
     /// Touches a side flown by one pilot gets before the ball has to be
     /// over: 1 is one touch and over, 3 is three. A side of two always gets
-    /// three, and neither pilot may play it twice running.
+    /// three.
     public var soloTouches = 3
     public static let soloTouchesRange: ClosedRange<Int> = 1 ... 3
+    /// How many times running one pilot may play the ball: 2 lets a pilot
+    /// press it twice, and the third is a triple hit. Holds for a pilot
+    /// alone on a side too.
+    public var inARow = 2
+    public static let inARowRange: ClosedRange<Int> = 1 ... 3
     /// The scoring zone, as a stretch of each half's wall path: 0 is the
     /// foot of the net, 1 the roof at the side wall. The path runs along the
     /// floor, round the corner, up the wall and round into the roof.
@@ -20,9 +25,25 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// duel's are 0.82; lower soaks a spike up instead of firing it back.
     public var wallBounce = 0.5
     public static let wallBounceRange: ClosedRange<Double> = 0.2 ... 0.82
+    /// The MAX CROSS line stands on the net and leans over the far half:
+    /// this is how far over it reaches at the roof, as a share of a half's
+    /// width. 0 is straight up off the net.
+    public var crossLean = 0.3
+    public static let crossLeanRange: ClosedRange<Double> = 0 ... 0.6
+    /// How hard the line shoves a hull back per unit past it. The duel's
+    /// is 18; ASTROBALL's is loose, so a hull can lean well over to spike.
+    public var crossPush = 4.0
+    /// The two sides' colours this match. Not a setting: drawn fresh each
+    /// match (`withRandomHues`) and carried on the host's tuning so every
+    /// phone paints the same court.
+    public var hues = TeamHues()
+    public static let crossPushRange: ClosedRange<Double> = 0 ... 18
+    /// The duel's push the crossing drag was tuned against; the drag scales
+    /// with the push so a loose line is loose all the way.
+    static let duelCrossPush = 18.0
 
     /// The half of the floor nearest the net.
-    public static let defaultZoneEnd = ArenaGeometry.volleyball.wallPathFraction(ofFloor: 0.5)
+    public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.5)
 
     public init() {}
 
@@ -51,6 +72,9 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public static let zoneStartKey = "astroball.zoneStart"
     public static let zoneEndKey = "astroball.zoneEnd"
     public static let wallBounceKey = "astroball.wallBounce"
+    public static let inARowKey = "astroball.inARow"
+    public static let crossLeanKey = "astroball.crossLean"
+    public static let crossPushKey = "astroball.crossPush"
 
     /// The pilot's settings, each clamped to its slider; one never set reads
     /// its default.
@@ -64,6 +88,15 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if let value = defaults.object(forKey: wallBounceKey) as? Double {
             tuning.wallBounce = min(wallBounceRange.upperBound, max(wallBounceRange.lowerBound, value))
         }
+        if let value = defaults.object(forKey: inARowKey) as? Int {
+            tuning.inARow = min(inARowRange.upperBound, max(inARowRange.lowerBound, value))
+        }
+        if let value = defaults.object(forKey: crossLeanKey) as? Double {
+            tuning.crossLean = min(crossLeanRange.upperBound, max(crossLeanRange.lowerBound, value))
+        }
+        if let value = defaults.object(forKey: crossPushKey) as? Double {
+            tuning.crossPush = min(crossPushRange.upperBound, max(crossPushRange.lowerBound, value))
+        }
         return tuning
     }
 
@@ -74,12 +107,34 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if zoneStart == base.zoneStart { defaults.removeObject(forKey: Self.zoneStartKey) } else { defaults.set(zoneStart, forKey: Self.zoneStartKey) }
         if zoneEnd == base.zoneEnd { defaults.removeObject(forKey: Self.zoneEndKey) } else { defaults.set(zoneEnd, forKey: Self.zoneEndKey) }
         if wallBounce == base.wallBounce { defaults.removeObject(forKey: Self.wallBounceKey) } else { defaults.set(wallBounce, forKey: Self.wallBounceKey) }
+        if inARow == base.inARow { defaults.removeObject(forKey: Self.inARowKey) } else { defaults.set(inARow, forKey: Self.inARowKey) }
+        if crossLean == base.crossLean { defaults.removeObject(forKey: Self.crossLeanKey) } else { defaults.set(crossLean, forKey: Self.crossLeanKey) }
+        if crossPush == base.crossPush { defaults.removeObject(forKey: Self.crossPushKey) } else { defaults.set(crossPush, forKey: Self.crossPushKey) }
     }
 
     public var clampedWallBounce: Double {
         wallBounce.isFinite
             ? min(Self.wallBounceRange.upperBound, max(Self.wallBounceRange.lowerBound, wallBounce))
             : 0.5
+    }
+
+    /// The same-pilot cap, clamped: a host's number off the wire is not
+    /// trusted to be in range.
+    public var clampedInARow: Int {
+        min(Self.inARowRange.upperBound, max(Self.inARowRange.lowerBound, inARow))
+    }
+
+    public var clampedCrossLean: Double {
+        crossLean.isFinite ? min(Self.crossLeanRange.upperBound, max(Self.crossLeanRange.lowerBound, crossLean)) : 0.3
+    }
+
+    public var clampedCrossPush: Double {
+        crossPush.isFinite ? min(Self.crossPushRange.upperBound, max(Self.crossPushRange.lowerBound, crossPush)) : 4
+    }
+
+    /// The crossing drag that goes with this push.
+    public func crossDrag(duelDrag: Double) -> Double {
+        duelDrag * clampedCrossPush / Self.duelCrossPush
     }
 }
 
@@ -89,9 +144,12 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
 public struct VolleyRules: Equatable, Sendable {
     public var touchLimit: SideCounts
     public var pilots: SideCounts
+    /// Most times running one pilot may play it.
+    public var inARow: Int
 
     public init(tuning: AstroballTuning, pilots: SideCounts) {
         self.pilots = pilots
+        inARow = tuning.clampedInARow
         touchLimit = SideCounts(
             cyan: tuning.touchLimit(pilots: pilots.cyan),
             orange: tuning.touchLimit(pilots: pilots.orange)
@@ -100,17 +158,35 @@ public struct VolleyRules: Equatable, Sendable {
 }
 
 public extension ArenaGeometry {
-    /// The ASTROBALL court: volleyball's floor-standing net, on the duel's
-    /// court or the doubles court a quarter bigger.
+    /// How much wider than the volleyball court ASTROBALL's is, for room
+    /// to set and spike. The height stays.
+    static let astroballWidthScale = 1.3
+
+    /// The ASTROBALL court: volleyball's floor-standing net on a court
+    /// stretched wide, the duel's height or the doubles court's a quarter
+    /// taller.
     static func astroball(doubles: Bool) -> ArenaGeometry {
-        guard doubles else { return .volleyball }
+        let scale = doubles ? doublesScale : 1
         return ArenaGeometry(
-            halfWidth: standard.halfWidth * doublesScale,
-            floorY: standard.floorY * doublesScale,
-            ceilingY: standard.ceilingY * doublesScale,
+            halfWidth: standard.halfWidth * scale * astroballWidthScale,
+            floorY: standard.floorY * scale,
+            ceilingY: standard.ceilingY * scale,
             netStyle: .floorWall,
             netTopY: 0
         )
+    }
+
+    /// How far into the far half a hull may fly at height `y` before the
+    /// MAX CROSS line shoves it back. Every court but ASTROBALL's has a
+    /// straight line halfway across the far half; ASTROBALL's stands on the
+    /// top of the net and leans over the far side as it rises, so a hull
+    /// can reach over to spike but not fly round the net.
+    func crossingLimit(atY y: Double, astroball: AstroballTuning?) -> Double {
+        guard let astroball, netStyle == .floorWall else { return opponentCrossingLimit }
+        let rise = ceilingY - netTopY
+        guard rise > 0 else { return 0 }
+        let height = min(1, max(0, (y - netTopY) / rise))
+        return height * astroball.clampedCrossLean * halfWidth
     }
 
     /// Each half's wall path, piece by piece: floor from the net to the
@@ -207,5 +283,95 @@ public extension ArenaGeometry {
             cornerTangentX + cornerRadiusX * cos(angle),
             ceilingY - cornerRadiusY + cornerRadiusY * sin(angle)
         )
+    }
+}
+
+public extension WorldState {
+    /// True when `seat` playing the ball now would give the point away: its
+    /// side's touches are spent, or its own run in a row is.
+    func astroballTouchFaults(_ seat: Seat, tuning: AstroballTuning) -> Bool {
+        let team = seat.team
+        let side = ships.filter { $0.key.team == team && !$0.value.isDestroyed }.count
+        if match.shipTouches[team] >= tuning.touchLimit(pilots: max(1, side)) { return true }
+        return match.lastTouch == seat && match.lastTouchRun >= tuning.clampedInARow
+    }
+
+    /// The pilots who may play the ball next: those on the side whose half
+    /// it is over, less any whose touch would fault. The court rings them,
+    /// so a side of two can see whose ball it is.
+    func astroballUp(tuning: AstroballTuning) -> [Seat] {
+        let team = team(onHalfAt: ball.position.x)
+        return ships.keys
+            .filter { $0.team == team && ships[$0]?.isDestroyed == false && !astroballTouchFaults($0, tuning: tuning) }
+            .sorted { $0.rawValue < $1.rawValue }
+    }
+}
+
+/// A side's colour on screen. The rulebook only knows cyan and orange; these
+/// are paint. Green and pink are ASTROPUCK's third and fourth pilots.
+public enum TeamHue: Int, Codable, CaseIterable, Sendable {
+    case cyan, orange, green, pink
+
+    public var name: String {
+        switch self {
+        case .cyan: "CYAN"
+        case .orange: "ORANGE"
+        case .green: "GREEN"
+        case .pink: "PINK"
+        }
+    }
+
+    /// The lead's hull, and the colour the side is drawn in.
+    public var rgb: SIMD3<Double> {
+        switch self {
+        case .cyan: SIMD3(0.0, 0.92, 1.0)
+        case .orange: SIMD3(1.0, 0.45, 0.0)
+        case .green: SIMD3(0.35, 1.0, 0.35)
+        case .pink: SIMD3(1.0, 0.30, 0.75)
+        }
+    }
+
+    /// The wing's paler hull on a side of two.
+    public var wingRGB: SIMD3<Double> {
+        switch self {
+        case .cyan: SIMD3(0.45, 0.88, 1.0)
+        case .orange: SIMD3(1.0, 0.65, 0.30)
+        case .green: SIMD3(0.68, 1.0, 0.62)
+        case .pink: SIMD3(1.0, 0.64, 0.88)
+        }
+    }
+}
+
+/// Which colour each side is painted this match.
+public struct TeamHues: Equatable, Sendable, Codable {
+    public var cyan: TeamHue = .cyan
+    public var orange: TeamHue = .orange
+
+    public init(cyan: TeamHue = .cyan, orange: TeamHue = .orange) {
+        self.cyan = cyan
+        self.orange = orange
+    }
+
+    public subscript(team: Team) -> TeamHue { team == .cyan ? cyan : orange }
+
+    public func rgb(for seat: Seat) -> SIMD3<Double> {
+        let hue = self[seat.team]
+        return seat == .cyanWing || seat == .orangeWing ? hue.wingRGB : hue.rgb
+    }
+
+    /// Two different colours from the four, any order.
+    public static func random<G: RandomNumberGenerator>(using generator: inout G) -> TeamHues {
+        let picked = TeamHue.allCases.shuffled(using: &generator)
+        return TeamHues(cyan: picked[0], orange: picked[1])
+    }
+}
+
+public extension AstroballTuning {
+    /// This tuning with a fresh pair of side colours, for a new match.
+    func withRandomHues() -> AstroballTuning {
+        var tuning = self
+        var generator = SystemRandomNumberGenerator()
+        tuning.hues = .random(using: &generator)
+        return tuning
     }
 }

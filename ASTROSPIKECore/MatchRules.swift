@@ -83,8 +83,11 @@ public struct MatchRuleState: Codable, Equatable, Sendable {
     /// by a forfeit, so the result screen never has to infer it from points.
     public var winner: Team?
     /// ASTROBALL: who played the ball last this possession, for the
-    /// no-doubles rule. Nil once it crosses the net.
+    /// same-pilot cap. Nil once it crosses the net.
     public var lastTouch: Seat?
+    /// How many times running `lastTouch` has played it. Only read while
+    /// `lastTouch` is set, so nothing has to clear it.
+    public var lastTouchRun = 0
 
     public init(
         score: Score = Score(),
@@ -310,15 +313,18 @@ public struct MatchRules: Sendable {
             case let .ballPlayed(seat):
                 guard let volley else { break }
                 let team = seat.team
-                if volley.pilots[team] > 1, state.lastTouch == seat {
-                    return awardPoint(to: team.opponent, reason: .doubleTouch)
-                }
+                let run = state.lastTouch == seat ? state.lastTouchRun + 1 : 1
                 state.floorContacts = SideCounts()
                 state.shipTouches[team.opponent] = 0
                 state.shipTouches[team] += 1
                 state.lastTouch = seat
+                state.lastTouchRun = run
+                // A side over its count says so, even when the run is over too.
                 if state.shipTouches[team] > volley.touchLimit[team] {
                     return awardPoint(to: team.opponent, reason: .touchLimit)
+                }
+                if run > volley.inARow {
+                    return awardPoint(to: team.opponent, reason: .doubleTouch)
                 }
             case let .ballTouchedFloor(side):
                 state.floorContacts[side] += 1

@@ -74,6 +74,7 @@ extension StatBoard {
 /// The break between sets: who took it (the title carries the set count)
 /// and both sides' match in numbers, while the ships swap ends.
 struct SetBreakBoard: View {
+    @Environment(\.teamHues) private var hues
     let title: String?
     let stats: MatchStats
     /// Nil for a spectator: the board then reads CYAN and ORANGE.
@@ -132,10 +133,10 @@ struct SetBreakBoard: View {
         .accessibilityIdentifier("set-break-board")
     }
 
-    private func tint(_ team: Team) -> Color { team == .cyan ? .cyan : .orange }
+    private func tint(_ team: Team) -> Color { hues.color(team) }
 
     private func name(_ team: Team) -> String {
-        guard let localTeam else { return team == .cyan ? "CYAN" : "ORANGE" }
+        guard let localTeam else { return hues[team].name }
         return team == localTeam ? "YOU" : "RIVAL"
     }
 }
@@ -213,6 +214,7 @@ struct StatsSheet: View {
 /// The plays being called right now, top centre over the court. Each
 /// capsule is the colour of the side that made the play.
 struct PlayFeed: View {
+    @Environment(\.teamHues) private var hues
     let callouts: [PlayCallout]
 
     var body: some View {
@@ -223,7 +225,7 @@ struct PlayFeed: View {
                     .lineLimit(1)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(callout.team == .cyan ? Color.cyan : Color.orange, in: Capsule())
+                    .background(hues.color(callout.team), in: Capsule())
                     .accessibilityIdentifier("play-call")
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }

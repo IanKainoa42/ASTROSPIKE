@@ -113,6 +113,15 @@ public struct AIController: InputSource, Sendable {
     /// is driven nearly flat, so the run-up is beside it rather than under
     /// it, and a high one is spiked down into the far half.
     private static let aimDepthUnderCap = 0.34
+    /// ASTROBALL: how far into the far half, as a share of its width, a shot
+    /// is dropped, and how much air it leaves over the tape.
+    private static let volleyLandingDepth = 0.30
+    private static let volleyNetClearance = 0.10
+    private static let volleyBoltLean = 0.30
+    /// ASTROBALL's ready spot, close in beside the net and a little under the
+    /// tape, where a serve falling off it can be got under either way.
+    private static let volleyReadyX = 0.12
+    private static let volleyReadyY = -0.10
     /// Free-for-all: how near the goal the ball must be before the bot lobs
     /// it at the mouth rather than driving it in.
     private static let freeForAllLobRange = 0.55
@@ -201,10 +210,16 @@ public struct AIController: InputSource, Sendable {
         // slot on a private copy rather than threaded through every helper.
         let state = Self.focused(state, on: Self.focusBall(in: state, seat: seat, ship: ship))
         let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
-        let supporting = supportsPartner(state: state, seat: seat, ship: ship)
+        let holdsOff = touchWouldFault(state: state, seat: seat, ship: ship)
+        let supporting = holdsOff || supportsPartner(state: state, seat: seat, ship: ship)
 
         let projectedHomeDistance = (ship.position.x + ship.velocity.x * 1.20) * homeSign
-        let crossingDanger = !freeRoam && projectedHomeDistance < -(arena.opponentCrossingLimit - 0.12)
+        // ASTROBALL's line leans over the net and is loose, so leaning past
+        // it is how a spike is played; only a run that will carry well past
+        // it is a danger there.
+        let lineMargin = configuration.astroball == nil ? 0.12 : -0.10
+        let crossingDanger = !freeRoam && projectedHomeDistance
+            < -(arena.crossingLimit(atY: ship.position.y, astroball: configuration.astroball) - lineMargin)
         let recovering = recoveryIsUrgent(for: ship)
         // The net never traps anyone -- hulls fly straight through it. What
         // can pin them is the hump above it, so the escape check keys off the
@@ -361,7 +376,10 @@ public struct AIController: InputSource, Sendable {
         // hanging off the roof is a wide target played with flat, hard shots,
         // and pointing the nose down one of those lines drops the lift the
         // ship needs to stay in the play at all.
-        if arena.hoop != nil, striking, !recovering, !crossingDanger, altitudeMargin > 0.12 {
+        // ASTROBALL plays the same lifts and drops as the hoop court, so it
+        // aims the same way.
+        if arena.hoop != nil || configuration.astroball != nil,
+           striking, !recovering, !crossingDanger, altitudeMargin > 0.12 {
             desiredAngle = atan2(plannedShot.y, plannedShot.x) + cachedAimError
         } else if !crossingDanger, !striking, !recovering {
             desiredAngle += cachedAimError
@@ -431,16 +449,24 @@ public struct AIController: InputSource, Sendable {
         return copy
     }
 
+    /// ASTROBALL: true when this seat's next touch, hull or bolt, would hand
+    /// the point over -- its in-a-row run or its side's touches are spent and
+    /// the ball has not been over since. Better to let it go and hope.
+    private func touchWouldFault(state: WorldState, seat: Seat, ship: ShipState) -> Bool {
+        guard let astroball = configuration.astroball else { return false }
+        return state.astroballTouchFaults(seat, tuning: astroball)
+    }
+
     /// True when the partner is the one who should play this ball. The wing
     /// yields on anything close to a tie; the lead only yields when it is
     /// clearly the farther of the two.
     private func supportsPartner(state: WorldState, seat: Seat, ship: ShipState) -> Bool {
         guard let partner = state.ships[seat.partner], !partner.isDestroyed else { return false }
-        // ASTROBALL: nobody on a side of two plays the ball twice running,
-        // so whoever touched it last leaves the next one to the partner.
-        if configuration.astroball != nil, let last = state.match.lastTouch {
-            if last == seat { return true }
-            if last == seat.partner { return false }
+        // ASTROBALL: whoever has used up their touches in a row leaves the
+        // next one to the partner.
+        if let astroball = configuration.astroball, let last = state.match.lastTouch {
+            if last == seat, state.match.lastTouchRun >= astroball.clampedInARow { return true }
+            if last == seat.partner, state.match.lastTouchRun >= astroball.clampedInARow { return false }
         }
         let mine = simd_distance(ship.position, state.ball.position)
         let theirs = simd_distance(partner.position, state.ball.position)
@@ -464,8 +490,12 @@ public struct AIController: InputSource, Sendable {
         guard distance > 0.16, distance < reach else { return false }
         // The trigger works up to the MAX CROSS line; the ball may be
         // anywhere. A hair of margin so the bot never pulls it on the line.
-        guard freeRoam || ship.position.x * homeSign > -(arena.opponentCrossingLimit - 0.02) else { return false }
+        guard freeRoam || ship.position.x * homeSign
+            > -(arena.crossingLimit(atY: ship.position.y, astroball: configuration.astroball) - 0.02) else { return false }
         guard simd_dot(toBall / distance, nose) > 0.985 else { return false }
+        // In ASTROBALL a bolt is a touch and the ball goes the way the bolt
+        // flies, so only a bolt headed for the net is worth one.
+        if configuration.astroball != nil, nose.x * -homeSign < Self.volleyBoltLean { return false }
         return simd_dot(nose, plannedShot) > alignment
     }
 
@@ -508,6 +538,8 @@ public struct AIController: InputSource, Sendable {
         let radius = state.ball.radius
         let ballGravity = configuration.gravity.y * configuration.ballGravityMultiplier
         let shipSpeed = simd_length(ship.velocity)
+        // ASTROBALL's walls and roof soak up speed; roll them as the engine does.
+        let wallBounce = configuration.astroball?.clampedWallBounce ?? SimulationEngine.ballRestitution
         var position = state.ball.position
         var velocity = state.ball.velocity
         // Spin bends the rollout exactly as it bends the real ball, and every
@@ -558,19 +590,19 @@ public struct AIController: InputSource, Sendable {
                 if position.x - radius <= -arena.halfWidth {
                     let incoming = velocity
                     position.x = -arena.halfWidth + radius
-                    velocity.x = abs(velocity.x) * SimulationEngine.ballRestitution
+                    velocity.x = abs(velocity.x) * wallBounce
                     grip(SIMD2(1, 0), from: incoming)
                 }
                 if position.x + radius >= arena.halfWidth {
                     let incoming = velocity
                     position.x = arena.halfWidth - radius
-                    velocity.x = -abs(velocity.x) * SimulationEngine.ballRestitution
+                    velocity.x = -abs(velocity.x) * wallBounce
                     grip(SIMD2(-1, 0), from: incoming)
                 }
                 if position.y + radius >= arena.ceilingY {
                     let incoming = velocity
                     position.y = arena.ceilingY - radius
-                    velocity.y = -abs(velocity.y) * SimulationEngine.ballRestitution
+                    velocity.y = -abs(velocity.y) * wallBounce
                     grip(SIMD2(0, -1), from: incoming)
                 }
                 if position.y - radius <= arena.floorY {
@@ -720,7 +752,12 @@ public struct AIController: InputSource, Sendable {
 
     /// Ready position while the ball is on the far side of the net.
     private func guardPost(homeSign: Double) -> SIMD2<Double> {
-        SIMD2(homeSign * 0.42 * arena.widthScale, arena.floorY + 0.50 * arena.heightScale)
+        // ASTROBALL serves onto the tape and the ball falls off it into the
+        // zone right beside the net, so the ready spot is close in under it.
+        if configuration.astroball != nil, arena.netStyle == .floorWall {
+            return SIMD2(homeSign * Self.volleyReadyX * arena.widthScale, arena.netTopY + Self.volleyReadyY)
+        }
+        return SIMD2(homeSign * 0.42 * arena.widthScale, arena.floorY + 0.50 * arena.heightScale)
     }
 
     /// The shot to play from `point`: which way to send the ball, and how
@@ -748,6 +785,9 @@ public struct AIController: InputSource, Sendable {
             // on this side, for the lob next touch.
             return lob(from: point, to: Self.ringSetUp(homeSign: homeSign, arena: arena), ballVelocity: ballVelocity)
         }
+        if configuration.astroball != nil, arena.netStyle == .floorWall {
+            return lob(from: point, to: volleyTarget(from: point, homeSign: homeSign), ballVelocity: ballVelocity)
+        }
         guard let hoop = arena.hoop else {
             return (shotDirection(from: point, homeSign: homeSign), difficulty.strikeSpeed)
         }
@@ -758,6 +798,23 @@ public struct AIController: InputSource, Sendable {
             ? SIMD2(0, hoop.centerY)
             : SIMD2(homeSign * 0.30, hoop.centerY - 0.20)
         return lob(from: point, to: target, ballVelocity: ballVelocity)
+    }
+
+    /// Where an ASTROBALL shot is aimed: down onto the far floor in the
+    /// stretch nearest the net, the default scoring zone. The gentlest arc
+    /// there from low on this side can clip the tape, so when it would, the
+    /// shot goes at a point clear over the net instead and carries on down
+    /// into the far half. From up over the net that is a spike.
+    private func volleyTarget(from point: SIMD2<Double>, homeSign: Double) -> SIMD2<Double> {
+        let radius = configuration.ballRadius
+        let landing = SIMD2(-homeSign * Self.volleyLandingDepth * arena.halfWidth, arena.floorY + radius)
+        let clearance = arena.netTopY + radius + Self.volleyNetClearance
+        let launch = lobVelocity(landing - point)
+        let gravity = -configuration.gravity.y * configuration.ballGravityMultiplier
+        guard abs(launch.x) > 0.001 else { return landing }
+        let time = abs(point.x) / abs(launch.x)
+        let heightAtNet = point.y + launch.y * time - 0.5 * gravity * time * time
+        return heightAtNet >= clearance ? landing : SIMD2(-homeSign * 0.05, clearance + 0.06)
     }
 
     /// The band of its own half the bot will shoot from: close enough to the

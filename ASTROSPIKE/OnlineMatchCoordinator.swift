@@ -1595,7 +1595,8 @@ final class OnlineMatchCoordinator: NSObject,
         // The ring sliders write straight to the defaults, so read them now
         // rather than trust a snapshot taken before Settings was opened.
         if format.isFreeForAll { hostTuning.ring = RingTuning.stored() }
-        if format.isAstroball { hostTuning.astroball = AstroballTuning.stored() }
+        // The side colours are drawn here, once, and ride the seating plan.
+        if format.isAstroball { hostTuning.astroball = AstroballTuning.stored().withRandomHues() }
         isAuthoritative = true
         startConfiguredMatch()
     }

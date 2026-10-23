@@ -1487,7 +1487,7 @@ private struct GameView: View {
                                   largeControls: largeControls, leftHanded: leftHanded,
                                   arenaFrame: Self.arenaFrame(in: geometry),
                                   windowFrame: TouchControls.windowFrame(in: geometry),
-                                  playerTint: localTeam == .cyan ? .cyan : .orange)
+                                  playerTint: session.teamHues.color(localTeam))
                 }
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
@@ -1534,7 +1534,7 @@ private struct GameView: View {
                     if !session.isFreeForAll {
                     let servingSide = session.state.team(onHalfAt: session.state.serveDriftSign)
                     let isLocalServe = !isSpectating && servingSide == localTeam
-                    let serveColor = servingSide == .cyan ? Color.cyan : Color.orange
+                    let serveColor = session.teamHues.color(servingSide)
                     HStack(spacing: 6) {
                         Image(systemName: "tennisball.fill")
                             .font(.system(size: 11, weight: .bold))
@@ -1688,6 +1688,7 @@ private struct GameView: View {
             if phase == .finished { emoteTrayOpen = false }
         }
         .animation(.easeOut(duration: 0.15), value: emoteTrayOpen)
+        .environment(\.teamHues, session.teamHues)
         }
     }
 
@@ -2083,14 +2084,34 @@ private struct BayLinkStatus: View {
     }
 }
 
+extension EnvironmentValues {
+    /// The match's side colours: cyan and orange, or ASTROBALL's draw.
+    @Entry var teamHues = TeamHues()
+}
+
+extension TeamHue {
+    var color: Color {
+        switch self {
+        case .cyan: .cyan
+        case .orange: .orange
+        default: Color(red: rgb.x, green: rgb.y, blue: rgb.z)
+        }
+    }
+}
+
+extension TeamHues {
+    func color(_ team: Team) -> Color { self[team].color }
+}
+
 private struct TeamSideBadge: View {
     let title: String
     let team: Team
     var isLocal: Bool = false
+    @Environment(\.teamHues) private var hues
 
     var body: some View {
-        let color = team == .cyan ? Color.cyan : .orange
-        Text("\(title) • \(team.rawValue.uppercased())")
+        let color = hues.color(team)
+        Text("\(title) • \(hues[team].name)")
             .font(.caption2.monospaced().weight(.black))
             .tracking(1.2)
             .foregroundStyle(color)
@@ -2098,11 +2119,12 @@ private struct TeamSideBadge: View {
             .padding(.vertical, 6)
             .background(.black.opacity(0.42), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.7), lineWidth: 1.5))
-            .accessibilityLabel(isLocal ? "Your side: \(team.rawValue.capitalized)" : "\(title): \(team.rawValue.capitalized)")
+            .accessibilityLabel(isLocal ? "Your side: \(hues[team].name.capitalized)" : "\(title): \(hues[team].name.capitalized)")
     }
 }
 
 private struct MatchHUD: View {
+    @Environment(\.teamHues) private var hues
     let state: WorldState
     let localTeam: Team
     let allowedBounces: Int
@@ -2194,7 +2216,7 @@ private struct MatchHUD: View {
             ForEach([leftTeam, leftTeam.opponent], id: \.self) { team in
                 HStack(spacing: 3) {
                     ForEach(0..<state.match.setsToWin, id: \.self) { index in
-                        Circle().fill(index < state.match.sets[team] ? Self.tint(team) : .white.opacity(0.18))
+                        Circle().fill(index < state.match.sets[team] ? tint(team) : .white.opacity(0.18))
                             .frame(width: 6, height: 6)
                     }
                 }
@@ -2203,14 +2225,14 @@ private struct MatchHUD: View {
         .accessibilityLabel("Sets: you \(state.match.sets[localTeam]), rival \(state.match.sets[localTeam.opponent])")
     }
 
-    private static func tint(_ team: Team) -> Color { team == .cyan ? .cyan : .orange }
+    private func tint(_ team: Team) -> Color { hues.color(team) }
 
     /// Names the side and what the next point takes. Carries the team tint
     /// as a filled capsule so it reads from across the room mid-rally.
     private func stakeCallout(_ headline: (team: Team, stake: Stake)) -> some View {
-        let tint = headline.team == .cyan ? Color.cyan : Color.orange
+        let tint = hues.color(headline.team)
         let word = headline.stake == .matchPoint ? "MATCH POINT" : "SET POINT"
-        let side = headline.team == .cyan ? "CYAN" : "ORANGE"
+        let side = hues[headline.team].name
         return Text("\(side) · \(word)")
             .font(.caption2.monospaced().weight(.black))
             .tracking(1.4)
@@ -2223,7 +2245,7 @@ private struct MatchHUD: View {
     }
 
     private func score(team: Team) -> some View {
-        let tint = Self.tint(team)
+        let tint = tint(team)
         let value = state.match.score[team]
         let bounces = state.match.floorContacts[team]
         let stake = state.match.stake(for: team)
@@ -2572,9 +2594,9 @@ private struct SettingsView: View {
 struct AstroballTuningControls: View {
     @State private var tuning = AstroballTuning.stored()
 
-    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three, and nobody plays it twice running. Hull and bolts both count. The zone is a stretch of each half's wall path, from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Elsewhere the floor plays as in the duel. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. Takes effect next match, and online when you host."
+    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. The zone is a stretch of each half's wall path, from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Elsewhere the floor plays as in the duel. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; push is how hard it shoves you back (the duel uses 18). Takes effect next match, and online when you host."
 
-    private var court: ArenaGeometry { .volleyball }
+    private var court: ArenaGeometry { .astroball(doubles: false) }
 
     var body: some View {
         Picker("Solo touches", selection: $tuning.soloTouches) {
@@ -2582,6 +2604,11 @@ struct AstroballTuningControls: View {
         }
         .pickerStyle(.segmented)
         .accessibilityIdentifier(AstroballTuning.soloTouchesKey)
+        Picker("In a row", selection: $tuning.inARow) {
+            ForEach(Array(AstroballTuning.inARowRange), id: \.self) { Text("\($0)").tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier(AstroballTuning.inARowKey)
         TuningSlider(title: "Zone from", value: $tuning.zoneStart, range: 0 ... 1, step: 0.01,
                      readout: { court.wallPathPlace(at: $0) })
             .accessibilityIdentifier(AstroballTuning.zoneStartKey)
@@ -2591,6 +2618,11 @@ struct AstroballTuningControls: View {
         TuningSlider(title: "Wall bounce", value: $tuning.wallBounce, range: AstroballTuning.wallBounceRange, step: 0.01,
                      readout: { "\(Int(($0 * 100).rounded()))%" })
             .accessibilityIdentifier(AstroballTuning.wallBounceKey)
+        TuningSlider(title: "MAX CROSS lean", value: $tuning.crossLean, range: AstroballTuning.crossLeanRange, step: 0.01)
+            .accessibilityIdentifier(AstroballTuning.crossLeanKey)
+        TuningSlider(title: "MAX CROSS push", value: $tuning.crossPush, range: AstroballTuning.crossPushRange, step: 0.5,
+                     readout: { $0.formatted(.number.precision(.fractionLength(1))) })
+            .accessibilityIdentifier(AstroballTuning.crossPushKey)
         Button("Reset ASTROBALL to default") { tuning = AstroballTuning() }
             .disabled(tuning == AstroballTuning())
             .onChange(of: tuning) { _, tuning in tuning.store() }
@@ -2803,6 +2835,7 @@ private struct TableCard {
 }
 
 private struct ResultsOverlay: View {
+    @Environment(\.teamHues) private var hues
     let state: WorldState
     let localTeam: Team
     let plan: ResultsPlan
@@ -2832,7 +2865,7 @@ private struct ResultsOverlay: View {
     /// YOU on your side and RIVAL on theirs, or both pilots' names.
     private var sidesLabel: String {
         guard let names else { return "YOU — RIVAL" }
-        let mine = spectating ? names[localTeam] ?? "CYAN" : "YOU"
+        let mine = spectating ? names[localTeam] ?? hues[localTeam].name : "YOU"
         return "\(mine) — \(names[localTeam.opponent] ?? "RIVAL")"
     }
 
@@ -2840,7 +2873,7 @@ private struct ResultsOverlay: View {
         guard spectating else { return didLocalPlayerWin ? "YOU WIN" : "YOU LOSE" }
         let winner = state.match.winner
             ?? (state.match.score.cyan >= state.match.score.orange ? Team.cyan : .orange)
-        return "\(names?[winner] ?? winner.rawValue.uppercased()) WINS"
+        return "\(names?[winner] ?? hues[winner].name) WINS"
     }
 
     var body: some View {
@@ -2955,14 +2988,14 @@ private struct ResultsOverlay: View {
     private func scoreLine(_ tally: Score) -> some View {
         let rival = localTeam.opponent
         let label: String = if spectating {
-            "\(names?[localTeam] ?? "Cyan") \(tally[localTeam]), \(names?[rival] ?? "Orange") \(tally[rival])"
+            "\(names?[localTeam] ?? hues[localTeam].name.capitalized) \(tally[localTeam]), \(names?[rival] ?? hues[rival].name.capitalized) \(tally[rival])"
         } else {
             "You \(tally[localTeam]), rival \(tally[rival])"
         }
         return HStack(spacing: 18) {
-            Text(tally[localTeam].formatted()).foregroundStyle(localTeam == .cyan ? Color.cyan : .orange)
+            Text(tally[localTeam].formatted()).foregroundStyle(hues.color(localTeam))
             Text("—").foregroundStyle(.secondary)
-            Text(tally[rival].formatted()).foregroundStyle(rival == .cyan ? Color.cyan : .orange)
+            Text(tally[rival].formatted()).foregroundStyle(hues.color(rival))
         }
         .font(.system(size: 58, weight: .black, design: .rounded).monospacedDigit())
         .accessibilityElement(children: .ignore)

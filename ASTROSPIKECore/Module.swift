@@ -998,11 +998,15 @@ public struct SimulationEngine: Sendable {
             // deeper a pilot pushes into the far half, the harder the arena shoves
             // back and the more speed it steals. Nothing here is lethal.
             let intrusionSign = ship.homeSide == .cyan ? 1.0 : -1.0
-            let depth = ship.position.x * intrusionSign - arena.opponentCrossingLimit
+            let depth = ship.position.x * intrusionSign
+                - arena.crossingLimit(atY: ship.position.y, astroball: configuration.astroball)
             if depth > 0, !isFreeForAll {
-                acceleration.x -= intrusionSign * configuration.crossingPushBack * depth
-                acceleration -= ship.velocity
-                    * (configuration.crossingDrag * min(1, depth / 0.20))
+                // ASTROBALL's line is loose, push and drag alike.
+                let push = configuration.astroball?.clampedCrossPush ?? configuration.crossingPushBack
+                let drag = configuration.astroball?.crossDrag(duelDrag: configuration.crossingDrag)
+                    ?? configuration.crossingDrag
+                acceleration.x -= intrusionSign * push * depth
+                acceleration -= ship.velocity * (drag * min(1, depth / 0.20))
             }
             // The ring's MAX CROSS: the same treacle, shoving back toward the
             // nearest ground the pilot may fly.
@@ -1031,7 +1035,8 @@ public struct SimulationEngine: Sendable {
             let homeSign = ship.homeSide == .cyan ? -1.0 : 1.0
             let shortOfTheLine = isFreeForAll
                 ? ringOffside(ship.position, seat: seat) == nil
-                : ship.position.x * homeSign >= -arena.opponentCrossingLimit
+                : ship.position.x * homeSign
+                    >= -arena.crossingLimit(atY: ship.position.y, astroball: configuration.astroball)
             // Nor from the deck: a hull sat on the ground does not fire, so
             // nobody parks and spams bolts. The ring has no deck -- its rim
             // is a wall, and walls do not stop the trigger.

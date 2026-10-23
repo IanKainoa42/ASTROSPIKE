@@ -4,9 +4,10 @@ import Testing
 
 @Suite("ASTROBALL")
 struct AstroballTests {
-    private func rules(solo: Int = 3, cyanPilots: Int = 1, orangePilots: Int = 1) -> MatchRules {
+    private func rules(solo: Int = 3, inARow: Int = 2, cyanPilots: Int = 1, orangePilots: Int = 1) -> MatchRules {
         var tuning = AstroballTuning()
         tuning.soloTouches = solo
+        tuning.inARow = inARow
         var rules = MatchRules(state: MatchRuleState(phase: .playing), allowedFloorBounces: 1)
         rules.volley = VolleyRules(tuning: tuning, pilots: SideCounts(cyan: cyanPilots, orange: orangePilots))
         return rules
@@ -30,27 +31,50 @@ struct AstroballTests {
         #expect(rules.state.score.orange == 1)
     }
 
-    @Test("A solo side gets three touches, and may play them all itself")
+    @Test("A solo side gets three touches, and may play them all itself when in a row allows it")
     func soloThreeTouches() {
-        var rules = rules(solo: 3)
+        var rules = rules(solo: 3, inARow: 3)
         for _ in 0 ..< 3 { #expect(rules.resolve([.ballPlayed(seat: .orange)]).isEmpty) }
         #expect(pointReason(rules.resolve([.ballPlayed(seat: .orange)])) == .touchLimit)
         #expect(rules.state.score.cyan == 1)
     }
 
-    @Test("A side of two gets three whatever the solo setting, alternating")
+    @Test("A side of two gets three whatever the solo setting")
     func teamThreeTouches() {
         var rules = rules(solo: 1, cyanPilots: 2)
         for seat in [Seat.cyan, .cyanWing, .cyan] { #expect(rules.resolve([.ballPlayed(seat: seat)]).isEmpty) }
         #expect(pointReason(rules.resolve([.ballPlayed(seat: .cyanWing)])) == .touchLimit)
     }
 
-    @Test("On a side of two the same pilot cannot play it twice running")
-    func noDoubles() {
+    @Test("Two in a row is fine by default; a triple gives the point away")
+    func noTriples() {
         var rules = rules(cyanPilots: 2)
-        _ = rules.resolve([.ballPlayed(seat: .cyanWing)])
+        #expect(rules.resolve([.ballPlayed(seat: .cyanWing)]).isEmpty)
+        #expect(rules.resolve([.ballPlayed(seat: .cyanWing)]).isEmpty)
         #expect(pointReason(rules.resolve([.ballPlayed(seat: .cyanWing)])) == .doubleTouch)
         #expect(rules.state.score.orange == 1)
+
+        // A solo side is held to it too, under its touch count.
+        var solo = self.rules(solo: 3)
+        _ = solo.resolve([.ballPlayed(seat: .orange)])
+        _ = solo.resolve([.ballPlayed(seat: .orange)])
+        #expect(pointReason(solo.resolve([.ballPlayed(seat: .orange)])) == .doubleTouch)
+    }
+
+    @Test("In a row is a setting: one is the old no-doubles rule, three lets a pilot play the side's three")
+    func inARowSetting() {
+        var strict = rules(inARow: 1, cyanPilots: 2)
+        _ = strict.resolve([.ballPlayed(seat: .cyan)])
+        #expect(pointReason(strict.resolve([.ballPlayed(seat: .cyan)])) == .doubleTouch)
+
+        var loose = rules(inARow: 3, cyanPilots: 2)
+        for _ in 0 ..< 3 { #expect(loose.resolve([.ballPlayed(seat: .cyan)]).isEmpty) }
+        #expect(pointReason(loose.resolve([.ballPlayed(seat: .cyan)])) == .touchLimit)
+
+        // A partner's touch breaks the run.
+        var run = rules(cyanPilots: 2)
+        for seat in [Seat.cyan, .cyan, .cyanWing] { #expect(run.resolve([.ballPlayed(seat: seat)]).isEmpty) }
+        #expect(run.state.lastTouchRun == 1)
     }
 
     @Test("The other side playing it, or the ball crossing, starts the count again")
@@ -58,6 +82,7 @@ struct AstroballTests {
         var rules = rules(solo: 2)
         _ = rules.resolve([.ballPlayed(seat: .cyan)])
         _ = rules.resolve([.ballPlayed(seat: .cyan)])
+        #expect(rules.state.score == Score())
         _ = rules.resolve([.ballPlayed(seat: .orange)])
         #expect(rules.state.shipTouches.cyan == 0)
         #expect(rules.resolve([.ballPlayed(seat: .cyan)]).isEmpty)
@@ -67,8 +92,9 @@ struct AstroballTests {
         _ = crossing.resolve([.ballCrossedCenter(into: .orange)])
         #expect(crossing.state.lastTouch == nil)
         #expect(crossing.state.shipTouches == SideCounts())
-        // Back over: cyan plays first again with no double held against it.
+        // Back over: cyan plays first again with no run held against it.
         #expect(crossing.resolve([.ballPlayed(seat: .cyan)]).isEmpty)
+        #expect(crossing.state.lastTouchRun == 1)
     }
 
     @Test("Outside ASTROBALL a played ball is never a fault")
@@ -105,7 +131,7 @@ struct AstroballTests {
 
     @Test("The default zone is the half of the floor nearest the net")
     func defaultZone() {
-        let court = ArenaGeometry.volleyball
+        let court = ArenaGeometry.astroball(doubles: false)
         let tuning = AstroballTuning()
         let floor = court.cornerTangentX - court.netHalfWidth
         let near = court.wallPathFraction(at: SIMD2(court.netHalfWidth + floor * 0.3, court.floorY))!
@@ -118,7 +144,7 @@ struct AstroballTests {
 
     @Test("The wall path runs floor, corner, wall, corner; the roof's flat is off it")
     func wallPathMapping() {
-        let court = ArenaGeometry.volleyball
+        let court = ArenaGeometry.astroball(doubles: false)
         #expect(court.wallPathFraction(at: SIMD2(court.netHalfWidth, court.floorY)) == 0)
         #expect(court.wallPathFraction(at: SIMD2(0.1, court.ceilingY)) == nil)
         var previous = -1.0
@@ -144,7 +170,7 @@ struct AstroballTests {
         if let tuning {
             engine.updateConfiguration(.astroball(from: engine.configuration, tuning: tuning))
         }
-        engine.updateArena(.volleyball)
+        engine.updateArena(.astroball(doubles: false))
         engine.beginPlay()
         return engine
     }
@@ -183,7 +209,7 @@ struct AstroballTests {
 
     @Test("The ball landing in the zone gives the other side the point")
     func zoneLandingScores() {
-        let court = ArenaGeometry.volleyball
+        let court = ArenaGeometry.astroball(doubles: false)
         let floor = court.cornerTangentX - court.netHalfWidth
         for (share, scores) in [(0.25, true), (0.8, false)] {
             var engine = astroballEngine()
@@ -227,8 +253,10 @@ struct AstroballTests {
         #expect(configuration.astroball == AstroballTuning())
         let court = ArenaGeometry.astroball(doubles: true)
         #expect(court.netStyle == .floorWall)
-        #expect(court.halfWidth > ArenaGeometry.volleyball.halfWidth)
-        #expect(ArenaGeometry.astroball(doubles: false) == .volleyball)
+        let singles = ArenaGeometry.astroball(doubles: false)
+        #expect(court.halfWidth > singles.halfWidth)
+        #expect(abs(singles.halfWidth - ArenaGeometry.volleyball.halfWidth * ArenaGeometry.astroballWidthScale) < 1e-9)
+        #expect(singles.netStyle == .floorWall)
     }
 
     @Test("Online ASTROBALL seats like a duel: three or four pilots play two a side")
@@ -248,9 +276,102 @@ struct AstroballTests {
         tuning.zoneStart = 0.6
         tuning.zoneEnd = 0.9
         tuning.wallBounce = 0.4
+        tuning.inARow = 3
+        tuning.crossLean = 0.5
+        tuning.crossPush = 9
         tuning.store(in: defaults)
         #expect(AstroballTuning.stored(in: defaults) == tuning)
         defaults.set(9, forKey: AstroballTuning.soloTouchesKey)
-        #expect(AstroballTuning.stored(in: defaults).soloTouches == 3)
+        defaults.set(0, forKey: AstroballTuning.inARowKey)
+        defaults.set(5.0, forKey: AstroballTuning.crossLeanKey)
+        defaults.set(-1.0, forKey: AstroballTuning.crossPushKey)
+        let clamped = AstroballTuning.stored(in: defaults)
+        #expect(clamped.soloTouches == 3)
+        #expect(clamped.inARow == 1)
+        #expect(clamped.crossLean == AstroballTuning.crossLeanRange.upperBound)
+        #expect(clamped.crossPush == 0)
+    }
+
+    // MARK: MAX CROSS
+
+    @Test("The MAX CROSS line rises from the top of the net and leans over the far half")
+    func crossLineLeans() {
+        let court = ArenaGeometry.astroball(doubles: false)
+        let tuning = AstroballTuning()
+        #expect(court.crossingLimit(atY: court.netTopY, astroball: tuning) == 0)
+        #expect(court.crossingLimit(atY: court.floorY, astroball: tuning) == 0)
+        let top = court.crossingLimit(atY: court.ceilingY, astroball: tuning)
+        #expect(abs(top - tuning.crossLean * court.halfWidth) < 1e-9)
+        let mid = court.crossingLimit(atY: (court.netTopY + court.ceilingY) / 2, astroball: tuning)
+        #expect(abs(mid - top / 2) < 1e-9)
+        // The duel keeps its fixed line.
+        #expect(court.crossingLimit(atY: court.ceilingY, astroball: nil) == court.opponentCrossingLimit)
+    }
+
+    @Test("ASTROBALL's line is loose: a ship over it is pushed back far softer than the duel's")
+    func crossLineIsLoose() {
+        func pushedBack(_ tuning: AstroballTuning?) -> Double {
+            var engine = astroballEngine(tuning)
+            let court = engine.arena
+            // Cyan defends the left; park it well over the line on the right, high up.
+            let y = court.netTopY + (court.ceilingY - court.netTopY) * 0.5
+            let limit = court.crossingLimit(atY: y, astroball: tuning)
+            engine.state.ships[.cyan]!.position = .init(limit + 0.12, y)
+            engine.state.ships[.cyan]!.velocity = .zero
+            engine.state.ships[.orange]!.position = .init(court.halfWidth - 0.1, court.floorY + 0.1)
+            engine.state.ball = BallState(position: .init(-court.halfWidth + 0.15, court.floorY + 0.1), velocity: .zero)
+            for tick in UInt64(0) ..< 6 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
+            return -engine.state.ships[.cyan]!.velocity.x
+        }
+        let loose = pushedBack(AstroballTuning())
+        var duelStrength = AstroballTuning()
+        duelStrength.crossPush = AstroballTuning.duelCrossPush
+        let firm = pushedBack(duelStrength)
+        #expect(loose > 0, "loose line never pushed: \(loose)")
+        #expect(firm > loose * 2.5, "firm \(firm) vs loose \(loose)")
+    }
+
+    @Test("The ring marks whose ball it is: the side under it, less a pilot whose run is spent")
+    func upIsWhoseBall() {
+        let tuning = AstroballTuning()
+        var state = astroballEngine().state
+        state.ships[.cyanWing] = state.ships[.cyan]
+        state.ships[.orangeWing] = state.ships[.orange]
+        state.ball.position = .init(-0.4, 0.2)
+        #expect(state.astroballUp(tuning: tuning) == [.cyan, .cyanWing])
+        state.ball.position = .init(0.4, 0.2)
+        #expect(state.astroballUp(tuning: tuning) == [.orange, .orangeWing])
+        state.sidesSwapped = true
+        #expect(state.astroballUp(tuning: tuning) == [.cyan, .cyanWing], "ends changed: the right half is cyan's")
+        state.sidesSwapped = false
+        state.ball.position = .init(-0.4, 0.2)
+        state.match.shipTouches.cyan = 2
+        state.match.lastTouch = .cyan
+        state.match.lastTouchRun = 2
+        #expect(state.astroballUp(tuning: tuning) == [.cyanWing], "two in a row: only the partner may play it")
+        state.match.shipTouches.cyan = 3
+        #expect(state.astroballUp(tuning: tuning).isEmpty, "three spent: nobody on the side may play it")
+        state.ships[.cyanWing]?.isDestroyed = true
+        state.match.shipTouches.cyan = 0
+        state.match.lastTouchRun = 1
+        #expect(state.astroballUp(tuning: tuning) == [.cyan], "a downed partner is never up")
+    }
+
+    @Test("Each match draws two different side colours from all four")
+    func huesAreDistinct() {
+        var generator = SystemRandomNumberGenerator()
+        var seen = Set<TeamHue>()
+        for _ in 0 ..< 200 {
+            let hues = TeamHues.random(using: &generator)
+            #expect(hues.cyan != hues.orange)
+            seen.insert(hues.cyan)
+            seen.insert(hues.orange)
+        }
+        #expect(seen == Set(TeamHue.allCases))
+        #expect(TeamHues()[.cyan] == .cyan && TeamHues()[.orange] == .orange, "the duel keeps cyan and orange")
+        var tuning = AstroballTuning()
+        tuning.hues = TeamHues(cyan: .green, orange: .pink)
+        let wire = try? JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning))
+        #expect(wire?.hues == tuning.hues, "the host's colours ride the seating plan")
     }
 }

@@ -200,6 +200,11 @@ final class GameSession {
     let isFreeForAll: Bool
     /// ASTROBALL, offline or online: the touch cap and the zone are on.
     let isAstroball: Bool
+    /// Offline ASTROBALL's side colours, drawn once a match so a Settings
+    /// change on resume does not repaint the court.
+    private var astroballHues: TeamHues
+    /// Side colours for the HUD: ASTROBALL's draw, cyan and orange elsewhere.
+    var teamHues: TeamHues { engine.configuration.astroball?.hues ?? TeamHues() }
     /// How many nets the ring has, or nil off it.
     private let ringPilots: Int?
 
@@ -265,7 +270,10 @@ final class GameSession {
         self.isDoubles = isDoubles
         let ringPilots = isFreeForAll ? roster.count : nil
         self.ringPilots = ringPilots
-        let configuration = Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll)
+        var generator = SystemRandomNumberGenerator()
+        let hues = TeamHues.random(using: &generator)
+        astroballHues = hues
+        let configuration = Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll, hues: hues)
         let court = Self.court(for: configuration, mode: mode, isDoubles: isDoubles, ringPilots: ringPilots)
         self.isAstroball = configuration.astroball != nil
         initialEngine.updateConfiguration(configuration)
@@ -456,7 +464,7 @@ final class GameSession {
     /// The pilot's sliders, as this table plays them: doubles fixes the
     /// ball count and size whatever the slider says.
     private func resolved(_ configuration: SimulationConfiguration) -> SimulationConfiguration {
-        Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll)
+        Self.resolved(configuration, mode: mode, isDoubles: isDoubles, isFreeForAll: isFreeForAll, hues: astroballHues)
     }
 
     /// Free-for-all plays one ball, or two when the ring's Two balls is on,
@@ -468,14 +476,17 @@ final class GameSession {
         _ configuration: SimulationConfiguration,
         mode: GameMode,
         isDoubles: Bool,
-        isFreeForAll: Bool
+        isFreeForAll: Bool,
+        hues: TeamHues
     ) -> SimulationConfiguration {
         var configuration = configuration
         // ASTROBALL offline flies the pilot's own touches and zone, read
         // fresh so a Settings change lands on resume; online they are the
         // host's, already in the configuration.
         if case .astroball = mode {
-            configuration = .astroball(from: configuration, tuning: AstroballTuning.stored())
+            var tuning = AstroballTuning.stored()
+            tuning.hues = hues
+            configuration = .astroball(from: configuration, tuning: tuning)
         }
         // One ball on ASTROBALL's two-a-side court, at the pilot's size.
         if isDoubles, configuration.astroball == nil { return .doubles(from: configuration) }
@@ -512,6 +523,16 @@ final class GameSession {
     /// Play Again: same rival, same format, new countdown. Online cannot.
     func restartMatch() {
         guard mode.isOffline else { return }
+        if isAstroball, var tuning = engine.configuration.astroball {
+            // A new match, a new pair of colours.
+            var generator = SystemRandomNumberGenerator()
+            astroballHues = .random(using: &generator)
+            tuning.hues = astroballHues
+            var configuration = engine.configuration
+            configuration.astroball = tuning
+            engine.updateConfiguration(configuration)
+            scene.astroball = tuning
+        }
         engine.restartMatch()
         state = engine.state
         scene.snapshot = state
@@ -751,7 +772,7 @@ final class GameSession {
         if presentsLocalEvents,
            let point = events.first(where: { if case .point = $0 { true } else { false } }) {
             lastPointText = point.label(
-                bounceAllowance: engine.configuration.allowedFloorBounces
+                bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues
             )
             if case let .point(team, reason) = point {
                 FeedbackCenter.shared.point(team: team, reason: reason)
@@ -766,7 +787,7 @@ final class GameSession {
         if presentsLocalEvents,
            let set = events.first(where: { if case .setEnded = $0 { true } else { false } }) {
             callouts = []
-            lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces)
+            lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues)
         }
         for event in events where presentsLocalEvents {
             callOut(event)
@@ -916,7 +937,8 @@ final class GameSession {
     }
 
     private func announceShipCues(inputs: [Seat: PlayerInput]) {
-        let limit = court.opponentCrossingLimit
+        let court = court
+        let astroball = engine.configuration.astroball
         var offsideNow: Set<Seat> = []
         var thrustingNow: Set<Team> = []
         // Both ships on a team share one voice, so the burn is panned to the
@@ -933,7 +955,7 @@ final class GameSession {
             // on their lines would chirp all match.
             let offside = isFreeForAll
                 ? seat == localSeat && engine.ringOffside(ship.position, seat: seat) != nil
-                : ship.position.x * intrusionSign > limit
+                : ship.position.x * intrusionSign > court.crossingLimit(atY: ship.position.y, astroball: astroball)
             if offside {
                 offsideNow.insert(seat)
                 if !offsideLastFrame.contains(seat) {
@@ -1062,7 +1084,7 @@ final class GameSession {
             switch event {
             case let .point(team, reason):
                 self.lastPointText = event.label(
-                    bounceAllowance: self.engine.configuration.allowedFloorBounces
+                    bounceAllowance: self.engine.configuration.allowedFloorBounces, teamHues: self.teamHues
                 )
                 FeedbackCenter.shared.point(team: team, reason: reason)
             case .goalScored:
@@ -1074,7 +1096,7 @@ final class GameSession {
             case .setEnded:
                 self.callouts = []
                 self.lastPointText = event.label(
-                    bounceAllowance: self.engine.configuration.allowedFloorBounces
+                    bounceAllowance: self.engine.configuration.allowedFloorBounces, teamHues: self.teamHues
                 )
             case .collisionEffect:
                 FeedbackCenter.shared.impactHaptic()
@@ -1163,12 +1185,12 @@ final class FrameDriver: NSObject {
 }
 
 private extension SimulationEvent {
-    func label(bounceAllowance: Int) -> String {
+    func label(bounceAllowance: Int, teamHues: TeamHues = TeamHues()) -> String {
         if case let .setEnded(winner, sets) = self {
-            return "\(winner == .cyan ? "CYAN" : "ORANGE") TAKES THE SET · \(sets.cyan)–\(sets.orange)"
+            return "\(teamHues[winner].name) TAKES THE SET · \(sets.cyan)–\(sets.orange)"
         }
         guard case let .point(team, reason) = self else { return "" }
-        let scorer = team == .cyan ? "CYAN" : "ORANGE"
+        let scorer = teamHues[team].name
         switch reason {
         case .goal: return "\(scorer) GOAL"
         case .thirdBounce: return "BOUNCE LIMIT (\(bounceAllowance)) — \(scorer)"
@@ -1176,7 +1198,7 @@ private extension SimulationEvent {
         case .netContact: return "NET / CROSS — \(scorer)"
         case .forfeit: return "FORFEIT — \(scorer)"
         case .touchLimit: return "TOO MANY TOUCHES — \(scorer)"
-        case .doubleTouch: return "DOUBLE TOUCH — \(scorer)"
+        case .doubleTouch: return "TOO MANY IN A ROW — \(scorer)"
         case .zone: return "IN THE ZONE — \(scorer)"
         }
     }

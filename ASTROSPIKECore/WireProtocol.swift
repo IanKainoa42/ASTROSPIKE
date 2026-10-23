@@ -173,7 +173,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 54: ASTROBALL -- a new online format, the host's touches/zone/wall
     //     bounce in its tuning, two rule contacts, three point reasons and
     //     the last-touch seat on the match state.
-    public static let currentVersion: UInt16 = 54
+    // 55: ASTROBALL's same-pilot cap, leaning MAX CROSS line and its push, side colours
+    //     in the host's tuning, and the same-pilot run on the match state.
+    public static let currentVersion: UInt16 = 55
 
     public var version: UInt16
     public var sequence: UInt64

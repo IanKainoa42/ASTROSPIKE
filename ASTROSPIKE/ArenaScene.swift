@@ -59,6 +59,7 @@ final class ArenaScene: SKScene {
     var astroball: AstroballTuning? {
         didSet {
             guard astroball != oldValue else { return }
+            for (seat, marker) in markerNodes { marker.fontColor = seatColor(seat) }
             didBuild = false
             buildArena()
         }
@@ -69,6 +70,9 @@ final class ArenaScene: SKScene {
     /// A hull with its beam locked on wears the same solid rim as its ball,
     /// so the pair reads as one body.
     private var hullLockRings: [Seat: SKShapeNode] = [:]
+    /// ASTROBALL, a side of two: a ring in the side's colour on whoever may
+    /// play the ball next, so a pilot whose run is spent sees the partner lit.
+    private var upRings: [Seat: SKShapeNode] = [:]
     /// YOU and ALLY over the two ships on the pilot's side in doubles, where
     /// two hulls share a colour and nothing else says which one you fly.
     private var markerNodes: [Seat: SKLabelNode] = [:]
@@ -164,6 +168,12 @@ final class ArenaScene: SKScene {
             lockRing.isHidden = true
             hullLockRings[seat] = lockRing
             actorLayer.addChild(lockRing)
+            let upRing = SKShapeNode()
+            upRing.fillColor = .clear
+            upRing.zPosition = 0.4
+            upRing.isHidden = true
+            upRings[seat] = upRing
+            actorLayer.addChild(upRing)
             let marker = SKLabelNode(fontNamed: "Menlo-Bold")
             marker.fontSize = 11
             marker.fontColor = Self.hullColor(for: seat)
@@ -371,7 +381,8 @@ final class ArenaScene: SKScene {
     }
 
     private func seatColor(_ seat: Seat) -> SKColor {
-        seatColors == .freeForAll ? Self.freeForAllColor(for: seat) : Self.hullColor(for: seat)
+        seatColors == .freeForAll ? Self.freeForAllColor(for: seat)
+            : astroball == nil ? Self.hullColor(for: seat) : Self.color(hues.rgb(for: seat))
     }
 
     private func configureActorNodes() {
@@ -405,24 +416,47 @@ final class ArenaScene: SKScene {
         buildLighting(in: frame)
 
         if !isFreeForAllField {
-        let leftZone = SKShapeNode(rect: CGRect(
-            x: frame.minX,
-            y: frame.minY,
-            width: frame.width / 2,
-            height: frame.height
-        ))
-        leftZone.fillColor = Self.color(leftTeam).withAlphaComponent(0.025)
+        // ASTROBALL's middle, between the two MAX CROSS lines above the net,
+        // is anybody's sky: it is drawn neutral and cut out of both halves.
+        let wedge: (tip: CGPoint, top: CGFloat)? = astroball.map { tuning in
+            let tip = point(0, arena.netTopY)
+            let top = point(arena.crossingLimit(atY: arena.ceilingY, astroball: tuning), arena.ceilingY)
+            return (tip, abs(top.x - tip.x))
+        }
+        func half(_ sign: CGFloat) -> CGPath {
+            let outer = sign < 0 ? frame.minX : frame.maxX
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: outer, y: frame.minY))
+            path.addLine(to: CGPoint(x: frame.midX, y: frame.minY))
+            if let wedge {
+                path.addLine(to: wedge.tip)
+                path.addLine(to: CGPoint(x: wedge.tip.x + sign * wedge.top, y: frame.maxY))
+            } else {
+                path.addLine(to: CGPoint(x: frame.midX, y: frame.maxY))
+            }
+            path.addLine(to: CGPoint(x: outer, y: frame.maxY))
+            path.closeSubpath()
+            return path
+        }
+        let leftZone = SKShapeNode(path: half(-1))
+        leftZone.fillColor = teamColor(leftTeam).withAlphaComponent(0.025)
         leftZone.strokeColor = .clear
         arenaLayer.addChild(leftZone)
-        let rightZone = SKShapeNode(rect: CGRect(
-            x: frame.midX,
-            y: frame.minY,
-            width: frame.width / 2,
-            height: frame.height
-        ))
-        rightZone.fillColor = Self.color(leftTeam.opponent).withAlphaComponent(0.025)
+        let rightZone = SKShapeNode(path: half(1))
+        rightZone.fillColor = teamColor(leftTeam.opponent).withAlphaComponent(0.025)
         rightZone.strokeColor = .clear
         arenaLayer.addChild(rightZone)
+        if let wedge {
+            let middle = CGMutablePath()
+            middle.move(to: wedge.tip)
+            middle.addLine(to: CGPoint(x: wedge.tip.x - wedge.top, y: frame.maxY))
+            middle.addLine(to: CGPoint(x: wedge.tip.x + wedge.top, y: frame.maxY))
+            middle.closeSubpath()
+            let neutral = SKShapeNode(path: middle)
+            neutral.fillColor = SKColor.white.withAlphaComponent(0.03)
+            neutral.strokeColor = .clear
+            arenaLayer.addChild(neutral)
+        }
 
         addSideLabel(for: leftTeam, at: point(-0.72, 0.68))
         addSideLabel(for: leftTeam.opponent, at: point(0.72, 0.68))
@@ -492,7 +526,7 @@ final class ArenaScene: SKScene {
             let position = point(sign * world.x, world.y)
             if index == 0 { path.move(to: position) } else { path.addLine(to: position) }
         }
-        let color = Self.color(owningTeam)
+        let color = teamColor(owningTeam)
         let glow = SKShapeNode(path: path)
         glow.strokeColor = color.withAlphaComponent(0.35)
         glow.lineWidth = 12
@@ -879,7 +913,7 @@ final class ArenaScene: SKScene {
             // A sprung peg wears the colour of the team whose half it is on,
             // and follows it when the teams change ends.
             let pegColor: SKColor? = obstacle.isSprung
-                ? Self.color(obstacle.start.x < 0 ? leftTeam : leftTeam.opponent)
+                ? teamColor(obstacle.start.x < 0 ? leftTeam : leftTeam.opponent)
                 : nil
             if pegColor != nil {
                 // No rail of its own: the peg rides the MAX CROSS line.
@@ -1008,7 +1042,7 @@ final class ArenaScene: SKScene {
         for sign in [-1.0, 1.0] {
             // Coloured for the team that defends it: whoever is on that half.
             let color = owner.map { solid ? SKColor(white: 0.55, alpha: 1) : seatColor($0) }
-                ?? Self.color(sign < 0 ? leftTeam : leftTeam.opponent)
+                ?? teamColor(sign < 0 ? leftTeam : leftTeam.opponent)
             let face = CGMutablePath()
             face.move(to: point(half * sign, collarBottom))
             face.addLine(to: point(half * sign, arena.netBottomY))
@@ -1070,7 +1104,7 @@ final class ArenaScene: SKScene {
         let label = SKLabelNode(text: text)
         label.fontName = "AvenirNextCondensed-Bold"
         label.fontSize = 11
-        label.fontColor = (team == .cyan ? SKColor.cyan : .orange).withAlphaComponent(0.35)
+        label.fontColor = teamColor(team).withAlphaComponent(0.35)
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
         label.position = position
@@ -1080,12 +1114,12 @@ final class ArenaScene: SKScene {
 
     private func addSideLabel(for team: Team, at position: CGPoint) {
         let isLocal = team == localTeam
-        let label = SKLabelNode(text: "\(team.rawValue.uppercased()) SIDE" + (isLocal ? " · YOU" : ""))
+        let label = SKLabelNode(text: "\(hues[team].name) SIDE" + (isLocal ? " · YOU" : ""))
         label.fontName = "AvenirNextCondensed-Bold"
         // It was 11pt at 35%, which is part of why nobody could tell whose
         // end was whose.
         label.fontSize = 14
-        label.fontColor = Self.color(team).withAlphaComponent(isLocal ? 0.8 : 0.5)
+        label.fontColor = teamColor(team).withAlphaComponent(isLocal ? 0.8 : 0.5)
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
         label.position = position
@@ -1134,7 +1168,7 @@ final class ArenaScene: SKScene {
         let guardLabel = SKLabelNode(text: "DEFEND")
         guardLabel.fontName = "AvenirNextCondensed-Bold"
         guardLabel.fontSize = 13
-        guardLabel.fontColor = Self.color(localTeam).withAlphaComponent(0.7)
+        guardLabel.fontColor = teamColor(localTeam).withAlphaComponent(0.7)
         guardLabel.horizontalAlignmentMode = outward(defend)
         guardLabel.verticalAlignmentMode = .center
         guardLabel.position = point(defend * (arena.netHalfWidth + 0.035), mouthY)
@@ -1142,21 +1176,32 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(guardLabel)
     }
 
-    private static func color(_ team: Team) -> SKColor {
-        team == .cyan ? .cyan : .orange
+    /// A side's colour: cyan and orange, or ASTROBALL's draw this match.
+    private func teamColor(_ team: Team) -> SKColor {
+        Self.color(hues[team].rgb)
     }
+
+    private var hues: TeamHues { astroball?.hues ?? TeamHues() }
 
     /// The crossing limit on the given half: matched to the side that owns that half
     /// so court ownership is unambiguous.
     private func addCrossingLimit(for owningTeam: Team, onHalfAt sign: Double) {
-        let x = sign * arena.opponentCrossingLimit
-        let color = Self.color(owningTeam)
+        let color = teamColor(owningTeam)
+        // Every court's line stands straight up halfway across the half but
+        // ASTROBALL's, which rises off the top of the net and leans out over
+        // this half the higher it goes.
+        let bottomY = astroball == nil ? arena.floorY + 0.04 : arena.netTopY
+        func lineX(atY y: Double) -> Double {
+            sign * arena.crossingLimit(atY: y, astroball: astroball)
+        }
         let path = CGMutablePath()
-        var y = arena.floorY + 0.04
-        while y < arena.ceilingY {
-            path.move(to: point(x, y))
-            path.addLine(to: point(x, min(y + 0.045, arena.ceilingY)))
-            y += 0.09
+        let span = arena.ceilingY - bottomY
+        let dashes = Int((span / 0.09).rounded(.up))
+        for dash in 0 ..< dashes {
+            let start = bottomY + Double(dash) * 0.09
+            let end = min(start + 0.045, arena.ceilingY)
+            path.move(to: point(lineX(atY: start), start))
+            path.addLine(to: point(lineX(atY: end), end))
         }
         let marker = SKShapeNode(path: path)
         marker.strokeColor = color.withAlphaComponent(0.28)
@@ -1170,7 +1215,7 @@ final class ArenaScene: SKScene {
         label.fontColor = color.withAlphaComponent(0.45)
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
-        label.position = point(x, 0.58)
+        label.position = point(lineX(atY: 0.58), 0.58)
         arenaLayer.addChild(label)
     }
 
@@ -1213,7 +1258,7 @@ final class ArenaScene: SKScene {
         ballSpinTick = snapshot.tick
         let tint = snapshot.freeForAll != nil
             ? snapshot.ball.lastPlay.map { seatColor($0.seat) }
-            : snapshot.lastBallToucher.map { Self.color($0) }
+            : snapshot.lastBallToucher.map { teamColor($0) }
         let fx = labScale
         for (index, node) in balls.enumerated() {
             let ring = gripRings[index]
@@ -1600,7 +1645,7 @@ final class ArenaScene: SKScene {
         guard !reduceMotion else { return }
         let fx = labScale
         let position = point(world.x, world.y)
-        let color = snapshot?.lastBallToucher.map { Self.color($0) } ?? .white
+        let color = snapshot?.lastBallToucher.map { teamColor($0) } ?? .white
         for (tone, size, alpha, curve) in [
             (color, 34 * fx, CGFloat(0.5), SKActionTimingMode.linear),
             (SKColor(red: 1, green: 0.94, blue: 0.86, alpha: 1), 10 * fx, CGFloat(0.6), .easeOut),
@@ -1866,14 +1911,14 @@ final class ArenaScene: SKScene {
                     let goalCenterY = (arena.portalMouthTopY + arena.netBottomY) / 2
                     goalBurst(
                         at: point(0, goalCenterY),
-                        color: scoringTeam == .cyan ? .cyan : .orange
+                        color: teamColor(scoringTeam)
                     )
                 } else if let destroyed = snapshot?.ships.first(where: { $0.key.team == scoringTeam.opponent && $0.value.isDestroyed })?.value {
-                    sparks(at: point(destroyed.position.x, destroyed.position.y), color: scoringTeam.opponent == .cyan ? .cyan : .orange)
+                    sparks(at: point(destroyed.position.x, destroyed.position.y), color: teamColor(scoringTeam.opponent))
                 }
             case let .destruction(team, _):
                 for (seat, ship) in snapshot?.ships ?? [:] where seat.team == team && ship.isDestroyed {
-                    sparks(at: point(ship.position.x, ship.position.y), color: team == .cyan ? .cyan : .orange)
+                    sparks(at: point(ship.position.x, ship.position.y), color: teamColor(team))
                 }
             case let .collisionEffect(position, intensity):
                 if intensity == boltPunch {
@@ -1937,7 +1982,7 @@ final class ArenaScene: SKScene {
             positionX: Float(world.x),
             volume: Float(min(1, max(0.15, speed / 500)))
         )
-        let tint = team.map { Self.color($0) } ?? .white
+        let tint = team.map { teamColor($0) } ?? .white
         addLight(at: position, radius: min(140, max(60, speed * 0.3)) * fx, color: onBall ? tint : .white, life: 0.12)
         kick(min(6, max(1, speed / 90)))
         guard !reduceMotion else { return }
@@ -1989,6 +2034,14 @@ final class ArenaScene: SKScene {
         }
     }
 
+    /// Whether `seat` is ringed as next to play: ASTROBALL in play, on a
+    /// side of two, and the rulebook would let it touch the ball now.
+    private func isUp(_ seat: Seat) -> Bool {
+        guard let astroball, let snapshot, snapshot.match.phase == .playing else { return false }
+        let side = snapshot.ships.filter { $0.key.team == seat.team && !$0.value.isDestroyed }.count
+        return side > 1 && snapshot.astroballUp(tuning: astroball).contains(seat)
+    }
+
     private func update(seat: Seat, state: ShipState?, dt: Double, lights: inout [FloorLight]) {
         guard let shipNode = shipNodes[seat], let exhaust = exhaustNodes[seat] else { return }
         let marker = markerNodes[seat]
@@ -1996,6 +2049,7 @@ final class ArenaScene: SKScene {
             shipNode.isHidden = true
             marker?.isHidden = true
             hullLockRings[seat]?.isHidden = true
+            upRings[seat]?.isHidden = true
             beamRigs[seat]?.crop.isHidden = true
             beamRigs[seat]?.tether.isHidden = true
             beamPulls[seat] = nil
@@ -2016,6 +2070,21 @@ final class ArenaScene: SKScene {
         }
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
+        if let upRing = upRings[seat] {
+            let up = !state.isDestroyed && isUp(seat)
+            upRing.isHidden = !up
+            if up {
+                let radius = CGFloat(ShipHitbox.shared.reach) * pointsPerWorldUnit + 9 * max(labScale, 1)
+                upRing.path = CGPath(
+                    ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
+                    transform: nil
+                )
+                upRing.strokeColor = seatColor(seat).withAlphaComponent(0.85)
+                upRing.lineWidth = 2.5 * max(labScale, 1)
+                upRing.glowWidth = 3
+                upRing.position = point(state.position.x, state.position.y)
+            }
+        }
         if let lockRing = hullLockRings[seat] {
             let locked = !state.isDestroyed && (snapshot?.balls.contains { $0.beamLock?.seat == seat } ?? false)
             lockRing.isHidden = !locked
@@ -2640,7 +2709,7 @@ final class ArenaScene: SKScene {
             ballTrails = Array(repeating: [], count: snapshot.balls.count)
         }
         trailLayer.removeAllChildren()
-        let trailColor: SKColor = snapshot.lastBallToucher.map { Self.color($0) } ?? .white
+        let trailColor: SKColor = snapshot.lastBallToucher.map { teamColor($0) } ?? .white
         for (index, ball) in snapshot.balls.enumerated() {
             ballTrails[index].append(point(ball.position.x, ball.position.y))
             ballTrails[index] = Array(ballTrails[index].suffix(16))
