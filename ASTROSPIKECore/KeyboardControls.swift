@@ -40,6 +40,8 @@ public enum KeyboardControlMapping {
     static let returnKey = 40
     static let escape = 41
     static let keypadEnter = 88
+    static let leftShift = 225
+    static let rightShift = 229
 
     /// The action a key drives, or `nil` if the key is not ours to consume --
     /// in which case the caller must pass the press along the responder chain
@@ -61,6 +63,23 @@ public enum KeyboardControlMapping {
         switch code {
         case escape, keyP: .pause
         case returnKey, keypadEnter: .confirm
+        default: nil
+        }
+    }
+
+    /// Either Shift holds the saber out, like a thumb on the SABER pad.
+    public static func isSaberKey(_ code: Int) -> Bool {
+        code == leftShift || code == rightShift
+    }
+
+    /// The flick a direction key makes while Shift holds the saber. The
+    /// steering keys flick, so the hand that flies is the hand that swings.
+    public static func saberFlick(forKeyCode code: Int) -> SaberFlick? {
+        switch code {
+        case keyA, leftArrow: .left
+        case keyD, rightArrow: .right
+        case keyW, upArrow: .up
+        case keyS, downArrow: .down
         default: nil
         }
     }

@@ -47,6 +47,27 @@ struct KeyboardControlTests {
         }
     }
 
+    @Test("Shift holds the saber and the steering keys flick it")
+    func shiftHoldsTheSaber() {
+        #expect(KeyboardControlMapping.isSaberKey(225))
+        #expect(KeyboardControlMapping.isSaberKey(229))
+        for code in [225, 229] {
+            #expect(KeyboardControlMapping.action(forKeyCode: code) == nil)
+            #expect(KeyboardControlMapping.command(forKeyCode: code) == nil)
+        }
+        let flicks: [(Int, SaberFlick)] = [
+            (4, .left), (80, .left), (7, .right), (79, .right),
+            (26, .up), (82, .up), (22, .down), (81, .down),
+        ]
+        for (code, flick) in flicks {
+            #expect(KeyboardControlMapping.saberFlick(forKeyCode: code) == flick)
+        }
+        // Space, pause and confirm never flick.
+        for code in [44, 41, 19, 40, 88] {
+            #expect(KeyboardControlMapping.saberFlick(forKeyCode: code) == nil)
+        }
+    }
+
     @Test("Escape pauses and Return confirms")
     func escapeAndReturnAreWiredTheObviousWay() {
         #expect(KeyboardControlMapping.command(forKeyCode: 41) == .pause)

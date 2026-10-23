@@ -13,17 +13,25 @@ struct KeyboardControls: UIViewRepresentable {
     /// Match commands (pause, confirm). Nil while a sheet is up, so the keys
     /// fall through to the system and Escape still dismisses what is on screen.
     var onCommand: ((FlightControlCommand) -> Void)?
+    /// Shift held and the flicks made under it. Nil outside ASTROBALL, so
+    /// Shift and the direction keys behave as they always have there.
+    var saberChanged: ((Bool) -> Void)?
+    var saberFlicked: ((SaberFlick) -> Void)?
 
     func makeUIView(context: Context) -> KeyboardCaptureView {
         let view = KeyboardCaptureView()
         view.inputChanged = apply
         view.commandFired = onCommand
+        view.saberChanged = saberChanged
+        view.saberFlicked = saberFlicked
         return view
     }
 
     func updateUIView(_ view: KeyboardCaptureView, context: Context) {
         view.inputChanged = apply
         view.commandFired = onCommand
+        view.saberChanged = saberChanged
+        view.saberFlicked = saberFlicked
     }
 
     private func apply(_ held: Set<FlightControlAction>) {
@@ -38,7 +46,10 @@ struct KeyboardControls: UIViewRepresentable {
 final class KeyboardCaptureView: UIView {
     var inputChanged: ((Set<FlightControlAction>) -> Void)?
     var commandFired: ((FlightControlCommand) -> Void)?
+    var saberChanged: ((Bool) -> Void)?
+    var saberFlicked: ((SaberFlick) -> Void)?
     private var held: Set<FlightControlAction> = []
+    private var saberHeld = false
 
     override var canBecomeFirstResponder: Bool { true }
 
@@ -89,6 +100,20 @@ final class KeyboardCaptureView: UIView {
     private func update(_ press: UIPress, pressed: Bool) -> Bool {
         guard let code = press.key?.keyCode.rawValue else { return false }
 
+        if let saberChanged, KeyboardControlMapping.isSaberKey(code) {
+            saberHeld = pressed
+            saberChanged(pressed)
+            return true
+        }
+
+        // Under Shift a direction key flicks the blade instead of flying. Only
+        // the key-down is taken: its key-up falls through below, so a key held
+        // before Shift went down is still let go of.
+        if pressed, saberHeld, let saberFlicked, let flick = KeyboardControlMapping.saberFlick(forKeyCode: code) {
+            saberFlicked(flick)
+            return true
+        }
+
         if let action = KeyboardControlMapping.action(forKeyCode: code) {
             if pressed {
                 held.insert(action)
@@ -106,6 +131,7 @@ final class KeyboardCaptureView: UIView {
                 // Steering is not held through a pause.
                 held.removeAll()
                 inputChanged?(held)
+                releaseSaber()
                 commandFired(command)
             }
             return true
@@ -113,7 +139,14 @@ final class KeyboardCaptureView: UIView {
         return false
     }
 
+    private func releaseSaber() {
+        guard saberHeld else { return }
+        saberHeld = false
+        saberChanged?(false)
+    }
+
     private func releaseAll() {
+        releaseSaber()
         guard !held.isEmpty else { return }
         held.removeAll()
         inputChanged?(held)
