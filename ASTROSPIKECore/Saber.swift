@@ -141,9 +141,12 @@ extension ShipState {
     mutating func stepSaber(held: Bool, flick: SaberFlick?, flickCount: UInt8, netward: Double, dt: Double) -> Bool {
         let rate = dt / Saber.drawTime
         // A press takes the pilot's count as it stands: the last flick of an
-        // earlier press is not a new one.
-        if held, !saber.isOut { saber.flickCount = flickCount }
+        // earlier press is not a new one. Drawn first: a sheathed saber is
+        // not stored, so a count written before the blade is out was thrown
+        // away and every press after the first flick replayed that flick.
+        let pressed = held && !saber.isOut
         saber.drawn = held ? 1 : max(0, saber.drawn - rate)
+        if pressed { saber.flickCount = flickCount }
         // Only a held pad reads flicks, and only a new count starts a move:
         // a dropped packet repeats the last count, an idle tick sends none.
         if held {

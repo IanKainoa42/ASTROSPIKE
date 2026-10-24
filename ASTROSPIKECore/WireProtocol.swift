@@ -180,7 +180,7 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 57: ASTROBALL's MAX CROSS is a hard line (the push slider is gone from
     //     its tuning), touches debounce for 0.3 s and bolts share it, and
     //     the saber draws in one step.
-    public static let currentVersion: UInt16 = 59
+    public static let currentVersion: UInt16 = 60
 
     public var version: UInt16
     public var sequence: UInt64

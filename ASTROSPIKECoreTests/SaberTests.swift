@@ -187,6 +187,35 @@ struct SaberTests {
         #expect(engine.state.ball.velocity.y > 0, "the ball fell through the blade")
     }
 
+    @Test("A fresh press after a flick only draws the blade: the old flick is not replayed")
+    func pressAfterFlickDoesNotSpin() {
+        var engine = engine()
+        engine.state.ships[.cyan]!.saber = SaberState()
+        var tick: UInt64 = 0
+        engine.step(inputs: [.cyan: held(tick)]); tick += 1
+        engine.step(inputs: [.cyan: held(tick, flick: .left, count: 1)]); tick += 1
+        #expect(engine.state.ships[.cyan]!.saber.move == .spinLeft)
+        // Let go until the blade is sheathed and the move is over.
+        for _ in 0 ..< ticks(Saber.spinDuration + Saber.drawTime, engine) {
+            engine.step(inputs: [.cyan: PlayerInput(tick: tick, torque: 0, thrust: false, saberFlick: .left, saberFlickCount: 1)])
+            tick += 1
+        }
+        #expect(!engine.state.ships[.cyan]!.saber.isOut)
+        // Press again, twice: the input still carries the last flick and its count.
+        for _ in 0 ..< 2 {
+            for _ in 0 ..< 5 {
+                engine.step(inputs: [.cyan: held(tick, flick: .left, count: 1)])
+                tick += 1
+                #expect(engine.state.ships[.cyan]!.saber.isOut)
+                #expect(engine.state.ships[.cyan]!.saber.move == nil, "a plain press spun the hull")
+            }
+            for _ in 0 ..< ticks(Saber.drawTime, engine) {
+                engine.step(inputs: [.cyan: PlayerInput(tick: tick, torque: 0, thrust: false, saberFlick: .left, saberFlickCount: 1)])
+                tick += 1
+            }
+        }
+    }
+
     @Test("The saber flies in a duel too; the blade drops the beam; a stun drops the move")
     func limits() {
         var duel = engine(astroball: false)
