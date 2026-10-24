@@ -779,6 +779,19 @@ public struct ArenaGeometry: Equatable, Sendable {
         return (closest + normal * combined, normal)
     }
 
+    /// Whether the floor-mounted net stands between `start` and `end`: the
+    /// straight line between them crosses the slab at or below its cap. A
+    /// beam is a net-stopped thing, so it reaches only its own side.
+    public func netBlocks(from start: SIMD2<Double>, to end: SIMD2<Double>) -> Bool {
+        guard netStyle == .floorWall else { return false }
+        let edge = netHalfWidth
+        if (start.x > edge && end.x > edge) || (start.x < -edge && end.x < -edge) { return false }
+        let dx = end.x - start.x
+        let t = abs(dx) > 0.000_001 ? min(1, max(0, -start.x / dx)) : 0
+        let crossY = start.y + (end.y - start.y) * t
+        return crossY <= netTopY + edge
+    }
+
     /// Swept version. The slab is thin and a driven ball crosses several of
     /// its own radii a tick, so left unswept it simply teleports through.
     public func floorNetContact(

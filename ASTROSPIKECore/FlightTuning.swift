@@ -187,7 +187,8 @@ public final class FlightTuningStore {
             boltHit: boltHit,
             beamLock: beamLock,
             beamSwing: beamSwing,
-            ring: RingTuning.stored(in: defaults)
+            ring: RingTuning.stored(in: defaults),
+            astroball: AstroballTuning.stored(in: defaults)
         )
     }
 

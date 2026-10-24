@@ -1837,6 +1837,8 @@ public struct SimulationEngine: Sendable {
             let toward = offset / distance
             let along = simd_dot(toward, nose)
             guard along > Self.tractorCone else { continue }
+            // The net stops the beam: nothing on the far side is reached.
+            guard !arena.netBlocks(from: ship.position, to: state.balls[ballIndex].position) else { continue }
             let falloff = 1 - distance / range
             let centring = (along - Self.tractorCone) / (1 - Self.tractorCone)
             let grip = falloff * centring
@@ -2039,6 +2041,7 @@ public struct SimulationEngine: Sendable {
         let toward = offset / distance
         let along = simd_dot(toward, SIMD2(cos(ship.angle), sin(ship.angle)))
         guard along > Self.tractorCone else { return nil }
+        guard !arena.netBlocks(from: ship.position, to: point) else { return nil }
         return ((1 - distance / range) * (along - Self.tractorCone) / (1 - Self.tractorCone), toward)
     }
 

@@ -526,7 +526,10 @@ final class ArenaScene: SKScene {
     /// The stretch of a half's wall path the ball must not touch, glowing in
     /// the colour of the side that loses the point on it.
     private func addScoringZone(_ tuning: AstroballTuning, for owningTeam: Team, onHalfAt sign: Double) {
-        guard let zone = tuning.zoneRange else { return }
+        for zone in tuning.zoneRanges { addZoneStroke(zone, for: owningTeam, onHalfAt: sign) }
+    }
+
+    private func addZoneStroke(_ zone: ClosedRange<Double>, for owningTeam: Team, onHalfAt sign: Double) {
         let low = zone.lowerBound
         let high = zone.upperBound
         let steps = max(2, Int(((high - low) * 120).rounded(.up)))
@@ -2289,6 +2292,7 @@ final class ArenaScene: SKScene {
             guard distance > 0, distance < range else { continue }
             let along = simd_dot(offset / distance, heading)
             guard along > cone else { continue }
+            guard !arena.netBlocks(from: tip, to: ball.position) else { continue }
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
             if hold > grip { grip = hold; held = index }
         }
@@ -2306,6 +2310,7 @@ final class ArenaScene: SKScene {
             guard distance > 0, distance < range else { continue }
             let along = simd_dot(offset / distance, heading)
             guard along > cone else { continue }
+            guard !arena.netBlocks(from: tip, to: peg) else { continue }
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
             if hold > grip { grip = hold; heldPoint = peg }
         }
@@ -2318,6 +2323,7 @@ final class ArenaScene: SKScene {
             guard distance > 0, distance < range else { continue }
             let along = simd_dot(offset / distance, heading)
             guard along > cone else { continue }
+            guard !arena.netBlocks(from: tip, to: ship.position) else { continue }
             let hold = (1 - distance / range) * ((along - cone) / (1 - cone))
             if hold > grip { grip = hold; heldPoint = ship.position }
         }

@@ -124,22 +124,35 @@ struct AstroballTests {
         #expect(tuning.zoneRange == 0 ... 1)
         tuning.zoneEnd = .infinity
         #expect(tuning.zoneRange == nil)
-        #expect(!tuning.zoneContains(0.5))
+        #expect(!tuning.zoneContains(0.02))
         tuning.zoneEnd = .nan
         #expect(tuning.zoneRange == nil)
     }
 
-    @Test("The default zone is the half of the floor nearest the net")
+    @Test("Default zones: the quarter of the floor nearest the net, and the back corner plus lower quarter of the wall")
     func defaultZone() {
         let court = ArenaGeometry.astroball(doubles: false)
         let tuning = AstroballTuning()
         let floor = court.cornerTangentX - court.netHalfWidth
-        let near = court.wallPathFraction(at: SIMD2(court.netHalfWidth + floor * 0.3, court.floorY))!
-        let far = court.wallPathFraction(at: SIMD2(-(court.netHalfWidth + floor * 0.7), court.floorY))!
+        let near = court.wallPathFraction(at: SIMD2(court.netHalfWidth + floor * 0.2, court.floorY))!
+        let mid = court.wallPathFraction(at: SIMD2(-(court.netHalfWidth + floor * 0.6), court.floorY))!
         #expect(tuning.zoneContains(near))
-        #expect(!tuning.zoneContains(far))
-        let wall = court.wallPathFraction(at: SIMD2(court.halfWidth, (court.floorY + court.ceilingY) / 2))!
-        #expect(!tuning.zoneContains(wall))
+        #expect(!tuning.zoneContains(mid))
+        let lowWall = court.wallPathFraction(at: SIMD2(court.halfWidth, court.floorY + (court.ceilingY - court.floorY) * 0.1))!
+        let highWall = court.wallPathFraction(at: SIMD2(court.halfWidth, (court.floorY + court.ceilingY) / 2))!
+        #expect(tuning.zoneContains(lowWall))
+        #expect(!tuning.zoneContains(highWall))
+        let corner = court.wallPathFraction(at: court.wallPathPoint(at: tuning.zone2Start + 0.01))!
+        #expect(tuning.zoneContains(corner))
+    }
+
+    @Test("The net stops the beam; either side of it is clear")
+    func netBlocksBeam() {
+        let court = ArenaGeometry.volleyball
+        #expect(court.netBlocks(from: SIMD2(-0.3, court.floorY + 0.1), to: SIMD2(0.3, court.floorY + 0.1)))
+        #expect(!court.netBlocks(from: SIMD2(-0.3, 0.2), to: SIMD2(0.3, 0.2)))
+        #expect(!court.netBlocks(from: SIMD2(0.2, court.floorY + 0.1), to: SIMD2(0.5, court.floorY + 0.1)))
+        #expect(!ArenaGeometry.standard.netBlocks(from: SIMD2(-0.3, 0), to: SIMD2(0.3, 0)))
     }
 
     @Test("The wall path runs floor, corner, wall, corner; the roof's flat is off it")
@@ -267,7 +280,7 @@ struct AstroballTests {
     }
 
     @Test("Settings round-trip through defaults, clamped, defaults leaving no key")
-    func storedRoundTrip() throws {
+    @MainActor func storedRoundTrip() throws {
         let defaults = try #require(UserDefaults(suiteName: "astroball-tests-\(UUID().uuidString)"))
         AstroballTuning().store(in: defaults)
         #expect(defaults.object(forKey: AstroballTuning.zoneEndKey) == nil)
@@ -280,6 +293,7 @@ struct AstroballTests {
         tuning.crossLean = 0.5
         tuning.store(in: defaults)
         #expect(AstroballTuning.stored(in: defaults) == tuning)
+        #expect(FlightTuningStore(defaults: defaults).snapshot.astroball == tuning)
         defaults.set(9, forKey: AstroballTuning.soloTouchesKey)
         defaults.set(0, forKey: AstroballTuning.inARowKey)
         defaults.set(5.0, forKey: AstroballTuning.crossLeanKey)

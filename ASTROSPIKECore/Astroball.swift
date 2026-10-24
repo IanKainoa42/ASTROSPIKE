@@ -21,6 +21,10 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// floor, round the corner, up the wall and round into the roof.
     public var zoneStart = 0.0
     public var zoneEnd = AstroballTuning.defaultZoneEnd
+    /// A second zone, by default the back of the court: the floor corner and
+    /// the lower quarter of the side wall.
+    public var zone2Start = AstroballTuning.defaultZone2Start
+    public var zone2End = AstroballTuning.defaultZone2End
     /// How much speed the ball keeps off the walls, roof and corners. The
     /// duel's are 0.82; lower soaks a spike up instead of firing it back.
     public var wallBounce = 0.5
@@ -43,10 +47,28 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// phone paints the same court.
     public var hues = TeamHues()
 
-    /// The half of the floor nearest the net.
-    public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.5)
+    /// The quarter of the floor nearest the net: straight-down spikes.
+    public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.25)
+    /// From the end of the flat floor, round the corner, up a quarter of the wall.
+    public static let defaultZone2Start = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 1)
+    public static let defaultZone2End = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofWall: 0.25)
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case soloTouches, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce
+    }
+
+    /// Hosts older than the second zone omit its ends: they read the default.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        soloTouches = try container.decodeIfPresent(Int.self, forKey: .soloTouches) ?? soloTouches
+        zoneStart = try container.decodeIfPresent(Double.self, forKey: .zoneStart) ?? zoneStart
+        zoneEnd = try container.decodeIfPresent(Double.self, forKey: .zoneEnd) ?? zoneEnd
+        zone2Start = try container.decodeIfPresent(Double.self, forKey: .zone2Start) ?? zone2Start
+        zone2End = try container.decodeIfPresent(Double.self, forKey: .zone2End) ?? zone2End
+        wallBounce = try container.decodeIfPresent(Double.self, forKey: .wallBounce) ?? wallBounce
+    }
 
     /// The touch cap for a side flown by `pilots` hulls.
     public func touchLimit(pilots: Int) -> Int {
@@ -56,22 +78,30 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// Whether `fraction` along a half's wall path is in the zone. The two
     /// ends may arrive either way round.
     public func zoneContains(_ fraction: Double) -> Bool {
-        guard let zone = zoneRange else { return false }
-        return zone.contains(fraction)
+        zoneRanges.contains { $0.contains(fraction) }
+    }
+
+    /// Both zones, in order, each clamped; empty ones left out.
+    public var zoneRanges: [ClosedRange<Double>] {
+        [Self.range(zoneStart, zoneEnd), Self.range(zone2Start, zone2End)].compactMap { $0 }
+    }
+
+    private static func range(_ a: Double, _ b: Double) -> ClosedRange<Double>? {
+        guard a.isFinite, b.isFinite else { return nil }
+        let low = min(1, max(0, min(a, b)))
+        let high = min(1, max(0, max(a, b)))
+        return high > low ? low ... high : nil
     }
 
     /// The zone's ends in order, clamped to the path. Nil when it is empty
     /// or a host's numbers off the wire are not finite.
-    public var zoneRange: ClosedRange<Double>? {
-        guard zoneStart.isFinite, zoneEnd.isFinite else { return nil }
-        let low = min(1, max(0, min(zoneStart, zoneEnd)))
-        let high = min(1, max(0, max(zoneStart, zoneEnd)))
-        return high > low ? low ... high : nil
-    }
+    public var zoneRange: ClosedRange<Double>? { Self.range(zoneStart, zoneEnd) }
 
     public static let soloTouchesKey = "astroball.soloTouches"
     public static let zoneStartKey = "astroball.zoneStart"
     public static let zoneEndKey = "astroball.zoneEnd"
+    public static let zone2StartKey = "astroball.zone2Start"
+    public static let zone2EndKey = "astroball.zone2End"
     public static let wallBounceKey = "astroball.wallBounce"
     public static let inARowKey = "astroball.inARow"
     public static let crossLeanKey = "astroball.crossLean"
@@ -85,6 +115,8 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         }
         if let value = defaults.object(forKey: zoneStartKey) as? Double { tuning.zoneStart = min(1, max(0, value)) }
         if let value = defaults.object(forKey: zoneEndKey) as? Double { tuning.zoneEnd = min(1, max(0, value)) }
+        if let value = defaults.object(forKey: zone2StartKey) as? Double { tuning.zone2Start = min(1, max(0, value)) }
+        if let value = defaults.object(forKey: zone2EndKey) as? Double { tuning.zone2End = min(1, max(0, value)) }
         if let value = defaults.object(forKey: wallBounceKey) as? Double {
             tuning.wallBounce = min(wallBounceRange.upperBound, max(wallBounceRange.lowerBound, value))
         }
@@ -103,6 +135,8 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if soloTouches == base.soloTouches { defaults.removeObject(forKey: Self.soloTouchesKey) } else { defaults.set(soloTouches, forKey: Self.soloTouchesKey) }
         if zoneStart == base.zoneStart { defaults.removeObject(forKey: Self.zoneStartKey) } else { defaults.set(zoneStart, forKey: Self.zoneStartKey) }
         if zoneEnd == base.zoneEnd { defaults.removeObject(forKey: Self.zoneEndKey) } else { defaults.set(zoneEnd, forKey: Self.zoneEndKey) }
+        if zone2Start == base.zone2Start { defaults.removeObject(forKey: Self.zone2StartKey) } else { defaults.set(zone2Start, forKey: Self.zone2StartKey) }
+        if zone2End == base.zone2End { defaults.removeObject(forKey: Self.zone2EndKey) } else { defaults.set(zone2End, forKey: Self.zone2EndKey) }
         if wallBounce == base.wallBounce { defaults.removeObject(forKey: Self.wallBounceKey) } else { defaults.set(wallBounce, forKey: Self.wallBounceKey) }
         if inARow == base.inARow { defaults.removeObject(forKey: Self.inARowKey) } else { defaults.set(inARow, forKey: Self.inARowKey) }
         if crossLean == base.crossLean { defaults.removeObject(forKey: Self.crossLeanKey) } else { defaults.set(crossLean, forKey: Self.crossLeanKey) }
@@ -200,6 +234,15 @@ public extension ArenaGeometry {
         let total = wallPathLength
         guard total > 0 else { return 0 }
         return wallPathPieces.floor * min(1, max(0, share)) / total
+    }
+
+    /// The fraction of the path at which `share` of the straight side wall,
+    /// measured up from the floor corner, ends.
+    func wallPathFraction(ofWall share: Double) -> Double {
+        let total = wallPathLength
+        guard total > 0 else { return 0 }
+        let pieces = wallPathPieces
+        return (pieces.floor + pieces.corner + pieces.wall * min(1, max(0, share))) / total
     }
 
     /// Where along its half's wall path a point on the court's skin sits,
