@@ -441,9 +441,21 @@ final class GameSession {
         isPaused = false
     }
 
-    func setApplicationActive(_ active: Bool) {
-        guard mode != .online else { return }
-        isPaused = !active
+    /// Leaving the app pauses a local match; coming back does not resume it.
+    /// The player taps Resume on the pause card, so bots never play on under
+    /// it and a match backgrounded mid-rally never restarts unannounced.
+    func pauseForBackground() {
+        guard mode != .online, state.match.phase != .finished else { return }
+        isPaused = true
+    }
+
+    /// The limit on each side's touches this possession in ASTROBALL, for
+    /// the HUD to meter; nil in every other mode, where touches are free.
+    var touchLimits: SideCounts? {
+        guard let tuning = engine.configuration.astroball else { return nil }
+        var pilots = SideCounts()
+        for seat in state.ships.keys { pilots[seat.team] += 1 }
+        return VolleyRules(tuning: tuning, pilots: pilots).touchLimit
     }
 
     /// The court as it currently stands, cut for the ball now in play. Read
@@ -802,7 +814,8 @@ final class GameSession {
         if presentsLocalEvents,
            let point = events.first(where: { if case .point = $0 { true } else { false } }) {
             lastPointText = point.label(
-                bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues
+                bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues,
+                localTeam: flownSeat?.team
             )
             if case let .point(team, reason) = point {
                 FeedbackCenter.shared.point(team: team, reason: reason)
@@ -1215,22 +1228,31 @@ final class FrameDriver: NSObject {
 }
 
 private extension SimulationEvent {
-    func label(bounceAllowance: Int, teamHues: TeamHues = TeamHues()) -> String {
+    /// The call for a point. From the flying pilot's side when there is
+    /// one: a fault names who made it (YOU or RIVAL) and who it pays, since
+    /// "BOUNCE LIMIT — ORANGE" named the side that was *paid* and read as
+    /// the other side's mistake. A spectator gets the colours.
+    func label(bounceAllowance: Int, teamHues: TeamHues = TeamHues(), localTeam: Team? = nil) -> String {
         if case let .setEnded(winner, sets) = self {
             return "\(teamHues[winner].name) TAKES THE SET · \(sets.cyan)–\(sets.orange)"
         }
         guard case let .point(team, reason) = self else { return "" }
         let scorer = teamHues[team].name
+        let fault: String
         switch reason {
-        case .goal: return "\(scorer) GOAL"
-        case .thirdBounce: return "BOUNCE LIMIT (\(bounceAllowance)) — \(scorer)"
-        case .crash: return "CRASH — \(scorer)"
-        case .netContact: return "NET / CROSS — \(scorer)"
-        case .forfeit: return "FORFEIT — \(scorer)"
-        case .touchLimit: return "TOO MANY TOUCHES — \(scorer)"
-        case .doubleTouch: return "TOO MANY IN A ROW — \(scorer)"
-        case .zone: return "IN THE ZONE — \(scorer)"
+        case .goal:
+            if let localTeam { return team == localTeam ? "YOUR GOAL" : "RIVAL GOAL" }
+            return "\(scorer) GOAL"
+        case .thirdBounce: fault = "BOUNCE LIMIT (\(bounceAllowance))"
+        case .crash: fault = "CRASH"
+        case .netContact: fault = "NET / CROSS"
+        case .forfeit: fault = "FORFEIT"
+        case .touchLimit: fault = "TOO MANY TOUCHES"
+        case .doubleTouch: fault = "TOO MANY IN A ROW"
+        case .zone: fault = "IN THE ZONE"
         }
+        guard let localTeam else { return "\(fault) — \(scorer)" }
+        return team == localTeam ? "RIVAL: \(fault) · YOUR POINT" : "YOU: \(fault) · RIVAL POINT"
     }
 
     /// The call for how a goal went in, under the scorer's name.

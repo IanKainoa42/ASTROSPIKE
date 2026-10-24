@@ -56,13 +56,16 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case soloTouches, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce
+        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, crossLean, hues
     }
 
     /// Hosts older than the second zone omit its ends: they read the default.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         soloTouches = try container.decodeIfPresent(Int.self, forKey: .soloTouches) ?? soloTouches
+        inARow = try container.decodeIfPresent(Int.self, forKey: .inARow) ?? inARow
+        crossLean = try container.decodeIfPresent(Double.self, forKey: .crossLean) ?? crossLean
+        hues = try container.decodeIfPresent(TeamHues.self, forKey: .hues) ?? hues
         zoneStart = try container.decodeIfPresent(Double.self, forKey: .zoneStart) ?? zoneStart
         zoneEnd = try container.decodeIfPresent(Double.self, forKey: .zoneEnd) ?? zoneEnd
         zone2Start = try container.decodeIfPresent(Double.self, forKey: .zone2Start) ?? zone2Start

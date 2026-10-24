@@ -224,7 +224,10 @@ struct AstroballTests {
     func zoneLandingScores() {
         let court = ArenaGeometry.astroball(doubles: false)
         let floor = court.cornerTangentX - court.netHalfWidth
-        for (share, scores) in [(0.25, true), (0.8, false)] {
+        // The default zone is the quarter of the floor nearest the net, so
+        // a landing well inside it scores and one past it, short of the
+        // corner zone, does not.
+        for (share, scores) in [(0.1, true), (0.5, false), (0.8, false)] {
             var engine = astroballEngine()
             engine.state.ships[.cyan]!.position = .init(-0.9, 0.4)
             engine.state.ships[.orange]!.position = .init(0.9, 0.4)
@@ -428,7 +431,10 @@ struct AstroballTests {
         #expect(TeamHues()[.cyan] == .cyan && TeamHues()[.orange] == .orange, "the duel keeps cyan and orange")
         var tuning = AstroballTuning()
         tuning.hues = TeamHues(cyan: .green, orange: .pink)
+        tuning.inARow = 3
+        tuning.crossLean = 0.45
         let wire = try? JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning))
         #expect(wire?.hues == tuning.hues, "the host's colours ride the seating plan")
+        #expect(wire?.inARow == 3 && wire?.crossLean == 0.45, "every host setting rides the wire")
     }
 }

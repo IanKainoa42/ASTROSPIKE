@@ -1375,6 +1375,7 @@ private struct GameView: View {
                         state: session.state,
                         localTeam: localTeam,
                         allowedBounces: allowedBounces,
+                        touchLimits: session.touchLimits,
                         // The diagnostics preview is a staged snapshot with
                         // no Game Center behind it; handing the HUD the live
                         // coordinator would print GAME CENTER OFFLINE under it.
@@ -1637,7 +1638,12 @@ private struct GameView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            session.setApplicationActive(phase == .active)
+            // Leaving the app pauses and raises the card; coming back leaves
+            // both as they are, so the match waits for Resume instead of
+            // playing on under the card or restarting the instant it shows.
+            guard phase != .active, mode.isOffline, session.state.match.phase != .finished else { return }
+            session.pauseForBackground()
+            showPause = true
         }
         .onChange(of: session.state.match.score[localTeam]) { old, new in
             // A point for our side invites a taunt; the nudge lapses with
@@ -2093,6 +2099,9 @@ private struct MatchHUD: View {
     let state: WorldState
     let localTeam: Team
     let allowedBounces: Int
+    /// ASTROBALL's touch limit a side, to meter against `shipTouches`; nil
+    /// where touches are free.
+    var touchLimits: SideCounts? = nil
     let online: OnlineMatchCoordinator?
     /// Each colour's pilot by name, at an open table.
     var teamNames: [Team: String]? = nil
@@ -2213,6 +2222,7 @@ private struct MatchHUD: View {
         let tint = tint(team)
         let value = state.match.score[team]
         let bounces = state.match.floorContacts[team]
+        let touches = min(state.match.shipTouches[team], touchLimits?[team] ?? 0)
         let stake = state.match.stake(for: team)
         let isLocal = !spectating && team == localTeam
         let tag: String = isLocal ? "YOU" : (teamNames?[team] ?? (online == nil ? "CPU" : "OPP"))
@@ -2246,20 +2256,35 @@ private struct MatchHUD: View {
                             .stroke(tint, lineWidth: stake == .matchPoint ? 3 : 1.5)
                     }
                 }
-            // Down arrows are bounces spent this possession. Touches are
-            // free, so there is nothing to meter for them.
-            HStack(spacing: 1) {
-                ForEach(0..<allowedBounces, id: \.self) { index in
-                    Image(systemName: "arrow.down")
-                        .foregroundStyle(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
+            // Down arrows are bounces spent this possession. In ASTROBALL a
+            // row of dots above them is touches spent of the side's limit,
+            // since TOO MANY TOUCHES was called with nothing on screen
+            // counting up to it.
+            VStack(spacing: 2) {
+                if let limit = touchLimits?[team] {
+                    HStack(spacing: 2) {
+                        ForEach(0..<limit, id: \.self) { index in
+                            Image(systemName: "circle.fill")
+                                .foregroundStyle(index < touches ? tint.opacity(0.9) : .white.opacity(0.16))
+                        }
+                    }
+                    .font(.system(size: 6, weight: .black))
+                    .accessibilityIdentifier("hud-touches")
                 }
+                HStack(spacing: 1) {
+                    ForEach(0..<allowedBounces, id: \.self) { index in
+                        Image(systemName: "arrow.down")
+                            .foregroundStyle(index < bounces ? tint.opacity(0.75) : .white.opacity(0.16))
+                    }
+                }
+                .font(.system(size: 10, weight: .black))
             }
-            .font(.system(size: 10, weight: .black))
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             side
                 + "\(team.rawValue) score \(value), \(bounces) of \(allowedBounces) bounces used"
+                + (touchLimits.map { ", \(touches) of \($0[team]) touches used" } ?? "")
                 + (stake == .none ? "" : stake == .matchPoint ? ", match point" : ", set point")
         )
     }
@@ -2394,14 +2419,16 @@ private struct FlightTutorial: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Hold left or right to rotate. Release to stop turning; your ship keeps its current angle and flight momentum.")
+                    TutorialCard(number: "01", icon: "arrow.left.and.right", title: "STEER", text: "Press left or right to rotate, and slide your thumb outward for a harder turn. Release to stop turning; your ship keeps its current angle and flight momentum.")
                     TutorialCard(number: "02", icon: "flame.fill", title: "THRUST", text: "Hold for steady main-engine acceleration. There is no auto-leveling and no brake. The exhaust is a real jet: a ball sitting in your plume gets shoved down it, so you can hover under a dropping ball to cushion it or blast one away. That is not a touch.")
-                    TutorialCard(number: "02b", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court, and you can fire from anywhere short of the MAX CROSS line, but not from the ground. A bolt that hits an enemy hull knocks it about: shoved, stunned or spun, as the host picks.")
-                    TutorialCard(number: "03", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer and W or up arrow to thrust, with Space to fire. The arrow keys steer too. Hold Shift for the saber and flick it with the arrows or WASD. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
-                    TutorialCard(number: "04", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Touch it as often as you like; three bounces on your floor between touches, and the fourth is theirs.")
-                    TutorialCard(number: "05", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
-                    TutorialCard(number: "06", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
-                    TutorialCard(number: "07", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal or a fourth bounce. Touches are unlimited. After every set the teams switch sides and keep their colours, so everyone plays both halves.")
+                    TutorialCard(number: "03", icon: "bolt.fill", title: "FIRE", text: "Tap to fire a bolt from the nose. It knocks the ball along the line you are pointing and is not a touch. Bolts fly the whole court, and you can fire from anywhere short of the MAX CROSS line (the coloured line on their half you cannot fly past), but not from the ground. A bolt that hits an enemy hull knocks it about: shoved, stunned or spun, as the host picks.")
+                    TutorialCard(number: "04", icon: "arrow.down.to.line.compact", title: "PULL", text: "Hold to reel the ball in with the tractor beam. It reaches anywhere on the court and pulls enemy hulls too. Keep holding once the ball lands on your hull and it locks there: swing it, pump it, let go to throw it. Score within a second of letting go and it is a SLAM DUNK. The lock breaks on the ground, a rival's touch, any bolt, or drawing the saber.")
+                    TutorialCard(number: "05", icon: "line.diagonal", title: "SABER", text: "Hold to draw a blade from the nose; let go to sheathe it. The ball comes off the blade along the angle it met it, so the pace is your swing. Flick the pad fast while holding: left or right spins the hull a full turn, up is a dink, down a spike. Drawing it breaks a beam lock. In ASTROBALL a blade hit is a touch.")
+                    TutorialCard(number: "06", icon: "keyboard", title: "KEYBOARD", text: "On a Mac, or with a keyboard attached, fly with A and D to steer, W or up arrow to thrust, Space to fire and S or down arrow to pull. The arrow keys steer too. Hold Shift for the saber and flick it with the arrows or WASD. Escape or P pauses, return confirms — the whole match runs without the screen. Touch and keys work together.")
+                    TutorialCard(number: "07", icon: "volleyball.fill", title: "SCORE", text: "The goal hangs from the roof, dead centre, and it is a portal. The face on your side is yours to defend: a ball that goes in through it is a point for the other side. Get the ball into their half, lifted, and into the face over there — or make them put it into their own. Clip the hard rounded bottom and it just bounces. Touch it as often as you like; three bounces on your floor between touches, and the fourth is theirs.")
+                    TutorialCard(number: "08", icon: "tray.and.arrow.down.fill", title: "THE LIP", text: "A ledge juts out under each face and tilts inward: a ball that lands on the lip rolls straight into the portal. Skim the ball under the cap so it drops onto the far lip, and it is in. Above the goal the roof bulges with the same curve as the corners, so nothing rides the ceiling into the mouth. Neither the lip nor the bulge counts as a bounce.")
+                    TutorialCard(number: "09", icon: "arrow.left.and.right.circle.fill", title: "CROSS", text: "Fly under the goal, or straight through the portal itself, to reach the opponent’s side — the net stops the ball, never your hull, so you can sit in the mouth and defend. You can fly as far as the colored MAX CROSS line.")
+                    TutorialCard(number: "10", icon: "burst.fill", title: "NO WRECKS", text: "Nothing destroys your ship. Ground, walls, ceiling, the roof bulge and the other ship all rebound. Points are won on the ball alone: a goal or a fourth bounce. Touches are unlimited. After every set the teams switch sides and keep their colours, so everyone plays both halves.")
                 }.padding(28)
             }
             .navigationTitle("How to Fly").toolbar { Button("Done") { dismiss() } }
