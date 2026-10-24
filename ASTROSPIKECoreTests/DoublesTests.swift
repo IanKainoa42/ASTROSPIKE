@@ -139,7 +139,7 @@ struct DoublesTests {
         for envelope in [input, profile, seating, snapshot, ring] {
             #expect(try codec.decode(codec.encode(envelope)) == envelope)
         }
-        #expect(WireEnvelope.currentVersion == 58)
+        #expect(WireEnvelope.currentVersion == 59)
     }
 
     @Test("A team-up seats the invited friend beside the host")

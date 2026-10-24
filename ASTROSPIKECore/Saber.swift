@@ -68,7 +68,7 @@ public enum Saber {
     /// A blade at rest is a dead bat: a ball flown into it comes off soft.
     /// The moves are what put pace on it.
     public static let restitution = 0.35
-    public static let spinDuration = 0.5
+    public static let spinDuration = 0.3
     public static let spikeDuration = 0.24
     /// How far the chop turns the hull: 150 degrees.
     public static let spikeArc = 150.0 * .pi / 180

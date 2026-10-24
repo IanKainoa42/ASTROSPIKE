@@ -163,6 +163,30 @@ struct SaberTests {
         #expect(engine.state.match.lastTouchRun == 1)
     }
 
+    @Test("The blade hits the ball in a duel and in the warm-up bay, not just ASTROBALL", arguments: [false, true])
+    func hitsOutsideAstroball(warmup: Bool) {
+        var engine = SimulationEngine.testing()
+        if warmup { engine.updateConfiguration(.warmup(from: engine.configuration)) }
+        engine.beginPlay()
+        #expect(engine.state.match.phase == .playing)
+        let at = SIMD2(-0.5, 0.2)
+        engine.state.ships[.cyan]!.position = at
+        engine.state.ships[.cyan]!.velocity = .zero
+        engine.state.ships[.cyan]!.angle = 0
+        engine.state.ships[.orange]!.position = .init(0.8, 0.5)
+        // The ball drops onto the middle of the blade, clear of the hull.
+        let radius = engine.state.ball.radius
+        engine.state.ball = BallState(
+            position: at + SIMD2(blade.base + blade.length * 0.6, radius + Saber.radius + 0.01),
+            velocity: .init(0, -1)
+        )
+        for tick in 0 ..< 12 {
+            engine.step(inputs: [.cyan: held(UInt64(tick))])
+            engine.state.ships[.cyan]!.velocity = .zero
+        }
+        #expect(engine.state.ball.velocity.y > 0, "the ball fell through the blade")
+    }
+
     @Test("The saber flies in a duel too; the blade drops the beam; a stun drops the move")
     func limits() {
         var duel = engine(astroball: false)

@@ -1185,16 +1185,14 @@ public struct SimulationEngine: Sendable {
                 contacts: &contacts,
                 effects: &collisionEffects
             )
-            if configuration.astroball != nil {
-                resolveBallSaberCollisions(
-                    ballIndex: ballIndex,
-                    previousBallPosition: previousBallPositions[ballIndex],
-                    previousShipPositions: previousShipPositions,
-                    previousShipAngles: previousShipAngles,
-                    contacts: &contacts,
-                    effects: &collisionEffects
-                )
-            }
+            resolveBallSaberCollisions(
+                ballIndex: ballIndex,
+                previousBallPosition: previousBallPositions[ballIndex],
+                previousShipPositions: previousShipPositions,
+                previousShipAngles: previousShipAngles,
+                contacts: &contacts,
+                effects: &collisionEffects
+            )
             resolveBallCollision(
                 ballIndex: ballIndex,
                 previousPosition: previousBallPositions[ballIndex],
@@ -3395,7 +3393,8 @@ public struct SimulationEngine: Sendable {
         }
         state.ships[hit.seat] = ship
         contacts.append(.ballTouchedShip(team: hit.seat.team, counted: fresh))
-        if fresh { contacts.append(.ballPlayed(seat: hit.seat)) }
+        // As the hull: only ASTROBALL counts a play toward its touch limit.
+        if fresh, configuration.astroball != nil { contacts.append(.ballPlayed(seat: hit.seat)) }
         state.balls[ballIndex].lastPlay = BallPlay(seat: hit.seat, kind: .hull)
         if fresh { playsThisStep.append(.hit(hit.seat)) }
         if fresh { defencePlays.append((ballIndex, hit.seat, .hull)) }

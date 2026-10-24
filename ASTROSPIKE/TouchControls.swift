@@ -30,9 +30,11 @@ struct TouchControls: View {
     /// does nothing.
     var loadout: Loadout = .ship
     var playerTint: Color = .cyan
-    /// The SABER pad: hold to draw the blade, let go to sheathe it. Nil
-    /// hides the pad.
+    /// The SABER pad: hold to draw the blade, let go to sheathe it, and
+    /// flick the held thumb left, right, up or down for a move. Nil hides
+    /// the pad.
     var saberChanged: ((Bool) -> Void)?
+    var saberFlicked: ((SaberFlick) -> Void)?
 
     @AppStorage("clusterControls") private var clusterControls = false
     @State private var leftPressed = false
@@ -458,10 +460,20 @@ struct TouchControls: View {
     }
 
     private func saberPad(chrome: CGSize) -> some View {
-        ControlZone(
-            icon: "line.diagonal", label: "Saber", identifier: "saber-control", tint: playerTint,
-            active: saberPressed, chrome: chrome, bottomPadding: 12, pressChanged: setSaberPressed
-        )
+        ZStack {
+            ControlZone(
+                icon: "line.diagonal", label: "Saber", identifier: "saber-control", tint: playerTint,
+                active: saberPressed, chrome: chrome, bottomPadding: 12, pressChanged: nil
+            )
+            SaberCapture(
+                pressChanged: setSaberPressed,
+                flicked: { flick in
+                    FeedbackCenter.shared.controlPressed()
+                    saberFlicked?(flick)
+                }
+            )
+            .accessibilityHidden(true)
+        }
     }
 
     // MARK: Full-bleed fallback
@@ -900,6 +912,98 @@ private final class PressCaptureView: UIView {
         super.didMoveToWindow()
         guard window == nil else { return }
         pressTracker.cancelAll()
+        pressChanged?(false)
+    }
+}
+
+/// The SABER pad's touch: down draws the blade, up sheathes it, and a quick
+/// slide of the held thumb is a flick, read to the nearest of the four
+/// directions. Only a fast slide counts -- `flickDistance` inside
+/// `flickWindow` -- so a thumb that settles or rolls on the pad as it presses
+/// just draws the blade and never spins the hull. The origin follows a slow
+/// thumb and moves to it after each flick, so a second flick is a second move.
+private struct SaberCapture: UIViewRepresentable {
+    let pressChanged: (Bool) -> Void
+    let flicked: (SaberFlick) -> Void
+
+    func makeUIView(context: Context) -> SaberCaptureView {
+        let view = SaberCaptureView()
+        view.isAccessibilityElement = false
+        view.pressChanged = pressChanged
+        view.flicked = flicked
+        return view
+    }
+
+    func updateUIView(_ view: SaberCaptureView, context: Context) {
+        view.pressChanged = pressChanged
+        view.flicked = flicked
+    }
+}
+
+private final class SaberCaptureView: UIView {
+    var pressChanged: ((Bool) -> Void)?
+    var flicked: ((SaberFlick) -> Void)?
+    private let flickDistance: CGFloat = 26
+    private let flickWindow: TimeInterval = 0.2
+    private var activeTouchID: ObjectIdentifier?
+    private var origin: CGPoint = .zero
+    private var originTime: TimeInterval = 0
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        let radius = min(bounds.width, bounds.height) / 2
+        let dx = point.x - bounds.midX, dy = point.y - bounds.midY
+        return dx * dx + dy * dy <= radius * radius
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+        guard activeTouchID == nil, let touch = touches.first else { return }
+        activeTouchID = ObjectIdentifier(touch)
+        origin = touch.location(in: self)
+        originTime = touch.timestamp
+        pressChanged?(true)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesMoved(touches, with: event)
+        guard let activeID = activeTouchID,
+              let touch = touches.first(where: { ObjectIdentifier($0) == activeID }) else { return }
+        let location = touch.location(in: self)
+        // A slow thumb drags the origin along: drift never adds up to a flick.
+        if touch.timestamp - originTime > flickWindow {
+            origin = location
+            originTime = touch.timestamp
+            return
+        }
+        let dx = location.x - origin.x
+        let dy = location.y - origin.y
+        guard dx * dx + dy * dy >= flickDistance * flickDistance else { return }
+        origin = location
+        originTime = touch.timestamp
+        // Screen y runs down.
+        flicked?(abs(dx) > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down))
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        release(touches)
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesCancelled(touches, with: event)
+        release(touches)
+    }
+
+    private func release(_ touches: Set<UITouch>) {
+        guard let activeID = activeTouchID, touches.contains(where: { ObjectIdentifier($0) == activeID }) else { return }
+        activeTouchID = nil
+        pressChanged?(false)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window == nil, activeTouchID != nil else { return }
+        activeTouchID = nil
         pressChanged?(false)
     }
 }

@@ -130,8 +130,16 @@ final class GameSession {
     var fire = false { didSet { if fire { fireLatched = true } } }
     private var fireLatched = false
     var tractor = false
-    /// The SABER pad held: the blade out, in every mode a hull flies.
+    /// The SABER pad held (every mode), and the flicks made on it. Each
+    /// flick steps the count; a new count is what starts a move.
     var saber = false
+    private var saberFlick: SaberFlick?
+    private var saberFlickCount: UInt8 = 0
+
+    func flickSaber(_ flick: SaberFlick) {
+        saberFlick = flick
+        saberFlickCount &+= 1
+    }
 
     let mode: GameMode
     let scene = ArenaScene()
@@ -184,8 +192,9 @@ final class GameSession {
     private var localInputHistory: [UInt64: PlayerInput] = [:]
     private static let holdBeamPreview = ProcessInfo.processInfo.arguments.contains("--hold-beam")
     /// `--saber-demo`: for screenshots of the saber. The pilot's blade is
-    /// held out.
+    /// held out and flicks through all four moves, one every 0.6 s.
     private static let saberDemo = ProcessInfo.processInfo.arguments.contains("--saber-demo")
+    private var saberDemoTicks = 0
     private var holdBeamStaged = false
     private var smoothing = GuestSmoothing()
     /// How many ticks of the guest's own inputs are kept for replaying a
@@ -652,7 +661,7 @@ final class GameSession {
         let tick = engine.state.tick
         var localInput = PlayerInput(
             tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched, tractor: tractor,
-            saber: saber
+            saber: saber, saberFlick: saberFlick, saberFlickCount: saberFlickCount
         )
         // Online only every other tick goes out. A tap that landed on an odd
         // tick and was cleared there never reached the host.
@@ -662,7 +671,13 @@ final class GameSession {
             self.demoAI = demoAI
         }
         if Self.saberDemo, engine.state.match.phase == .playing {
+            saberDemoTicks += 1
+            if saberDemoTicks % 72 == 0 {
+                flickSaber([SaberFlick.left, .down, .right, .up][(saberDemoTicks / 72) % 4])
+            }
             localInput.saber = true
+            localInput.saberFlick = saberFlick
+            localInput.saberFlickCount = saberFlickCount
         }
         if mode == .online {
             // Online, the thumb is read on the ticks it is sent and held
