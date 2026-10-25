@@ -47,6 +47,16 @@ public enum AIDifficulty: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// Share of bolts meant to hit the ball, on an average day. Form swings
+    /// it about 0.2 either way; rookies never shoot.
+    public var boltHitRate: Double {
+        switch self {
+        case .rookie: 0.45
+        case .pilot: 0.62
+        case .ace: 0.80
+        }
+    }
+
     /// The next rung on the solo ladder. Nil at Ace: there is nowhere harder.
     public var next: AIDifficulty? {
         switch self {
@@ -54,6 +64,57 @@ public enum AIDifficulty: String, Codable, CaseIterable, Sendable {
         case .pilot: .ace
         case .ace: nil
         }
+    }
+}
+
+/// A bot's trigger finger. A bolt flies down the nose, and a bot that only
+/// fires once the nose is on the ball never misses, so each shot is rolled
+/// first: a line through the ball, or one just wide of it, measured in the
+/// ball's own half-width so the odds hold at any range. The bot fires when
+/// the nose crosses that line. Form drifts over tens of seconds, so a bot
+/// runs hot and cold rather than missing on a fixed beat. Hashed from seat
+/// and clock, never a system RNG: the same match plays the same way.
+struct BoltSight: Sendable {
+    private var shots: UInt64 = 0
+
+    /// Radians off the line to the ball the next bolt should leave on, and
+    /// how near the nose must come to that line to fire.
+    func line(
+        seat: Seat,
+        tick: UInt64,
+        stepDuration: Double,
+        distance: Double,
+        ballRadius: Double,
+        difficulty: AIDifficulty
+    ) -> (offset: Double, tolerance: Double) {
+        let seconds = Double(tick) * stepDuration
+        let salt = UInt64(seat.rawValue) &+ 1
+        let wave = sin(seconds * 2 * .pi / 17 + Double(salt) * 1.9)
+        let mood = Self.unit(Self.hash(UInt64(seconds / 9), salt, 1)) * 2 - 1
+        let form = 0.6 * wave + 0.4 * mood
+        let chance = min(0.95, max(0.10, difficulty.boltHitRate + 0.2 * form))
+        // A fresh look every three quarters of a second, so a line the nose
+        // never reaches does not hold the trigger for good.
+        let key = Self.hash(shots, UInt64(seconds / 0.75), salt)
+        let along = Self.unit(Self.hash(key, 2, salt)) * 2 - 1
+        let widths = Self.unit(key) < chance
+            ? along * 0.6
+            : (along < 0 ? -1.0 : 1.0) * (1.4 + abs(along))
+        let halfWidth = atan((ballRadius + BoltState.radius) / max(distance, 0.000_001))
+        return (widths * halfWidth, max(0.02, 0.35 * halfWidth))
+    }
+
+    mutating func fired() { shots &+= 1 }
+
+    private static func hash(_ a: UInt64, _ b: UInt64, _ c: UInt64) -> UInt64 {
+        var z = a &* 0x9E37_79B9_7F4A_7C15 &+ b &* 0xBF58_476D_1CE4_E5B9 &+ c &* 0x94D0_49BB_1331_11EB
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+
+    private static func unit(_ value: UInt64) -> Double {
+        Double(value >> 11) / Double(1 << 53)
     }
 }
 
@@ -160,6 +221,7 @@ public struct AIController: InputSource, Sendable {
     private var cachedAimError = 0.0
     private var cachedHomeSide: Team?
     private var carryTicks: UInt64 = 0
+    private var sight = BoltSight()
     /// Free-for-all play. There is no MAX CROSS line, so the bot neither
     /// bails out of the far side nor holds its fire there; and only goals
     /// count, so every shot is lobbed at the mouth instead of driven across
@@ -409,7 +471,8 @@ public struct AIController: InputSource, Sendable {
             : aligned
                 && !climbingAway
                 && simd_dot(need, nose) > configuration.maximumThrustAcceleration * Self.thrustGate
-        let fire = !supporting && wantsToFire(state: state, ship: ship, nose: nose, homeSign: homeSign)
+        let fire = !supporting && wantsToFire(state: state, seat: seat, tick: tick, ship: ship, nose: nose, homeSign: homeSign)
+        if fire { sight.fired() }
         return PlayerInput(tick: tick, torque: torque, thrust: thrust, fire: fire)
     }
 
@@ -476,15 +539,20 @@ public struct AIController: InputSource, Sendable {
     /// Shoot when the ball is out in front, from this half, and the nose is
     /// already pointing roughly the way the shot should go -- so a bolt sends
     /// it over rather than into the bot's own face. Too close and the hull
-    /// will hit it anyway; too far and the bolt fizzles first.
+    /// will hit it anyway; too far and the bolt fizzles first. The nose has
+    /// to cross the sight's rolled line, which is not always on the ball.
     private func wantsToFire(
         state: WorldState,
+        seat: Seat,
+        tick: UInt64,
         ship: ShipState,
         nose: SIMD2<Double>,
         homeSign: Double
     ) -> Bool {
         guard let alignment = difficulty.fireAlignment, ship.fireCooldownTicks == 0 else { return false }
-        let toBall = state.ball.position - ship.position
+        // Led by the bolt's flight, so a line meant to hit does.
+        let flight = simd_length(state.ball.position - ship.position) / max(configuration.boltSpeed, 0.000_001)
+        let toBall = state.ball.position + state.ball.velocity * flight - ship.position
         let distance = simd_length(toBall)
         let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
         guard distance > 0.16, distance < reach else { return false }
@@ -492,7 +560,16 @@ public struct AIController: InputSource, Sendable {
         // anywhere. A hair of margin so the bot never pulls it on the line.
         guard freeRoam || ship.position.x * homeSign
             > -(arena.crossingLimit(atY: ship.position.y, astroball: configuration.astroball) - 0.02) else { return false }
-        guard simd_dot(toBall / distance, nose) > 0.985 else { return false }
+        let line = sight.line(
+            seat: seat,
+            tick: tick,
+            stepDuration: configuration.stepDuration,
+            distance: distance,
+            ballRadius: state.ball.radius,
+            difficulty: difficulty
+        )
+        let bearing = atan2(toBall.y, toBall.x) + line.offset
+        guard abs(normalizedAngle(ship.angle - bearing)) < line.tolerance else { return false }
         // In ASTROBALL a bolt is a touch and the ball goes the way the bolt
         // flies, so only a bolt headed for the net is worth one.
         if configuration.astroball != nil, nose.x * -homeSign < Self.volleyBoltLean { return false }

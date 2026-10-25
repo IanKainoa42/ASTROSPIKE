@@ -1941,7 +1941,21 @@ private struct GameView: View {
     private func rematchOpponent() {
         guard mode == .online, online.canRematch else { return }
         leaveGame()
-        online.rematch()
+        Self.rematch(online: online, lobby: lobby)
+    }
+
+    /// One rival goes through the lobby, the way a friend invite does: they
+    /// are almost certainly still in the app, so it lands as the in-game
+    /// row rather than Apple's banner, and the bay opens once the search is
+    /// out. A raw Game Center re-invite from the results card left the
+    /// inviter on the main menu. Several rivals still go through Game Center.
+    static func rematch(online: OnlineMatchCoordinator, lobby: LobbyService) {
+        let rivals = online.lastMatchOpponents
+        if rivals.count == 1, let rival = rivals.first {
+            lobby.inviteAnytime(pilotID: rival.gamePlayerID, name: rival.displayName, format: online.lastMatchFormat, using: online)
+        } else {
+            online.rematch()
+        }
     }
 }
 

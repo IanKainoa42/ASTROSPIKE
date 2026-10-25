@@ -97,6 +97,7 @@ public struct FreeForAllPilot: Sendable {
     public let difficulty: AIDifficulty
     private var configuration: SimulationConfiguration
     private(set) var targetGoal: Int?
+    private var sight = BoltSight()
 
     public init(difficulty: AIDifficulty, configuration: SimulationConfiguration) {
         self.difficulty = difficulty
@@ -114,15 +115,28 @@ public struct FreeForAllPilot: Sendable {
               let own = field.bay(of: seat) else { return input }
         let guarded = { (index: Int) in !field.isSolid(goal: index) }
         let ball = focus(state: state, ship: ship, own: own, ring: ring)
-        let toBall = ball.position - ship.position
+        // Led by the bolt's flight, so a line meant to hit does.
+        let flight = simd_length(ball.position - ship.position) / max(configuration.boltSpeed, 0.000_001)
+        let toBall = ball.position + ball.velocity * flight - ship.position
         let distance = simd_length(toBall)
         let reach = configuration.boltSpeed * configuration.boltLifetime * 0.85
+        // Where the next bolt is meant to go: on the ball or, some shots,
+        // just wide of it.
+        let line = sight.line(
+            seat: seat,
+            tick: tick,
+            stepDuration: configuration.stepDuration,
+            distance: distance,
+            ballRadius: ball.radius,
+            difficulty: difficulty
+        )
+        let bearing = atan2(toBall.y, toBall.x) + line.offset
         // A ball out on a rival's ground, past the line, the hull cannot
-        // reach: hold at the line with the nose on it and shoot it.
+        // reach: hold at the line with the nose on the sight line and shoot.
         let unreachable = ring.offside(ball.position, home: own, guarded: guarded) != nil
         if unreachable, distance < reach, simd_length(ship.velocity) < 0.4, distance > 0.000_001 {
-            let error = remainder(atan2(toBall.y, toBall.x) - ship.angle, 2 * .pi)
-            input.torque = abs(error) < 0.03 ? 0 : max(-1, min(1, error * 4))
+            let error = remainder(bearing - ship.angle, 2 * .pi)
+            input.torque = abs(error) < line.tolerance * 0.5 ? 0 : max(-1, min(1, error * 4))
             input.thrust = false
         }
         // Fire when the nose is on the ball and the knock either frees an
@@ -132,10 +146,17 @@ public struct FreeForAllPilot: Sendable {
               distance > 0.16, distance < reach,
               ring.offside(ship.position, home: own, guarded: guarded) == nil else { return input }
         let nose = SIMD2(cos(ship.angle), sin(ship.angle))
-        guard simd_dot(toBall / distance, nose) > max(alignment, 0.985),
+        // The goal check reads the line the bot believes it is on: the ball's
+        // bearing, not the nose, so a shot rolled wide is still taken.
+        let believed = simd_normalize(toBall)
+        guard simd_dot(believed, nose) > alignment,
+              abs(remainder(ship.angle - bearing, 2 * .pi)) < line.tolerance,
               !headsInto(own, from: ball.position, along: nose, ring: ring) else { return input }
-        let scores = ring.spokeAngles.indices.contains { $0 != own && guarded($0) && headsInto($0, from: ball.position, along: nose, ring: ring) }
-        if unreachable || scores { input.fire = true }
+        let scores = ring.spokeAngles.indices.contains { $0 != own && guarded($0) && headsInto($0, from: ball.position, along: believed, ring: ring) }
+        if unreachable || scores {
+            input.fire = true
+            sight.fired()
+        }
         return input
     }
 

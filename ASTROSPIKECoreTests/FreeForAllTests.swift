@@ -990,11 +990,11 @@ struct FreeForAllTests {
     /// The bot is chaotic, so judge it over several starts rather than one:
     /// ten two-minute games alone against idle hulls (the step is 1/120 s).
     /// Held short of every MAX CROSS line, it scores from the line, shooting
-    /// a ball it cannot reach. With the flush slots these starts give
-    /// 46 rival lives at three pilots and 27 at four, none of its own (over
-    /// 100 minutes of lone play, about 1.6 a minute at either size); the
-    /// floors sit about 30% under, and an idle bot takes none -- an
-    /// untouched face-off never scores.
+    /// a ball it cannot reach. With the flush slots these starts gave
+    /// 46 rival lives at three pilots and 27 at four, none of its own; since
+    /// build 181 its bolts miss on purpose (Ian: the bots never miss) and
+    /// three pilots give 27. The floor sits about 30% under, and an idle bot
+    /// takes none -- an untouched face-off never scores.
     @Test("The bot takes rivals' lives more often than it gives up its own", arguments: [3, 4])
     func botScores(pilots: Int) {
         var rival = 0
@@ -1012,7 +1012,7 @@ struct FreeForAllTests {
                 if engine.state.match.phase == .finished { break }
             }
         }
-        #expect(rival >= (pilots == 3 ? 32 : 19), "only \(rival) rival lives in 20 minutes")
+        #expect(rival >= 19, "only \(rival) rival lives in 20 minutes")
         #expect(Double(rival) > 1.3 * Double(own), "rival \(rival), own \(own)")
     }
 }

@@ -55,6 +55,10 @@ final class OnlineMatchCoordinator: NSObject,
     /// feature. Preserved across `leaveMatch()` calls so the results screen
     /// can offer "Rematch" after the match object is disconnected.
     private(set) var lastMatchOpponents: [GKPlayer] = []
+    /// What the last match was, so a rematch is the same game and not a
+    /// duel: `leaveMatch` puts `format` back to `.duel` before the button
+    /// is pressed.
+    private(set) var lastMatchFormat: OnlineFormat = .duel
     
     /// Whether a rematch is available: the last match had opponents Game
     /// Center still knows about and no open table was involved.
@@ -829,13 +833,14 @@ final class OnlineMatchCoordinator: NSObject,
             return
         }
         note("REMATCH: RE-INVITING \(lastMatchOpponents.map(\.displayName).joined(separator: ", "))")
-        invite(lastMatchOpponents)
+        invite(lastMatchOpponents, format: lastMatchFormat)
     }
 
     /// Preserves the current match's opponents before the match object is
     /// disconnected, enabling the rematch feature from the results screen.
     private func saveLastMatchOpponents() {
         guard let match else { return }
+        lastMatchFormat = format
         let localID = GKLocalPlayer.local.gamePlayerID
         let opponents = match.players.filter { player in
             guard let seat = seating[player.gamePlayerID] else { return true }

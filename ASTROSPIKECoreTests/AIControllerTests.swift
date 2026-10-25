@@ -414,3 +414,68 @@ struct AIControllerTests {
         return PlayerInput(tick: tick, torque: torque, thrust: thrust)
     }
 }
+
+struct BotBoltAccuracyTests {
+    /// Whether the first bolt `seat` fires within `seconds` strikes a ball;
+    /// nil when it never fires.
+    static func firstShot(
+        _ engine: inout SimulationEngine,
+        seat: Seat,
+        seconds: Double,
+        input: (WorldState, UInt64) -> PlayerInput
+    ) -> Bool? {
+        var shot: UInt64?
+        for _ in 0 ..< Int(seconds / engine.configuration.stepDuration) {
+            let before = engine.state.stats[seat].boltHits
+            engine.step(inputs: [seat: input(engine.state, engine.state.tick)])
+            if let id = shot {
+                if engine.state.stats[seat].boltHits > before { return true }
+                if !engine.state.bolts.contains(where: { $0.id == id }) { return false }
+            } else if let bolt = engine.state.bolts.first(where: { $0.seat == seat }) {
+                shot = bolt.id
+            }
+        }
+        return shot == nil ? nil : false
+    }
+
+    /// Ian: the bots never miss with a bolt. A ring ace parked beside a
+    /// still ball should land most first shots and still miss some. With
+    /// every shot rolled onto the ball this went 14 for 14.
+    @Test func ringAceMissesSomeBolts() {
+        var configuration = SimulationConfiguration.online
+        configuration.ring = .lab
+        let arena = ArenaGeometry.freeForAll(pilots: 3, ballRadius: configuration.ballRadius, tuning: .lab)
+        let ring = arena.ring!
+        var hits = 0, shots = 0
+        for k in 0 ..< 160 {
+            var engine = SimulationEngine.testing()
+            engine.updateConfiguration(configuration)
+            engine.updateArena(arena)
+            engine.configureFreeForAll(FreeForAllState.seats(pilots: 3))
+            engine.beginPlay()
+            // Different clocks, so the rolls differ from case to case.
+            for _ in 0 ..< (k * 377) % 2400 { engine.step(inputs: [:]) }
+            let field = engine.state.freeForAll!
+            guard let own = field.bay(of: .cyanWing), let ship = engine.state.ships[.cyanWing] else { continue }
+            let angle = Double(k) * 2.399
+            let point = ship.position + SIMD2(cos(angle), sin(angle)) * (0.35 + Double(k % 9) * 0.12)
+            guard simd_length(point) < ring.rimRadius - 0.1,
+                  ring.offside(point, home: own, guarded: { !field.isSolid(goal: $0) }) != nil else { continue }
+            engine.state.balls[0].position = point
+            engine.state.balls[0].velocity = .zero
+            if engine.state.balls.count > 1 {
+                engine.state.balls[1].position = -point * 0.3
+                engine.state.balls[1].velocity = .zero
+            }
+            var bot = FreeForAllPilot(difficulty: .ace, configuration: engine.configuration)
+            guard let hit = Self.firstShot(&engine, seat: .cyanWing, seconds: 4, input: { state, tick in
+                bot.input(for: state, seat: .cyanWing, arena: arena, tick: tick)
+            }) else { continue }
+            shots += 1
+            if hit { hits += 1 }
+        }
+        #expect(shots >= 8, "too few shots to judge: \(shots)")
+        #expect(hits < shots, "\(hits) of \(shots) hit")
+        #expect(hits * 4 >= shots, "\(hits) of \(shots) hit")
+    }
+}
