@@ -110,6 +110,9 @@ final class GameSession {
     private(set) var events: [SimulationEvent] = []
     private(set) var countdown = 3
     private(set) var lastPointText: String?
+    /// The side the last call went to; the banner is painted its colour,
+    /// so the words never have to say whose point it was.
+    private(set) var lastPointTeam: Team?
     /// Plays called by name while the rally runs -- zaps, slams, saves --
     /// newest last, each for a couple of seconds.
     private(set) var callouts: [PlayCallout] = []
@@ -568,6 +571,7 @@ final class GameSession {
         countdownAccumulator = 0
         accumulator = 0
         lastPointText = nil
+        lastPointTeam = nil
         callouts = []
         announcedStakes = (.none, .none)
         isPaused = false
@@ -814,10 +818,10 @@ final class GameSession {
         if presentsLocalEvents,
            let point = events.first(where: { if case .point = $0 { true } else { false } }) {
             lastPointText = point.label(
-                bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues,
-                localTeam: flownSeat?.team
+                bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues
             )
             if case let .point(team, reason) = point {
+                lastPointTeam = team
                 FeedbackCenter.shared.point(team: team, reason: reason)
             }
             if let shot = events.first(where: { if case .goalScored = $0 { true } else { false } }),
@@ -826,11 +830,13 @@ final class GameSession {
             }
         } else if presentsLocalEvents, events.contains(.rallyReset) {
             lastPointText = nil
+            lastPointTeam = nil
         }
         if presentsLocalEvents,
            let set = events.first(where: { if case .setEnded = $0 { true } else { false } }) {
             callouts = []
             lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues)
+            if case let .setEnded(winner, _) = set { lastPointTeam = winner }
         }
         for event in events where presentsLocalEvents {
             callOut(event)
@@ -887,19 +893,21 @@ final class GameSession {
     }
 
     /// The name a call goes out under: the pilot's Game Center name online,
-    /// yours on this phone when you are signed in, CPU for every seat a bot
-    /// flies. The callout's colour says which side.
+    /// yours on this phone when you are signed in, nothing for a bot (or for
+    /// you signed out): the callout's colour says which side, so it never
+    /// reads YOU or CPU.
     func callSign(_ seat: Seat) -> String {
         if case .online = mode, let online,
            let id = online.seating.first(where: { $0.value == seat })?.key {
             return online.pilotName(id).uppercased()
         }
         if seat == flownSeat {
-            return GKLocalPlayer.local.isAuthenticated ? GKLocalPlayer.local.displayName.uppercased() : "YOU"
+            if GKLocalPlayer.local.isAuthenticated { return GKLocalPlayer.local.displayName.uppercased() }
+            return isFreeForAll ? "YOU" : ""
         }
-        // Three bots on one field: CPU says nothing about which.
+        // Three bots on one field: a name says which.
         if isFreeForAll { return ArenaScene.freeForAllName(for: seat) }
-        return "CPU"
+        return ""
     }
 
     /// Puts a `.play` event on the feed. A repeat of a call still on screen
@@ -907,20 +915,23 @@ final class GameSession {
     private func callOut(_ event: SimulationEvent) {
         guard case let .play(seat, call) = event else { return }
         let name = callSign(seat)
-        let text: String
+        let raw: String
         switch call {
         case let .zap(victim):
-            text = "ZAP  \(name) → \(callSign(victim))"
+            raw = "ZAP  \(name) → \(callSign(victim))"
         case .slam:
-            text = "SLAM  \(name)"
+            raw = "SLAM  \(name)"
         case let .save(kind, close):
             let what = switch kind {
             case .hull: "SAVE"
             case .bolt: "BOLT SAVE"
             case .beam: "BEAM SAVE"
             }
-            text = (close ? "CLOSE " : "") + what + "  \(name)"
+            raw = (close ? "CLOSE " : "") + what + "  \(name)"
         }
+        // A bot has no name, so drop the gaps (and a dangling arrow) it leaves.
+        let text = raw.split(separator: " ").joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " →"))
         callouts.removeAll { $0.text == text }
         calloutSerial += 1
         callouts.append(PlayCallout(id: calloutSerial, text: text, team: seat.team, born: CACurrentMediaTime()))
@@ -1129,6 +1140,7 @@ final class GameSession {
                 self.lastPointText = event.label(
                     bounceAllowance: self.engine.configuration.allowedFloorBounces, teamHues: self.teamHues
                 )
+                self.lastPointTeam = team
                 FeedbackCenter.shared.point(team: team, reason: reason)
             case .goalScored:
                 if let text = event.goalLabel(name: self.callSign) { self.lastPointText = text }
@@ -1136,11 +1148,13 @@ final class GameSession {
                 self.callOut(event)
             case .rallyReset:
                 self.lastPointText = nil
+                self.lastPointTeam = nil
             case .setEnded:
                 self.callouts = []
                 self.lastPointText = event.label(
                     bounceAllowance: self.engine.configuration.allowedFloorBounces, teamHues: self.teamHues
                 )
+                if case let .setEnded(winner, _) = event { self.lastPointTeam = winner }
             case .collisionEffect:
                 FeedbackCenter.shared.impactHaptic()
             case let .shipZapped(seat, _):
@@ -1228,43 +1242,37 @@ final class FrameDriver: NSObject {
 }
 
 private extension SimulationEvent {
-    /// The call for a point. From the flying pilot's side when there is
-    /// one: a fault names who made it (YOU or RIVAL) and who it pays, since
-    /// "BOUNCE LIMIT — ORANGE" named the side that was *paid* and read as
-    /// the other side's mistake. A spectator gets the colours.
-    func label(bounceAllowance: Int, teamHues: TeamHues = TeamHues(), localTeam: Team? = nil) -> String {
+    /// The call for a point: just what happened. The banner is painted the
+    /// colour of the side it paid, so the words never say whose point it
+    /// was (Ian: "just use color to identify").
+    func label(bounceAllowance: Int, teamHues: TeamHues = TeamHues()) -> String {
         if case let .setEnded(winner, sets) = self {
             return "\(teamHues[winner].name) TAKES THE SET · \(sets.cyan)–\(sets.orange)"
         }
-        guard case let .point(team, reason) = self else { return "" }
-        let scorer = teamHues[team].name
-        let fault: String
-        switch reason {
-        case .goal:
-            if let localTeam { return team == localTeam ? "YOUR GOAL" : "RIVAL GOAL" }
-            return "\(scorer) GOAL"
-        case .thirdBounce: fault = "BOUNCE LIMIT (\(bounceAllowance))"
-        case .crash: fault = "CRASH"
-        case .netContact: fault = "NET / CROSS"
-        case .forfeit: fault = "FORFEIT"
-        case .touchLimit: fault = "TOO MANY TOUCHES"
-        case .doubleTouch: fault = "TOO MANY IN A ROW"
-        case .zone: fault = "IN THE ZONE"
+        guard case let .point(_, reason) = self else { return "" }
+        return switch reason {
+        case .goal: "GOAL"
+        case .thirdBounce: "BOUNCE LIMIT (\(bounceAllowance))"
+        case .crash: "CRASH"
+        case .netContact: "NET / CROSS"
+        case .forfeit: "FORFEIT"
+        case .touchLimit: "TOO MANY TOUCHES"
+        case .doubleTouch: "TOO MANY IN A ROW"
+        case .zone: "IN THE ZONE"
         }
-        guard let localTeam else { return "\(fault) — \(scorer)" }
-        return team == localTeam ? "RIVAL: \(fault) · YOUR POINT" : "YOU: \(fault) · RIVAL POINT"
     }
 
     /// The call for how a goal went in, under the scorer's name.
     func goalLabel(name: (Seat) -> String) -> String? {
         guard case let .goalScored(seat, style) = self else { return nil }
         let who = name(seat)
-        return switch style {
-        case .hull: "GOAL — \(who)"
-        case .bolt: "BOLT GOAL — \(who)"
-        case .slamDunk: "SLAM DUNK — \(who)"
-        case .ownGoal: "OWN GOAL — \(who)"
+        let call = switch style {
+        case .hull: "GOAL"
+        case .bolt: "BOLT GOAL"
+        case .slamDunk: "SLAM DUNK"
+        case .ownGoal: "OWN GOAL"
         }
+        return who.isEmpty ? call : "\(call) — \(who)"
     }
 }
 

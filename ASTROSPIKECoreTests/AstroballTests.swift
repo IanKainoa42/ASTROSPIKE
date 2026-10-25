@@ -129,7 +129,7 @@ struct AstroballTests {
         #expect(tuning.zoneRange == nil)
     }
 
-    @Test("Default zones: the quarter of the floor nearest the net, and the back corner plus lower quarter of the wall")
+    @Test("Default zones: the floor nearest the net to 28%, and a small target 7% to 13% up the back wall")
     func defaultZone() {
         let court = ArenaGeometry.astroball(doubles: false)
         let tuning = AstroballTuning()
@@ -138,12 +138,15 @@ struct AstroballTests {
         let mid = court.wallPathFraction(at: SIMD2(-(court.netHalfWidth + floor * 0.6), court.floorY))!
         #expect(tuning.zoneContains(near))
         #expect(!tuning.zoneContains(mid))
-        let lowWall = court.wallPathFraction(at: SIMD2(court.halfWidth, court.floorY + (court.ceilingY - court.floorY) * 0.1))!
+        // Measured up the straight wall, above the corner arc, as the zone is.
+        let lowWall = court.wallPathFraction(ofWall: 0.1)
         let highWall = court.wallPathFraction(at: SIMD2(court.halfWidth, (court.floorY + court.ceilingY) / 2))!
         #expect(tuning.zoneContains(lowWall))
         #expect(!tuning.zoneContains(highWall))
-        let corner = court.wallPathFraction(at: court.wallPathPoint(at: tuning.zone2Start + 0.01))!
-        #expect(tuning.zoneContains(corner))
+        let target = court.wallPathFraction(at: court.wallPathPoint(at: tuning.zone2Start + 0.002))!
+        #expect(tuning.zoneContains(target))
+        #expect(!tuning.zoneContains(court.wallPathFraction(ofFloor: 1)), "the floor corner is clear")
+        #expect(!tuning.zoneContains(court.wallPathFraction(ofWall: 0.2)), "the target stops at 13% of the wall")
     }
 
     @Test("The net stops the beam; either side of it is clear")
@@ -450,5 +453,33 @@ struct AstroballTests {
         let wire = try? JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning))
         #expect(wire?.hues == tuning.hues, "the host's colours ride the seating plan")
         #expect(wire?.inARow == 3 && wire?.crossLean == 0.45, "every host setting rides the wire")
+    }
+
+    @Test("ASTROBALL 2 V 2 puts one friend across the net and keeps both wings for bots")
+    func twoASideOnline() throws {
+        #expect(OnlineFormat.astroballDoubles.isAstroball)
+        let plan = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:2"], format: .astroballDoubles)
+        #expect(plan == ["G:1": .cyan, "G:2": .orange], "the friend is a rival, not a teammate")
+        #expect(OnlineSeating.roster(filled: Set(plan.values), format: .astroballDoubles) == Seat.doubles,
+                "both wings are seated, so each pilot gets a bot beside them")
+        #expect(OnlineSeating.roster(filled: Set(plan.values), format: .astroball) == Seat.singles,
+                "plain ASTROBALL with one friend stays a duel")
+        #expect(OnlineSeating.lateSeat(filled: Set(plan.values), format: .astroballDoubles, ring: nil) == .cyanWing)
+        let codec = WireCodec()
+        let seating = WireEnvelope(sequence: 1, payload: .seating(plan: plan, tuning: FlightTuningSnapshot.defaults, format: .astroballDoubles))
+        #expect(try codec.decode(codec.encode(seating)) == seating)
+    }
+
+    @Test("ASTROBALL team-up online: one friend flies on your side, two bots across")
+    func teamUpOnline() throws {
+        #expect(OnlineFormat.astroballTeamUp.isAstroball)
+        let plan = OnlineSeating.plan(localID: "G:1", peerIDs: ["G:2"], format: .astroballTeamUp)
+        #expect(plan == ["G:1": .cyan, "G:2": .cyanWing], "the friend is a teammate")
+        #expect(OnlineSeating.roster(filled: Set(plan.values), format: .astroballTeamUp) == Seat.doubles,
+                "the far side is seated, so two bots fly against you")
+        #expect(OnlineSeating.lateSeat(filled: Set(plan.values), format: .astroballTeamUp, ring: nil) == .orange)
+        let codec = WireCodec()
+        let seating = WireEnvelope(sequence: 1, payload: .seating(plan: plan, tuning: FlightTuningSnapshot.defaults, format: .astroballTeamUp))
+        #expect(try codec.decode(codec.encode(seating)) == seating)
     }
 }

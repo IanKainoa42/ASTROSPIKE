@@ -142,10 +142,18 @@ public enum OnlineFormat: String, Codable, Equatable, Sendable {
     /// ASTROBALL, seated like a duel: one across the net, a third pilot
     /// makes it two against one and a bot, a fourth two a side.
     case astroball
+    /// ASTROBALL two a side however few accept: seated like a duel, so one
+    /// friend flies across the net and each of you gets a bot on the wing.
+    case astroballDoubles
+    /// ASTROBALL with your friends beside you: seated like a team-up, so
+    /// one friend flies on your wing against two bots.
+    case astroballTeamUp
 
     /// Every seat flies for itself.
     public var isFreeForAll: Bool { self == .freeForAll || self == .freeForAll4 }
-    public var isAstroball: Bool { self == .astroball }
+    public var isAstroball: Bool { self == .astroball || self == .astroballDoubles || self == .astroballTeamUp }
+    /// The guests fly beside the host.
+    public var isTeamUp: Bool { self == .teamUp || self == .astroballTeamUp }
 }
 
 /// The two decisions the table needs that must come out the same on every
@@ -159,7 +167,7 @@ public enum OnlineSeating {
     /// two leads and the cyan wing, which is what the duel's first three
     /// chairs are.
     public static func order(format: OnlineFormat) -> [Seat] {
-        format == .teamUp ? [.cyan, .cyanWing, .orange, .orangeWing] : [.cyan, .orange, .cyanWing, .orangeWing]
+        format.isTeamUp ? [.cyan, .cyanWing, .orange, .orangeWing] : [.cyan, .orange, .cyanWing, .orangeWing]
     }
 
     public static func order(teamUp: Bool) -> [Seat] {
@@ -188,7 +196,7 @@ public enum OnlineSeating {
         switch format {
         case .freeForAll: FreeForAllState.seats(pilots: ringSize(seated: filled.count))
         case .freeForAll4: FreeForAllState.seats(pilots: 4)
-        case .doublesVersus: Seat.doubles
+        case .doublesVersus, .astroballDoubles, .astroballTeamUp: Seat.doubles
         case .duel, .teamUp, .astroball: format == .teamUp || filled.count > 2 ? Seat.doubles : Seat.singles
         }
     }

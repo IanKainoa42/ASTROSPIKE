@@ -147,7 +147,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         // Thrust is drawn 80pt with 16pt of slop around it (build 165).
         XCTAssertGreaterThanOrEqual(thrustControl.frame.width, 95)
         XCTAssertGreaterThanOrEqual(thrustControl.frame.height, 95)
-        XCTAssertTrue(app.staticTexts["Your side: Cyan"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["hud-you-tag"].exists)
 
         app.buttons["Pause match"].tap()
         XCTAssertTrue(app.buttons["Resume"].waitForExistence(timeout: 3))

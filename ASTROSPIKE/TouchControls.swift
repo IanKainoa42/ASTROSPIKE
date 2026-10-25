@@ -69,6 +69,9 @@ struct TouchControls: View {
     /// The diamond rides only the lift of Ian's thrust drag: the whole
     /// diamond climbs with the window, nothing slides sideways.
     private static let diamondBakedOffset = CGSize(width: 0, height: -246)
+    /// Only the Mac window climbs: an iPad lifted the pads ~246 pt to mid-height.
+    private static let liftsPads = ProcessInfo.processInfo.isiOSAppOnMac
+        || ProcessInfo.processInfo.isMacCatalystApp
     @State private var dragging: [String: CGSize] = [:]
     /// Where each pad actually landed on the glass, measured after every
     /// offset is applied. A drag is committed against this, so a pad can
@@ -135,8 +138,9 @@ struct TouchControls: View {
         let bottom = local.height - edge
         let bakedScale = CGSize(
             width: min(1, engineWidth / Self.bakedReference.width),
-            // Phones (~430 pt tall) keep the pads on the floor; the lift grows with the window.
-            height: min(1, max(0, local.height - 400) / (Self.bakedReference.height - 400))
+            // The lift is Ian's Mac-window drag; phones and iPads keep the pads
+            // on the floor, hugging the bottom corners.
+            height: Self.liftsPads ? min(1, max(0, local.height - 400) / (Self.bakedReference.height - 400)) : 0
         )
         let thrust = thrustChrome
         let fire = fireChrome

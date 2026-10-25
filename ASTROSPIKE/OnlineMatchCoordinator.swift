@@ -126,7 +126,7 @@ final class OnlineMatchCoordinator: NSObject,
     /// beside it and the empty chairs go to bots) or a free-for-all ring. A
     /// guest takes this from the seating plan.
     private(set) var format: OnlineFormat = .duel
-    var teamUp: Bool { format == .teamUp }
+    var teamUp: Bool { format.isTeamUp }
     /// Three or four pilots round the ring, every seat its own side.
     var isFreeForAll: Bool { format.isFreeForAll }
     /// Display names of everyone at the table, by Game Center player ID.
@@ -1148,6 +1148,7 @@ final class OnlineMatchCoordinator: NSObject,
         request.defaultNumberOfPlayers = partySize
         request.inviteMessage = asOpenTable ? Self.openTableInviteMessage
             : format.isFreeForAll ? "ASTROPUCK in ASTROSPIKE"
+            : format == .astroballTeamUp ? "Team up for ASTROBALL in ASTROSPIKE"
             : format.isAstroball ? "ASTROBALL in ASTROSPIKE"
             : format == .teamUp ? "Team up with me in ASTROSPIKE"
             : partySize > 2 ? "Doubles in ASTROSPIKE" : "Duel me in ASTROSPIKE"
@@ -1377,7 +1378,8 @@ final class OnlineMatchCoordinator: NSObject,
         case .doublesVersus: "Versus match in ASTROSPIKE"
         case .teamUp: "Team up with me in ASTROSPIKE"
         case .duel: "Duel me in ASTROSPIKE"
-        case .astroball: "ASTROBALL in ASTROSPIKE"
+        case .astroball, .astroballDoubles: "ASTROBALL in ASTROSPIKE"
+        case .astroballTeamUp: "Team up for ASTROBALL in ASTROSPIKE"
         }
         self.format = format
         request.recipientResponseHandler = { [weak self] player, response in

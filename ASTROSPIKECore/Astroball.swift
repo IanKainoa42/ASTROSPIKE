@@ -47,11 +47,11 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// phone paints the same court.
     public var hues = TeamHues()
 
-    /// The quarter of the floor nearest the net: straight-down spikes.
-    public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.25)
-    /// From the end of the flat floor, round the corner, up a quarter of the wall.
-    public static let defaultZone2Start = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 1)
-    public static let defaultZone2End = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofWall: 0.25)
+    /// The floor nearest the net, out to 28%: straight-down spikes.
+    public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.28)
+    /// A small target low on the back wall, 7% to 13% of the way up it.
+    public static let defaultZone2Start = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofWall: 0.07)
+    public static let defaultZone2End = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofWall: 0.13)
 
     public init() {}
 

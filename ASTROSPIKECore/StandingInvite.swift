@@ -88,6 +88,8 @@ public struct StandingInvite: Codable, Equatable, Sendable, Identifiable {
         case .freeForAll: "ASTROPUCK"
         case .freeForAll4: "FOUR-PILOT ASTROPUCK"
         case .astroball: "ASTROBALL"
+        case .astroballDoubles: "ASTROBALL 2 V 2"
+        case .astroballTeamUp: "ASTROBALL TEAM UP"
         }
     }
 

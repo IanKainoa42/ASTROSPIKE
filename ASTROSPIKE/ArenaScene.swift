@@ -70,9 +70,10 @@ final class ArenaScene: SKScene {
     /// A hull with its beam locked on wears the same solid rim as its ball,
     /// so the pair reads as one body.
     private var hullLockRings: [Seat: SKShapeNode] = [:]
-    /// ASTROBALL, a side of two: a ring in the side's colour on whoever may
-    /// play the ball next, so a pilot whose run is spent sees the partner lit.
+    /// ASTROBALL: a ring in the side's colour on whoever played the ball last.
     private var upRings: [Seat: SKShapeNode] = [:]
+    /// The net-fault offender and the shade dimming everything but them.
+    private var spotlit: (seat: Seat, node: SKShapeNode)?
     /// YOU and ALLY over the two ships on the pilot's side in doubles, where
     /// two hulls share a colour and nothing else says which one you fly.
     private var markerNodes: [Seat: SKLabelNode] = [:]
@@ -468,8 +469,6 @@ final class ArenaScene: SKScene {
             arenaLayer.addChild(neutral)
         }
 
-        addSideLabel(for: leftTeam, at: point(-0.72, 0.68))
-        addSideLabel(for: leftTeam.opponent, at: point(0.72, 0.68))
         addCrossingLimit(for: leftTeam, onHalfAt: -1)
         addCrossingLimit(for: leftTeam.opponent, onHalfAt: 1)
         }
@@ -1118,21 +1117,6 @@ final class ArenaScene: SKScene {
         label.fontName = "AvenirNextCondensed-Bold"
         label.fontSize = 11
         label.fontColor = teamColor(team).withAlphaComponent(0.35)
-        label.horizontalAlignmentMode = .center
-        label.verticalAlignmentMode = .center
-        label.position = position
-        label.zPosition = 1
-        arenaLayer.addChild(label)
-    }
-
-    private func addSideLabel(for team: Team, at position: CGPoint) {
-        let isLocal = team == localTeam
-        let label = SKLabelNode(text: "\(hues[team].name) SIDE" + (isLocal ? " · YOU" : ""))
-        label.fontName = "AvenirNextCondensed-Bold"
-        // It was 11pt at 35%, which is part of why nobody could tell whose
-        // end was whose.
-        label.fontSize = 14
-        label.fontColor = teamColor(team).withAlphaComponent(isLocal ? 0.8 : 0.5)
         label.horizontalAlignmentMode = .center
         label.verticalAlignmentMode = .center
         label.position = position
@@ -1918,6 +1902,19 @@ final class ArenaScene: SKScene {
             switch event {
             case let .point(scoringTeam, reason):
                 ballTrails.removeAll()
+                if reason == .netContact {
+                    // A hull in the net: the court flashes red twice and the
+                    // screen dims round the offender.
+                    courtPulse(.red, beats: 2)
+                    if let (seat, ship) = snapshot?.ships
+                        .filter({ $0.key.team == scoringTeam.opponent })
+                        .min(by: { abs($0.value.position.x) < abs($1.value.position.x) }) {
+                        zap(seat: seat, at: ship.position)
+                        spotlight(on: seat, at: point(ship.position.x, ship.position.y))
+                    }
+                } else {
+                    courtPulse(teamColor(scoringTeam), beats: 1)
+                }
                 if reason == .goal {
                     // One portal, dead centre -- the ball went through it and
                     // is gone, so the burst is where it vanished.
@@ -2027,6 +2024,43 @@ final class ArenaScene: SKScene {
         ring.run(.sequence([.group([.scale(to: scale, duration: 0.42), .fadeOut(withDuration: 0.42)]), .removeFromParent()]))
     }
 
+    /// The whole court washes over in `color` and fades, `beats` times.
+    private func courtPulse(_ color: SKColor, beats: Int) {
+        let wash = SKShapeNode(path: boundsPath())
+        wash.fillColor = color
+        wash.strokeColor = color
+        wash.lineWidth = 6
+        wash.glowWidth = 14
+        wash.alpha = 0
+        wash.zPosition = 30
+        actorLayer.addChild(wash)
+        let peak: CGFloat = reduceMotion ? 0.12 : 0.24
+        let beat = SKAction.sequence([.fadeAlpha(to: peak, duration: 0.09), .fadeAlpha(to: 0, duration: 0.33)])
+        wash.run(.sequence([.repeat(beat, count: beats), .removeFromParent()]))
+    }
+
+    /// After a net fault the whole screen but the offender drops 10% for
+    /// two seconds. The shade is one fat stroke whose inner edge is the
+    /// lit circle; `update(seat:)` keeps it on the offender as they fly.
+    private func spotlight(on seat: Seat, at position: CGPoint) {
+        spotlit?.node.removeFromParent()
+        let radius = CGFloat(ShipHitbox.shared.reach) * pointsPerWorldUnit + 14 * max(labScale, 1)
+        let reach = hypot(size.width, size.height) * 2
+        let shade = SKShapeNode(circleOfRadius: radius + reach / 2)
+        shade.position = position
+        shade.fillColor = .clear
+        shade.strokeColor = SKColor(white: 0, alpha: 0.10)
+        shade.lineWidth = reach
+        shade.zPosition = 31
+        shade.alpha = 0
+        actorLayer.addChild(shade)
+        spotlit = (seat, shade)
+        shade.run(.sequence([
+            .fadeIn(withDuration: 0.15), .wait(forDuration: 1.6),
+            .fadeOut(withDuration: 0.25), .removeFromParent(),
+        ]))
+    }
+
     private func sparks(at position: CGPoint, color: SKColor) {
         let count = reduceMotion ? 5 : 16
         for index in 0..<count {
@@ -2049,10 +2083,10 @@ final class ArenaScene: SKScene {
 
     /// Whether `seat` is ringed as next to play: ASTROBALL in play, on a
     /// side of two, and the rulebook would let it touch the ball now.
+    /// ASTROBALL: only the pilot who played the ball last is ringed.
     private func isUp(_ seat: Seat) -> Bool {
-        guard let astroball, let snapshot, snapshot.match.phase == .playing else { return false }
-        let side = snapshot.ships.filter { $0.key.team == seat.team && !$0.value.isDestroyed }.count
-        return side > 1 && snapshot.astroballUp(tuning: astroball).contains(seat)
+        guard astroball != nil, let snapshot, snapshot.match.phase == .playing else { return false }
+        return snapshot.match.lastTouch == seat
     }
 
     private func update(seat: Seat, state: ShipState?, dt: Double, lights: inout [FloorLight]) {
@@ -2073,8 +2107,7 @@ final class ArenaScene: SKScene {
         if let marker {
             let doubles = (snapshot?.ships.count ?? 0) > 2
             let text: String? = !doubles || localSeat == nil ? nil
-                : seat == localSeat ? "YOU"
-                : seatColors == .teams && seat == localSeat?.partner ? "ALLY" : nil
+                : seat == localSeat ? "YOU" : nil
             marker.isHidden = text == nil || state.isDestroyed
             if let text {
                 marker.text = text
@@ -2084,6 +2117,9 @@ final class ArenaScene: SKScene {
         }
         shipNode.position = point(state.position.x, state.position.y)
         shipNode.zRotation = state.angle - .pi / 2
+        if let spotlit, spotlit.seat == seat, spotlit.node.parent != nil {
+            spotlit.node.position = shipNode.position
+        }
         if let upRing = upRings[seat] {
             let up = !state.isDestroyed && isUp(seat)
             upRing.isHidden = !up
@@ -2893,7 +2929,13 @@ final class ArenaScene: SKScene {
         // never grows into them, so a thumb in the corner reaches the pads
         // without ever having to cross the court's edge.
         let landscape = size.width > size.height
-        let sideInset = landscape ? max(inset, size.width * controlMarginFraction) : inset
+        // ASTROBALL's court runs out over the pads, to just past the steer
+        // and fire pads: the pads keep the standard court's margins (the
+        // touch controls measure them off `.standard`), only the drawing grows.
+        let margin = arena.netStyle == .floorWall
+            ? min(size.width * astroballMarginFraction, astroballMarginCap)
+            : size.width * controlMarginFraction
+        let sideInset = landscape ? max(inset, margin) : inset
         // The ring is drawn round: one scale both ways, as big as fits
         // between the pads. Stretched, the rim would be an ellipse the ball
         // visibly leaves.
@@ -2935,6 +2977,12 @@ final class ArenaScene: SKScene {
     /// iPhone's rounded corners. 0.18 since build 115 (was 0.20): the court
     /// was drawn narrower than its world shape and read as squashed.
     static let controlMarginFraction: CGFloat = 0.18
+    /// ASTROBALL's court is drawn this close to the window's sides, between
+    /// the HITS rails, over the pads.
+    static let astroballMarginFraction: CGFloat = 0.10
+    /// The pads are phone-sized on every screen, so the margin that clears
+    /// them is too: an iPad's 10% (138 pt) left a wide dead strip a side.
+    static let astroballMarginCap: CGFloat = 88
 
     /// Points per world unit for things drawn round (ball, hulls). The court
     /// is stretched a little differently on each axis; the geometric mean

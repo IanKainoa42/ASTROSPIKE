@@ -759,6 +759,8 @@ private struct InviteSheet: View {
     let openPicker: (_ format: OnlineFormat) -> Void
     @State private var format: InviteFormat
     @State private var picked: Set<String> = []
+    /// ASTROBALL only: who your friends fly with.
+    @State private var astroballSides = AstroballSides.versus
     @Environment(\.dismiss) private var dismiss
 
     init(online: OnlineMatchCoordinator, lobby: LobbyService? = nil, format: InviteFormat = .duel, openPicker: @escaping (_ format: OnlineFormat) -> Void) {
@@ -781,7 +783,11 @@ private struct InviteSheet: View {
         case .duel: "Pick a pilot. If they are in the app it rings in game; if not, the ask keeps for a day and Game Center taps them."
         case .teamUp: "Pick up to three. The first flies beside you against two bots; four pilots make it two a side."
         case .freeForAll: "Pick up to three. Everyone gets a net and five lives on the ring; two of you fly against a bot, four fill the ring. Your ring settings fly on every phone."
-        case .astroball: "Pick up to three. One is a duel across the net; two or three make it two a side, a bot in any empty seat. Your ASTROBALL settings fly on every phone."
+        case .astroball: switch astroballSides {
+            case .versus: "Pick up to three. Two a side: one friend flies across the net and you each get a bot on your wing; bots take any empty seat. Your ASTROBALL settings fly on every phone."
+            case .together: "Pick up to three. The first flies on your side against two bots; four pilots make it two a side. Your ASTROBALL settings fly on every phone."
+            case .duel: "Pick one for a duel across the net. Two or three make it two a side, a bot in any empty seat. Your ASTROBALL settings fly on every phone."
+            }
         case .openTable: "Pick up to five. The first to join starts a duel with you; anyone after watches the game in progress, then everyone flies the next: three is two against one and a bot, four is two a side. Past four, winners stay on."
         case .addToTable: "They watch the game in progress and fly the next one. Past four pilots, they wait their turn on the bench."
         }
@@ -813,6 +819,15 @@ private struct InviteSheet: View {
                         }
                         .pickerStyle(.segmented)
                         .accessibilityIdentifier("invite-format")
+                    }
+                    if format == .astroball {
+                        Picker("Sides", selection: $astroballSides) {
+                            Text("1 V 1").tag(AstroballSides.duel)
+                            Text("2 V 2").tag(AstroballSides.versus)
+                            Text("TEAM UP").tag(AstroballSides.together)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("invite-astroball-sides")
                     }
                     Text(guidance)
                         .font(.footnote).foregroundStyle(.secondary)
@@ -885,7 +900,7 @@ private struct InviteSheet: View {
                 // has no bench to put a late arrival on.
                 if format == .duel || format == .teamUp || format == .freeForAll || format == .astroball {
                     Section {
-                        Button { openPicker(format.online) } label: {
+                        Button { openPicker(onlineFormat) } label: {
                             Label("Game Center picker", systemImage: "person.2.wave.2.fill")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
@@ -902,6 +917,15 @@ private struct InviteSheet: View {
         .onChange(of: format) { _, _ in picked = [] }
         .task { online.loadInvitees() }
         .accessibilityIdentifier("invite-screen")
+    }
+
+    private var onlineFormat: OnlineFormat {
+        guard format == .astroball else { return format.online }
+        return switch astroballSides {
+        case .duel: .astroball
+        case .versus: .astroballDoubles
+        case .together: .astroballTeamUp
+        }
     }
 
     private var sendLabel: String {
@@ -922,7 +946,7 @@ private struct InviteSheet: View {
         case .duel: break
         case .teamUp: online.invite(players, format: .teamUp)
         case .freeForAll: online.invite(players, format: .freeForAll)
-        case .astroball: online.invite(players, format: .astroball)
+        case .astroball: online.invite(players, format: onlineFormat)
         case .openTable: online.openTable(inviting: players)
         case .addToTable:
             online.inviteToTable(players)
@@ -930,6 +954,9 @@ private struct InviteSheet: View {
         }
     }
 }
+
+/// ASTROBALL invites: a duel, a friend across the net, or a friend beside you.
+private enum AstroballSides { case duel, versus, together }
 
 /// The in-game half of INVITES: answer what is waiting, see what is out,
 /// and ask whoever is in the app right now.
@@ -1412,30 +1439,6 @@ private struct GameView: View {
                 if mode == .online, case .reconnecting = online.status {
                     holdButton
                 }
-                // Where the court leaves a band for the scoreboard (iPhone
-                // Duo) the badges have no room of their own: the HUD's YOU
-                // tag and the court's own side labels say the same thing.
-                if !mode.isBay, !session.isFreeForAll,
-                   ArenaScene.scoreboardBand(for: TouchControls.windowFrame(in: geometry).size) == 0 {
-                    let left = session.state.team(onHalfAt: -1)
-                    let right = left.opponent
-                    let you = session.state.ships.count > 2 ? "YOU + ALLY" : "YOU"
-                    HStack {
-                        TeamSideBadge(
-                            title: sideTitle(left, you: you),
-                            team: left,
-                            isLocal: !isSpectating && left == localTeam
-                        )
-                        Spacer()
-                        TeamSideBadge(
-                            title: sideTitle(right, you: you),
-                            team: right,
-                            isLocal: !isSpectating && right == localTeam
-                        )
-                    }
-                    .padding(.horizontal, 22)
-                    .padding(.top, 4)
-                }
                 if let table, session.state.match.phase != .finished {
                     OpenTableBanner(text: bannerText(for: table), isWatching: isSpectating)
                         .padding(.top, 6)
@@ -1453,6 +1456,25 @@ private struct GameView: View {
                                   saberChanged: { session.saber = $0 },
                                   saberFlicked: { session.flickSaber($0) })
                 }
+            }
+            // ASTROBALL's touches and bounces, big, down each screen edge by
+            // that side's half: the dots beside the score were too small to
+            // read mid-rally.
+            if !mode.isBay, !session.isFreeForAll, let limits = session.touchLimits {
+                let left = session.state.team(onHalfAt: -1)
+                HStack {
+                    VolleyRail(state: session.state, team: left, touchLimit: limits[left], allowedBounces: allowedBounces)
+                    Spacer()
+                    VolleyRail(state: session.state, team: left.opponent, touchLimit: limits[left.opponent], allowedBounces: allowedBounces)
+                }
+                // Out past the safe area, most of the way to the glass: the
+                // island's notch is only the outer ~40% of the inset.
+                .padding(.leading, max(6, geometry.safeAreaInsets.leading * 0.62))
+                .padding(.trailing, max(6, geometry.safeAreaInsets.trailing * 0.62))
+                .padding(.top, 58)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(.container, edges: .horizontal)
+                .allowsHitTesting(false)
             }
             // Takes no space and never hit-tests, so a hardware keyboard flies
             // the ship without displacing the thumb controls.
@@ -1491,10 +1513,14 @@ private struct GameView: View {
             } else if session.state.match.phase == .serve {
                 VStack(spacing: 8) {
                     if let text = session.lastPointText {
+                        // Painted the colour of the side the point paid, so
+                        // the words never say whose it was.
+                        let paid = session.lastPointTeam.map { session.teamHues.color($0) }
                         Text(text)
                             .font(.system(size: 26, weight: .black, design: .rounded)).tracking(2)
+                            .foregroundStyle(paid == nil ? .white : .black)
                             .padding(.horizontal, 20).padding(.vertical, 10)
-                            .background(.black.opacity(0.66), in: Capsule())
+                            .background(paid ?? .black.opacity(0.66), in: Capsule())
                             .overlay(Capsule().stroke(.white.opacity(0.35)))
                     }
                     if !session.isFreeForAll {
@@ -1719,16 +1745,11 @@ private struct GameView: View {
         return "OPEN TABLE · \(table.queue.count) WAITING"
     }
 
+    /// The pill is painted the serving side's colour, so it never says
+    /// YOUR or CPU; a pilot's name still shows online.
     private func serveText(_ servingSide: Team, isLocal: Bool) -> String {
-        if isLocal { return "YOUR SERVE" }
-        if let name = courtNames?[servingSide] { return "\(name) SERVES" }
-        return mode == .online ? "OPPONENT SERVE" : "CPU SERVE"
-    }
-
-    private func sideTitle(_ team: Team, you: String) -> String {
-        if !isSpectating, team == localTeam { return you }
-        if let name = courtNames?[team] { return name }
-        return mode == .online ? "OPPONENT" : "CPU"
+        if !isLocal, let name = courtNames?[servingSide] { return "\(name) SERVES" }
+        return "SERVE"
     }
 
     /// The results card's view of the table: who flies next and who has won.
@@ -2074,23 +2095,51 @@ extension TeamHues {
     func color(_ team: Team) -> Color { self[team].color }
 }
 
-private struct TeamSideBadge: View {
-    let title: String
-    let team: Team
-    var isLocal: Bool = false
+/// One side's ASTROBALL meter on its screen edge: a box per touch the side
+/// may spend (filled as they go, the last one ringed white once it is all
+/// that is left), then an arrow per bounce.
+private struct VolleyRail: View {
     @Environment(\.teamHues) private var hues
+    let state: WorldState
+    let team: Team
+    let touchLimit: Int
+    let allowedBounces: Int
 
     var body: some View {
-        let color = hues.color(team)
-        Text("\(title) • \(hues[team].name)")
-            .font(.caption2.monospaced().weight(.black))
-            .tracking(1.2)
-            .foregroundStyle(color)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 6)
-            .background(.black.opacity(0.42), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.7), lineWidth: 1.5))
-            .accessibilityLabel(isLocal ? "Your side: \(hues[team].name.capitalized)" : "\(title): \(hues[team].name.capitalized)")
+        let tint = hues.color(team)
+        let touches = min(state.match.shipTouches[team], touchLimit)
+        let bounces = min(state.match.floorContacts[team], allowedBounces)
+        VStack(spacing: 4) {
+            Text("HITS")
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .foregroundStyle(tint)
+            ForEach(0..<touchLimit, id: \.self) { index in
+                let spent = index < touches
+                let isLast = index == touchLimit - 1 && touches == touchLimit - 1
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(spent ? tint : .white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .stroke(isLast ? .white : tint.opacity(spent ? 1 : 0.45), lineWidth: isLast ? 2.5 : 1.5)
+                    )
+                    .overlay(Text("\(index + 1)")
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .foregroundStyle(spent ? .black : tint.opacity(0.7)))
+                    .frame(width: 30, height: 23)
+            }
+            Rectangle().fill(.white.opacity(0.2)).frame(width: 22, height: 1).padding(.vertical, 2)
+            ForEach(0..<allowedBounces, id: \.self) { index in
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 15, weight: .black))
+                    .foregroundStyle(index < bounces ? tint : .white.opacity(0.2))
+            }
+        }
+        .padding(.vertical, 8).padding(.horizontal, 5)
+        .background(.black.opacity(0.4), in: Capsule())
+        .overlay(Capsule().stroke(tint.opacity(0.5), lineWidth: 1))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(hues[team].name.capitalized): \(touches) of \(touchLimit) hits, \(bounces) of \(allowedBounces) bounces")
+        .accessibilityIdentifier("hud-volley-rail")
     }
 }
 
@@ -2225,7 +2274,8 @@ private struct MatchHUD: View {
         let touches = min(state.match.shipTouches[team], touchLimits?[team] ?? 0)
         let stake = state.match.stake(for: team)
         let isLocal = !spectating && team == localTeam
-        let tag: String = isLocal ? "YOU" : (teamNames?[team] ?? (online == nil ? "CPU" : "OPP"))
+        // A pilot's name online; offline the colour alone says whose side.
+        let tag = teamNames?[team]
         let side: String = if isLocal {
             "Your side, "
         } else if let name = teamNames?[team] {
@@ -2236,14 +2286,16 @@ private struct MatchHUD: View {
         return HStack(spacing: narrow ? 8 : 12) {
             VStack(spacing: 3) {
                 Image(systemName: team == .cyan ? "minus" : "diamond.fill").foregroundStyle(tint)
-                Text(tag)
-                    .font(.system(size: 10, weight: .black, design: .monospaced))
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                    .frame(maxWidth: narrow ? 64 : 76)
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(tint, in: Capsule())
                     .accessibilityIdentifier(isLocal ? "hud-you-tag" : "hud-opponent-tag")
+                if let tag {
+                    Text(tag)
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(maxWidth: narrow ? 64 : 76)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(tint, in: Capsule())
+                }
             }
             Text(value.formatted())
                 .font(.system(size: 36, weight: .black, design: .rounded).monospacedDigit())
@@ -2256,21 +2308,9 @@ private struct MatchHUD: View {
                             .stroke(tint, lineWidth: stake == .matchPoint ? 3 : 1.5)
                     }
                 }
-            // Down arrows are bounces spent this possession. In ASTROBALL a
-            // row of dots above them is touches spent of the side's limit,
-            // since TOO MANY TOUCHES was called with nothing on screen
-            // counting up to it.
-            VStack(spacing: 2) {
-                if let limit = touchLimits?[team] {
-                    HStack(spacing: 2) {
-                        ForEach(0..<limit, id: \.self) { index in
-                            Image(systemName: "circle.fill")
-                                .foregroundStyle(index < touches ? tint.opacity(0.9) : .white.opacity(0.16))
-                        }
-                    }
-                    .font(.system(size: 6, weight: .black))
-                    .accessibilityIdentifier("hud-touches")
-                }
+            // Down arrows are bounces spent this possession. ASTROBALL meters
+            // touches and bounces on its edge rails (`VolleyRail`) instead.
+            if touchLimits == nil {
                 HStack(spacing: 1) {
                     ForEach(0..<allowedBounces, id: \.self) { index in
                         Image(systemName: "arrow.down")
@@ -2662,7 +2702,7 @@ struct ControlLayoutEditor: View {
 struct AstroballTuningControls: View {
     @State private var tuning = AstroballTuning.stored()
 
-    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. There are two zones, each a stretch of each half's wall path (by default the quarter of the floor nearest the net, and the floor corner up the lower quarter of the side wall), from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Elsewhere the floor plays as in the duel. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; fly past it and it slings you back. Takes effect next match, and online when you host."
+    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. There are two zones, each a stretch of each half's wall path (by default the floor nearest the net out to 28%, and a small target 7% to 13% up the side wall), from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; fly past it and it slings you back. Takes effect next match, and online when you host."
 
     private var court: ArenaGeometry { .astroball(doubles: false) }
 

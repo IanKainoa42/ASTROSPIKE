@@ -135,10 +135,8 @@ struct SetBreakBoard: View {
 
     private func tint(_ team: Team) -> Color { hues.color(team) }
 
-    private func name(_ team: Team) -> String {
-        guard let localTeam else { return hues[team].name }
-        return team == localTeam ? "YOU" : "RIVAL"
-    }
+    /// The colour's name, never YOU or RIVAL: the column's tint says whose.
+    private func name(_ team: Team) -> String { hues[team].name }
 }
 
 /// STATS on the home screen: the pilot's best match on every board, kept on
