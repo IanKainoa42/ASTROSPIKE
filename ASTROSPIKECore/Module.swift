@@ -2619,7 +2619,11 @@ public struct SimulationEngine: Sendable {
             radius: radius
         ) {
             ship.position = wall.position
-            shipTouchedNet = true
+            // Only the net's upper half is a fault: a hull sliding along the
+            // floor out of the zone into the bottom of the net is fair.
+            if ship.position.y > arena.floorY + (arena.netTopY - arena.floorY) * 0.5 {
+                shipTouchedNet = true
+            }
             let inwardSpeed = simd_dot(ship.velocity, wall.normal)
             if inwardSpeed < 0 {
                 ship.velocity -= wall.normal * ((1 + 0.12) * inwardSpeed)

@@ -223,17 +223,20 @@ struct AstroballTests {
         #expect(engine.state.match.shipTouches.cyan == 1)
     }
 
-    @Test("A hull touching the net loses the point in ASTROBALL; the duel's net is only a wall")
+    @Test("A hull touching the net's upper half loses the point in ASTROBALL; the lower half is fair; the duel's net is only a wall")
     func netTouchLosesPoint() {
+        let court = ArenaGeometry.astroball(doubles: false)
+        let netHeight = court.netTopY - court.floorY
         for astroball in [true, false] {
-            var engine = astroballEngine(astroball ? AstroballTuning() : nil)
-            let court = ArenaGeometry.astroball(doubles: false)
-            engine.state.ships[.orange]!.position = .init(0.9, 0.4)
-            engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + 0.1)
-            engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
-            engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
-            for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
-            #expect(engine.state.match.score.orange == (astroball ? 1 : 0))
+            for (share, fault) in [(0.85, true), (0.2, false)] {
+                var engine = astroballEngine(astroball ? AstroballTuning() : nil)
+                engine.state.ships[.orange]!.position = .init(0.9, 0.4)
+                engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + netHeight * share)
+                engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
+                engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
+                for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
+                #expect(engine.state.match.score.orange == (astroball && fault ? 1 : 0), "astroball \(astroball), height \(share)")
+            }
         }
     }
 
@@ -244,7 +247,7 @@ struct AstroballTests {
         var engine = astroballEngine(tuning)
         let court = ArenaGeometry.astroball(doubles: false)
         engine.state.ships[.orange]!.position = .init(0.9, 0.4)
-        engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + 0.1)
+        engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + (court.netTopY - court.floorY) * 0.85)
         engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
         engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
         for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }

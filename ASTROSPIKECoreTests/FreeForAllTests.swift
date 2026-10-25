@@ -984,11 +984,13 @@ struct FreeForAllTests {
 
 extension RingTuning {
     /// The table the ring's mechanics are pinned against: flat, no centre
-    /// bumper, a ball rather than a puck, bumps a quarter of the radius. The
+    /// bumper, a ball rather than a puck, bumps a quarter of the radius, the
+    /// old ring's size. The
     /// shipped defaults are Ian's own feel (build 146) and move with it, so
     /// these tests never lean on them.
     static var lab: RingTuning {
         var tuning = RingTuning()
+        tuning.size = 1
         tuning.speed = 0.45
         tuning.hullDrag = 0.45
         tuning.ballDrag = 0.15

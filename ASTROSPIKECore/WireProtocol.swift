@@ -183,7 +183,8 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 62: ASTROBALL 2 V 2 (`astroballDoubles`), a new online format: one
     //     friend across the net and a bot on each wing; and ASTROBALL TEAM
     //     UP (`astroballTeamUp`), the friend on your side against two bots.
-    public static let currentVersion: UInt16 = 62
+    // 63: the ring's size rides the host's ring tuning.
+    public static let currentVersion: UInt16 = 63
 
     public var version: UInt16
     public var sequence: UInt64

@@ -17,9 +17,10 @@ import simd
 /// mouth; the rim itself opens there. A hull meets every net shut, so
 /// nobody parks behind a goal line.
 public struct RingField: Equatable, Sendable {
-    /// Centre to rim. The field is the size the old hub-and-spoke ring was,
-    /// so nothing on screen shrank; the hub's room is now open play.
-    public static let rimRadius = 1.52
+    /// Centre to rim at a Ring size of 1: the size the old hub-and-spoke
+    /// ring was. The Ring size setting scales it; hulls, ball, nets and the
+    /// centre bumper keep their size, so a bigger ring is more room.
+    public static let baseRimRadius = 1.52
     /// Each pilot's MAX CROSS line, as a share of the distance out to the
     /// mouths: the arc across each rival's ground past which the rival
     /// shoves a pilot back, as the duel's line does half way into the far
@@ -55,7 +56,7 @@ public struct RingField: Equatable, Sendable {
     public var ballRadius: Double
 
     /// Half the net's mouth, out to the middle of each post: the ball plus a
-    /// tenth of the field either side, so a bigger ball keeps the same room.
+    /// fixed 0.10 either side, so a bigger ball keeps the same room.
     public var netHalfWidth: Double
     /// Back of the net to the mouth, along the frame's centreline.
     public var netDepth: Double
@@ -75,7 +76,7 @@ public struct RingField: Equatable, Sendable {
         maxCrossShare = tuning.lineShare
         centreBumper = tuning.centreBumper
         puck = tuning.puck
-        rimRadius = Self.rimRadius
+        rimRadius = Self.baseRimRadius * min(2.5, max(1, tuning.size))
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
         netHalfWidth = ballRadius + 0.10 + Self.netWall
         netDepth = 2 * ballRadius + 0.07 + Self.netWall
@@ -355,6 +356,10 @@ public struct RingField: Equatable, Sendable {
 /// the centre bumper is up. Online, the host's settings ride the wire so
 /// every board flies the same table.
 public struct RingTuning: Equatable, Sendable, Codable {
+    /// The field's radius, as a multiple of the old ring's. Hulls, ball and
+    /// nets keep their size: the Ring size setting is more room, drawn as
+    /// smaller hulls on the same screen.
+    public var size = 1.5
     /// The motor's push on the ring, as a share of the Thrust slider.
     public var speed = 0.70
     /// Velocity bled off a ring hull each second. Held thrust builds speed
@@ -421,6 +426,7 @@ public struct RingTuning: Equatable, Sendable, Codable {
     /// it had when it was the only one, so a stored setting carries over.
     public static var knobs: [Knob] {
         [
+            Knob(key: "ring.size", title: "Ring size", range: 1.0 ... 2.5, step: 0.05, percent: true, keyPath: \.size),
             Knob(key: "ring.speed", title: "Thrust", range: 0.1 ... 1.2, step: 0.05, percent: true, keyPath: \.speed),
             Knob(key: "ring.hullDrag", title: "Hull drag", range: 0.05 ... 1.5, step: 0.05, percent: false, keyPath: \.hullDrag),
             Knob(key: "ring.ballDrag", title: "Ball drag", range: 0 ... 0.8, step: 0.01, percent: false, keyPath: \.ballDrag),
