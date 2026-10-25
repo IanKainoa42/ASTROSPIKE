@@ -2717,6 +2717,8 @@ struct AstroballTuningControls: View {
         }
         .pickerStyle(.segmented)
         .accessibilityIdentifier(AstroballTuning.inARowKey)
+        Toggle("Net touch loses the point", isOn: $tuning.netPenalty)
+            .accessibilityIdentifier(AstroballTuning.netPenaltyKey)
         TuningSlider(title: "Zone from", value: $tuning.zoneStart, range: 0 ... 1, step: 0.01,
                      readout: { court.wallPathPlace(at: $0) })
             .accessibilityIdentifier(AstroballTuning.zoneStartKey)

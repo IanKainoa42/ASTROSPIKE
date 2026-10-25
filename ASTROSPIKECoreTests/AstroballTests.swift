@@ -237,6 +237,23 @@ struct AstroballTests {
         }
     }
 
+    @Test("The net penalty switch turns the fault off and rides the wire")
+    func netPenaltySwitch() throws {
+        var tuning = AstroballTuning()
+        tuning.netPenalty = false
+        var engine = astroballEngine(tuning)
+        let court = ArenaGeometry.astroball(doubles: false)
+        engine.state.ships[.orange]!.position = .init(0.9, 0.4)
+        engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + 0.1)
+        engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
+        engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
+        for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
+        #expect(engine.state.match.score.orange == 0)
+        let decoded = try JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning))
+        #expect(decoded.netPenalty == false)
+        #expect(try JSONDecoder().decode(AstroballTuning.self, from: Data("{}".utf8)).netPenalty == true)
+    }
+
     @Test("The ball landing in the zone gives the other side the point")
     func zoneLandingScores() {
         let court = ArenaGeometry.astroball(doubles: false)

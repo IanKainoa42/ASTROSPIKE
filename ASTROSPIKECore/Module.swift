@@ -1183,7 +1183,7 @@ public struct SimulationEngine: Sendable {
         }
         solveBeamLocks(effects: &collisionEffects)
         // ASTROBALL: a hull in the net is a fault, the toucher's point lost.
-        if configuration.astroball != nil, state.match.phase == .playing {
+        if configuration.astroball?.netPenalty == true, state.match.phase == .playing {
             for seat in netTouchers.sorted() {
                 contacts.append(.shipDestroyed(team: seat.team, reason: .netContact))
             }

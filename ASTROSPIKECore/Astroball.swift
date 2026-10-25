@@ -46,6 +46,9 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// match (`withRandomHues`) and carried on the host's tuning so every
     /// phone paints the same court.
     public var hues = TeamHues()
+    /// Whether a hull touching the net loses its side the point. On by
+    /// default; off, the net is only a wall.
+    public var netPenalty = true
 
     /// The floor nearest the net, out to 28%: straight-down spikes.
     public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.28)
@@ -56,7 +59,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, crossLean, hues
+        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, crossLean, hues, netPenalty
     }
 
     /// Hosts older than the second zone omit its ends: they read the default.
@@ -66,6 +69,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         inARow = try container.decodeIfPresent(Int.self, forKey: .inARow) ?? inARow
         crossLean = try container.decodeIfPresent(Double.self, forKey: .crossLean) ?? crossLean
         hues = try container.decodeIfPresent(TeamHues.self, forKey: .hues) ?? hues
+        netPenalty = try container.decodeIfPresent(Bool.self, forKey: .netPenalty) ?? netPenalty
         zoneStart = try container.decodeIfPresent(Double.self, forKey: .zoneStart) ?? zoneStart
         zoneEnd = try container.decodeIfPresent(Double.self, forKey: .zoneEnd) ?? zoneEnd
         zone2Start = try container.decodeIfPresent(Double.self, forKey: .zone2Start) ?? zone2Start
@@ -108,6 +112,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public static let wallBounceKey = "astroball.wallBounce"
     public static let inARowKey = "astroball.inARow"
     public static let crossLeanKey = "astroball.crossLean"
+    public static let netPenaltyKey = "astroball.netPenalty"
 
     /// The pilot's settings, each clamped to its slider; one never set reads
     /// its default.
@@ -129,6 +134,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if let value = defaults.object(forKey: crossLeanKey) as? Double {
             tuning.crossLean = min(crossLeanRange.upperBound, max(crossLeanRange.lowerBound, value))
         }
+        if let value = defaults.object(forKey: netPenaltyKey) as? Bool { tuning.netPenalty = value }
         return tuning
     }
 
@@ -143,6 +149,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if wallBounce == base.wallBounce { defaults.removeObject(forKey: Self.wallBounceKey) } else { defaults.set(wallBounce, forKey: Self.wallBounceKey) }
         if inARow == base.inARow { defaults.removeObject(forKey: Self.inARowKey) } else { defaults.set(inARow, forKey: Self.inARowKey) }
         if crossLean == base.crossLean { defaults.removeObject(forKey: Self.crossLeanKey) } else { defaults.set(crossLean, forKey: Self.crossLeanKey) }
+        if netPenalty == base.netPenalty { defaults.removeObject(forKey: Self.netPenaltyKey) } else { defaults.set(netPenalty, forKey: Self.netPenaltyKey) }
     }
 
     public var clampedWallBounce: Double {
