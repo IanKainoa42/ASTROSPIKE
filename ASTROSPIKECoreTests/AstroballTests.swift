@@ -223,38 +223,43 @@ struct AstroballTests {
         #expect(engine.state.match.shipTouches.cyan == 1)
     }
 
-    @Test("A hull touching the net's upper half loses the point in ASTROBALL; the lower half is fair; the duel's net is only a wall")
-    func netTouchLosesPoint() {
+    @Test("A hull touching the net's upper half costs what Net touch says; the lower half is fair; the duel's net is only a wall")
+    func netTouch() {
         let court = ArenaGeometry.astroball(doubles: false)
         let netHeight = court.netTopY - court.floorY
-        for astroball in [true, false] {
-            for (share, fault) in [(0.85, true), (0.2, false)] {
-                var engine = astroballEngine(astroball ? AstroballTuning() : nil)
+        // nil: the duel. Otherwise each Net touch setting.
+        let modes: [NetTouch?] = [nil, .off, .stun, .point]
+        for mode in modes {
+            for (share, high) in [(0.85, true), (0.2, false)] {
+                var tuning = AstroballTuning()
+                if let mode { tuning.netTouch = mode }
+                var engine = astroballEngine(mode == nil ? nil : tuning)
                 engine.state.ships[.orange]!.position = .init(0.9, 0.4)
                 engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + netHeight * share)
                 engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
                 engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
                 for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
-                #expect(engine.state.match.score.orange == (astroball && fault ? 1 : 0), "astroball \(astroball), height \(share)")
+                let label = "\(String(describing: mode)), height \(share)"
+                #expect(engine.state.match.score.orange == (mode == .point && high ? 1 : 0), "\(label)")
+                let stunned = engine.state.ships[.cyan]!.stunTicks > 0
+                #expect(stunned == (mode == .stun && high), "\(label)")
+                if mode == .stun && high {
+                    let left = Double(engine.state.ships[.cyan]!.stunTicks) * engine.configuration.stepDuration
+                    #expect(left > 0.9 && left <= 1.0, "about a second stunned, \(left) left")
+                }
             }
         }
     }
 
-    @Test("The net penalty switch turns the fault off and rides the wire")
-    func netPenaltySwitch() throws {
-        var tuning = AstroballTuning()
-        tuning.netPenalty = false
-        var engine = astroballEngine(tuning)
-        let court = ArenaGeometry.astroball(doubles: false)
-        engine.state.ships[.orange]!.position = .init(0.9, 0.4)
-        engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + (court.netTopY - court.floorY) * 0.85)
-        engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
-        engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
-        for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
-        #expect(engine.state.match.score.orange == 0)
-        let decoded = try JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning))
-        #expect(decoded.netPenalty == false)
-        #expect(try JSONDecoder().decode(AstroballTuning.self, from: Data("{}".utf8)).netPenalty == true)
+    @Test("Net touch defaults to stun and rides the wire; an older host's payload reads the default")
+    func netTouchSetting() throws {
+        #expect(AstroballTuning().netTouch == .stun)
+        for mode in NetTouch.allCases {
+            var tuning = AstroballTuning()
+            tuning.netTouch = mode
+            #expect(try JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning)).netTouch == mode)
+        }
+        #expect(try JSONDecoder().decode(AstroballTuning.self, from: Data("{}".utf8)).netTouch == .stun)
     }
 
     @Test("The ball landing in the zone gives the other side the point")

@@ -1190,10 +1190,21 @@ public struct SimulationEngine: Sendable {
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
         solveBeamLocks(effects: &collisionEffects)
-        // ASTROBALL: a hull in the net is a fault, the toucher's point lost.
-        if configuration.astroball?.netPenalty == true, state.match.phase == .playing {
+        // ASTROBALL: a hull in the net is a fault: a second stunned, or
+        // the toucher's point lost, as the host set it.
+        if let astroball = configuration.astroball, state.match.phase == .playing {
             for seat in netTouchers.sorted() {
-                contacts.append(.shipDestroyed(team: seat.team, reason: .netContact))
+                switch astroball.netTouch {
+                case .off:
+                    break
+                case .stun:
+                    guard var ship = state.ships[seat], ship.stunGuardTicks == 0 else { continue }
+                    ship.stunTicks = UInt64((Self.netStunSeconds / dt).rounded())
+                    ship.stunGuardTicks = UInt64((Self.netStunGuardSeconds / dt).rounded())
+                    state.ships[seat] = ship
+                case .point:
+                    contacts.append(.shipDestroyed(team: seat.team, reason: .netContact))
+                }
             }
         }
         advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects, contacts: &contacts)
@@ -2130,6 +2141,11 @@ public struct SimulationEngine: Sendable {
     /// stun starts before another one can land (stun plus a clear window).
     static let stunSeconds = 0.75
     static let stunGuardSeconds = 1.6
+    /// `NetTouch.stun`: a second with the controls dead, and no second net
+    /// stun until a clear window after it, so a hull drifting along the
+    /// net is not held there.
+    static let netStunSeconds = 1.0
+    static let netStunGuardSeconds = 2.0
     /// `BoltHit.spin`: the yaw a hit on the very tip of the hull knocks in,
     /// radians a second, and how fast it bleeds away. The total turn is
     /// about kick x decay: ~40 degrees off the tip, half that dead centre.

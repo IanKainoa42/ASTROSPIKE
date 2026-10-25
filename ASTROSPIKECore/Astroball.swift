@@ -52,9 +52,9 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// match (`withRandomHues`) and carried on the host's tuning so every
     /// phone paints the same court.
     public var hues = TeamHues()
-    /// Whether a hull touching the net loses its side the point. On by
-    /// default; off, the net is only a wall.
-    public var netPenalty = true
+    /// What a hull touching the net's upper half costs: nothing, a second
+    /// stunned (the default), or its side the point.
+    public var netTouch = NetTouch.stun
 
     /// The floor nearest the net, out to 28%: straight-down spikes.
     public static let defaultZoneEnd = ArenaGeometry.astroball(doubles: false).wallPathFraction(ofFloor: 0.28)
@@ -65,7 +65,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, floorBounce, crossLean, hues, netPenalty
+        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, floorBounce, crossLean, hues, netTouch
     }
 
     /// Hosts older than the second zone omit its ends: they read the default.
@@ -75,7 +75,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         inARow = try container.decodeIfPresent(Int.self, forKey: .inARow) ?? inARow
         crossLean = try container.decodeIfPresent(Double.self, forKey: .crossLean) ?? crossLean
         hues = try container.decodeIfPresent(TeamHues.self, forKey: .hues) ?? hues
-        netPenalty = try container.decodeIfPresent(Bool.self, forKey: .netPenalty) ?? netPenalty
+        netTouch = try container.decodeIfPresent(NetTouch.self, forKey: .netTouch) ?? netTouch
         zoneStart = try container.decodeIfPresent(Double.self, forKey: .zoneStart) ?? zoneStart
         zoneEnd = try container.decodeIfPresent(Double.self, forKey: .zoneEnd) ?? zoneEnd
         zone2Start = try container.decodeIfPresent(Double.self, forKey: .zone2Start) ?? zone2Start
@@ -120,7 +120,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public static let floorBounceKey = "astroball.floorBounce"
     public static let inARowKey = "astroball.inARow"
     public static let crossLeanKey = "astroball.crossLean"
-    public static let netPenaltyKey = "astroball.netPenalty"
+    public static let netTouchKey = "astroball.netTouch"
 
     /// The pilot's settings, each clamped to its slider; one never set reads
     /// its default.
@@ -145,7 +145,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if let value = defaults.object(forKey: crossLeanKey) as? Double {
             tuning.crossLean = min(crossLeanRange.upperBound, max(crossLeanRange.lowerBound, value))
         }
-        if let value = defaults.object(forKey: netPenaltyKey) as? Bool { tuning.netPenalty = value }
+        if let value = defaults.string(forKey: netTouchKey).flatMap(NetTouch.init(rawValue:)) { tuning.netTouch = value }
         return tuning
     }
 
@@ -161,7 +161,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if floorBounce == base.floorBounce { defaults.removeObject(forKey: Self.floorBounceKey) } else { defaults.set(floorBounce, forKey: Self.floorBounceKey) }
         if inARow == base.inARow { defaults.removeObject(forKey: Self.inARowKey) } else { defaults.set(inARow, forKey: Self.inARowKey) }
         if crossLean == base.crossLean { defaults.removeObject(forKey: Self.crossLeanKey) } else { defaults.set(crossLean, forKey: Self.crossLeanKey) }
-        if netPenalty == base.netPenalty { defaults.removeObject(forKey: Self.netPenaltyKey) } else { defaults.set(netPenalty, forKey: Self.netPenaltyKey) }
+        if netTouch == base.netTouch { defaults.removeObject(forKey: Self.netTouchKey) } else { defaults.set(netTouch.rawValue, forKey: Self.netTouchKey) }
     }
 
     public var clampedWallBounce: Double {
@@ -454,5 +454,23 @@ public extension AstroballTuning {
         var generator = SystemRandomNumberGenerator()
         tuning.hues = .random(using: &generator)
         return tuning
+    }
+}
+
+/// What a hull touching the ASTROBALL net's upper half costs.
+public enum NetTouch: String, Codable, CaseIterable, Sendable {
+    /// Nothing: the net is only a wall.
+    case off
+    /// The hull's controls go dead for `SimulationEngine.netStunSeconds`.
+    case stun
+    /// The toucher's side loses the point.
+    case point
+
+    public var label: String {
+        switch self {
+        case .off: "Off"
+        case .stun: "Stun"
+        case .point: "Point"
+        }
     }
 }

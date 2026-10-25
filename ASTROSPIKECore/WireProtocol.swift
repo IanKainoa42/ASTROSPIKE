@@ -186,7 +186,8 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     // 63: the ring's size rides the host's ring tuning.
     // 64: the ring's Puck toggle is gone (a puck always, and its spin
     //     curves); its Puck size rides the host's ring tuning.
-    public static let currentVersion: UInt16 = 64
+    // 65: ASTROBALL's net touch is off / stun / point, not a switch.
+    public static let currentVersion: UInt16 = 65
 
     public var version: UInt16
     public var sequence: UInt64
