@@ -759,6 +759,9 @@ public struct SimulationEngine: Sendable {
     /// The walls, roof and corners: ASTROBALL's slider, the duel's 0.82
     /// everywhere else.
     private var wallRestitution: Double { configuration.astroball?.clampedWallBounce ?? Self.ballRestitution }
+    /// The flat floor: ASTROBALL's slider (never above its walls), the
+    /// duel's 0.78 everywhere else.
+    private var deckRestitution: Double { configuration.astroball?.clampedFloorBounce ?? Self.floorRestitution }
     /// Slowest hull-on-arena or hull-on-hull knock that counts as an impact.
     static let effectImpactSpeed = 0.25
     /// The floor takes a little more out of it than the walls do.
@@ -2293,7 +2296,7 @@ public struct SimulationEngine: Sendable {
             let outside = arena.ring.map {
                 let distance = simd_length(bolt.position)
                 return distance > $0.rimRadius
-            } ?? (abs(bolt.position.x) > arena.halfWidth
+            } ?? (abs(bolt.position.x) > arena.sideWallX(atY: bolt.position.y)
                 || bolt.position.y < arena.floorY
                 || bolt.position.y > arena.ceilingY)
             // Whatever stands in the middle of this court eats a bolt: the
@@ -2681,12 +2684,15 @@ public struct SimulationEngine: Sendable {
             ship.position.y = arena.ceilingY - above
             ship.velocity.y = min(0, -ship.velocity.y * 0.3)
         }
-        if ship.position.x - left <= -arena.halfWidth {
-            ship.position.x = -arena.halfWidth + left
+        // A leaning wall stands in at its foot; a hull meets it as a plumb
+        // wall at its own height, which is all a lean this slight needs.
+        let wallX = arena.sideWallX(atY: ship.position.y)
+        if ship.position.x - left <= -wallX {
+            ship.position.x = -wallX + left
             ship.velocity.x = max(0, -ship.velocity.x * 0.3)
         }
-        if ship.position.x + right >= arena.halfWidth {
-            ship.position.x = arena.halfWidth - right
+        if ship.position.x + right >= wallX {
+            ship.position.x = wallX - right
             ship.velocity.x = min(0, -ship.velocity.x * 0.3)
         }
         return grounded
@@ -3026,7 +3032,8 @@ public struct SimulationEngine: Sendable {
             let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, corner.normal)
             if inwardSpeed < 0 {
                 let incoming = state.balls[ballIndex].velocity
-                state.balls[ballIndex].velocity -= corner.normal * ((1 + wallRestitution) * inwardSpeed)
+                let bounce = ArenaGeometry.cornerRestitution(normal: corner.normal, wall: wallRestitution, floor: deckRestitution)
+                state.balls[ballIndex].velocity -= corner.normal * ((1 + bounce) * inwardSpeed)
                 grip(corner.normal, from: incoming, ballIndex: ballIndex)
             }
             noteZone(at: corner.position - corner.normal * r, contacts: &contacts)
@@ -3039,7 +3046,7 @@ public struct SimulationEngine: Sendable {
         if state.balls[ballIndex].position.y - r <= arena.floorY {
             let incoming = state.balls[ballIndex].velocity
             state.balls[ballIndex].position.y = arena.floorY + r
-            state.balls[ballIndex].velocity.y = abs(state.balls[ballIndex].velocity.y) * Self.floorRestitution
+            state.balls[ballIndex].velocity.y = abs(state.balls[ballIndex].velocity.y) * deckRestitution
             grip(SIMD2(0, 1), from: incoming, ballIndex: ballIndex)
             noteZone(at: SIMD2(state.balls[ballIndex].position.x, arena.floorY), contacts: &contacts)
             if !floorRegistered {
@@ -3062,6 +3069,19 @@ public struct SimulationEngine: Sendable {
             state.balls[ballIndex].velocity.y = -abs(state.balls[ballIndex].velocity.y) * wallRestitution
             grip(SIMD2(0, -1), from: incoming, ballIndex: ballIndex)
             noteZone(at: SIMD2(state.balls[ballIndex].position.x, arena.ceilingY), contacts: &contacts)
+        }
+        // ASTROBALL's leaning walls. A plumb wall returns nil and falls
+        // through to the flat checks below, which a leaning one never
+        // reaches: its widest point is `halfWidth`.
+        if let wall = arena.sideWallContact(position: state.balls[ballIndex].position, radius: r) {
+            state.balls[ballIndex].position = wall.position
+            let inwardSpeed = simd_dot(state.balls[ballIndex].velocity, wall.normal)
+            if inwardSpeed < 0 {
+                let incoming = state.balls[ballIndex].velocity
+                state.balls[ballIndex].velocity -= wall.normal * ((1 + wallRestitution) * inwardSpeed)
+                grip(wall.normal, from: incoming, ballIndex: ballIndex)
+            }
+            noteZone(at: wall.position - wall.normal * r, contacts: &contacts)
         }
         if state.balls[ballIndex].position.x - r <= -arena.halfWidth {
             let incoming = state.balls[ballIndex].velocity

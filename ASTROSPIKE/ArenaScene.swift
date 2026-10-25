@@ -498,8 +498,8 @@ final class ArenaScene: SKScene {
         arenaLayer.addChild(wall)
 
         let floor = CGMutablePath()
-        floor.move(to: point(-arena.cornerTangentX, arena.floorY))
-        floor.addLine(to: point(arena.cornerTangentX, arena.floorY))
+        floor.move(to: point(-arena.floorCornerTangentX, arena.floorY))
+        floor.addLine(to: point(arena.floorCornerTangentX, arena.floorY))
         let floorNode = SKShapeNode(path: floor)
         floorNode.strokeColor = .white.withAlphaComponent(0.55)
         floorNode.lineWidth = 4
@@ -863,17 +863,24 @@ final class ArenaScene: SKScene {
         // Bottom-left, top-left, top-right, bottom-right.
         let corners: [(x: Double, y: Double)] = [(-1, -1), (-1, 1), (1, 1), (1, -1)]
         for corner in corners {
-            let originX = corner.x * arena.cornerTangentX
+            // ASTROBALL's floor corners sit in at the foot of its leaning
+            // walls; the straight drawn up to the roof corner is the lean.
+            let originX = corner.x * (corner.y > 0 ? arena.cornerTangentX : arena.floorCornerTangentX)
             let originY = corner.y > 0
                 ? arena.ceilingY - arena.cornerRadiusY
                 : arena.floorY + arena.cornerRadiusY
-            // Walk each arc from its vertical tangent to its horizontal one, so
-            // consecutive corners join along the straight wall between them.
+            // Walk the outline one way round: floor to wall on the bottom-left,
+            // wall to roof on the top-left, and so on, so consecutive corners
+            // join along the straight wall or roof between them. The walk used
+            // to run every other arc backwards, which drew chords straight
+            // across the court at the corner tangents and left the side walls
+            // undrawn; build 172's bigger corners put those chords beside the
+            // MAX CROSS lines.
             for step in 0...steps {
                 let t = Double(step) / Double(steps)
                 let sweep = t * .pi / 2
                 let goingUp = corner.y > 0
-                let angle = goingUp == (corner.x < 0) ? sweep : .pi / 2 - sweep
+                let angle = goingUp == (corner.x < 0) ? .pi / 2 - sweep : sweep
                 let x = originX + corner.x * arena.cornerRadiusX * sin(angle)
                 let y = originY + corner.y * arena.cornerRadiusY * cos(angle)
                 let screen = point(x, y)
@@ -898,8 +905,8 @@ final class ArenaScene: SKScene {
         // Cuts run into the walls and roof so nothing can get behind them;
         // the court outline crops off the part buried in the wall.
         let crop = SKCropNode()
-        // Not boundsPath(): it crosses itself at the corner tangents, so its
-        // fill leaves the middle of the court out.
+        // A rounded rectangle rather than boundsPath(): the same outline, as
+        // one closed shape the crop can fill.
         let lowerLeft = point(-arena.halfWidth, arena.floorY)
         let upperRight = point(arena.halfWidth, arena.ceilingY)
         let court = CGRect(

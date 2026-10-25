@@ -127,6 +127,7 @@ struct AIControllerTests {
         #expect(!engine.state.ships[.orange]!.isDestroyed)
     }
 
+
     @Test("Pilot returns an incoming ball instead of merely surviving beside it")
     func pilotReturnsIncomingBall() {
         // Staged so the idle control is meaningful: left alone these balls drift
@@ -137,9 +138,9 @@ struct AIControllerTests {
         // idle control returns on its own proves nothing and is skipped.
         var clean = 0
         var returned = 0
-        for x in [0.40, 0.45, 0.50] {
-            for y in [0.20, 0.25, 0.30] {
-                for vx in [0.25, 0.35] {
+        for x in [0.30, 0.35, 0.40, 0.45, 0.50] {
+            for y in [0.10, 0.20, 0.25, 0.30] {
+                for vx in [0.05, 0.15, 0.25, 0.35] {
                     let ball = BallState(position: SIMD2(x, y), velocity: SIMD2(vx, -0.15))
                     guard !Self.flyIncoming(ball, pilot: false).returned else { continue }
                     clean += 1
@@ -154,10 +155,12 @@ struct AIControllerTests {
             }
         }
 
-        // Measured 9 returns from 16 clean stagings, and 6 from 15 before
-        // surfaces gripped the ball. The prototype AI returned none.
-        #expect(clean >= 12, "the idle control crossed too often for this to prove anything")
-        #expect(returned >= 4)
+        // Measured 18 returns from 53 clean stagings of 80 once build 172
+        // rounded the corners (a floor corner now rolls a dying ball back
+        // over the net, so the old 18-staging grid kept only 6 clean); 9
+        // from 16 and 6 from 15 before that. The prototype AI returned none.
+        #expect(clean >= 40, "the idle control crossed too often for this to prove anything")
+        #expect(returned >= 12)
         #expect(returned * 4 >= clean, "the pilot returned \(returned) of \(clean)")
     }
 
@@ -181,6 +184,8 @@ struct AIControllerTests {
                simd_distance(engine.state.ball.position, ship.position) < 0.14 {
                 struck = true
             }
+            // A bolt on the ball is the AI reaching it too: the pilot fires.
+            if engine.state.stats[.orange].boltHits > 0 { struck = true }
             if previousX > 0, engine.state.ball.position.x < 0 {
                 return (true, struck, engine.state.ships[.orange]!.isDestroyed)
             }

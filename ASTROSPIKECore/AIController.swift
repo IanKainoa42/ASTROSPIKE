@@ -540,6 +540,7 @@ public struct AIController: InputSource, Sendable {
         let shipSpeed = simd_length(ship.velocity)
         // ASTROBALL's walls and roof soak up speed; roll them as the engine does.
         let wallBounce = configuration.astroball?.clampedWallBounce ?? SimulationEngine.ballRestitution
+        let floorBounce = configuration.astroball?.clampedFloorBounce ?? SimulationEngine.floorRestitution
         var position = state.ball.position
         var velocity = state.ball.velocity
         // Spin bends the rollout exactly as it bends the real ball, and every
@@ -587,6 +588,16 @@ public struct AIController: InputSource, Sendable {
                     grip(out, from: incoming)
                 }
             } else {
+                // The leaning ASTROBALL wall, as the engine meets it.
+                if let wall = arena.sideWallContact(position: position, radius: radius) {
+                    position = wall.position
+                    let inward = simd_dot(velocity, wall.normal)
+                    if inward < 0 {
+                        let incoming = velocity
+                        velocity -= wall.normal * ((1 + wallBounce) * inward)
+                        grip(wall.normal, from: incoming)
+                    }
+                }
                 if position.x - radius <= -arena.halfWidth {
                     let incoming = velocity
                     position.x = -arena.halfWidth + radius
@@ -608,8 +619,21 @@ public struct AIController: InputSource, Sendable {
                 if position.y - radius <= arena.floorY {
                     let incoming = velocity
                     position.y = arena.floorY + radius
-                    velocity.y = abs(velocity.y) * SimulationEngine.floorRestitution
+                    velocity.y = abs(velocity.y) * floorBounce
                     grip(SIMD2(0, 1), from: incoming)
+                }
+                // The corner arcs, as the engine rolls them. Without this a
+                // bot reads a ball into the bigger corners as hitting a
+                // square one and sets up for the wrong rebound.
+                if let corner = arena.cornerContact(position: position, radius: radius) {
+                    position = corner.position
+                    let inward = simd_dot(velocity, corner.normal)
+                    if inward < 0 {
+                        let incoming = velocity
+                        let bounce = ArenaGeometry.cornerRestitution(normal: corner.normal, wall: wallBounce, floor: floorBounce)
+                        velocity -= corner.normal * ((1 + bounce) * inward)
+                        grip(corner.normal, from: incoming)
+                    }
                 }
                 if let hump = arena.humpContact(position: position, radius: radius) {
                     position = hump.position
@@ -951,8 +975,9 @@ public struct AIController: InputSource, Sendable {
         if result.x * homeSign < minimumX {
             result.x = homeSign * minimumX
         }
-        if abs(result.x) > arena.halfWidth - 0.10 {
-            result.x = homeSign * (arena.halfWidth - 0.10)
+        let wall = arena.sideWallX(atY: result.y) - 0.10
+        if abs(result.x) > wall {
+            result.x = homeSign * wall
         }
         let deck = deck(at: result.x) + (arena.hoop == nil ? 0.115 : 0.085)
         result.y = max(deck, min(arena.ceilingY - 0.082, result.y))

@@ -186,8 +186,29 @@ public struct ArenaGeometry: Equatable, Sendable {
     ///
     /// The same arc is mirrored into the middle of the roof as the hump the
     /// net hangs from, so tuning one tunes both.
+    ///
+    /// Build 172 opened them up from the 0.30 x 0.16 they were tuned at to
+    /// 0.42 x 0.30: rounder and taller, so a ball into a corner comes off at
+    /// an angle that depends on where on the arc it met it, not one of four
+    /// right-angle rebounds. The hump no longer follows them (see
+    /// `humpRadiusX`), so the goal is exactly the size it was.
     public var cornerRadiusX: Double
     public var cornerRadiusY: Double
+    /// The arc of the hump the net hangs from. It was the corner arc
+    /// mirrored; it is pinned to the corner's old tuned shape so opening the
+    /// corners up leaves the goal mouth, the collar and the lips -- three
+    /// separately hardened leak paths -- exactly where they were.
+    public var humpRadiusX: Double = ArenaGeometry.tunedHumpRadiusX
+    public var humpRadiusY: Double = ArenaGeometry.tunedHumpRadiusY
+    public static let tunedHumpRadiusX = 0.30
+    public static let tunedHumpRadiusY = 0.16
+    /// How far inside `halfWidth` each side wall's foot stands, where it
+    /// meets the floor corner. The wall then leans out as it rises, reaching
+    /// `halfWidth` where the roof corner begins, so a ball banked off it
+    /// comes away climbing: a shot driven at the floor scores, one played
+    /// into the wall pops back up. Zero, a plumb wall, everywhere but
+    /// ASTROBALL (see `ArenaGeometry.astroball(doubles:)`).
+    public var wallInset: Double = 0
     /// How far the lip under each face reaches out from the slab.
     public var lipLength: Double
     /// How much higher the outer end of each lip sits than its root. That
@@ -238,8 +259,8 @@ public struct ArenaGeometry: Equatable, Sendable {
         // Nil derives it from `ballRadius`, and never rides above the tuned
         // 0.184: a ball at or under nominal leaves the court untouched.
         netBottomY: Double? = nil,
-        cornerRadiusX: Double = 0.30,
-        cornerRadiusY: Double = 0.16,
+        cornerRadiusX: Double = 0.42,
+        cornerRadiusY: Double = 0.30,
         // Three ball radii of ledge: big enough to catch a shot that arrives
         // a little under the mouth, small enough that it is still the mouth,
         // not the lip, that you are shooting at. Nil keeps it three radii of
@@ -259,7 +280,7 @@ public struct ArenaGeometry: Equatable, Sendable {
         self.netHalfWidth = netHalfWidth
         self.netBottomY = netBottomY ?? min(
             Self.tunedNetBottomY,
-            (ceilingY - cornerRadiusY) - Self.portalCollar
+            (ceilingY - Self.tunedHumpRadiusY) - Self.portalCollar
                 - Self.minimumMouthClearance * ballRadius * 2
         )
         self.cornerRadiusX = cornerRadiusX
@@ -366,6 +387,53 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// Where the flat floor and ceiling end and the corner arc begins.
     public var cornerTangentX: Double { halfWidth - cornerRadiusX }
 
+    /// Where the flat floor ends and the floor corner begins. The floor
+    /// corners move in with the foot of a leaning wall so they still meet it.
+    public var floorCornerTangentX: Double { cornerTangentX - wallInset }
+
+    // MARK: - Side walls
+
+    /// The height the straight of each side wall starts and ends at: the
+    /// top of the floor corner and the bottom of the roof corner.
+    public var sideWallSpan: (low: Double, high: Double) {
+        (floorY + cornerRadiusY, ceilingY - cornerRadiusY)
+    }
+
+    /// How far out the side wall stands at height `y`: `halfWidth` on a
+    /// plumb wall, and on a leaning one its foot below the straight and
+    /// `halfWidth` above it.
+    public func sideWallX(atY y: Double) -> Double {
+        let span = sideWallSpan
+        guard wallInset > 0, span.high > span.low else { return halfWidth }
+        let rise = min(1, max(0, (y - span.low) / (span.high - span.low)))
+        return halfWidth - wallInset * (1 - rise)
+    }
+
+    /// Pushes a body of `radius` off a leaning side wall. Nil on a plumb
+    /// wall, which every caller already meets as a flat `halfWidth`, so
+    /// those courts are untouched. Past either end of the straight the
+    /// corner arcs shape the wall; this is only the backstop there, square
+    /// to the wall's own end, because extending the slope would cut into
+    /// the floor corner.
+    public func sideWallContact(
+        position: SIMD2<Double>,
+        radius: Double
+    ) -> (position: SIMD2<Double>, normal: SIMD2<Double>)? {
+        guard wallInset > 0 else { return nil }
+        let sign: Double = position.x < 0 ? -1 : 1
+        let span = sideWallSpan
+        guard position.y >= span.low, position.y <= span.high else {
+            let limit = sideWallX(atY: position.y)
+            guard abs(position.x) + radius >= limit else { return nil }
+            return (SIMD2(sign * (limit - radius), position.y), SIMD2(-sign, 0))
+        }
+        let foot = SIMD2(sign * (halfWidth - wallInset), span.low)
+        let normal = simd_normalize(SIMD2(-sign * (span.high - span.low), wallInset))
+        let distance = simd_dot(position - foot, normal)
+        guard distance < radius else { return nil }
+        return (position + normal * (radius - distance), normal)
+    }
+
     // MARK: - The hump the net hangs from
 
     /// The corner fillet, mirrored inward and hung from the roof with the net
@@ -373,11 +441,11 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// ceiling, vertical where it meets the slab. A ball riding the roof into
     /// the middle is therefore turned down and away instead of sliding along
     /// the ceiling into the goal.
-    public var humpBaseX: Double { netHalfWidth + cornerRadiusX }
+    public var humpBaseX: Double { netHalfWidth + humpRadiusX }
 
     /// The underside of the hump: the lowest it reaches, flat across the
     /// width of the slab.
-    public var humpUndersideY: Double { ceilingY - cornerRadiusY }
+    public var humpUndersideY: Double { ceilingY - humpRadiusY }
 
     /// The collar between the hump and the top of the goal: one diameter of
     /// the ball the arena was *tuned* at, and it stays that whatever the ball
@@ -579,7 +647,7 @@ public struct ArenaGeometry: Equatable, Sendable {
     /// Sample `index` of the right-hand slope, running underside to roof.
     public func humpSurfacePoint(_ index: Int) -> SIMD2<Double> {
         let unit = Self.arcUnit[index]
-        return SIMD2(humpBaseX - cornerRadiusX * unit.x, humpUndersideY + cornerRadiusY * unit.y)
+        return SIMD2(humpBaseX - humpRadiusX * unit.x, humpUndersideY + humpRadiusY * unit.y)
     }
 
     /// The right-hand profile including the flat underside, for drawing.
@@ -698,13 +766,22 @@ public struct ArenaGeometry: Equatable, Sendable {
         if mirrored.x <= netHalfWidth { return true }
         guard mirrored.x < humpBaseX else { return false }
         let unit = SIMD2(
-            (mirrored.x - humpBaseX) / cornerRadiusX,
-            (mirrored.y - humpUndersideY) / cornerRadiusY
+            (mirrored.x - humpBaseX) / humpRadiusX,
+            (mirrored.y - humpUndersideY) / humpRadiusY
         )
         return simd_length_squared(unit) > 1
     }
 
     // MARK: - Corners
+
+    /// How much speed a ball keeps off a corner arc whose outward normal is
+    /// `normal`: the wall's bounce on the roof corners, sliding to the
+    /// floor's as a floor corner flattens out, so there is no seam where
+    /// the arc meets either surface.
+    public static func cornerRestitution(normal: SIMD2<Double>, wall: Double, floor: Double) -> Double {
+        let toward = min(1, max(0, normal.y))
+        return wall + (floor - wall) * toward
+    }
 
     /// Pushes a body of `radius` out of whichever corner arc it has entered.
     /// The inset is approximated by shrinking the semi-axes, which is exact for
@@ -720,7 +797,7 @@ public struct ArenaGeometry: Equatable, Sendable {
         let signX: Double = position.x < 0 ? -1 : 1
         let signY: Double = position.y < (floorY + ceilingY) / 2 ? -1 : 1
         let origin = SIMD2(
-            signX * cornerTangentX,
+            signX * (signY > 0 ? cornerTangentX : floorCornerTangentX),
             signY > 0 ? ceilingY - cornerRadiusY : floorY + cornerRadiusY
         )
 

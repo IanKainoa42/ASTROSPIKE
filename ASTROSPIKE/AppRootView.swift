@@ -2702,7 +2702,7 @@ struct ControlLayoutEditor: View {
 struct AstroballTuningControls: View {
     @State private var tuning = AstroballTuning.stored()
 
-    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. There are two zones, each a stretch of each half's wall path (by default the floor nearest the net out to 28%, and a small target 7% to 13% up the side wall), from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; fly past it and it slings you back. Takes effect next match, and online when you host."
+    static let footer = "Solo touches is how many times a side flown by one pilot may play the ball before it has to be over: one touch and over, up to three. A side of two always gets three. In a row is how many times one pilot may play it running: two by default, so a double is fine and a triple gives the point away. Hull and bolts both count. There are two zones, each a stretch of each half's wall path (by default the floor nearest the net out to 28%, and a small target 7% to 13% up the side wall), from the foot of the net (0) along the floor, round the corner and up the side wall to the roof (1): the ball touching your zone gives the other side the point. Wall bounce is how much speed the ball keeps off the walls, roof and corners; lower soaks a spike up. Floor bounce is the same for the floor, and is never livelier than the walls, so a ball that lands stays down; the floor corners blend from one to the other. The MAX CROSS line rises from the top of the net and leans over the far half by the lean; fly past it and it slings you back. Takes effect next match, and online when you host."
 
     private var court: ArenaGeometry { .astroball(doubles: false) }
 
@@ -2734,6 +2734,9 @@ struct AstroballTuningControls: View {
         TuningSlider(title: "Wall bounce", value: $tuning.wallBounce, range: AstroballTuning.wallBounceRange, step: 0.01,
                      readout: { "\(Int(($0 * 100).rounded()))%" })
             .accessibilityIdentifier(AstroballTuning.wallBounceKey)
+        TuningSlider(title: "Floor bounce", value: $tuning.floorBounce, range: AstroballTuning.floorBounceRange, step: 0.01,
+                     readout: { "\(Int((min($0, tuning.clampedWallBounce) * 100).rounded()))%" })
+            .accessibilityIdentifier(AstroballTuning.floorBounceKey)
         TuningSlider(title: "MAX CROSS lean", value: $tuning.crossLean, range: AstroballTuning.crossLeanRange, step: 0.01)
             .accessibilityIdentifier(AstroballTuning.crossLeanKey)
         Button("Reset ASTROBALL to default") { tuning = AstroballTuning() }

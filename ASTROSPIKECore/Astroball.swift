@@ -29,6 +29,12 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// duel's are 0.82; lower soaks a spike up instead of firing it back.
     public var wallBounce = 0.5
     public static let wallBounceRange: ClosedRange<Double> = 0.2 ... 0.82
+    /// How much speed the ball keeps off the floor. Deader than the walls,
+    /// so a spike that lands stays down and a wall rebound is still live;
+    /// never livelier than the walls, whatever the slider says (see
+    /// `clampedFloorBounce`). The duel's floor is 0.78.
+    public var floorBounce = 0.3
+    public static let floorBounceRange: ClosedRange<Double> = 0.1 ... 0.82
     /// The MAX CROSS line stands on the net and leans over the far half:
     /// this is how far over it reaches at the roof, as a share of a half's
     /// width. 0 is straight up off the net.
@@ -59,7 +65,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, crossLean, hues, netPenalty
+        case soloTouches, inARow, zoneStart, zoneEnd, zone2Start, zone2End, wallBounce, floorBounce, crossLean, hues, netPenalty
     }
 
     /// Hosts older than the second zone omit its ends: they read the default.
@@ -75,6 +81,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         zone2Start = try container.decodeIfPresent(Double.self, forKey: .zone2Start) ?? zone2Start
         zone2End = try container.decodeIfPresent(Double.self, forKey: .zone2End) ?? zone2End
         wallBounce = try container.decodeIfPresent(Double.self, forKey: .wallBounce) ?? wallBounce
+        floorBounce = try container.decodeIfPresent(Double.self, forKey: .floorBounce) ?? floorBounce
     }
 
     /// The touch cap for a side flown by `pilots` hulls.
@@ -110,6 +117,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public static let zone2StartKey = "astroball.zone2Start"
     public static let zone2EndKey = "astroball.zone2End"
     public static let wallBounceKey = "astroball.wallBounce"
+    public static let floorBounceKey = "astroball.floorBounce"
     public static let inARowKey = "astroball.inARow"
     public static let crossLeanKey = "astroball.crossLean"
     public static let netPenaltyKey = "astroball.netPenalty"
@@ -127,6 +135,9 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if let value = defaults.object(forKey: zone2EndKey) as? Double { tuning.zone2End = min(1, max(0, value)) }
         if let value = defaults.object(forKey: wallBounceKey) as? Double {
             tuning.wallBounce = min(wallBounceRange.upperBound, max(wallBounceRange.lowerBound, value))
+        }
+        if let value = defaults.object(forKey: floorBounceKey) as? Double {
+            tuning.floorBounce = min(floorBounceRange.upperBound, max(floorBounceRange.lowerBound, value))
         }
         if let value = defaults.object(forKey: inARowKey) as? Int {
             tuning.inARow = min(inARowRange.upperBound, max(inARowRange.lowerBound, value))
@@ -147,6 +158,7 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         if zone2Start == base.zone2Start { defaults.removeObject(forKey: Self.zone2StartKey) } else { defaults.set(zone2Start, forKey: Self.zone2StartKey) }
         if zone2End == base.zone2End { defaults.removeObject(forKey: Self.zone2EndKey) } else { defaults.set(zone2End, forKey: Self.zone2EndKey) }
         if wallBounce == base.wallBounce { defaults.removeObject(forKey: Self.wallBounceKey) } else { defaults.set(wallBounce, forKey: Self.wallBounceKey) }
+        if floorBounce == base.floorBounce { defaults.removeObject(forKey: Self.floorBounceKey) } else { defaults.set(floorBounce, forKey: Self.floorBounceKey) }
         if inARow == base.inARow { defaults.removeObject(forKey: Self.inARowKey) } else { defaults.set(inARow, forKey: Self.inARowKey) }
         if crossLean == base.crossLean { defaults.removeObject(forKey: Self.crossLeanKey) } else { defaults.set(crossLean, forKey: Self.crossLeanKey) }
         if netPenalty == base.netPenalty { defaults.removeObject(forKey: Self.netPenaltyKey) } else { defaults.set(netPenalty, forKey: Self.netPenaltyKey) }
@@ -156,6 +168,14 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
         wallBounce.isFinite
             ? min(Self.wallBounceRange.upperBound, max(Self.wallBounceRange.lowerBound, wallBounce))
             : 0.5
+    }
+
+    /// The floor's bounce, clamped to its slider and never above the walls'.
+    public var clampedFloorBounce: Double {
+        let floor = floorBounce.isFinite
+            ? min(Self.floorBounceRange.upperBound, max(Self.floorBounceRange.lowerBound, floorBounce))
+            : 0.3
+        return min(floor, clampedWallBounce)
     }
 
     /// The same-pilot cap, clamped: a host's number off the wire is not
@@ -199,14 +219,24 @@ public extension ArenaGeometry {
     /// taller.
     static func astroball(doubles: Bool) -> ArenaGeometry {
         let scale = doubles ? doublesScale : 1
-        return ArenaGeometry(
+        var court = ArenaGeometry(
             halfWidth: standard.halfWidth * scale * astroballWidthScale,
             floorY: standard.floorY * scale,
             ceilingY: standard.ceilingY * scale,
             netStyle: .floorWall,
             netTopY: 0
         )
+        let span = court.sideWallSpan
+        court.wallInset = max(0, span.high - span.low) * tan(astroballWallLean)
+        return court
     }
+
+    /// How far ASTROBALL's side walls lean out from plumb as they rise.
+    /// Ian: reward hitting the ball down at the floor, not just into the
+    /// side walls. Off a wall leaning this far a ball leaves twice the lean
+    /// steeper upward than it came in, so a bank shot climbs back into play
+    /// instead of dropping into the corner.
+    static let astroballWallLean = 15 * Double.pi / 180
 
     /// How far into the far half a hull may fly at height `y` before the
     /// MAX CROSS line shoves it back. Every court but ASTROBALL's has a
@@ -224,12 +254,14 @@ public extension ArenaGeometry {
     /// Each half's wall path, piece by piece: floor from the net to the
     /// corner, the floor corner, the side wall, the roof corner.
     private var wallPathPieces: (floor: Double, corner: Double, wall: Double) {
-        let floor = max(0, cornerTangentX - netHalfWidth)
+        let floor = max(0, floorCornerTangentX - netHalfWidth)
         let a = cornerRadiusX
         let b = cornerRadiusY
         // A quarter of Ramanujan's ellipse perimeter.
         let corner = Double.pi * (3 * (a + b) - ((3 * a + b) * (a + 3 * b)).squareRoot()) / 4
-        let wall = max(0, (ceilingY - cornerRadiusY) - (floorY + cornerRadiusY))
+        let rise = max(0, (ceilingY - cornerRadiusY) - (floorY + cornerRadiusY))
+        // The wall's own length, which a lean stretches past its height.
+        let wall = (rise * rise + wallInset * wallInset).squareRoot()
         return (floor, corner, wall)
     }
 
@@ -266,17 +298,21 @@ public extension ArenaGeometry {
         let lowArc = floorY + cornerRadiusY
         let highArc = ceilingY - cornerRadiusY
         let quarter = Double.pi / 2
+        let floorTangent = floorCornerTangentX
         let along: Double
-        if x < cornerTangentX {
-            // The flat floor, or the flat roof. Their ends belong to the
-            // corners, so the roof's end of the path still reads 1.
-            guard surface.y < (floorY + ceilingY) / 2 else { return nil }
+        if surface.y < lowArc, x < floorTangent {
+            // The flat floor. Its end belongs to the corner.
             along = max(0, x - netHalfWidth)
         } else if surface.y < lowArc {
-            let angle = atan2((x - cornerTangentX) / cornerRadiusX, (lowArc - surface.y) / cornerRadiusY)
+            let angle = atan2((x - floorTangent) / cornerRadiusX, (lowArc - surface.y) / cornerRadiusY)
             along = pieces.floor + pieces.corner * min(1, max(0, angle / quarter))
         } else if surface.y <= highArc {
-            along = pieces.floor + pieces.corner + (surface.y - lowArc)
+            let share = highArc > lowArc ? (surface.y - lowArc) / (highArc - lowArc) : 0
+            along = pieces.floor + pieces.corner + pieces.wall * share
+        } else if x < cornerTangentX {
+            // The flat roof, which the path never reaches. Its end belongs
+            // to the corner, so the roof's end of the path still reads 1.
+            return nil
         } else {
             let angle = atan2((surface.y - highArc) / cornerRadiusY, (x - cornerTangentX) / cornerRadiusX)
             along = pieces.floor + pieces.corner + pieces.wall + pieces.corner * min(1, max(0, angle / quarter))
@@ -312,12 +348,16 @@ public extension ArenaGeometry {
         if along <= pieces.corner {
             let angle = along / pieces.corner * quarter
             return SIMD2(
-                cornerTangentX + cornerRadiusX * sin(angle),
+                floorCornerTangentX + cornerRadiusX * sin(angle),
                 floorY + cornerRadiusY - cornerRadiusY * cos(angle)
             )
         }
         along -= pieces.corner
-        if along <= pieces.wall { return SIMD2(halfWidth, floorY + cornerRadiusY + along) }
+        if along <= pieces.wall {
+            let span = sideWallSpan
+            let y = span.low + (span.high - span.low) * (pieces.wall > 0 ? along / pieces.wall : 0)
+            return SIMD2(sideWallX(atY: y), y)
+        }
         along -= pieces.wall
         let angle = min(1, along / max(pieces.corner, 0.000_001)) * quarter
         return SIMD2(

@@ -7,7 +7,8 @@ struct RallyLifecycleTests {
     /// randomised near-wall situations: without the buffer this hull is struck
     /// three separate times inside a handful of ticks, which is the entire
     /// touch allowance gone in under 60ms. Re-swept when surfaces started
-    /// gripping the ball, and again when hulls got their drawn-size hitbox.
+    /// gripping the ball, when hulls got their drawn-size hitbox, and when
+    /// build 172's rounder corners swallowed the old spot low on the wall.
     private func rattleAgainstTheWall(debounce: Double? = nil) -> SimulationEngine {
         var configuration = SimulationConfiguration()
         if let debounce { configuration.ballTouchDebounce = debounce }
@@ -15,15 +16,15 @@ struct RallyLifecycleTests {
             state: WorldState(
                 ships: [
                     .cyan: ShipState(
-                        position: SIMD2(-0.858729, -0.421778),
-                        velocity: SIMD2(0.377983, -0.791238),
-                        angle: 2.181934
+                        position: SIMD2(-0.861161, 0.072677),
+                        velocity: SIMD2(-0.159175, -0.786221),
+                        angle: 2.809420
                     ),
                     .orange: ShipState(position: SIMD2(0.55, -0.45), angle: .pi / 2),
                 ],
                 ball: BallState(
-                    position: SIMD2(-0.859656, -0.515194),
-                    velocity: SIMD2(-0.763752, -0.259653)
+                    position: SIMD2(-0.900420, 0.042583),
+                    velocity: SIMD2(-0.092809, -0.404498)
                 ),
                 match: MatchRuleState(phase: .playing)
             ),
@@ -43,6 +44,7 @@ struct RallyLifecycleTests {
         }
         return collisions
     }
+
 
     @Test("A ball rattling on a hull tallies one touch, not three")
     func rattleCountsOnce() {

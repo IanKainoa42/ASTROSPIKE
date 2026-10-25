@@ -9,14 +9,18 @@ struct ArenaPhysicsTests {
     /// suite that only ever checked 1x would be testing a court nobody plays.
     static let ballScales = [1.0, 2.0, 3.0]
     static let ballRadii = ballScales.map { BallState.nominalRadius * $0 }
-    @Test("The hump is the corner arc, mirrored into the middle of the roof")
+    @Test("The hump keeps the corner arc it was tuned with, mirrored into the middle of the roof")
     func humpMirrorsTheCornerCurvature() {
         let arena = ArenaGeometry.standard
 
         // Same arc, same semi-axes, with the net face standing in for the side
         // wall: vertical at the collar, horizontal where it meets the roof.
-        #expect(arena.humpBaseX == arena.netHalfWidth + arena.cornerRadiusX)
-        #expect(arena.humpUndersideY == arena.ceilingY - arena.cornerRadiusY)
+        #expect(arena.humpBaseX == arena.netHalfWidth + arena.humpRadiusX)
+        #expect(arena.humpUndersideY == arena.ceilingY - arena.humpRadiusY)
+        // The corners opened up in build 172; the hump, and so the goal,
+        // stayed on the shape it was tuned at.
+        #expect(arena.humpRadiusX == 0.30 && arena.humpRadiusY == 0.16)
+        #expect(arena.cornerRadiusX > arena.humpRadiusX && arena.cornerRadiusY > arena.humpRadiusY)
         let underside = arena.humpSurfacePoint(0)
         #expect(abs(underside.x - arena.netHalfWidth) < 1e-12)
         #expect(abs(underside.y - arena.humpUndersideY) < 1e-12)
@@ -826,9 +830,11 @@ struct ArenaPhysicsTests {
     @Test("A hull cannot carry the ball: every contact pops it clear")
     func hullCannotCarryTheBall() {
         var engine = SimulationEngine.testing()
-        engine.state.ships[.cyan]!.position = SIMD2(-0.55, 0.20)
-        engine.state.ships[.orange]!.position = SIMD2(0.55, 0.20)
-        engine.state.ball = BallState(position: SIMD2(-0.55, 0.60), velocity: SIMD2(0, -0.2))
+        // Clear of the roof corners: since build 172 they reach in past
+        // x = 0.54, and a ball hopping up into one is turned off the hull.
+        engine.state.ships[.cyan]!.position = SIMD2(-0.45, 0.20)
+        engine.state.ships[.orange]!.position = SIMD2(0.45, 0.20)
+        engine.state.ball = BallState(position: SIMD2(-0.45, 0.60), velocity: SIMD2(0, -0.2))
         // Touches are free, so nothing in the rulebook ends this: a ship
         // holding station under the ball keeps it up for as long as it
         // likes, and that is legal keep-up. What the physics has to

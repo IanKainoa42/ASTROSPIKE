@@ -133,7 +133,7 @@ struct AstroballTests {
     func defaultZone() {
         let court = ArenaGeometry.astroball(doubles: false)
         let tuning = AstroballTuning()
-        let floor = court.cornerTangentX - court.netHalfWidth
+        let floor = court.floorCornerTangentX - court.netHalfWidth
         let near = court.wallPathFraction(at: SIMD2(court.netHalfWidth + floor * 0.2, court.floorY))!
         let mid = court.wallPathFraction(at: SIMD2(-(court.netHalfWidth + floor * 0.6), court.floorY))!
         #expect(tuning.zoneContains(near))
@@ -260,7 +260,7 @@ struct AstroballTests {
     @Test("The ball landing in the zone gives the other side the point")
     func zoneLandingScores() {
         let court = ArenaGeometry.astroball(doubles: false)
-        let floor = court.cornerTangentX - court.netHalfWidth
+        let floor = court.floorCornerTangentX - court.netHalfWidth
         // The default zone is the quarter of the floor nearest the net, so
         // a landing well inside it scores and one past it, short of the
         // corner zone, does not.
@@ -295,6 +295,94 @@ struct AstroballTests {
         let duel = kept(nil)
         #expect(abs(astroball - 0.3) < 0.06, "kept \(astroball)")
         #expect(duel > 0.7, "kept \(duel)")
+    }
+
+    @Test("ASTROBALL's floor is deader than its walls, and never livelier")
+    func floorBounce() {
+        // A drop onto the flat floor past the net-side zone and short of the
+        // corner, so it scores nothing and meets no arc.
+        func kept(_ tuning: AstroballTuning?) -> Double {
+            var engine = astroballEngine(tuning)
+            let court = engine.arena
+            let floor = court.floorCornerTangentX - court.netHalfWidth
+            engine.state.ships[.cyan]!.position = .init(-0.9, 0.4)
+            engine.state.ships[.orange]!.position = .init(0.9, 0.4)
+            let x = -(court.netHalfWidth + floor * 0.6)
+            engine.state.ball = BallState(position: .init(x, court.floorY + engine.state.ball.radius + 0.02), velocity: .init(0, -1.5))
+            var falling = 0.0
+            for tick in UInt64(0) ..< 30 {
+                if engine.state.ball.velocity.y < 0 { falling = -engine.state.ball.velocity.y }
+                engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+                if engine.state.ball.velocity.y > 0 { return engine.state.ball.velocity.y / falling }
+            }
+            return .nan
+        }
+        let standard = kept(AstroballTuning())
+        #expect(abs(standard - 0.3) < 0.06, "kept \(standard)")
+        #expect(standard < AstroballTuning().clampedWallBounce)
+        var lively = AstroballTuning()
+        lively.floorBounce = 0.8
+        lively.wallBounce = 0.4
+        let capped = kept(lively)
+        #expect(abs(capped - 0.4) < 0.06, "a floor above the walls plays at the walls' bounce: kept \(capped)")
+        #expect(lively.clampedFloorBounce == lively.clampedWallBounce)
+    }
+
+    @Test("ASTROBALL's side walls lean out as they rise; every other court's stand plumb")
+    func wallsLeanOut() {
+        for court in [ArenaGeometry.astroball(doubles: false), .astroball(doubles: true)] {
+            let span = court.sideWallSpan
+            #expect(court.wallInset > 0)
+            #expect(abs(court.sideWallX(atY: span.high) - court.halfWidth) < 1e-12, "the top of the wall is the court's width")
+            #expect(abs(court.sideWallX(atY: span.low) - (court.halfWidth - court.wallInset)) < 1e-12)
+            let lean = atan(court.wallInset / (span.high - span.low))
+            #expect(abs(lean - ArenaGeometry.astroballWallLean) < 1e-9)
+            // The floor corner meets the foot of the wall rather than the old plumb line.
+            #expect(abs(court.floorCornerTangentX + court.cornerRadiusX - (court.halfWidth - court.wallInset)) < 1e-12)
+            // A ball resting on the wall mid-height is pushed in and up, never down.
+            let mid = (span.low + span.high) / 2
+            let contact = court.sideWallContact(position: SIMD2(court.sideWallX(atY: mid) - 0.03, mid), radius: 0.042)
+            #expect(contact != nil && contact!.normal.x < 0 && contact!.normal.y > 0)
+        }
+        for court in [ArenaGeometry.standard, .volleyball, .doubles(ballRadius: BallState.nominalRadius)] {
+            #expect(court.wallInset == 0)
+            #expect(court.sideWallX(atY: 0) == court.halfWidth)
+            #expect(court.sideWallContact(position: SIMD2(court.halfWidth - 0.01, 0), radius: 0.042) == nil)
+        }
+    }
+
+    @Test("A flat shot into ASTROBALL's wall comes off climbing; into a plumb wall it does not")
+    func leaningWallLifts() {
+        func lift(_ arena: ArenaGeometry) -> Double {
+            var engine = astroballEngine()
+            engine.updateArena(arena)
+            engine.state.ships[.cyan]!.position = .init(-0.9, 0.4)
+            engine.state.ships[.orange]!.position = .init(0.3, 0.5)
+            let y = (arena.sideWallSpan.low + arena.sideWallSpan.high) / 2
+            engine.state.ball = BallState(position: .init(arena.sideWallX(atY: y) - 0.2, y), velocity: .init(1.5, 0))
+            for tick in UInt64(0) ..< 60 {
+                let before = engine.state.ball.velocity.y
+                engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+                if engine.state.ball.velocity.x < 0 { return engine.state.ball.velocity.y - before }
+            }
+            return .nan
+        }
+        let leaning = lift(.astroball(doubles: false))
+        var plumb = ArenaGeometry.astroball(doubles: false)
+        plumb.wallInset = 0
+        let flat = lift(plumb)
+        // A plumb wall lifts a little too: its grip takes back some of the
+        // fall the ball picked up on the way over. The lean adds the climb.
+        #expect(leaning > flat + 0.12, "lean lifted \(leaning), plumb \(flat)")
+    }
+
+    @Test("A floor corner blends from the wall's bounce to the floor's")
+    func cornerBlend() {
+        #expect(ArenaGeometry.cornerRestitution(normal: SIMD2(-1, 0), wall: 0.5, floor: 0.3) == 0.5)
+        #expect(ArenaGeometry.cornerRestitution(normal: SIMD2(0, 1), wall: 0.5, floor: 0.3) == 0.3)
+        #expect(ArenaGeometry.cornerRestitution(normal: SIMD2(0, -1), wall: 0.5, floor: 0.3) == 0.5, "a roof corner is all wall")
+        let half = ArenaGeometry.cornerRestitution(normal: SIMD2(-0.6, 0.8), wall: 0.5, floor: 0.3)
+        #expect(half > 0.3 && half < 0.5)
     }
 
     // MARK: Setup
@@ -470,9 +558,10 @@ struct AstroballTests {
         tuning.hues = TeamHues(cyan: .green, orange: .pink)
         tuning.inARow = 3
         tuning.crossLean = 0.45
+        tuning.floorBounce = 0.22
         let wire = try? JSONDecoder().decode(AstroballTuning.self, from: JSONEncoder().encode(tuning))
         #expect(wire?.hues == tuning.hues, "the host's colours ride the seating plan")
-        #expect(wire?.inARow == 3 && wire?.crossLean == 0.45, "every host setting rides the wire")
+        #expect(wire?.inARow == 3 && wire?.crossLean == 0.45 && wire?.floorBounce == 0.22, "every host setting rides the wire")
     }
 
     @Test("ASTROBALL 2 V 2 puts one friend across the net and keeps both wings for bots")

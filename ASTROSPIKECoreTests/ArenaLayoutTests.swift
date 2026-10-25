@@ -168,6 +168,11 @@ struct ArenaLayoutTests {
                 start.x = min(arena.halfWidth - r, max(-arena.halfWidth + r, start.x))
                 start.y = min(arena.ceilingY - r, max(arena.floorY + r, start.y))
                 guard Self.deepestPenetration(arena, start, r) < 0 else { continue }
+                // Nor already inside a corner arc: no ball can be there, and
+                // since build 172's rounder corners reach the Diamond cuts and
+                // the Fins root, the corner would fire it into the obstacle
+                // from behind.
+                guard arena.cornerContact(position: start, radius: r) == nil else { continue }
                 var probe = engine
                 for seat in probe.state.ships.keys {
                     probe.state.ships[seat]?.position = SIMD2(0, arena.floorY + 0.1)
