@@ -36,6 +36,7 @@
 		44C4C481489A9951E0515F09 /* tractorHum.wav in Resources */ = {isa = PBXBuildFile; fileRef = 84352B3F6DCACAAA90DCD3BF /* tractorHum.wav */; };
 		4531AFF3E344E822E5BBEEDE /* Soundscape.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85F7067A0FF1B4269F53702 /* Soundscape.swift */; };
 		4764E0AEAE9D5025E9E6E9F9 /* StatsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C302876D4085238255061DF4 /* StatsReporter.swift */; };
+		47931227FCE9DA276CD63231 /* saberSwoosh.wav in Resources */ = {isa = PBXBuildFile; fileRef = 066C28FFAB465B80E473D5B2 /* saberSwoosh.wav */; };
 		480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */; };
 		48720106053A8B5076C1A1F6 /* ArenaLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4719289BA07891CDC9CFD53 /* ArenaLayoutTests.swift */; };
 		49CA6B0EB325CFE342EDA7AF /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
@@ -66,10 +67,12 @@
 		8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4033BD3492F8C74CE390EB56 /* FlightTuning.swift */; };
 		86D5CF5361D7F2585D97096D /* ShipConceptCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D0AED08F5A123283EB23CBF /* ShipConceptCatalog.swift */; };
 		8A057848B69EF6F911C03A14 /* RallyLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0836154FDAEE43295072AB0 /* RallyLifecycleTests.swift */; };
+		8CEA1CF959B41756E33BEA67 /* saberIgnite.wav in Resources */ = {isa = PBXBuildFile; fileRef = 5E3C36D41BF9A3F8015B82F5 /* saberIgnite.wav */; };
 		8CF22C59860FE66DC8AD9A1E /* PlayerNetworkCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */; };
 		8D4415BEF5D274D18341CD57 /* LobbyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D734BE128C9E77556BF0D012 /* LobbyService.swift */; };
 		90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */; };
 		92D1F12A02223D2A4C1E5197 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2CD4F97738D5A2F620398EBF /* Assets.xcassets */; };
+		96EC9C8CD53136A8D636601F /* saberRetract.wav in Resources */ = {isa = PBXBuildFile; fileRef = 90AC1065F5164A2B883CDB18 /* saberRetract.wav */; };
 		98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */; };
 		9A8054FDF9CD87753E2C8FC3 /* wallHit.wav in Resources */ = {isa = PBXBuildFile; fileRef = E31B73843669B37E85A83089 /* wallHit.wav */; };
 		9D240A566AA6F14812EB8F8C /* RaceTuningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */; };
@@ -98,6 +101,7 @@
 		C1E0FB0B483772ECFE197291 /* GameSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2938C10E066FBAEF95E3652B /* GameSession.swift */; };
 		C30EF90CB82EA5EF045ED33A /* KeyboardControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */; };
 		C4C375DE7E2456727D003347 /* TrackScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B581A251E3DC103CDFB31F3 /* TrackScene.swift */; };
+		C76DAA1B11D22EFBA91AB1E4 /* saberClash.wav in Resources */ = {isa = PBXBuildFile; fileRef = C0569AF1D15645044FC79B92 /* saberClash.wav */; };
 		C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */; };
 		CB4E58A55B21C45474313E95 /* ASTROSPIKECore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 508EF7E8B690D0B5B30BC522 /* ASTROSPIKECore.framework */; };
 		CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5488DBEBDCDC52A967D49F5A /* AppRootView.swift */; };
@@ -108,6 +112,7 @@
 		D63984183D2118FC583DE76C /* ballHit.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4F3090E5C1DDC5465B014444 /* ballHit.wav */; };
 		D8E93E5AE303267C6C6AF27D /* volleySuspense.m4a in Resources */ = {isa = PBXBuildFile; fileRef = BE59B8B356F6882B1E3B31EF /* volleySuspense.m4a */; };
 		DC6201369B4C58B4F1EE74FA /* OnlineFailureReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */; };
+		DD5795F1FD155CE5E5E8C4CD /* saberHum.wav in Resources */ = {isa = PBXBuildFile; fileRef = E18FA91B3D949378F5214B6D /* saberHum.wav */; };
 		DE0C9433C7AFD7FC5912429C /* PrivacyDisclosureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B097CB65828BC1A1357CC9 /* PrivacyDisclosureTests.swift */; };
 		DE7DAA438A0BC52DBC446F59 /* TrackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 088700D916D7C71D0559E240 /* TrackEngine.swift */; };
 		E0D56F2F59ACC2894CB23766 /* OnlineDiagnosticsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495F3316EF4FC8274854838C /* OnlineDiagnosticsSnapshot.swift */; };
@@ -180,6 +185,7 @@
 		0229900C8172E2E47EE8513F /* TrackTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTuning.swift; sourceTree = "<group>"; };
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		056582DB470999C16355D1FE /* HullStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullStore.swift; sourceTree = "<group>"; };
+		066C28FFAB465B80E473D5B2 /* saberSwoosh.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = saberSwoosh.wav; sourceTree = "<group>"; };
 		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
 		079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopy.swift; sourceTree = "<group>"; };
 		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
@@ -234,6 +240,7 @@
 		5637738B4E3686D57BD33184 /* WarmupRings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WarmupRings.swift; sourceTree = "<group>"; };
 		58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullCatalogTests.swift; sourceTree = "<group>"; };
 		59789ED6BD3380F1CF173747 /* BoltShipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoltShipTests.swift; sourceTree = "<group>"; };
+		5E3C36D41BF9A3F8015B82F5 /* saberIgnite.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = saberIgnite.wav; sourceTree = "<group>"; };
 		645D1FA24033CE1191F24341 /* ShipDesigns.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipDesigns.swift; sourceTree = "<group>"; };
 		64EE37BD172B8E9F4ED33AAC /* KeyboardControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControlTests.swift; sourceTree = "<group>"; };
 		6A89AE44E2F19595442A144C /* SeatReturn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeatReturn.swift; sourceTree = "<group>"; };
@@ -251,6 +258,7 @@
 		8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineSessionTests.swift; sourceTree = "<group>"; };
 		8BC6ECC67ABFA9D6B090D577 /* CourtVariantTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourtVariantTests.swift; sourceTree = "<group>"; };
 		8D596EF795D28C0B0DE3BE63 /* TrackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTests.swift; sourceTree = "<group>"; };
+		90AC1065F5164A2B883CDB18 /* saberRetract.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = saberRetract.wav; sourceTree = "<group>"; };
 		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
@@ -276,6 +284,7 @@
 		BACCBC1253D91A47299D2645 /* DoublesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoublesTests.swift; sourceTree = "<group>"; };
 		BE59B8B356F6882B1E3B31EF /* volleySuspense.m4a */ = {isa = PBXFileReference; path = volleySuspense.m4a; sourceTree = "<group>"; };
 		BF4CC0793BBEF7450A3DFF60 /* EmoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmoteTests.swift; sourceTree = "<group>"; };
+		C0569AF1D15645044FC79B92 /* saberClash.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = saberClash.wav; sourceTree = "<group>"; };
 		C1E68E2EF5231AB8C2B67D4E /* HullLook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullLook.swift; sourceTree = "<group>"; };
 		C302876D4085238255061DF4 /* StatsReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsReporter.swift; sourceTree = "<group>"; };
 		CF08260D34E017255668BDB7 /* ShipHitboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShipHitboxTests.swift; sourceTree = "<group>"; };
@@ -284,6 +293,7 @@
 		D734BE128C9E77556BF0D012 /* LobbyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyService.swift; sourceTree = "<group>"; };
 		DBF5E91B39BF78BC48AAE5C2 /* Module.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Module.swift; sourceTree = "<group>"; };
 		E15C7F5062271210B353D8FD /* ResultsLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsLoopTests.swift; sourceTree = "<group>"; };
+		E18FA91B3D949378F5214B6D /* saberHum.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = saberHum.wav; sourceTree = "<group>"; };
 		E31B73843669B37E85A83089 /* wallHit.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = wallHit.wav; sourceTree = "<group>"; };
 		E57694E75B9AA18D4C97118C /* boltHit.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = boltHit.wav; sourceTree = "<group>"; };
 		E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RaceTuningView.swift; sourceTree = "<group>"; };
@@ -329,6 +339,11 @@
 				2C3D25E49598037842E7D41C /* goal.mp3 */,
 				BA9DAB3776E4440683DFD33C /* offsideCyan.mp3 */,
 				34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */,
+				C0569AF1D15645044FC79B92 /* saberClash.wav */,
+				E18FA91B3D949378F5214B6D /* saberHum.wav */,
+				5E3C36D41BF9A3F8015B82F5 /* saberIgnite.wav */,
+				90AC1065F5164A2B883CDB18 /* saberRetract.wav */,
+				066C28FFAB465B80E473D5B2 /* saberSwoosh.wav */,
 				3642C970AB86552313466CC5 /* thrusterCyan.mp3 */,
 				74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */,
 				84352B3F6DCACAAA90DCD3BF /* tractorHum.wav */,
@@ -638,6 +653,11 @@
 				A9CC6A505E6B540052A930D6 /* goal.mp3 in Resources */,
 				480B31514CF6F86931AC3A90 /* offsideCyan.mp3 in Resources */,
 				98BCF9710390F9012EC85837 /* offsideOrange.mp3 in Resources */,
+				C76DAA1B11D22EFBA91AB1E4 /* saberClash.wav in Resources */,
+				DD5795F1FD155CE5E5E8C4CD /* saberHum.wav in Resources */,
+				8CEA1CF959B41756E33BEA67 /* saberIgnite.wav in Resources */,
+				96EC9C8CD53136A8D636601F /* saberRetract.wav in Resources */,
+				47931227FCE9DA276CD63231 /* saberSwoosh.wav in Resources */,
 				81CFFE5928F7D9BC1B3CB1F3 /* thrusterCyan.mp3 in Resources */,
 				0B193428AC54E680033CB925 /* thrusterOrange.mp3 in Resources */,
 				44C4C481489A9951E0515F09 /* tractorHum.wav in Resources */,
@@ -933,7 +953,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 179;
+				CURRENT_PROJECT_VERSION = 180;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -993,7 +1013,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 179;
+				CURRENT_PROJECT_VERSION = 180;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

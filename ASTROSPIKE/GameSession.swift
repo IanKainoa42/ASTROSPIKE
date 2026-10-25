@@ -167,6 +167,11 @@ final class GameSession {
     /// when a frame carries several simulation ticks.
     private var thrustingTeams: Set<Team> = []
     private var thrustCenter: [Team: Double] = [:]
+    /// Each hull's blade as last heard, so the saber cues fire on its edges.
+    /// Nil for a seat not yet seen: its first frame only seeds this.
+    private var saberHeard: [Seat: SaberState] = [:]
+    /// Seats whose blade is shrinking, so the retract plays once per sheathe.
+    private var saberSheathing: Set<Seat> = []
     let localSeat: Seat
     /// Watching from an open table's bench: every ship on the court is
     /// someone else's, and `localSeat` is only a placeholder.
@@ -417,6 +422,8 @@ final class GameSession {
         // The thruster bed loops. Leaving the arena with the throttle down
         // must not leave it droning under the menu.
         SoundBank.shared.stopEverything()
+        saberHeard = [:]
+        saberSheathing = []
         Soundscape.shared.end()
         if mode.isBay { StatsReporter.reportPractice(keepUp: bestKeepUp, hoops: ringsPopped) }
         thrustingTeams = []
@@ -600,6 +607,8 @@ final class GameSession {
             demoAI = AIController(difficulty: .pilot, configuration: engine.configuration, arena: court)
         }
         SoundBank.shared.stopEverything()
+        saberHeard = [:]
+        saberSheathing = []
         thrustingTeams = []
         thrustCenter = [:]
         offsideLastFrame = []
@@ -1059,6 +1068,54 @@ final class GameSession {
                 active: playing && !pulls.isEmpty,
                 grip: pulls.map(\.grip).max() ?? 0,
                 positionX: Float(pulls.first?.x ?? 0),
+                dt: dt
+            )
+        }
+        driveSaberBed(playing: playing, dt: dt)
+    }
+
+    /// The blades, off whatever each hull's saber is doing on this board --
+    /// the pilot's, a bot's or a rival's off the snapshot alike, so nothing
+    /// rides the wire. Ignite on the draw, retract the frame the blade starts
+    /// shrinking (the sheathe takes 0.12s; a cue at the end of it is late),
+    /// a swoosh when a spin or chop starts, and a hum while the blade is out.
+    private func driveSaberBed(playing: Bool, dt: CFTimeInterval) {
+        for seat in Seat.allCases {
+            let ship = state.ships[seat]
+            let x = Float(ship?.position.x ?? 0)
+            // Out of play the blade goes quiet without a cue: a point scored
+            // with it out is not a sheathe, and the next rally starts afresh.
+            guard playing, let ship, !ship.isDestroyed else {
+                saberHeard[seat] = nil
+                saberSheathing.remove(seat)
+                SoundBank.shared.driveSaberHum(seat, active: false, swinging: false, positionX: x, dt: dt)
+                continue
+            }
+            let blade = ship.saber
+            if let before = saberHeard[seat] {
+                if blade.isOut && !before.isOut {
+                    SoundBank.shared.play(.saberIgnite, positionX: x, volume: 0.32)
+                }
+                if blade.drawn < before.drawn {
+                    if saberSheathing.insert(seat).inserted {
+                        SoundBank.shared.play(.saberRetract, positionX: x, volume: 0.36)
+                    }
+                } else {
+                    saberSheathing.remove(seat)
+                }
+                // A new move starts with a fresh clock, so a move that follows
+                // straight on from another still swooshes.
+                if let move = blade.move, move != .dink,
+                   before.move != move || blade.moveTime < before.moveTime {
+                    SoundBank.shared.play(.saberSwoosh, positionX: x, volume: move == .spike ? 0.55 : 0.45)
+                }
+            }
+            saberHeard[seat] = blade
+            SoundBank.shared.driveSaberHum(
+                seat,
+                active: blade.isOut,
+                swinging: blade.move != nil,
+                positionX: x,
                 dt: dt
             )
         }

@@ -21,12 +21,19 @@ final class SoundBank {
         case ballHit
         case wallHit
         case tractorHum
+        // Synthesised by scripts/saber_sounds.py.
+        case saberIgnite
+        case saberRetract
+        case saberHum
+        case saberSwoosh
+        case saberClash
 
         /// The lab sounds ship as WAV: they are short, and the lead-in trim
         /// and sustain search are for recordings, not synthesis.
         var isRendered: Bool {
             switch self {
-            case .boltFire, .boltHit, .ballHit, .wallHit, .tractorHum: true
+            case .boltFire, .boltHit, .ballHit, .wallHit, .tractorHum,
+                 .saberIgnite, .saberRetract, .saberHum, .saberSwoosh, .saberClash: true
             default: false
             }
         }
@@ -68,7 +75,7 @@ final class SoundBank {
         }
         // Bolts, their hits and every contact now sound, so a busy rally
         // needs more voices than the old goal-and-offside set did.
-        for _ in 0..<10 {
+        for _ in 0..<12 {
             voices.append(SpatialAudioCenter.shared.makeVoice(format: format))
         }
         for cue in [Cue.thrusterCyan, .thrusterOrange] {
@@ -78,6 +85,9 @@ final class SoundBank {
         }
         for team in [Team.cyan, .orange] {
             hums[team] = SpatialAudioCenter.shared.makeFilteredVoice(format: format)
+        }
+        for seat in Seat.allCases {
+            saberHums[seat] = SpatialAudioCenter.shared.makePitchedVoice(format: format)
         }
     }
 
@@ -160,13 +170,49 @@ final class SoundBank {
         }
     }
 
+    /// One hull's blade hum, driven every frame. Per seat, not per team: a
+    /// side in doubles can have two blades out. It comes in almost at once
+    /// (the ignite covers the attack), fades over the sheathe, and climbs in
+    /// pitch while the blade is swinging.
+    func driveSaberHum(_ seat: Seat, active: Bool, swinging: Bool, positionX: Float, dt: Double) {
+        guard let (voice, speed) = saberHums[seat] else { return }
+        let step = Float(max(0, min(dt, 0.1)))
+        var level = saberHumLevels[seat] ?? 0
+        if active && enabled {
+            level = min(1, level + step / 0.05)
+        } else {
+            level = max(0, level - step / 0.15)
+        }
+        saberHumLevels[seat] = level
+        guard level > 0 else {
+            if voice.isPlaying { voice.stop() }
+            return
+        }
+        guard let buffer = buffers[.saberHum] else { return }
+        voice.position = AVAudio3DPoint(x: positionX, y: 0, z: -1)
+        voice.volume = Self.saberHumVolume * level
+        speed.rate = swinging ? 1.25 : 1
+        if !voice.isPlaying {
+            guard SpatialAudioCenter.shared.ensureRunning() else { return }
+            voice.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts])
+            voice.play()
+        }
+    }
+
     func stopEverything() {
         for voice in voices { voice.stop() }
         for voice in loops.values { voice.stop() }
         for (voice, _) in hums.values { voice.stop() }
+        for (voice, _) in saberHums.values { voice.stop() }
         spools.removeAll()
         humLevels.removeAll()
+        saberHumLevels.removeAll()
     }
+
+    private var saberHums: [Seat: (AVAudioPlayerNode, AVAudioUnitVarispeed)] = [:]
+    private var saberHumLevels: [Seat: Float] = [:]
+    /// The hum file is loud (0.29 RMS); this sits it under the thrusters.
+    private static let saberHumVolume: Float = 0.22
 
     private var hums: [Team: (AVAudioPlayerNode, AVAudioUnitEQ)] = [:]
     private var humLevels: [Team: Float] = [:]

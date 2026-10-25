@@ -1968,6 +1968,25 @@ final class ArenaScene: SKScene {
         }
     }
 
+    private var lastClash: CFTimeInterval = 0
+
+    /// Whether a ball contact was the blade's rather than the hull's: a drawn
+    /// blade lies along the nose, so the ball sits ahead of a hull with its
+    /// saber out and close to that hull's axis. The event says neither, and
+    /// the blade's exact base is the engine's, so this reads it off the pose.
+    private func bladeMet(at world: SIMD2<Double>, ball: BallState?, ships: [Seat: ShipState]) -> Bool {
+        guard let ball else { return false }
+        return ships.values.contains { ship in
+            guard ship.saber.isOut else { return false }
+            let axis = SIMD2(cos(ship.angle), sin(ship.angle))
+            let offset = ball.position - ship.position
+            let along = simd_dot(offset, axis)
+            let across = abs(simd_dot(offset, SIMD2(-axis.y, axis.x)))
+            return along > 0 && along < 0.12 + Saber.length * Saber.reach(ship.saber) + ball.radius
+                && across < ball.radius + Saber.radius + 0.01
+        }
+    }
+
     /// A contact, thrown as sparks along the bounce. The event carries no
     /// kind or normal, so both are read off the snapshot: an event on a ball
     /// is a ball contact, and the ship nearest it (if any is close) is the
@@ -1997,11 +2016,18 @@ final class ArenaScene: SKScene {
                   simd_length(ship.position - world) < 0.1 {
             normal = ship.velocity
         }
-        SoundBank.shared.play(
-            onBall ? .ballHit : .wallHit,
-            positionX: Float(world.x),
-            volume: Float(min(1, max(0.15, speed / 500)))
-        )
+        let loudness = Float(min(1, max(0.15, speed / 500)))
+        if onBall, bladeMet(at: world, ball: nearestBall, ships: ships) {
+            // The engine has no 0.25 gate on blade contacts, so a ball worried
+            // along the blade is held to one clash every 60 ms.
+            let now = CACurrentMediaTime()
+            if now - lastClash > 0.06 {
+                lastClash = now
+                SoundBank.shared.play(.saberClash, positionX: Float(world.x), volume: 0.25 + 0.4 * loudness)
+            }
+        } else {
+            SoundBank.shared.play(onBall ? .ballHit : .wallHit, positionX: Float(world.x), volume: loudness)
+        }
         let tint = team.map { teamColor($0) } ?? .white
         addLight(at: position, radius: min(140, max(60, speed * 0.3)) * fx, color: onBall ? tint : .white, life: 0.12)
         kick(min(6, max(1, speed / 90)))
