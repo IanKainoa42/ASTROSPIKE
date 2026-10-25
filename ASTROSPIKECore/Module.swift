@@ -683,6 +683,12 @@ public struct SimulationEngine: Sendable {
     /// Per-seat ball hitboxes. A seat missing here flies `ShipHitbox.shared`,
     /// so every hull meets the ball the same way unless one is set.
     public var shipHitboxes: [Seat: ShipHitbox] = [:]
+
+    /// The hull `seat` meets things with: its hitbox, grown by the ring's
+    /// Hull size on the free-for-all ring.
+    public func hitbox(_ seat: Seat) -> ShipHitbox {
+        (shipHitboxes[seat] ?? .shared).scaled(by: arena.ring?.hullScale ?? 1)
+    }
     /// A guest's copy of an online board. It flies the physics between the
     /// host's snapshots but never keeps the book: no points, no serves, no
     /// phase changes of its own. Those arrive from the host, so a rally the
@@ -1099,7 +1105,7 @@ public struct SimulationEngine: Sendable {
             shipTouchedNet = false
             if resolveArenaCollision(
                 for: &ship,
-                hitbox: shipHitboxes[seat] ?? .shared,
+                hitbox: hitbox(seat),
                 from: previousShipPositions[seat] ?? ship.position,
                 effects: &collisionEffects
             ) {
@@ -1167,10 +1173,9 @@ public struct SimulationEngine: Sendable {
             } else {
                 state.balls[ballIndex].velocity += configuration.gravity * configuration.ballGravityMultiplier * dt
             }
-            // A puck slides dead straight: its spin is only for show. A
-            // locked ball turns with its hull, so it neither curves nor
+            // A locked ball turns with its hull, so it neither curves nor
             // winds down on its own.
-            if !(arena.ring != nil && configuration.ring.puck), state.balls[ballIndex].beamLock == nil {
+            if state.balls[ballIndex].beamLock == nil {
                 (state.balls[ballIndex].velocity, state.balls[ballIndex].spin) = BallState.curved(
                     state.balls[ballIndex].velocity,
                     spin: state.balls[ballIndex].spin,
@@ -1748,7 +1753,7 @@ public struct SimulationEngine: Sendable {
             seat: seat,
             // Leaves from just past the nose so it cannot spawn inside a ball
             // already resting against the hull.
-            position: ship.position + axis * ((shipHitboxes[seat] ?? .shared).noseReach + 0.005),
+            position: ship.position + axis * (hitbox(seat).noseReach + 0.005),
             velocity: axis * configuration.boltSpeed,
             ticksRemaining: lifetime
         ))
@@ -1890,7 +1895,7 @@ public struct SimulationEngine: Sendable {
                    lockedBall(of: seat) == nil, !groundedSeats.contains(seat) {
                     // Held long enough: the ball welds on where it is, never
                     // closer than just off the nose.
-                    let reach = (shipHitboxes[seat] ?? .shared).noseReach + state.balls[ballIndex].radius + 0.005
+                    let reach = hitbox(seat).noseReach + state.balls[ballIndex].radius + 0.005
                     let bearing = remainder(atan2(toward.y, toward.x) - ship.angle, 2 * .pi)
                     state.balls[ballIndex].beamLock = BeamLock(
                         seat: seat,
@@ -1952,7 +1957,7 @@ public struct SimulationEngine: Sendable {
             let shipMass = Self.shipMass
             let ballMass = Self.ballMass
             let mass = shipMass + ballMass
-            let hitbox = shipHitboxes[lock.seat] ?? .shared
+            let hitbox = self.hitbox(lock.seat)
             let shipInertia = Self.lockedHullInertia * shipMass * hitbox.reach * hitbox.reach
             // The ball's own turn counts too, as the solid ball the grip
             // treats it as: whatever it was spinning at the lock goes into
@@ -2176,7 +2181,7 @@ public struct SimulationEngine: Sendable {
             var shipHit: (seat: Seat, contact: Double)?
             for seat in Seat.allCases where isFreeForAll ? seat != bolt.seat : seat.team != bolt.owner {
                 guard let ship = state.ships[seat], !ship.isDestroyed else { continue }
-                let hitbox = shipHitboxes[seat] ?? .shared
+                let hitbox = self.hitbox(seat)
                 let axis = SIMD2(cos(ship.angle), sin(ship.angle))
                 let left = SIMD2(-axis.y, axis.x)
                 func local(_ offset: SIMD2<Double>) -> SIMD2<Double> {
@@ -2222,7 +2227,7 @@ public struct SimulationEngine: Sendable {
                         // decides -- never a coin toss, or two boards differ.
                         let arm = touch - ship.position
                         let cross = arm.x * travel.y - arm.y * travel.x
-                        let tip = max(0.000_001, ShipHitbox.shared.reach)
+                        let tip = max(0.000_001, hitbox(shipHit.seat).reach)
                         let lever = min(1, abs(cross) / tip)
                         let sign = abs(cross) > 0.000_001 ? (cross > 0 ? 1.0 : -1.0) : (bolt.owner == .cyan ? 1.0 : -1.0)
                         ship.knockSpin = sign * Self.knockSpinKick * (0.5 + 0.5 * lever)
@@ -2438,7 +2443,7 @@ public struct SimulationEngine: Sendable {
         guard !state.bumpers.isEmpty else { return }
         for seat in Seat.allCases {
             guard var ship = state.ships[seat], !ship.isDestroyed else { continue }
-            let reach = (shipHitboxes[seat] ?? .shared).reach
+            let reach = hitbox(seat).reach
             for index in state.bumpers.indices where arena.obstacles[index].isSprung {
                 var bumper = state.bumpers[index]
                 let peg = arena.obstacles[index].shifted(by: bumper.offset)
@@ -2540,8 +2545,8 @@ public struct SimulationEngine: Sendable {
         let relativeEnd = first.position - second.position
         // Each hull is a circle out to its farthest drawn point, so two ships
         // bump where their art meets rather than a hull-length apart.
-        let radius = (shipHitboxes[firstSeat] ?? .shared).reach
-            + (shipHitboxes[secondSeat] ?? .shared).reach
+        let radius = hitbox(firstSeat).reach
+            + hitbox(secondSeat).reach
         guard let hitTime = sweptCircleTime(
             from: relativeStart,
             to: relativeEnd,
@@ -3231,7 +3236,7 @@ public struct SimulationEngine: Sendable {
         for seat in Seat.allCases {
             guard let ship = state.ships[seat], !ship.isDestroyed,
                   let previousShipPosition = previousShipPositions[seat] else { continue }
-            let hitbox = shipHitboxes[seat] ?? .shared
+            let hitbox = self.hitbox(seat)
             let axis = SIMD2(cos(ship.angle), sin(ship.angle))
             let left = SIMD2(-axis.y, axis.x)
             func local(_ offset: SIMD2<Double>) -> SIMD2<Double> {
@@ -3266,7 +3271,7 @@ public struct SimulationEngine: Sendable {
             breakBeamLock(ballIndex)
         }
         takeBallOffBeam(ballIndex, playedBy: hit.seat)
-        let hitbox = shipHitboxes[hit.seat] ?? .shared
+        let hitbox = self.hitbox(hit.seat)
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let left = SIMD2(-axis.y, axis.x)
         let ballContact = previousBallPosition + (ballEnd - previousBallPosition) * hit.t
@@ -3353,7 +3358,7 @@ public struct SimulationEngine: Sendable {
     private func saberBlade(seat: Seat, position: SIMD2<Double>, angle: Double, reach: Double)
         -> (base: SIMD2<Double>, tip: SIMD2<Double>) {
         let axis = SIMD2(cos(angle), sin(angle))
-        let base = position + axis * (shipHitboxes[seat] ?? .shared).noseReach
+        let base = position + axis * hitbox(seat).noseReach
         return (base, base + axis * Saber.length * reach)
     }
 
@@ -3448,7 +3453,7 @@ public struct SimulationEngine: Sendable {
     /// out for the ball. Nil when the two are clear.
     private func hullPenetration(of ball: BallState, into seat: Seat) -> (normal: SIMD2<Double>, depth: Double)? {
         guard let ship = state.ships[seat], !ship.isDestroyed else { return nil }
-        let hitbox = shipHitboxes[seat] ?? .shared
+        let hitbox = self.hitbox(seat)
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let left = SIMD2(-axis.y, axis.x)
         let offset = ball.position - ship.position

@@ -611,10 +611,10 @@ struct FreeForAllTests {
         defaults.set(99.0, forKey: "ring.linePush")
         defaults.set(0.25, forKey: "ringGravity")
         defaults.set(true, forKey: RingTuning.centreBumperKey)
-        defaults.set(true, forKey: RingTuning.puckKey)
+        defaults.set(9.0, forKey: "ring.puckSize")
         defaults.set(0.1, forKey: "ring.fireCooldown")
         var stored = RingTuning.stored(in: defaults)
-        #expect(stored.puck, "the puck is stored")
+        #expect(stored.puckSize == 3.0, "puck size clamped to its slider")
         #expect(stored.fireCooldown == 0.45, "fire rate clamped to its slider")
         #expect(stored.linePush == 30, "clamped to the slider")
         #expect(stored.centreBumper, "the toggle is stored")
@@ -623,28 +623,63 @@ struct FreeForAllTests {
         stored.store(in: defaults)
         #expect(defaults.object(forKey: "ring.linePush") == nil, "a default is cleared, not written")
         #expect(defaults.object(forKey: RingTuning.centreBumperKey) == nil)
-        #expect(defaults.object(forKey: RingTuning.puckKey) == nil)
+        #expect(defaults.object(forKey: "ring.puckSize") == nil)
         #expect(RingTuning.stored(in: defaults) == RingTuning())
     }
 
-    @Test("The puck slides dead straight: the spin a hit leaves on it never bends its path, where the ball's curves")
-    func puckSlidesStraight() {
-        for puck in [false, true] {
+    @Test("The puck carries spin: a glance off the rim sets it turning, and a turning puck curves")
+    func puckCurves() {
+        // A spun puck in open ring bends off its line.
+        var (engine, _) = field(pilots: 3)
+        for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+        engine.state.ball = BallState(position: SIMD2(-0.3, 0), velocity: SIMD2(0.8, 0), radius: engine.configuration.ballRadius)
+        engine.state.ball.spin = BoltState.spinKick
+        engine.state.serveTicksRemaining = 0
+        for _ in 0 ..< 60 { engine.step(inputs: [:]) }
+        #expect(abs(engine.state.ball.velocity.y) > 0.01, "puck curved only \(abs(engine.state.ball.velocity.y))")
+
+        // A puck with no spin glancing off the rim in a valley (the top, at
+        // three pilots) comes away turning.
+        (engine, _) = field(pilots: 3)
+        for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
+        let rim = engine.arena.ring!.rimRadius
+        engine.state.ball = BallState(
+            position: SIMD2(-0.1, rim - engine.configuration.ballRadius - 0.03),
+            velocity: SIMD2(1.0, 0.5),
+            radius: engine.configuration.ballRadius
+        )
+        engine.state.serveTicksRemaining = 0
+        var spun = 0.0
+        for _ in 0 ..< 30 {
+            engine.step(inputs: [:])
+            spun = max(spun, abs(engine.state.ball.spin))
+        }
+        #expect(spun > 1, "the rim left only \(spun) of spin")
+    }
+
+    @Test("Hull size grows every hull on the ring, and a puck that would have missed the duel-sized hull meets the grown one")
+    func hullSize() {
+        for size in [1.0, 2.0] {
             var (engine, _) = field(pilots: 3)
+            var tuning = RingTuning.lab
+            tuning.hullSize = size
             var configuration = engine.configuration
-            configuration.ring.puck = puck
+            configuration.ring = tuning
             engine.updateConfiguration(configuration)
-            for seat in Array(engine.state.ships.keys) { engine.state.ships[seat] = nil }
-            engine.state.ball = BallState(position: SIMD2(-0.3, 0), velocity: SIMD2(0.8, 0), radius: engine.configuration.ballRadius)
-            engine.state.ball.spin = BoltState.spinKick
+            engine.updateArena(.freeForAll(pilots: 3, ballRadius: configuration.ballRadius, tuning: tuning))
+            let seat = engine.state.freeForAll!.bays[0]
+            #expect(abs(engine.hitbox(seat).reach - ShipHitbox.shared.reach * size) < 1e-12)
+            for other in Array(engine.state.ships.keys) where other != seat { engine.state.ships[other] = nil }
+            engine.state.ships[seat]!.position = .zero
+            engine.state.ships[seat]!.velocity = .zero
+            engine.state.ships[seat]!.angle = .pi / 2
+            // Passing beside the hull, clear of its duel size, inside double.
+            let side = ShipHitbox.shared.extent(along: SIMD2(1, 0), angle: .pi / 2) * 1.5 + ShipHitbox.skin + engine.configuration.ballRadius
+            engine.state.ball = BallState(position: SIMD2(side, -0.4), velocity: SIMD2(0, 1.0), radius: engine.configuration.ballRadius)
             engine.state.serveTicksRemaining = 0
-            for _ in 0 ..< 60 { engine.step(inputs: [:]) }
-            let drift = abs(engine.state.ball.velocity.y)
-            if puck {
-                #expect(drift < 1e-9, "puck bent by \(drift)")
-            } else {
-                #expect(drift > 0.01, "ball curved only \(drift)")
-            }
+            for _ in 0 ..< 90 { engine.step(inputs: [:]) }
+            let pushed = abs(engine.state.ball.velocity.x) > 0.05
+            #expect(pushed == (size > 1), "hull size \(size): ball velocity \(engine.state.ball.velocity)")
         }
     }
 
@@ -984,7 +1019,7 @@ struct FreeForAllTests {
 
 extension RingTuning {
     /// The table the ring's mechanics are pinned against: flat, no centre
-    /// bumper, a ball rather than a puck, bumps a quarter of the radius, the
+    /// bumper, bumps a quarter of the radius, the
     /// old ring's size. The
     /// shipped defaults are Ian's own feel (build 146) and move with it, so
     /// these tests never lean on them.
@@ -1001,7 +1036,7 @@ extension RingTuning {
         tuning.centreBumper = false
         tuning.bumpHeight = 0.25
         tuning.bumpWidth = 0.25
-        tuning.puck = false
+        tuning.hullSize = 1
         return tuning
     }
 }

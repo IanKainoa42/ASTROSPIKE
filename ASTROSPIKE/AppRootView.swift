@@ -2813,11 +2813,6 @@ struct RingTuningControls: View {
             set: { tuning.centreBumper = $0 }
         ))
         .accessibilityIdentifier(RingTuning.centreBumperKey)
-        Toggle("Puck", isOn: Binding(
-            get: { tuning.puck },
-            set: { tuning.puck = $0 }
-        ))
-        .accessibilityIdentifier(RingTuning.puckKey)
         Toggle("Two balls", isOn: Binding(
             get: { tuning.twoBalls },
             set: { tuning.twoBalls = $0 }

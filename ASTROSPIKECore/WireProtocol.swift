@@ -184,7 +184,9 @@ public struct WireEnvelope: Codable, Equatable, Sendable {
     //     friend across the net and a bot on each wing; and ASTROBALL TEAM
     //     UP (`astroballTeamUp`), the friend on your side against two bots.
     // 63: the ring's size rides the host's ring tuning.
-    public static let currentVersion: UInt16 = 63
+    // 64: the ring's Puck toggle is gone (a puck always, and its spin
+    //     curves); its Puck size rides the host's ring tuning.
+    public static let currentVersion: UInt16 = 64
 
     public var version: UInt16
     public var sequence: UInt64

@@ -28,9 +28,9 @@ public struct RingField: Equatable, Sendable {
     public var maxCrossShare: Double
     /// Whether the round bumper in the middle is standing.
     public var centreBumper: Bool
-    /// The ball plays as an air-hockey puck: drawn flat, and spin never
-    /// bends its path.
-    public var puck: Bool
+    /// How many times its duel size every hull flies and is drawn at on
+    /// the ring: the Hull size setting.
+    public var hullScale: Double
     /// Thickness of a net's frame, as a capsule radius.
     public static let netWall = 0.014
     /// Radius of the round bumper in the middle.
@@ -55,8 +55,9 @@ public struct RingField: Equatable, Sendable {
     public var spokeAngles: [Double]
     public var ballRadius: Double
 
-    /// Half the net's mouth, out to the middle of each post: the ball plus a
-    /// fixed 0.10 either side, so a bigger ball keeps the same room.
+    /// Half the net's mouth, out to the middle of each post: the puck plus
+    /// room either side, 0.10 or one and a half radii when that is more, so
+    /// a bigger puck opens the goal as much again round it.
     public var netHalfWidth: Double
     /// Back of the net to the mouth, along the frame's centreline.
     public var netDepth: Double
@@ -75,10 +76,10 @@ public struct RingField: Equatable, Sendable {
         self.ballRadius = ballRadius
         maxCrossShare = tuning.lineShare
         centreBumper = tuning.centreBumper
-        puck = tuning.puck
+        hullScale = min(3, max(1, tuning.hullSize))
         rimRadius = Self.baseRimRadius * min(2.5, max(1, tuning.size))
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
-        netHalfWidth = ballRadius + 0.10 + Self.netWall
+        netHalfWidth = ballRadius + max(0.10, 1.5 * ballRadius) + Self.netWall
         netDepth = 2 * ballRadius + 0.07 + Self.netWall
         posts = []
         backs = []
@@ -361,35 +362,41 @@ public struct RingTuning: Equatable, Sendable, Codable {
     /// smaller hulls on the same screen.
     public var size = 1.5
     /// The motor's push on the ring, as a share of the Thrust slider.
-    public var speed = 0.70
+    public var speed = 0.80
     /// Velocity bled off a ring hull each second. Held thrust builds speed
     /// along 1 - e^(-drag t) toward thrust / drag, and a hull let go glides
     /// to a stop on it.
-    public var hullDrag = 0.80
+    public var hullDrag = 0.85
     /// Velocity bled off the ball each second: a puck on air.
-    public var ballDrag = 0.21
+    public var ballDrag = 0.41
     /// The share of the duel's gravity felt at the rim. Ring gravity is spin
     /// gravity: nothing at the centre, growing straight out to this.
-    public var gravity = 0.10
+    public var gravity = 0.45
     /// How hard a rival past a MAX CROSS line is shoved back, per unit of
     /// depth. The duel's is 18.
-    public var linePush = 15.0
+    public var linePush = 17.0
     /// How much speed the line steals from a rival past it. The duel's is 5.
-    public var lineBrake = 0.7
+    public var lineBrake = 0.0
     /// Where each MAX CROSS arc stands, as a share of the way out to the
     /// mouths.
-    public var lineShare = 0.3
+    public var lineShare = 0.5
     /// The round bumper in the middle. Off leaves the face-off clear.
     public var centreBumper = true
     /// How far each goal's bump stands in off the rim, rim to mouth, as a
     /// share of the rim radius. Zero is a plain round rim, goals flush.
-    public var bumpHeight = 0.19
+    public var bumpHeight = 0.22
     /// How wide each bump's bell is: its standard deviation as a share of
     /// the rim from the goal's line to the valley.
-    public var bumpWidth = 0.29
-    /// The ball is an air-hockey puck: it slides dead straight whatever
-    /// spin a hit leaves on it, and it is drawn as a flat disc.
-    public var puck = true
+    public var bumpWidth = 0.32
+    /// The puck's radius on the ring, as a multiple of the duel ball's
+    /// nominal one, apart from the duel's Ball size. Its goals are cut to
+    /// it, so a bigger puck is a bigger goal, and the spin it carries reads
+    /// on its notch.
+    public var puckSize = 2.5
+    /// Every hull on the ring, hitbox and drawing together, as a multiple
+    /// of its duel size. A bigger ring and a bigger puck left the hulls
+    /// small beside them.
+    public var hullSize = 2.0
     /// Two balls in play at once. A goal re-drops only the ball that went
     /// in; the other plays on.
     public var twoBalls = true
@@ -417,8 +424,6 @@ public struct RingTuning: Equatable, Sendable, Codable {
 
     /// The defaults key for the centre bumper. Not a slider.
     public static let centreBumperKey = "ring.centreBumper"
-    /// The defaults key for the puck. Not a slider.
-    public static let puckKey = "ring.puck"
     /// The defaults key for two balls. Not a slider.
     public static let twoBallsKey = "ring.twoBalls"
 
@@ -429,7 +434,9 @@ public struct RingTuning: Equatable, Sendable, Codable {
             Knob(key: "ring.size", title: "Ring size", range: 1.0 ... 2.5, step: 0.05, percent: true, keyPath: \.size),
             Knob(key: "ring.speed", title: "Thrust", range: 0.1 ... 1.2, step: 0.05, percent: true, keyPath: \.speed),
             Knob(key: "ring.hullDrag", title: "Hull drag", range: 0.05 ... 1.5, step: 0.05, percent: false, keyPath: \.hullDrag),
-            Knob(key: "ring.ballDrag", title: "Ball drag", range: 0 ... 0.8, step: 0.01, percent: false, keyPath: \.ballDrag),
+            Knob(key: "ring.puckSize", title: "Puck size", range: 1.5 ... 3.0, step: 0.05, percent: true, keyPath: \.puckSize),
+            Knob(key: "ring.hullSize", title: "Hull size", range: 1.0 ... 3.0, step: 0.05, percent: true, keyPath: \.hullSize),
+            Knob(key: "ring.ballDrag", title: "Puck drag", range: 0 ... 0.8, step: 0.01, percent: false, keyPath: \.ballDrag),
             Knob(key: "ringGravity", title: "Ring gravity", range: 0 ... 1.5, step: 0.05, percent: true, keyPath: \.gravity),
             Knob(key: "ring.linePush", title: "MAX CROSS push", range: 0 ... 30, step: 0.5, percent: false, keyPath: \.linePush),
             Knob(key: "ring.lineBrake", title: "MAX CROSS brake", range: 0 ... 8, step: 0.1, percent: false, keyPath: \.lineBrake),
@@ -449,7 +456,6 @@ public struct RingTuning: Equatable, Sendable, Codable {
             tuning[keyPath: knob.keyPath] = min(knob.range.upperBound, max(knob.range.lowerBound, value))
         }
         tuning.centreBumper = defaults.object(forKey: centreBumperKey) as? Bool ?? RingTuning().centreBumper
-        tuning.puck = defaults.object(forKey: puckKey) as? Bool ?? RingTuning().puck
         tuning.twoBalls = defaults.object(forKey: twoBallsKey) as? Bool ?? RingTuning().twoBalls
         return tuning
     }
@@ -468,11 +474,6 @@ public struct RingTuning: Equatable, Sendable, Codable {
             defaults.removeObject(forKey: Self.centreBumperKey)
         } else {
             defaults.set(centreBumper, forKey: Self.centreBumperKey)
-        }
-        if puck == RingTuning().puck {
-            defaults.removeObject(forKey: Self.puckKey)
-        } else {
-            defaults.set(puck, forKey: Self.puckKey)
         }
         if twoBalls == RingTuning().twoBalls {
             defaults.removeObject(forKey: Self.twoBallsKey)

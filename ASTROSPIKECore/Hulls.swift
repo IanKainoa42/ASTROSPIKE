@@ -105,6 +105,15 @@ public struct ShipHitbox: Equatable, Sendable {
         polygon = outline.silhouette.map { SIMD2($0.y * s, -$0.x * s) }
     }
 
+    private init(polygon: [SIMD2<Double>]) {
+        self.polygon = polygon
+    }
+
+    /// The same hull drawn `scale` times as big: the ring's Hull size.
+    public func scaled(by scale: Double) -> ShipHitbox {
+        scale == 1 ? self : ShipHitbox(polygon: polygon.map { $0 * scale })
+    }
+
     /// How far the nose reaches ahead of the ship's centre, skin included.
     public var noseReach: Double { (polygon.map(\.x).max() ?? 0) + Self.skin }
 

@@ -99,6 +99,9 @@ final class ArenaScene: SKScene {
     /// Where each hull's nose tip sits, so the blade starts where the engine
     /// starts it.
     var noseReach: [Seat: Double] = [:]
+    /// The ring's Hull size: every hull, and the rings drawn round it, at
+    /// the size the engine flies it.
+    private var hullScale: Double { arena.ring?.hullScale ?? 1 }
     private var saberRigs: [Seat: SaberRig] = [:]
     private var ballTrails: [[CGPoint]] = []
     private var plumeSeed = 0
@@ -1277,7 +1280,7 @@ final class ArenaScene: SKScene {
             // The node is built 10pt in radius; scale it to the ball's world
             // radius so what you see is what the ship hits.
             node.setScale(CGFloat(ball.radius) * pointsPerWorldUnit / 10)
-            node.setPuck(arena.ring?.puck ?? false)
+            node.setPuck(arena.ring != nil)
             node.spin(by: ball.spin * spunTicks * Self.tickDuration)
             // Ball tint by last touch (possession cue)
             node.tint(tint)
@@ -1683,7 +1686,7 @@ final class ArenaScene: SKScene {
             return
         }
         // Children are drawn in outline units; this many make one point.
-        let perPoint = 1 / max(0.0001, CGFloat(ShipHitbox.worldPerOutlineUnit) * pointsPerWorldUnit)
+        let perPoint = 1 / max(0.0001, CGFloat(ShipHitbox.worldPerOutlineUnit * hullScale) * pointsPerWorldUnit)
         let reach = CGFloat(ShipHitbox.shared.reach / ShipHitbox.worldPerOutlineUnit)
         ship.childNode(withName: "zap")?.removeFromParent()
         let crackle = SKNode()
@@ -2051,7 +2054,7 @@ final class ArenaScene: SKScene {
     /// lit circle; `update(seat:)` keeps it on the offender as they fly.
     private func spotlight(on seat: Seat, at position: CGPoint) {
         spotlit?.node.removeFromParent()
-        let radius = CGFloat(ShipHitbox.shared.reach) * pointsPerWorldUnit + 14 * max(labScale, 1)
+        let radius = CGFloat(ShipHitbox.shared.reach * hullScale) * pointsPerWorldUnit + 14 * max(labScale, 1)
         let reach = hypot(size.width, size.height) * 2
         let shade = SKShapeNode(circleOfRadius: radius + reach / 2)
         shade.position = position
@@ -2131,7 +2134,7 @@ final class ArenaScene: SKScene {
             let up = !state.isDestroyed && isUp(seat)
             upRing.isHidden = !up
             if up {
-                let radius = CGFloat(ShipHitbox.shared.reach) * pointsPerWorldUnit + 9 * max(labScale, 1)
+                let radius = CGFloat(ShipHitbox.shared.reach * hullScale) * pointsPerWorldUnit + 9 * max(labScale, 1)
                 upRing.path = CGPath(
                     ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
                     transform: nil
@@ -2147,7 +2150,7 @@ final class ArenaScene: SKScene {
             lockRing.isHidden = !locked
             if locked {
                 let fx = labScale
-                let radius = CGFloat(ShipHitbox.shared.reach) * pointsPerWorldUnit + 4 * fx
+                let radius = CGFloat(ShipHitbox.shared.reach * hullScale) * pointsPerWorldUnit + 4 * fx
                 lockRing.path = CGPath(
                     ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
                     transform: nil
@@ -2161,7 +2164,7 @@ final class ArenaScene: SKScene {
         // back, so a dead stick reads as a hit, not as broken controls.
         shipNode.alpha = state.stunTicks > 0 && (state.stunTicks / 5) % 2 == 0 ? 0.3 : 1
         // Drawn at the scale the ball's hitbox is built at (`ShipHitbox`).
-        shipNode.setScale(CGFloat(ShipHitbox.worldPerOutlineUnit) * pointsPerWorldUnit)
+        shipNode.setScale(CGFloat(ShipHitbox.worldPerOutlineUnit * hullScale) * pointsPerWorldUnit)
         shipNode.glowWidth = 8 + min(12, state.thrustLevel * 0.65)
         // `thrustLevel` is not a dial -- `thrustRampRate` is 0 and initial
         // thrust equals maximum, so it is either 0 or whatever the slider
@@ -2224,7 +2227,7 @@ final class ArenaScene: SKScene {
         }
         let worldToPoints = arenaRect.width / CGFloat(arena.halfWidth * 2)
         let axis = SIMD2(cos(state.angle), sin(state.angle))
-        let base = state.position + axis * (noseReach[seat] ?? ShipHitbox.shared.noseReach)
+        let base = state.position + axis * (noseReach[seat] ?? ShipHitbox.shared.noseReach) * hullScale
         let tip = base + axis * Saber.length * reach
         let line = CGMutablePath()
         line.move(to: point(base.x, base.y))
@@ -2268,7 +2271,7 @@ final class ArenaScene: SKScene {
         let strength = min(1, abs(state.angularVelocity) / 20)
         if turning, strength > 0.05 {
             let side = SIMD2(-axis.y, axis.x) * -state.saber.turn
-            let from = state.position + axis * ((noseReach[seat] ?? ShipHitbox.shared.noseReach) * 0.55)
+            let from = state.position + axis * ((noseReach[seat] ?? ShipHitbox.shared.noseReach) * hullScale * 0.55)
             let to = from + side * (0.025 + 0.05 * strength)
             let flame = CGMutablePath()
             flame.move(to: point(from.x, from.y))

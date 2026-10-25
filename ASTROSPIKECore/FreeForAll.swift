@@ -237,7 +237,7 @@ public struct FreeForAllPilot: Sendable {
                 .first { !self.headsInto(own, from: spot, along: $0, ring: ring) } ?? -line
         }
 
-        let standoff = ring.ballRadius + Self.ringStandoff
+        let standoff = ring.ballRadius + Self.ringStandoff + ShipHitbox.shared.noseReach * (ring.hullScale - 1)
         let behind = spot - line * standoff
         let fromBall = ship.position - spot
         let distance = simd_length(fromBall)

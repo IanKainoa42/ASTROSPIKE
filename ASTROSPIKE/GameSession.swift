@@ -523,6 +523,8 @@ final class GameSession {
         if isFreeForAll {
             if mode.isOffline { configuration.ring = RingTuning.stored() }
             configuration.ballCount = configuration.ring.twoBalls ? 2 : 1
+            // The ring plays its own puck, not the duel's Ball size.
+            configuration.ballRadius = BallState.nominalRadius * configuration.ring.puckSize
         }
         return configuration
     }
