@@ -2619,6 +2619,7 @@ public struct SimulationEngine: Sendable {
             radius: radius
         ) {
             ship.position = wall.position
+            shipTouchedNet = true
             let inwardSpeed = simd_dot(ship.velocity, wall.normal)
             if inwardSpeed < 0 {
                 ship.velocity -= wall.normal * ((1 + 0.12) * inwardSpeed)
