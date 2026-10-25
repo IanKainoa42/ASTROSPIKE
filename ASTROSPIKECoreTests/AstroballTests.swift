@@ -220,6 +220,20 @@ struct AstroballTests {
         #expect(engine.state.match.shipTouches.cyan == 1)
     }
 
+    @Test("A hull touching the net loses the point in ASTROBALL; the duel's net is only a wall")
+    func netTouchLosesPoint() {
+        for astroball in [true, false] {
+            var engine = astroballEngine(astroball ? AstroballTuning() : nil)
+            let court = ArenaGeometry.astroball(doubles: false)
+            engine.state.ships[.orange]!.position = .init(0.9, 0.4)
+            engine.state.ships[.cyan]!.position = .init(-(court.netHalfWidth + 0.02), court.floorY + 0.1)
+            engine.state.ships[.cyan]!.velocity = .init(0.5, 0)
+            engine.state.ball = BallState(position: .init(0.7, 0.4), velocity: .zero)
+            for tick in UInt64(0) ..< 5 { engine.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)]) }
+            #expect(engine.state.match.score.orange == (astroball ? 1 : 0))
+        }
+    }
+
     @Test("The ball landing in the zone gives the other side the point")
     func zoneLandingScores() {
         let court = ArenaGeometry.astroball(doubles: false)

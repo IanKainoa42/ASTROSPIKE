@@ -63,7 +63,7 @@ public struct FlightTuningSnapshot: Equatable, Sendable, Codable {
         ballDropHeight: 0.10,
         ballDropSpeed: 0.06,
         tractorStrength: 2.6,
-        allowedBouncesPerHit: 3,
+        allowedBouncesPerHit: 2,
         setsToWin: 2
     )
 

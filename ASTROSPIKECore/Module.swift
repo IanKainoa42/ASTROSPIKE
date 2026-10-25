@@ -707,6 +707,10 @@ public struct SimulationEngine: Sendable {
     /// ledge cut at the floor, or the ring's rim. A beam lock does not
     /// survive it, and a grounded hull never locks on.
     private var groundedSeats: Set<Seat> = []
+    /// ASTROBALL: hulls that touched the net this step. Touching it loses
+    /// the point, as in volleyball.
+    private var netTouchers: Set<Seat> = []
+    private var shipTouchedNet = false
     private enum StatPlay {
         case hit(Seat)
         case boltHit(Seat, slam: Bool)
@@ -987,6 +991,7 @@ public struct SimulationEngine: Sendable {
         playsThisStep.removeAll()
         stickTorques.removeAll()
         groundedSeats.removeAll()
+        netTouchers.removeAll()
         defencePlays.removeAll()
         let previousShipPositions = state.ships.mapValues(\.position)
         let previousShipAngles = state.ships.mapValues(\.angle)
@@ -1088,6 +1093,7 @@ public struct SimulationEngine: Sendable {
             }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
+            shipTouchedNet = false
             if resolveArenaCollision(
                 for: &ship,
                 hitbox: shipHitboxes[seat] ?? .shared,
@@ -1096,6 +1102,7 @@ public struct SimulationEngine: Sendable {
             ) {
                 groundedSeats.insert(seat)
             }
+            if shipTouchedNet { netTouchers.insert(seat) }
             if ship.fireCooldownTicks > 0 { ship.fireCooldownTicks -= 1 }
             if ship.ballTouchCooldownTicks > 0 { ship.ballTouchCooldownTicks -= 1 }
             // The trigger works anywhere short of the MAX CROSS line, the
@@ -1175,6 +1182,12 @@ public struct SimulationEngine: Sendable {
             state.balls[ballIndex].position += state.balls[ballIndex].velocity * dt
         }
         solveBeamLocks(effects: &collisionEffects)
+        // ASTROBALL: a hull in the net is a fault, the toucher's point lost.
+        if configuration.astroball != nil, state.match.phase == .playing {
+            for seat in netTouchers.sorted() {
+                contacts.append(.shipDestroyed(team: seat.team, reason: .netContact))
+            }
+        }
         advanceBolts(previousShipPositions: previousShipPositions, effects: &collisionEffects, contacts: &contacts)
         resolveBallBallCollisions(effects: &collisionEffects)
         for ballIndex in state.balls.indices {
@@ -1982,7 +1995,9 @@ public struct SimulationEngine: Sendable {
             ship.angularVelocity = spin
             lock.spin = spin
             // The weld moved the hull; the walls still have the last word.
+            shipTouchedNet = false
             let grounded = resolveArenaCollision(for: &ship, hitbox: hitbox, from: from, effects: &effects)
+            if shipTouchedNet { netTouchers.insert(lock.seat) }
             ball.beamLock = lock
             // Still the beam's ball, for a slam dunk or a beam-pull goal.
             ball.beamHold = BeamHold(seat: lock.seat, tick: state.tick, since: ball.beamHold?.since)
