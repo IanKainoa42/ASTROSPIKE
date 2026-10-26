@@ -595,36 +595,33 @@ final class ArenaScene: SKScene {
         rim.glowWidth = 1
         arenaLayer.addChild(rim)
 
-        // Each goal's bump: filled solid from the rim up the bell, across
-        // the crown and down the far side, with the pocket left open; only
-        // the flanks are stroked, so the mouth reads open.
+        // Each goal's two barriers: filled from the rim up the bell, ending
+        // on a face just shy of the post so the mouth stays an opening.
+        // Only the flanks are stroked.
         if ring.hasBumps {
             for index in ring.spokeAngles.indices {
-                let down = ring.bumpFlank(index, side: -1)
-                let up = ring.bumpFlank(index, side: 1)
-                let body = CGMutablePath()
-                for (step, sample) in down.reversed().enumerated() {
-                    let screen = point(sample.x, sample.y)
-                    if step == 0 { body.move(to: screen) } else { body.addLine(to: screen) }
-                }
-                for sample in ring.netOutline {
-                    let world = ring.toWorld(sample, net: index)
-                    body.addLine(to: point(world.x, world.y))
-                }
-                for sample in up { body.addLine(to: point(sample.x, sample.y)) }
-                let low = ring.spokeAngles[index] + ring.flankEndAngle
-                let steps = 24
-                for step in 0 ... steps {
-                    let angle = low - 2 * ring.flankEndAngle * Double(step) / Double(steps)
-                    body.addLine(to: point(ring.rimRadius * cos(angle), ring.rimRadius * sin(angle)))
-                }
-                body.closeSubpath()
-                let fill = SKShapeNode(path: body)
-                fill.fillColor = SKColor(white: 0.16, alpha: 1)
-                fill.strokeColor = .clear
-                arenaLayer.addChild(fill)
+                for side in [-1.0, 1.0] {
+                    let flank = ring.bumpFlank(index, side: side)
+                    guard let inner = flank.first, let outer = flank.last else { continue }
+                    let body = CGMutablePath()
+                    body.move(to: point(inner.x, inner.y))
+                    for sample in flank.dropFirst() { body.addLine(to: point(sample.x, sample.y)) }
+                    let valley = atan2(outer.y, outer.x)
+                    let face = atan2(inner.y, inner.x)
+                    var turn = face - valley
+                    if turn > .pi { turn -= 2 * .pi }
+                    if turn < -.pi { turn += 2 * .pi }
+                    let steps = 18
+                    for step in 0 ... steps {
+                        let angle = valley + turn * Double(step) / Double(steps)
+                        body.addLine(to: point(ring.rimRadius * cos(angle), ring.rimRadius * sin(angle)))
+                    }
+                    body.closeSubpath()
+                    let fill = SKShapeNode(path: body)
+                    fill.fillColor = SKColor(white: 0.16, alpha: 1)
+                    fill.strokeColor = .clear
+                    arenaLayer.addChild(fill)
 
-                for flank in [down, up] {
                     let edge = CGMutablePath()
                     for (step, sample) in flank.enumerated() {
                         let screen = point(sample.x, sample.y)

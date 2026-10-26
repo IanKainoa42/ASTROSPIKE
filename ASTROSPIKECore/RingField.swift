@@ -5,8 +5,9 @@ import simd
 /// goal a bell-curve bump rises off the rim toward the middle, peak on the
 /// goal's line; the net is sunk in the top of the bell, mouth cut across
 /// it with both posts on the curve and the pocket inside the bump, and the
-/// flanks fall smoothly away either side to the rim in the valley between. A shot that misses the
-/// mouth glances off a flank and is sent on round toward a neighbour. With
+/// flanks fall smoothly away either side and stop just shy of the posts,
+/// so the mouth is the opening. A shot that misses the mouth glances off a
+/// flank and is sent on round toward a neighbour. With
 /// the Bump height at zero the goals are slots flush in a plain round rim.
 /// An optional bumper can stand in the middle.
 ///
@@ -56,8 +57,8 @@ public struct RingField: Equatable, Sendable {
     public var ballRadius: Double
 
     /// Half the net's mouth, out to the middle of each post: the puck plus
-    /// room either side, 0.10 or one and a half radii when that is more, so
-    /// a bigger puck opens the goal as much again round it.
+    /// room either side, 0.16 or 1.85 radii when that is more, so the
+    /// opening is a goal and not a crack between the barriers.
     public var netHalfWidth: Double
     /// Back of the net to the mouth, along the frame's centreline.
     public var netDepth: Double
@@ -94,7 +95,7 @@ public struct RingField: Equatable, Sendable {
         hullScale = min(3, max(1, tuning.hullSize))
         rimRadius = Self.baseRimRadius * min(2.5, max(1, tuning.size))
         spokeAngles = (0 ..< count).map { -.pi / 2 + Double($0) * 2 * .pi / Double(count) }
-        netHalfWidth = ballRadius + max(0.10, 1.5 * ballRadius) + Self.netWall
+        netHalfWidth = ballRadius + max(0.16, 1.85 * ballRadius) + Self.netWall
         netDepth = 2 * ballRadius + 0.07 + Self.netWall
         posts = []
         backs = []
@@ -232,9 +233,20 @@ public struct RingField: Equatable, Sendable {
         return SIMD2(simd_dot(point, across), netBackRadius - simd_dot(point, out))
     }
 
-    /// How far round from its goal a post's mouth end stands: where the
-    /// flank starts, down off the cut across the top of the bell.
+    /// How far round from its goal a post's mouth end stands.
     public var flankStartAngle: Double { atan2(netHalfWidth, mouthRadius) }
+
+    /// How far, in world units, a barrier's near end stops short of the post.
+    /// Just shy: the wall does not pinch the mouth, and the opening is the
+    /// goal rather than a crack beside it.
+    public static let barrierShy = 0.05
+
+    /// Where a barrier's near end stands: a shy past the post, still well
+    /// short of the valley.
+    public var barrierStartAngle: Double {
+        let shy = Self.barrierShy / max(0.3, mouthRadius)
+        return min(flankEndAngle * 0.85, flankStartAngle + shy)
+    }
 
     /// How far round from its goal a bump reaches: half way to the next
     /// goal, the bottom of the valley, where it meets the neighbour's flank.
@@ -253,17 +265,25 @@ public struct RingField: Equatable, Sendable {
         return cornerDepth * (bell(offset) - foot) / (1 - foot)
     }
 
-    /// One flank of net `index`'s bump: from the post's mouth end (`side`
+    /// One flank of net `index`'s bump: from just shy of the post (`side`
     /// -1 is the clockwise post) down the bell to the rim in the valley.
-    /// Sampled finely enough that the chain reads as a smooth curve.
+    /// Sampled finely enough that the chain reads as a smooth curve. The
+    /// goal's opening is the gap between the two near ends.
     public func bumpFlank(_ index: Int, side: Double) -> [SIMD2<Double>] {
-        let start = flankStartAngle, end = flankEndAngle
+        let start = barrierStartAngle, end = flankEndAngle
         let steps = 40
         return (0 ... steps).map { step in
             let offset = start + (end - start) * Double(step) / Double(steps)
-            if step == 0 { return toWorld(SIMD2(side * netHalfWidth, netDepth), net: index) }
             return Self.outward(spokeAngles[index] + side * offset) * (rimRadius - bumpHeight(at: offset))
         }
+    }
+
+    /// A spring on a hull toward its own mouth: acceleration grows with
+    /// the distance, so the far side pulls harder than a step away. Zero
+    /// strength pulls nothing. The puck is not a hull and is never pulled.
+    public func goalSpring(at point: SIMD2<Double>, home: Int, strength: Double) -> SIMD2<Double> {
+        guard strength > 0, spokeAngles.indices.contains(home) else { return .zero }
+        return (mouthCentre(home) - point) * strength
     }
 
     /// Where a pilot starts: just inside the rim, beside their own mouth,
@@ -429,14 +449,19 @@ public struct RingTuning: Equatable, Sendable, Codable {
     /// Where each MAX CROSS arc stands, as a share of the way out to the
     /// mouths.
     public var lineShare = 0.5
+    /// A loose spring on each hull toward its own goal, harder the farther
+    /// it flies. Zero leaves the MAX CROSS line as the only pull home. The
+    /// puck is not pulled.
+    public var goalPull = 0.0
     /// The round bumper in the middle. Off leaves the face-off clear.
     public var centreBumper = true
     /// How far each goal's bump stands in off the rim, rim to mouth, as a
     /// share of the rim radius. Zero is a plain round rim, goals flush.
     public var bumpHeight = 0.22
     /// How wide each bump's bell is: its standard deviation as a share of
-    /// the rim from the goal's line to the valley.
-    public var bumpWidth = 0.32
+    /// the rim from the goal's line to the valley. Wide enough that the
+    /// wall stays up across the arc and stops just shy of the goal.
+    public var bumpWidth = 0.52
     /// The puck's radius on the ring, as a multiple of the duel ball's
     /// nominal one, apart from the duel's Ball size. Its goals are cut to
     /// it, so a bigger puck is a bigger goal, and the spin it carries reads
@@ -508,6 +533,7 @@ public struct RingTuning: Equatable, Sendable, Codable {
             Knob(key: "ring.linePush", title: "MAX CROSS push", range: 0 ... 30, step: 0.5, percent: false, keyPath: \.linePush),
             Knob(key: "ring.lineBrake", title: "MAX CROSS brake", range: 0 ... 8, step: 0.1, percent: false, keyPath: \.lineBrake),
             Knob(key: "ring.lineShare", title: "MAX CROSS line", range: 0.3 ... 1.0, step: 0.02, percent: true, keyPath: \.lineShare),
+            Knob(key: "ring.goalPull", title: "Goal pull", range: 0 ... 2.5, step: 0.05, percent: false, keyPath: \.goalPull),
             Knob(key: "ring.bumpHeight", title: "Bump height", range: 0 ... 0.40, step: 0.01, percent: true, keyPath: \.bumpHeight),
             Knob(key: "ring.bumpWidth", title: "Bump width", range: 0.15 ... 0.70, step: 0.01, percent: true, keyPath: \.bumpWidth),
             Knob(key: "ring.fireCooldown", title: "Fire rate", range: 0.45 ... 4.0, step: 0.05, percent: false, keyPath: \.fireCooldown, seconds: true),

@@ -132,9 +132,12 @@ struct FreeForAllTests {
                     for net in sized.spokeAngles.indices {
                         for side in [-1.0, 1.0] {
                             let flank = sized.bumpFlank(net, side: side)
-                            // From the post's mouth end, which sits on the bell...
+                            // The post sits on the bell. The barrier starts just
+                            // shy of it, so the mouth is the opening.
                             let post = sized.toWorld(SIMD2(side * sized.netHalfWidth, sized.netDepth), net: net)
-                            #expect(simd_distance(flank.first!, post) < 1e-9, "\(label)")
+                            let start = abs(remainder(atan2(flank.first!.y, flank.first!.x) - sized.spokeAngles[net], 2 * .pi))
+                            let shy = start - sized.flankStartAngle
+                            #expect(shy > 0.01 && shy < 0.12, "\(label): barrier \(shy) rad shy of the post")
                             #expect(abs(sized.rimRadius - simd_length(post) - sized.bumpHeight(at: sized.flankStartAngle)) < 1e-6, "\(label): post on the bell")
                             // ...down to the rim in the valley, half way to the next goal...
                             let valley = sized.spokeAngles[net] + side * Double.pi / Double(pilots)
@@ -625,6 +628,42 @@ struct FreeForAllTests {
         #expect(defaults.object(forKey: RingTuning.centreBumperKey) == nil)
         #expect(defaults.object(forKey: "ring.puckSize") == nil)
         #expect(RingTuning.stored(in: defaults) == RingTuning())
+    }
+
+    @Test("Goal pull tugs a hull toward its own mouth, harder the farther it is, and leaves the puck and the MAX CROSS line alone")
+    func goalPullTugsTheHullHome() {
+        let (start, arena) = field(pilots: 3)
+        let ring = arena.ring!
+        let seat = start.state.freeForAll!.bays[0]
+        let mouth = ring.mouthCentre(0)
+        let spoke = RingField.outward(ring.spokeAngles[0])
+        func kick(pull: Double, radius: Double) -> (toward: Double, ball: Double) {
+            var engine = start
+            var configuration = engine.configuration
+            configuration.ring.goalPull = pull
+            engine.updateConfiguration(configuration)
+            for other in Array(engine.state.ships.keys) where other != seat { engine.state.ships[other] = nil }
+            let position = spoke * radius
+            engine.state.ships[seat]!.position = position
+            engine.state.ships[seat]!.velocity = .zero
+            engine.state.ball.position = SIMD2(0.35, -0.2)
+            engine.state.ball.velocity = .zero
+            engine.state.serveTicksRemaining = 0
+            engine.step(inputs: [:])
+            let toward = simd_normalize(mouth - position)
+            return (
+                simd_dot(engine.state.ships[seat]!.velocity, toward),
+                simd_length(engine.state.ball.velocity)
+            )
+        }
+        let near = kick(pull: 0.8, radius: ring.mouthRadius * 0.72)
+        let far = kick(pull: 0.8, radius: ring.mouthRadius * 0.28)
+        let off = kick(pull: 0, radius: ring.mouthRadius * 0.28)
+        #expect(near.toward > 0.002, "a hull near home still feels it: \(near.toward)")
+        #expect(far.toward > near.toward * 1.6, "farther pulls harder: \(far.toward) vs \(near.toward)")
+        #expect(near.ball < 1e-6 && far.ball < 1e-6, "the puck is not pulled")
+        #expect(abs(off.toward) < 1e-6, "zero leaves the hull: \(off.toward)")
+        #expect(ring.maxCrossRadius > 0, "the MAX CROSS line is still there")
     }
 
     @Test("The puck carries spin: a glance off the rim sets it turning, and a turning puck curves")

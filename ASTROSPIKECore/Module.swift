@@ -1100,6 +1100,12 @@ public struct SimulationEngine: Sendable {
                 acceleration -= ship.velocity
                     * (configuration.ring.lineBrake * min(1, depth / 0.20))
             }
+            // Optional, and only the hull: a loose spring home to its own
+            // goal, stronger the farther out it is. The MAX CROSS line is
+            // unchanged. The puck is not pulled.
+            if let ring = arena.ring, let home = state.freeForAll?.bay(of: seat), configuration.ring.goalPull > 0 {
+                acceleration += ring.goalSpring(at: ship.position, home: home, strength: configuration.ring.goalPull)
+            }
             ship.velocity += acceleration * dt
             ship.position += ship.velocity * dt
             shipTouchedNet = false
