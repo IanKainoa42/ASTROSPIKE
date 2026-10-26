@@ -2803,21 +2803,11 @@ struct RingTuningControls: View {
     var changed: (RingTuning) -> Void = { _ in }
     @State private var tuning = RingTuning.stored()
 
-    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Bump height is how far each goal's bump rises off the rim, as a share of the ring's radius (0 puts the goals flush in a plain round rim); bump width is how broad its bell is. Fire rate is the seconds between your bolts on the ring, apart from the duel's. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Puck turns the ball into a flat air-hockey puck that slides dead straight: spin never bends it. Two balls puts a second one in play; a goal re-drops only the one that went in. Gravity tilts the table out to the rim. All of it applies the moment you resume."
+    static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Bump height is how far each goal's bump rises off the rim, as a share of the ring's radius (0 puts the goals flush in a plain round rim); bump width is how broad its bell is. Fire rate is the seconds between your bolts on the ring, apart from the duel's. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Goal guards stand a round bumper in front of every goal; sliding, it rides a track across the mouth and stays wherever a hull, the beam or a bolt shoves it, and starts each point where Guard across puts it; stood still, Guard distance and Guard across are where it stays. Two balls puts a second one in play; a goal re-drops only the one that went in. Gravity tilts the table out to the rim. All of it applies the moment you resume."
 
     var body: some View {
-        ForEach(RingTuning.knobs) { knob in
-            TuningSlider(
-                title: knob.title,
-                value: Binding(
-                    get: { tuning[keyPath: knob.keyPath] },
-                    set: { tuning[keyPath: knob.keyPath] = $0 }
-                ),
-                range: knob.range,
-                step: knob.step,
-                readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : knob.degrees ? "\(Int($0.rounded()))°" : knob.seconds ? "\($0.formatted(.number.precision(.fractionLength(2)))) s" : $0.formatted(.number.precision(.fractionLength(2))) }
-            )
-            .accessibilityIdentifier(knob.key)
+        ForEach(RingTuning.knobs.filter { !RingTuning.guardKnobKeys.contains($0.key) }) { knob in
+            slider(knob)
             if knob.keyPath == \RingTuning.hullDrag {
                 let top = thrust * tuning.speed / max(0.01, tuning.hullDrag)
                 let half = log(2) / max(0.01, tuning.hullDrag)
@@ -2835,12 +2825,41 @@ struct RingTuningControls: View {
             set: { tuning.twoBalls = $0 }
         ))
         .accessibilityIdentifier(RingTuning.twoBallsKey)
+        Toggle("Goal guards", isOn: Binding(
+            get: { tuning.goalGuards },
+            set: { tuning.goalGuards = $0 }
+        ))
+        .accessibilityIdentifier(RingTuning.goalGuardsKey)
+        if tuning.goalGuards {
+            Toggle("Guards slide", isOn: Binding(
+                get: { tuning.guardsSlide },
+                set: { tuning.guardsSlide = $0 }
+            ))
+            .accessibilityIdentifier(RingTuning.guardsSlideKey)
+            ForEach(RingTuning.knobs.filter { RingTuning.guardKnobKeys.contains($0.key) }) { knob in
+                slider(knob)
+            }
+        }
         Button("Reset ring to default") { tuning = RingTuning() }
             .disabled(tuning == RingTuning())
             .onChange(of: tuning) { _, tuning in
                 tuning.store()
                 changed(tuning)
             }
+    }
+
+    private func slider(_ knob: RingTuning.Knob) -> some View {
+        TuningSlider(
+            title: knob.title,
+            value: Binding(
+                get: { tuning[keyPath: knob.keyPath] },
+                set: { tuning[keyPath: knob.keyPath] = $0 }
+            ),
+            range: knob.range,
+            step: knob.step,
+            readout: { knob.percent ? "\(Int(($0 * 100).rounded()))%" : knob.degrees ? "\(Int($0.rounded()))°" : knob.seconds ? "\($0.formatted(.number.precision(.fractionLength(2)))) s" : $0.formatted(.number.precision(.fractionLength(2))) }
+        )
+        .accessibilityIdentifier(knob.key)
     }
 }
 

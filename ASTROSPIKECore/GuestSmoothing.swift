@@ -15,7 +15,7 @@ public struct GuestSmoothing: Sendable {
     private var shipOffsets: [Seat: SIMD2<Double>] = [:]
     /// Along each peg's track: a rival's shove or haul is only known to this
     /// board when the host's snapshot says so.
-    private var bumperOffsets: [Double] = []
+    private var bumperOffsets: [SIMD2<Double>] = []
 
     public init(decayRate: Double = 14, snapDistance: Double = 0.25) {
         self.decayRate = decayRate
@@ -23,7 +23,7 @@ public struct GuestSmoothing: Sendable {
     }
 
     public var ballError: Double { ballOffsets.map(simd_length).max() ?? 0 }
-    public var bumperError: Double { bumperOffsets.map(abs).max() ?? 0 }
+    public var bumperError: Double { bumperOffsets.map(simd_length).max() ?? 0 }
 
     /// Records the gap between the frame on screen and the corrected state.
     /// The local ship is left alone: prediction and reconciliation own it.
@@ -33,9 +33,9 @@ public struct GuestSmoothing: Sendable {
             return clamped(displayed.balls[index].position - corrected.balls[index].position)
         }
         bumperOffsets = corrected.bumpers.indices.map { index in
-            guard index < displayed.bumpers.count else { return 0 }
-            let offset = displayed.bumpers[index].offset.y - corrected.bumpers[index].offset.y
-            return abs(offset) > snapDistance ? 0 : offset
+            guard index < displayed.bumpers.count else { return .zero }
+            let offset = displayed.bumpers[index].offset - corrected.bumpers[index].offset
+            return simd_length(offset) > snapDistance ? .zero : offset
         }
         for (seat, ship) in corrected.ships where seat != local {
             guard let shown = displayed.ships[seat] else { continue }
@@ -63,7 +63,7 @@ public struct GuestSmoothing: Sendable {
         }
         for (seat, offset) in shipOffsets { shown.ships[seat]?.position += offset }
         for (index, offset) in bumperOffsets.enumerated() where index < shown.bumpers.count {
-            shown.bumpers[index].offset.y += offset
+            shown.bumpers[index].offset += offset
         }
         return shown
     }

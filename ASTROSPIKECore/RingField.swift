@@ -70,6 +70,21 @@ public struct RingField: Equatable, Sendable {
     public var corners: [ArenaObstacle]
     /// The centre bumper, when it is standing. Empty when the toggle is off.
     public var centre: [ArenaObstacle]
+    /// A round guard in front of every goal, on a track across the mouth,
+    /// one per net in net order. Empty when the Goal guards toggle is off.
+    /// Sliding, a hull, the beam or a bolt shoves it along and it stays
+    /// where it stops; stood still, it is a post where Settings put it.
+    public var guards: [ArenaObstacle]
+    /// Radius of a goal guard.
+    public static let guardRadius = 0.06
+    /// Room between a guard at the Guard distance's far end and the MAX
+    /// CROSS line.
+    static let guardLineGap = 0.04
+    /// A pilot's spawn, across from the post and out from the mouth.
+    static let spawnBeside = 0.18
+    static let spawnOut = 0.28
+    /// The longest a sliding guard runs either side of its centre.
+    static let guardMaxReach = 0.9
 
     public init(pilots: Int, ballRadius: Double, tuning: RingTuning = RingTuning()) {
         let count = max(2, pilots)
@@ -85,6 +100,7 @@ public struct RingField: Equatable, Sendable {
         backs = []
         corners = []
         centre = []
+        guards = []
         cornerDepth = 0
         bumpSigma = 0
         let depth = min(max(0, tuning.bumpHeight) * rimRadius, 0.40 * rimRadius)
@@ -114,6 +130,39 @@ public struct RingField: Equatable, Sendable {
         }
         if centreBumper {
             centre = [.peg(.zero, radius: Self.centreBumperRadius)]
+        }
+        if tuning.goalGuards {
+            // Out in front of the mouth, `guardDistance` of the way to the
+            // MAX CROSS line: at 1 the guard's far edge sits just inside the
+            // line, on the owner's ground. Sliding, it runs a track three
+            // mouths wide or so, short of the wedge's borders so two
+            // neighbours' guards never meet; `guardShift` of that reach
+            // puts it across.
+            let toLine = mouthRadius - maxCrossRadius - Self.guardRadius - Self.guardLineGap
+            let distance = max(0.18, min(1, max(0.2, tuning.guardDistance)) * toLine)
+            let trackRadius = netBackRadius - netDepth - distance
+            let wedge = trackRadius * tan(.pi / Double(count)) - Self.guardRadius
+            var reach = min(Self.guardMaxReach, 0.75 * wedge)
+            // Pulled in near the mouth, the track stops short of the hulls'
+            // spawn beside it.
+            let spawn = SIMD2(netHalfWidth + Self.spawnBeside, netDepth + Self.spawnOut)
+            let clear = Self.guardRadius + ShipHitbox.shared.reach * hullScale + 0.04
+            let rise = abs(netDepth + distance - spawn.y)
+            if rise < clear { reach = min(reach, spawn.x - (clear * clear - rise * rise).squareRoot()) }
+            reach = max(netInnerHalfWidth - Self.guardRadius, reach)
+            let shift = min(1, max(-1, tuning.guardShift)) * reach
+            for index in spokeAngles.indices {
+                let out = Self.outward(spokeAngles[index])
+                let across = SIMD2(-out.y, out.x)
+                let anchor = toWorld(SIMD2(shift, netDepth + distance), net: index)
+                guards.append(.peg(
+                    anchor,
+                    radius: Self.guardRadius,
+                    sprung: true,
+                    track: across,
+                    travel: tuning.guardsSlide ? (-reach - shift) ... (reach - shift) : 0 ... 0
+                ))
+            }
         }
     }
 
@@ -221,7 +270,7 @@ public struct RingField: Equatable, Sendable {
     /// nose to the middle. Clear of the bump's flank, so an idle hull is
     /// not a keeper parked in its own goal.
     public func spawnPoint(bay: Int) -> SIMD2<Double> {
-        toWorld(SIMD2(netHalfWidth + 0.18, netDepth + 0.28), net: bay)
+        toWorld(SIMD2(netHalfWidth + Self.spawnBeside, netDepth + Self.spawnOut), net: bay)
     }
 
     /// The bearings of the valleys, midway between neighbouring mouths,
@@ -403,6 +452,18 @@ public struct RingTuning: Equatable, Sendable, Codable {
     /// Seconds between one bolt and the next on the ring, apart from the
     /// duel's own fire rate. A ring is a crowd, so it fires much slower.
     public var fireCooldown = 1.5
+    /// A round guard in front of every goal, so a shot from anywhere does
+    /// not go straight in.
+    public var goalGuards = true
+    /// The guards ride a track across the mouth and stay where they are
+    /// shoved. Off, each stands still where the two sliders below put it.
+    public var guardsSlide = true
+    /// How far out from the mouth each guard stands, as a share of the way
+    /// to the MAX CROSS line: 1 is just inside it.
+    public var guardDistance = 1.0
+    /// Where across its track each guard stands, -1 at one end to 1 at
+    /// the other. Sliding, it is where the guard starts every point.
+    public var guardShift = 0.0
 
     public init() {}
 
@@ -426,6 +487,12 @@ public struct RingTuning: Equatable, Sendable, Codable {
     public static let centreBumperKey = "ring.centreBumper"
     /// The defaults key for two balls. Not a slider.
     public static let twoBallsKey = "ring.twoBalls"
+    /// The defaults key for the goal guards. Not a slider.
+    public static let goalGuardsKey = "ring.goalGuards"
+    /// The defaults key for sliding guards. Not a slider.
+    public static let guardsSlideKey = "ring.guardsSlide"
+    /// The guard sliders, which Settings shows under the Goal guards toggle.
+    public static let guardKnobKeys: Set<String> = ["ring.guardLine", "ring.guardShift"]
 
     /// Every knob, in the order the sliders stand. Ring gravity keeps the key
     /// it had when it was the only one, so a stored setting carries over.
@@ -444,6 +511,8 @@ public struct RingTuning: Equatable, Sendable, Codable {
             Knob(key: "ring.bumpHeight", title: "Bump height", range: 0 ... 0.40, step: 0.01, percent: true, keyPath: \.bumpHeight),
             Knob(key: "ring.bumpWidth", title: "Bump width", range: 0.15 ... 0.70, step: 0.01, percent: true, keyPath: \.bumpWidth),
             Knob(key: "ring.fireCooldown", title: "Fire rate", range: 0.45 ... 4.0, step: 0.05, percent: false, keyPath: \.fireCooldown, seconds: true),
+            Knob(key: "ring.guardLine", title: "Guard distance", range: 0.2 ... 1.0, step: 0.02, percent: true, keyPath: \.guardDistance),
+            Knob(key: "ring.guardShift", title: "Guard across", range: -1 ... 1, step: 0.05, percent: true, keyPath: \.guardShift),
         ]
     }
 
@@ -457,6 +526,8 @@ public struct RingTuning: Equatable, Sendable, Codable {
         }
         tuning.centreBumper = defaults.object(forKey: centreBumperKey) as? Bool ?? RingTuning().centreBumper
         tuning.twoBalls = defaults.object(forKey: twoBallsKey) as? Bool ?? RingTuning().twoBalls
+        tuning.goalGuards = defaults.object(forKey: goalGuardsKey) as? Bool ?? RingTuning().goalGuards
+        tuning.guardsSlide = defaults.object(forKey: guardsSlideKey) as? Bool ?? RingTuning().guardsSlide
         return tuning
     }
 
@@ -479,6 +550,16 @@ public struct RingTuning: Equatable, Sendable, Codable {
             defaults.removeObject(forKey: Self.twoBallsKey)
         } else {
             defaults.set(twoBalls, forKey: Self.twoBallsKey)
+        }
+        if goalGuards == RingTuning().goalGuards {
+            defaults.removeObject(forKey: Self.goalGuardsKey)
+        } else {
+            defaults.set(goalGuards, forKey: Self.goalGuardsKey)
+        }
+        if guardsSlide == RingTuning().guardsSlide {
+            defaults.removeObject(forKey: Self.guardsSlideKey)
+        } else {
+            defaults.set(guardsSlide, forKey: Self.guardsSlideKey)
         }
     }
 }

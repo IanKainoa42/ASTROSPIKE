@@ -16,23 +16,40 @@ public struct ArenaObstacle: Equatable, Sendable {
     /// a bolt slides it up or down, and it stays where it stops. Where it is
     /// now lives on the world state.
     public var isSprung: Bool
+    /// The way a sprung peg's track runs, unit length: upright for the
+    /// duel's Bumpers, across the mouth for a ring goal guard.
+    public var track: SIMD2<Double>
+    /// How far a sprung peg can slide along `track` off its anchor. Nil is
+    /// the duel's floor-to-roof `bumperTravel` either way; a zero span is a
+    /// guard stood still, which gives nothing.
+    public var travel: ClosedRange<Double>?
 
     public init(
         start: SIMD2<Double>,
         end: SIMD2<Double>,
         radius: Double,
         isGround: Bool = false,
-        isSprung: Bool = false
+        isSprung: Bool = false,
+        track: SIMD2<Double> = SIMD2(0, 1),
+        travel: ClosedRange<Double>? = nil
     ) {
         self.start = start
         self.end = end
         self.radius = radius
         self.isGround = isGround
         self.isSprung = isSprung
+        self.track = track
+        self.travel = travel
     }
 
-    public static func peg(_ center: SIMD2<Double>, radius: Double, sprung: Bool = false) -> ArenaObstacle {
-        ArenaObstacle(start: center, end: center, radius: radius, isSprung: sprung)
+    public static func peg(
+        _ center: SIMD2<Double>,
+        radius: Double,
+        sprung: Bool = false,
+        track: SIMD2<Double> = SIMD2(0, 1),
+        travel: ClosedRange<Double>? = nil
+    ) -> ArenaObstacle {
+        ArenaObstacle(start: center, end: center, radius: radius, isSprung: sprung, track: track, travel: travel)
     }
 
     /// The same obstacle moved by `offset`.
@@ -50,7 +67,9 @@ public struct ArenaObstacle: Equatable, Sendable {
             end: SIMD2(-end.x, end.y),
             radius: radius,
             isGround: isGround,
-            isSprung: isSprung
+            isSprung: isSprung,
+            track: SIMD2(-track.x, track.y),
+            travel: travel
         )
     }
 
@@ -169,7 +188,9 @@ extension ArenaGeometry {
                 end: obstacle.end * scale,
                 radius: obstacle.radius * widthScale,
                 isGround: obstacle.isGround,
-                isSprung: obstacle.isSprung
+                isSprung: obstacle.isSprung,
+                track: obstacle.track,
+                travel: obstacle.travel
             )
         }
         court.obstacles = right + right.map(\.mirrored)
@@ -182,6 +203,13 @@ extension ArenaGeometry {
     /// so a peg run all the way up or down shuts that way.
     public var bumperTravel: Double {
         ceilingY - Self.bumperEndGap * heightScale - ArenaLayout.pegRadius * widthScale
+    }
+
+    /// How many entries `WorldState.bumpers` keeps: up to the last sprung
+    /// obstacle. Sprung pegs come first, so the ring's hundreds of flank
+    /// capsules never ride the snapshot.
+    public var sprungCount: Int {
+        obstacles.lastIndex(where: \.isSprung).map { $0 + 1 } ?? 0
     }
 
     /// The gap a peg at the end of its track leaves to the roof or floor, in

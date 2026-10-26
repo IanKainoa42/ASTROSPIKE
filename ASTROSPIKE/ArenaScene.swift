@@ -561,6 +561,7 @@ final class ArenaScene: SKScene {
     /// mouth to the open middle. With no bumps each mouth is a flush gap in
     /// the rim and the net hangs outside it.
     private func addRing(_ ring: RingField) {
+        bumperNodes.removeAll()
         func disk(at centre: SIMD2<Double>, radius: Double) -> CGPath {
             let path = CGMutablePath()
             let steps = 28
@@ -653,6 +654,46 @@ final class ArenaScene: SKScene {
         }
         for index in ring.spokeAngles.indices {
             addRingNet(ring, index: index, owner: snapshot?.freeForAll?.owner(ofGoal: index), solid: drawnSolidGoals[index])
+        }
+        addRingGuards(ring)
+    }
+
+    /// Each goal's guard in its owner's colour, over a faint track post to
+    /// post when it slides. The guards are the first obstacles, so a
+    /// guard's holder is keyed by its net's index and the frame loop slides
+    /// it along with the snapshot.
+    private func addRingGuards(_ ring: RingField) {
+        for (index, peg) in ring.guards.enumerated() {
+            let color = snapshot?.freeForAll?.owner(ofGoal: index).map(seatColor) ?? .white
+            if let travel = peg.travel, travel.upperBound > travel.lowerBound {
+                let from = peg.start + peg.track * travel.lowerBound
+                let to = peg.start + peg.track * travel.upperBound
+                let rail = CGMutablePath()
+                rail.move(to: point(from.x, from.y))
+                rail.addLine(to: point(to.x, to.y))
+                let line = SKShapeNode(path: rail)
+                line.strokeColor = color.withAlphaComponent(0.3)
+                line.lineWidth = 2
+                line.lineCap = .round
+                arenaLayer.addChild(line)
+            }
+            let holder = SKNode()
+            let path = CGMutablePath()
+            let steps = 28
+            for step in 0 ... steps {
+                let angle = Double(step) / Double(steps) * 2 * .pi
+                let screen = point(peg.start.x + peg.radius * cos(angle), peg.start.y + peg.radius * sin(angle))
+                if step == 0 { path.move(to: screen) } else { path.addLine(to: screen) }
+            }
+            path.closeSubpath()
+            let body = SKShapeNode(path: path)
+            body.fillColor = color.withAlphaComponent(0.35)
+            body.strokeColor = color
+            body.lineWidth = 3
+            body.glowWidth = 2
+            holder.addChild(body)
+            arenaLayer.addChild(holder)
+            bumperNodes[index] = holder
         }
     }
 

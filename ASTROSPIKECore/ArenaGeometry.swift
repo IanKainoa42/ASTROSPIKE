@@ -497,8 +497,8 @@ public struct ArenaGeometry: Equatable, Sendable {
 
     /// The free-for-all field: the round one, a net per pilot cut flush in
     /// the rim, facing in. The rectangle it carries is only the box the
-    /// ring fits in, for drawing and for bolts; its obstacles are the
-    /// bump flanks and the centre bumper when it is up (the nets
+    /// ring fits in, for drawing and for bolts; its obstacles are the goal
+    /// guards, the bump flanks and the centre bumper when it is up (the nets
     /// themselves come from the ring), and with no net style the duel's
     /// hump, lips and portal stay out of it.
     public static func freeForAll(pilots: Int, ballRadius: Double, tuning: RingTuning = RingTuning()) -> ArenaGeometry {
@@ -511,7 +511,9 @@ public struct ArenaGeometry: Equatable, Sendable {
             netStyle: .none
         )
         court.ring = ring
-        court.obstacles = ring.corners + ring.centre
+        // Guards first: they are the sprung pegs, and `WorldState.bumpers`
+        // only reaches as far as the last one.
+        court.obstacles = ring.guards + ring.corners + ring.centre
         return court
     }
 

@@ -1037,6 +1037,180 @@ extension RingTuning {
         tuning.bumpHeight = 0.25
         tuning.bumpWidth = 0.25
         tuning.hullSize = 1
+        // Off, so a shot pinned at a mouth meets only the net; the guards
+        // have their own tests.
+        tuning.goalGuards = false
         return tuning
+    }
+}
+
+extension FreeForAllTests {
+    /// The ring with guards up, stood still or sliding.
+    private func guarded(pilots: Int, slide: Bool, tuning base: RingTuning = .lab) -> (engine: SimulationEngine, arena: ArenaGeometry) {
+        var tuning = base
+        tuning.goalGuards = true
+        tuning.guardsSlide = slide
+        var configuration = SimulationConfiguration.online
+        configuration.ring = tuning
+        let arena = ArenaGeometry.freeForAll(pilots: pilots, ballRadius: configuration.ballRadius, tuning: tuning)
+        var engine = SimulationEngine.testing()
+        engine.updateConfiguration(configuration)
+        engine.updateArena(arena)
+        engine.configureFreeForAll(FreeForAllState.seats(pilots: pilots))
+        engine.beginPlay()
+        return (engine, arena)
+    }
+
+    /// Fires the ball at net `net`'s mouth centre from `distance` out,
+    /// `angle` off the net's centre line, and reports whether it went in.
+    private func shotScores(_ engine: SimulationEngine, arena: ArenaGeometry, net: Int, angle: Double, distance: Double = 1.5) -> Bool {
+        var engine = engine
+        let ring = arena.ring!
+        let target = ring.mouthCentre(net)
+        let inward = worldVector(SIMD2(sin(angle), cos(angle)), ring: ring, net: net)
+        engine.state.ball = BallState(
+            position: target + inward * distance,
+            velocity: -inward * 1.4,
+            radius: ring.ballRadius
+        )
+        engine.state.serveTicksRemaining = 0
+        var events: [SimulationEvent] = []
+        for _ in 0 ..< 300 {
+            engine.step(inputs: [:])
+            events += engine.lastEvents
+            if engine.state.match.phase != .playing { break }
+        }
+        return !livesLost(events).isEmpty
+    }
+
+    @Test("Every goal gets one guard in front of its mouth, and only the guards ride the snapshot")
+    func guardsStandInFront() {
+        for pilots in [3, 4] {
+            let (engine, arena) = guarded(pilots: pilots, slide: true)
+            let ring = arena.ring!
+            #expect(ring.guards.count == pilots)
+            #expect(engine.state.bumpers.count == pilots, "\(engine.state.bumpers.count) bumper entries: the flanks must not ride the wire")
+            for (net, peg) in ring.guards.enumerated() {
+                let local = ring.toLocal(peg.start, net: net)
+                #expect(abs(local.x) < 1e-9, "net \(net): \(local)")
+                // Just inside its owner's MAX CROSS line, end to end.
+                let edge = simd_length(peg.start) - peg.radius
+                #expect(edge > ring.maxCrossRadius && edge < ring.maxCrossRadius + 0.1, "net \(net): edge \(edge), line \(ring.maxCrossRadius)")
+                let travel = peg.travel!
+                for end in [travel.lowerBound, travel.upperBound] {
+                    let point = peg.start + peg.track * end
+                    #expect(ring.ground(at: point) == net && simd_length(point) - peg.radius > ring.maxCrossRadius, "net \(net) end \(end)")
+                }
+                #expect(arena.obstacles[net] == peg, "guards come first")
+            }
+        }
+        // On the shipped ring the track runs well past the posts.
+        for pilots in [3, 4] {
+            let ring = RingField(pilots: pilots, ballRadius: 0.084, tuning: RingTuning())
+            let travel = ring.guards[0].travel!
+            #expect(travel.upperBound - travel.lowerBound > 4 * ring.netInnerHalfWidth, "\(pilots) pilots: a track wider than the mouth: \(travel)")
+        }
+        var off = RingTuning.lab
+        off.goalGuards = false
+        #expect(RingField(pilots: 3, ballRadius: 0.1, tuning: off).guards.isEmpty)
+    }
+
+    @Test("A guard never reaches a pilot's spawn, at any setting, sliding end to end")
+    func guardsClearTheSpawn() {
+        for pilots in [3, 4] {
+            for distance in [0.2, 0.6, 1.0] {
+                for shift in [-1.0, 0, 1] {
+                    for slide in [false, true] {
+                        var tuning = RingTuning()
+                        tuning.guardDistance = distance
+                        tuning.guardShift = shift
+                        let (engine, arena) = guarded(pilots: pilots, slide: slide, tuning: tuning)
+                        let ring = arena.ring!
+                        for (seat, ship) in engine.state.ships {
+                            let reach = engine.hitbox(seat).reach
+                            for peg in ring.guards {
+                                let travel = peg.travel ?? 0 ... 0
+                                let ends = ArenaObstacle(
+                                    start: peg.start + peg.track * travel.lowerBound,
+                                    end: peg.start + peg.track * travel.upperBound,
+                                    radius: peg.radius
+                                )
+                                let clearance = simd_distance(ship.position, ends.closestPoint(to: ship.position)) - peg.radius - reach
+                                #expect(clearance > 0.02, "\(pilots) pilots, distance \(distance), shift \(shift), slide \(slide): \(clearance)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test("A centred guard stops the shot straight down the middle, but an angled one still finds the net")
+    func guardLeavesLanes() {
+        let (open, openArena) = field(pilots: 3)
+        #expect(shotScores(open, arena: openArena, net: 0, angle: 0), "with no guard the straight shot goes in")
+        let (engine, arena) = guarded(pilots: 3, slide: false)
+        #expect(!shotScores(engine, arena: arena, net: 0, angle: 0), "the guard takes the straight shot")
+        let angles = stride(from: 15.0, through: 50.0, by: 5.0).flatMap { [$0, -$0] }.map { $0 * .pi / 180 }
+        let lanes = angles.filter { shotScores(engine, arena: arena, net: 0, angle: $0) }
+        #expect(lanes.count >= 2, "only \(lanes.count) of \(angles.count) angled shots score past the guard")
+    }
+
+    @Test("A hull shoves a sliding guard along its track and it stays; a still guard does not move")
+    func guardSlides() {
+        for slide in [true, false] {
+            var (engine, arena) = guarded(pilots: 3, slide: slide)
+            let peg = arena.ring!.guards[0]
+            let seat = engine.state.freeForAll!.bays[0]
+            let reach = engine.hitbox(seat).reach
+            engine.state.ball.position = .zero
+            engine.state.ball.velocity = .zero
+            engine.state.ships[seat]!.position = peg.start - peg.track * (reach + peg.radius + 0.03)
+            engine.state.ships[seat]!.velocity = peg.track * 0.6
+            engine.state.serveTicksRemaining = 0
+            for _ in 0 ..< 40 { engine.step(inputs: [:]) }
+            let offset = engine.state.bumpers[0].offset
+            let along = simd_dot(offset, peg.track)
+            let sideways = simd_length(offset - peg.track * along)
+            #expect(sideways < 1e-9, "the guard stays on its track")
+            if slide {
+                #expect(along > 0.02, "shoved \(along) along")
+                // Clear of it, let it glide to a stop: it stays there, it
+                // does not spring home.
+                engine.state.ships[seat]!.position = .zero
+                engine.state.ships[seat]!.velocity = .zero
+                for _ in 0 ..< 360 where engine.state.bumpers[0].velocity != .zero { engine.step(inputs: [:]) }
+                #expect(engine.state.bumpers[0].velocity == .zero, "it glides to a stop")
+                let parked = engine.state.bumpers[0].offset
+                #expect(simd_dot(parked, peg.track) > 0.02, "stopped off its anchor")
+                for _ in 0 ..< 120 { engine.step(inputs: [:]) }
+                #expect(engine.state.bumpers[0].offset == parked, "it stays where it stopped")
+            } else {
+                #expect(simd_length(offset) == 0, "a still guard is a post")
+            }
+        }
+    }
+
+    @Test("The guard settings ride the wire and clamp to their sliders")
+    func guardSettingsRoundTrip() throws {
+        var tuning = RingTuning()
+        tuning.goalGuards = false
+        tuning.guardsSlide = false
+        tuning.guardDistance = 0.45
+        tuning.guardShift = -0.5
+        let data = try PropertyListEncoder().encode(tuning)
+        #expect(try PropertyListDecoder().decode(RingTuning.self, from: data) == tuning)
+
+        let defaults = UserDefaults(suiteName: "guards-\(UUID())")!
+        defaults.set(false, forKey: RingTuning.goalGuardsKey)
+        defaults.set(false, forKey: RingTuning.guardsSlideKey)
+        defaults.set(9.0, forKey: "ring.guardShift")
+        defaults.set(0.0, forKey: "ring.guardLine")
+        let stored = RingTuning.stored(in: defaults)
+        #expect(!stored.goalGuards && !stored.guardsSlide)
+        #expect(stored.guardShift == 1 && stored.guardDistance == 0.2)
+        RingTuning().store(in: defaults)
+        #expect(defaults.object(forKey: RingTuning.goalGuardsKey) == nil)
+        #expect(RingTuning.stored(in: defaults) == RingTuning())
     }
 }

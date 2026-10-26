@@ -825,10 +825,10 @@ public struct SimulationEngine: Sendable {
         seatBumpers()
     }
 
-    /// Every sprung peg back on its anchor, at rest, one entry per obstacle.
+    /// Every sprung peg back on its anchor, at rest, one entry per obstacle
+    /// up to the last sprung one.
     private mutating func seatBumpers() {
-        let sprung = arena.obstacles.contains { $0.isSprung }
-        state.bumpers = sprung ? Array(repeating: BumperState(), count: arena.obstacles.count) : []
+        state.bumpers = Array(repeating: BumperState(), count: arena.sprungCount)
     }
 
     public mutating func updateConfiguration(_ configuration: SimulationConfiguration) {
@@ -2341,8 +2341,9 @@ public struct SimulationEngine: Sendable {
                     let speed = simd_length(bolt.velocity)
                     let travel = speed > 0.000_001 ? bolt.velocity / speed : SIMD2(0, 1)
                     let direction = travel * (1 - BoltState.glance) - peg.normal * BoltState.glance
-                    state.bumpers[peg.index].velocity.y += direction.y * Self.bumperBoltKick
-                    clampTravel(&state.bumpers[peg.index])
+                    let track = arena.obstacles[peg.index].track
+                    state.bumpers[peg.index].velocity += track * (simd_dot(direction, track) * Self.bumperBoltKick)
+                    clampTravel(&state.bumpers[peg.index], on: arena.obstacles[peg.index])
                     effects.append(.collisionEffect(position: bolt.position, intensity: Self.bumperBoltKick))
                 }
                 continue
@@ -2393,19 +2394,22 @@ public struct SimulationEngine: Sendable {
     /// lets it glide to a stop. Nothing brings it home: it stays where it
     /// was left until something moves it again.
     private mutating func advanceBumpers(dt: Double) {
-        let sprung = arena.obstacles.contains { $0.isSprung }
         // A board rebuilt from a snapshot, or a court swapped under it, may
         // not have one entry per obstacle yet.
-        if state.bumpers.count != (sprung ? arena.obstacles.count : 0) { seatBumpers() }
-        guard sprung else { return }
+        if state.bumpers.count != arena.sprungCount { seatBumpers() }
         for index in state.bumpers.indices where arena.obstacles[index].isSprung {
+            let peg = arena.obstacles[index]
+            // A guard stood still neither slides nor feels the beam.
+            guard give(of: peg, along: peg.track) > 0 else { continue }
             var bumper = state.bumpers[index]
-            bumper.velocity.y += tractorPull(onPegAt: arena.obstacles[index].start + bumper.offset, dt: dt)
-            bumper.velocity.y -= bumper.velocity.y * min(1, Self.bumperDrag * dt)
+            var speed = simd_dot(bumper.velocity, peg.track)
+            speed += tractorPull(onPegAt: peg.start + bumper.offset, along: peg.track, dt: dt)
+            speed -= speed * min(1, Self.bumperDrag * dt)
             let stop = Self.bumperFriction * dt
-            bumper.velocity.y = abs(bumper.velocity.y) <= stop ? 0 : bumper.velocity.y - stop * (bumper.velocity.y > 0 ? 1 : -1)
-            bumper.offset.y += bumper.velocity.y * dt
-            clampTravel(&bumper)
+            speed = abs(speed) <= stop ? 0 : speed - stop * (speed > 0 ? 1 : -1)
+            bumper.velocity = peg.track * speed
+            bumper.offset += bumper.velocity * dt
+            clampTravel(&bumper, on: peg)
             state.bumpers[index] = bumper
         }
     }
@@ -2414,7 +2418,7 @@ public struct SimulationEngine: Sendable {
     /// the nose, graded exactly like the ball's grab. The hull takes back
     /// only what a ball grab would give it: the peg is on a rod, and a beam
     /// that yanked the ship across the court at every peg would be no fun.
-    private mutating func tractorPull(onPegAt centre: SIMD2<Double>, dt: Double) -> Double {
+    private mutating func tractorPull(onPegAt centre: SIMD2<Double>, along track: SIMD2<Double>, dt: Double) -> Double {
         var pull = 0.0
         let range = configuration.tractorRange
         guard range > 0, configuration.tractorStrength > 0, configuration.pegPull > 0 else { return pull }
@@ -2428,26 +2432,44 @@ public struct SimulationEngine: Sendable {
             guard along > Self.tractorCone else { continue }
             let grip = (1 - distance / range) * (along - Self.tractorCone) / (1 - Self.tractorCone)
             let tug = configuration.tractorStrength * grip * dt
-            pull -= toward.y * (tug * Self.bumperTractorGain * configuration.pegPull)
+            pull -= simd_dot(toward, track) * (tug * Self.bumperTractorGain * configuration.pegPull)
             ship.velocity += toward * (tug * Self.tractorMassRatio)
             state.ships[seat] = ship
         }
         return pull
     }
 
+    /// How far `peg` slides along its track: its own span, or the duel's
+    /// floor-to-roof travel.
+    private func travel(of peg: ArenaObstacle) -> ClosedRange<Double> {
+        peg.travel ?? -arena.bumperTravel ... arena.bumperTravel
+    }
+
+    /// How much `peg` gives along `normal`: only the part of it that lies
+    /// along the track, and nothing at all for a guard stood still.
+    private func give(of peg: ArenaObstacle, along normal: SIMD2<Double>) -> Double {
+        let span = travel(of: peg)
+        guard span.upperBound > span.lowerBound else { return 0 }
+        let along = simd_dot(normal, peg.track)
+        return along * along / Self.bumperMass
+    }
+
     /// Holds a peg on its track: no sideways give at all, and a hard stop at
     /// each end.
-    private func clampTravel(_ bumper: inout BumperState) {
-        let travel = arena.bumperTravel
-        bumper.offset.x = 0
-        bumper.velocity.x = 0
-        if bumper.offset.y > travel {
-            bumper.offset.y = travel
-            bumper.velocity.y = min(0, bumper.velocity.y)
-        } else if bumper.offset.y < -travel {
-            bumper.offset.y = -travel
-            bumper.velocity.y = max(0, bumper.velocity.y)
+    private func clampTravel(_ bumper: inout BumperState, on peg: ArenaObstacle) {
+        let span = travel(of: peg)
+        var position = simd_dot(bumper.offset, peg.track)
+        var speed = simd_dot(bumper.velocity, peg.track)
+        if position > span.upperBound {
+            position = span.upperBound
+            speed = min(0, speed)
+        } else if position < span.lowerBound {
+            position = span.lowerBound
+            speed = max(0, speed)
         }
+        if span.upperBound <= span.lowerBound { speed = 0 }
+        bumper.offset = peg.track * position
+        bumper.velocity = peg.track * speed
     }
 
     /// A hull meets a peg as two bodies, except the peg only gives along its
@@ -2470,21 +2492,22 @@ public struct SimulationEngine: Sendable {
                 let normal = distance > 1e-9 ? away / distance : SIMD2(0, 1)
                 // The peg's give along this normal: only the part of it that
                 // lies along the track.
+                let track = arena.obstacles[index].track
                 let shipGive = 1 / Self.shipMass
-                let pegGive = normal.y * normal.y / Self.bumperMass
+                let pegGive = give(of: arena.obstacles[index], along: normal)
                 let share = depth / (shipGive + pegGive)
                 ship.position += normal * (share * shipGive)
-                bumper.offset.y -= normal.y * share / Self.bumperMass
+                if pegGive > 0 { bumper.offset -= track * (simd_dot(normal, track) * share / Self.bumperMass) }
                 let closing = simd_dot(ship.velocity - bumper.velocity, normal)
                 if closing < 0 {
                     let impulse = -(1 + Self.shipBumperRestitution) * closing / (shipGive + pegGive)
                     ship.velocity += normal * (impulse / Self.shipMass)
-                    bumper.velocity.y -= normal.y * impulse / Self.bumperMass
+                    if pegGive > 0 { bumper.velocity -= track * (simd_dot(normal, track) * impulse / Self.bumperMass) }
                     if closing < -Self.effectImpactSpeed {
                         effects.append(.collisionEffect(position: ship.position, intensity: abs(closing)))
                     }
                 }
-                clampTravel(&bumper)
+                clampTravel(&bumper, on: arena.obstacles[index])
                 // A peg already at its stop gives no more: whatever overlap
                 // is left is the hull's to lose.
                 let stopped = arena.obstacles[index].shifted(by: bumper.offset)
@@ -2518,12 +2541,13 @@ public struct SimulationEngine: Sendable {
         state.balls[ballIndex].position = contact.position
         let closing = simd_dot(state.balls[ballIndex].velocity - bumper.velocity, contact.normal)
         guard closing < 0 else { return }
-        let pegGive = contact.normal.y * contact.normal.y / Self.bumperMass
+        let peg = arena.obstacles[contact.index]
+        let pegGive = give(of: peg, along: contact.normal)
         let impulse = -(1 + Self.ballRestitution) * closing / (1 / Self.ballMass + pegGive)
         let incoming = state.balls[ballIndex].velocity
         state.balls[ballIndex].velocity += contact.normal * (impulse / Self.ballMass)
-        bumper.velocity.y -= contact.normal.y * impulse / Self.bumperMass
-        clampTravel(&bumper)
+        if pegGive > 0 { bumper.velocity -= peg.track * (simd_dot(contact.normal, peg.track) * impulse / Self.bumperMass) }
+        clampTravel(&bumper, on: peg)
         state.bumpers[contact.index] = bumper
         grip(contact.normal, from: incoming, ballIndex: ballIndex)
     }
@@ -2733,8 +2757,10 @@ public struct SimulationEngine: Sendable {
     ) -> Bool {
         // A hull meets every net shut, live or not: it can fly up to a
         // mouth and keep it, but never park behind a goal line.
+        // Goal guards give way like the duel's pegs: see
+        // `resolveShipBumperCollisions`.
         var solid = arena
-        solid.obstacles += ring.closedNets { _ in true }
+        solid.obstacles = arena.obstacles.filter { !$0.isSprung } + ring.closedNets { _ in true }
         var grounded = false
         if let wall = solid.obstacleContact(from: previousPosition, to: ship.position, radius: hitbox.reach) {
             ship.position = wall.position
@@ -2778,6 +2804,7 @@ public struct SimulationEngine: Sendable {
         // pilot's net is shut to every ball.
         let locked = state.balls[ballIndex].beamLock != nil
         solid.obstacles = ring.ballWalls { locked || (field?.isSolid(goal: $0) ?? false) }
+        resolveBallBumperCollision(ballIndex: ballIndex, previousPosition: previousPosition)
         let r = state.balls[ballIndex].radius
         var from = previousPosition
         var struckFrame = false
