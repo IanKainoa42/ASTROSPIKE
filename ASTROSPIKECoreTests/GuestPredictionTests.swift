@@ -277,6 +277,35 @@ struct GuestPredictionTests {
         #expect(estimator.milliseconds == nil)
     }
 
+    @Test("A snapshot blend does not drop the guest's swing")
+    func rollForwardKeepsTheSaber() {
+        var engine = SimulationEngine.testing()
+        engine.beginPlay()
+        var ship = engine.state.ships[.orange]!
+        ship.saber.drawn = 1
+        ship.saber.move = .spike
+        ship.saber.moveTime = 0.08
+        ship.saber.startAngle = ship.angle
+        ship.saber.turn = -1
+        ship.saber.flickCount = 2
+        engine.state.ships[.orange] = ship
+        let resolution = GuestRollForward.resolve(
+            authoritative: engine.state,
+            predicted: engine.state,
+            target: engine.state.tick,
+            configuration: engine.configuration,
+            arena: engine.arena,
+            flownSeat: .orange,
+            bots: [:],
+            localInput: { .idle(tick: $0) },
+            remoteInput: { _, tick in .idle(tick: tick) }
+        )
+        let kept = resolution.state.ships[.orange]
+        #expect(kept?.saber.move == .spike)
+        #expect(kept?.saber.moveTime == 0.08)
+        #expect(kept?.saber.flickCount == 2)
+    }
+
     @Test("A batch of inputs survives the wire")
     func inputBatchRoundTrip() throws {
         let envelope = WireEnvelope(sequence: 3, payload: .inputs(seat: .orange, values: [

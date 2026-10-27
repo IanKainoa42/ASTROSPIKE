@@ -46,6 +46,52 @@ struct AstroballTests {
         #expect(pointReason(rules.resolve([.ballPlayed(seat: .cyanWing)])) == .touchLimit)
     }
 
+    @Test("A guest's touch lights the meter and does not award the point")
+    func guestNotesTheTouchWithoutScoring() {
+        var rules = rules(solo: 1)
+        rules.noteRally([.ballPlayed(seat: .cyan)])
+        #expect(rules.state.shipTouches.cyan == 1)
+        #expect(rules.state.lastTouch == .cyan)
+        #expect(rules.state.phase == .playing)
+        #expect(rules.state.score == Score())
+        // The touch that spends the allowance still shows, and the rally stays.
+        rules.noteRally([.ballPlayed(seat: .cyan)])
+        #expect(rules.state.shipTouches.cyan == 2)
+        #expect(rules.state.phase == .playing)
+        #expect(rules.state.score == Score())
+        rules.noteRally([.ballTouchedFloor(side: .orange)])
+        #expect(rules.state.floorContacts.orange == 1)
+        rules.noteRally([.ballTouchedFloor(side: .orange)])
+        #expect(rules.state.floorContacts.orange == 2)
+        #expect(rules.state.phase == .playing)
+        // A goal is the host's. The touch beside it is not booked either:
+        // the host returns before the touch loop.
+        var clean = self.rules(solo: 3)
+        clean.noteRally([.ballEnteredGoal(defending: .cyan), .ballPlayed(seat: .orange)])
+        #expect(clean.state.shipTouches == SideCounts())
+        #expect(clean.state.score == Score())
+    }
+
+    @Test("A guest engine counts the touch it played and does not take the point")
+    func guestEngineCountsItsOwnTouch() {
+        var guest = astroballEngine()
+        guest.followsHost = true
+        let home = SIMD2(-0.4, 0.2)
+        guest.state.ball = BallState(position: home + SIMD2(0, 0.16), velocity: .init(0, -2))
+        var waited = 0
+        while guest.state.match.shipTouches.cyan == 0, waited < 40 {
+            guest.state.ships[.cyan]!.position = home
+            guest.state.ships[.cyan]!.velocity = .zero
+            let tick = guest.state.tick
+            guest.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            waited += 1
+        }
+        #expect(guest.state.match.shipTouches.cyan == 1)
+        #expect(guest.state.match.lastTouch == .cyan)
+        #expect(guest.state.match.phase == .playing)
+        #expect(guest.state.match.score == Score())
+    }
+
     @Test("Two in a row is fine by default; a triple gives the point away")
     func noTriples() {
         var rules = rules(cyanPilots: 2)

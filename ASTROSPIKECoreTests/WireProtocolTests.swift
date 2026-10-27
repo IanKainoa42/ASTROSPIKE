@@ -111,6 +111,44 @@ struct WireProtocolTests {
         #expect(abs(reconciler.reconcile(predicted: nearby, authoritative: authoritative).position.x - 0.0375) < 0.000_000_001)
     }
 
+    @Test("A small blend keeps the saber, the stun and the knock")
+    func reconciliationKeepsTheSwing() {
+        var authoritative = ShipState(
+            position: SIMD2(0, 0), angle: 1.2, tractorActive: true, stunTicks: 40, stunGuardTicks: 80, knockSpin: 3
+        )
+        authoritative.saber.drawn = 1
+        authoritative.saber.move = .spike
+        authoritative.saber.moveTime = 0.1
+        authoritative.saber.startAngle = 1.2
+        authoritative.saber.turn = -1
+        authoritative.saber.flickCount = 4
+        var predicted = authoritative
+        predicted.position.x = 0.05
+        predicted.angle = 0.4
+        predicted.stunTicks = 0
+        predicted.knockSpin = 0
+        predicted.saber = SaberState()
+        let reconciler = StateReconciler()
+        // Still stunned: the guest's steered position is not where it is.
+        let stunned = reconciler.reconcile(predicted: predicted, authoritative: authoritative)
+        #expect(stunned.position == authoritative.position)
+        #expect(stunned.saber.move == .spike)
+        #expect(stunned.saber.flickCount == 4)
+        #expect(stunned.stunTicks == 40)
+        #expect(stunned.knockSpin == 3)
+
+        authoritative.stunTicks = 0
+        let swinging = reconciler.reconcile(predicted: predicted, authoritative: authoritative)
+        #expect(abs(swinging.position.x - 0.0375) < 0.000_000_001)
+        #expect(swinging.saber.move == .spike)
+        #expect(swinging.saber.moveTime == 0.1)
+        #expect(swinging.saber.flickCount == 4)
+        #expect(swinging.angle == 1.2, "the spike owns the nose")
+        #expect(swinging.knockSpin == 3)
+        #expect(swinging.tractorActive)
+        #expect(swinging.stunGuardTicks == 80)
+    }
+
     @Test("Older and duplicate snapshots cannot replace newer authority")
     func staleSnapshotSuppression() {
         var gate = AuthoritativeSnapshotGate()

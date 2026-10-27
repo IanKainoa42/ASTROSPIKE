@@ -288,6 +288,29 @@ public struct MatchRules: Sendable {
             return events
         }
 
+        return bookContacts(contacts, awarding: true)
+    }
+
+    /// Touches, bounces and the same-pilot run, with no score and no phase
+    /// change. A guest keeps its touch lights -- and the bots, which leave a
+    /// ball alone once the run is spent -- on the same book the host is
+    /// writing. Waiting on the snapshot meant the guest played the next touch
+    /// blind, and the host never did. A goal or a zone still belongs to the
+    /// host: counting past it would book a touch the host's early return
+    /// never booked.
+    public mutating func noteRally(_ contacts: [RuleContact]) {
+        guard state.phase == .playing else { return }
+        let goal = contacts.contains { if case .ballEnteredGoal = $0 { true } else { false } }
+        let zone = volley != nil && contacts.contains { if case .ballTouchedZone = $0 { true } else { false } }
+        if goal || zone { return }
+        _ = bookContacts(contacts, awarding: false)
+    }
+
+    /// The running book. `awarding` is the host: a fault pays the point and
+    /// clears the count. A guest leaves the count standing so the meter shows
+    /// the touch that spent it, and keeps playing until the host's snapshot
+    /// says the rally ended.
+    private mutating func bookContacts(_ contacts: [RuleContact], awarding: Bool) -> [SimulationEvent] {
         for contact in contacts {
             switch contact {
             case let .ballTouchedShip(team, counted):
@@ -321,15 +344,15 @@ public struct MatchRules: Sendable {
                 state.lastTouchRun = run
                 // A side over its count says so, even when the run is over too.
                 if state.shipTouches[team] > volley.touchLimit[team] {
-                    return awardPoint(to: team.opponent, reason: .touchLimit)
+                    return awarding ? awardPoint(to: team.opponent, reason: .touchLimit) : []
                 }
                 if run > volley.inARow {
-                    return awardPoint(to: team.opponent, reason: .doubleTouch)
+                    return awarding ? awardPoint(to: team.opponent, reason: .doubleTouch) : []
                 }
             case let .ballTouchedFloor(side):
                 state.floorContacts[side] += 1
                 if state.floorContacts[side] > allowedFloorBounces {
-                    return awardPoint(to: side.opponent, reason: .thirdBounce)
+                    return awarding ? awardPoint(to: side.opponent, reason: .thirdBounce) : []
                 }
             case .ballEnteredGoal, .ballEnteredHoop, .shipDestroyed, .ballTouchedZone:
                 break
@@ -342,6 +365,7 @@ public struct MatchRules: Sendable {
         }
         let destroyedTeams = Set(destructions.map(\.0))
         if destroyedTeams.count == 2 {
+            guard awarding else { return [] }
             state.floorContacts = SideCounts()
             state.shipTouches = SideCounts()
             state.lastTouch = nil
@@ -349,7 +373,7 @@ public struct MatchRules: Sendable {
             return [.rallyReset]
         }
         if let destruction = destructions.first {
-            return awardPoint(to: destruction.0.opponent, reason: destruction.1)
+            return awarding ? awardPoint(to: destruction.0.opponent, reason: destruction.1) : []
         }
         return []
     }

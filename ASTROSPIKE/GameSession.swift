@@ -849,7 +849,22 @@ final class GameSession {
             lastPointText = set.label(bounceAllowance: engine.configuration.allowedFloorBounces, teamHues: teamHues)
             if case let .setEnded(winner, _) = set { lastPointTeam = winner }
         }
-        for event in events where presentsLocalEvents {
+        for event in events {
+            // Sparks and zaps are flown on every board. A guest shows the
+            // ones its own step produced, at the moment of contact. The host
+            // used to post them reliably, and the point sat in the queue
+            // behind every scrape -- a round trip the host never waited.
+            let physicsCue = switch event {
+            case .collisionEffect, .shipZapped: true
+            default: false
+            }
+            if physicsCue, !presentsLocalEvents {
+                scene.present([event])
+                if case .collisionEffect = event { FeedbackCenter.shared.impactHaptic() }
+                if case let .shipZapped(seat, _) = event, seat == flownSeat { FeedbackCenter.shared.impact() }
+                continue
+            }
+            guard presentsLocalEvents else { continue }
             callOut(event)
             presentFreeForAll(event)
             if case .collisionEffect = event { FeedbackCenter.shared.impactHaptic() }
@@ -869,7 +884,7 @@ final class GameSession {
                 default:
                     break
                 }
-                online?.sendEvent(event)
+                if !physicsCue { online?.sendEvent(event) }
                 if case .point = event {
                     lobby?.hostDuelScored(engine.state.match.score)
                 }
@@ -1192,6 +1207,12 @@ final class GameSession {
         }
         online.onEvent = { [weak self] event in
             guard let self, !online.isAuthoritative else { return }
+            // Already shown from this board's own step. A late copy stacks
+            // a second spark on the contact and buzzes twice.
+            switch event {
+            case .collisionEffect, .shipZapped: return
+            default: break
+            }
             self.events = [event]
             self.scene.present([event])
             switch event {

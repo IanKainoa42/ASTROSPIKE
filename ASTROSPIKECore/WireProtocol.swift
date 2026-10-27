@@ -334,18 +334,26 @@ public struct StateReconciler: Sendable {
         guard simd_distance(predicted.position, authoritative.position) <= snapDistance else {
             return authoritative
         }
+        // A stunned hull is not steering. Blending toward where the guest
+        // flew with the stick live puts it somewhere the host never had it.
+        if authoritative.stunTicks > 0 { return authoritative }
         let retained = 1 - blendFraction
-        return ShipState(
-            position: predicted.position * retained + authoritative.position * blendFraction,
-            velocity: predicted.velocity * retained + authoritative.velocity * blendFraction,
-            angle: predicted.angle * retained + authoritative.angle * blendFraction,
-            angularVelocity: predicted.angularVelocity * retained
-                + authoritative.angularVelocity * blendFraction,
-            isDestroyed: authoritative.isDestroyed,
-            thrustLevel: authoritative.thrustLevel,
-            homeSide: authoritative.homeSide,
-            fireCooldownTicks: authoritative.fireCooldownTicks,
-            ballTouchCooldownTicks: authoritative.ballTouchCooldownTicks
-        )
+        // Start from the rolled ship. Building a fresh one dropped the saber,
+        // the stun and the bolt knock: a sheathed saber is not stored, so the
+        // next step read the press as new and the swing never finished. Only
+        // the guest blends, so only the guest lost the blade.
+        var ship = authoritative
+        ship.position = predicted.position * retained + authoritative.position * blendFraction
+        ship.velocity = predicted.velocity * retained + authoritative.velocity * blendFraction
+        // A saber move or a bolt's knock owns the turn. Blending the angle
+        // off the profile puts the blade somewhere the move is not.
+        let moveOwnsTurn = authoritative.saber.move.map { Saber.arc(of: $0) != 0 } == true
+            || authoritative.knockSpin != 0
+        if !moveOwnsTurn {
+            ship.angle = predicted.angle * retained + authoritative.angle * blendFraction
+            ship.angularVelocity = predicted.angularVelocity * retained
+                + authoritative.angularVelocity * blendFraction
+        }
+        return ship
     }
 }
