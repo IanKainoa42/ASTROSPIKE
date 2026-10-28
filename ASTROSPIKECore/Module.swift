@@ -3482,8 +3482,8 @@ public struct SimulationEngine: Sendable {
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let lever = point - ship.position
         let bladeVelocity = ship.velocity
-            + ship.angularVelocity * SIMD2(-lever.y, lever.x)
-            + axis * Saber.reachRate(ship.saber) * Saber.length * hit.along
+            + (ship.angularVelocity * SIMD2(-lever.y, lever.x)
+                + axis * Saber.reachRate(ship.saber) * Saber.length * hit.along) * Saber.swingPower
         let inward = simd_dot(state.balls[ballIndex].velocity - bladeVelocity, normal)
         guard inward < 0 else { return }
         // The blade is flown, not knocked: its swing does not slow. The hull

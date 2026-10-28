@@ -107,6 +107,12 @@ struct AstroballTests {
         #expect(pointReason(solo.resolve([.ballPlayed(seat: .orange)])) == .doubleTouch)
     }
 
+    @Test("By default a pilot may play the ball all three of the side's touches")
+    func defaultIsThreeInARow() {
+        #expect(AstroballTuning().inARow == 3)
+        #expect(Saber.swingPower == 0.5)
+    }
+
     @Test("In a row is a setting: one is the old no-doubles rule, three lets a pilot play the side's three")
     func inARowSetting() {
         var strict = rules(inARow: 1, cyanPilots: 2)
@@ -369,7 +375,7 @@ struct AstroballTests {
             return .nan
         }
         let standard = kept(AstroballTuning())
-        #expect(abs(standard - 0.3) < 0.06, "kept \(standard)")
+        #expect(abs(standard - 0.5) < 0.06, "kept \(standard)")
         #expect(standard < AstroballTuning().clampedWallBounce)
         var lively = AstroballTuning()
         lively.floorBounce = 0.8
@@ -569,7 +575,8 @@ struct AstroballTests {
 
     @Test("The ring marks whose ball it is: the side under it, less a pilot whose run is spent")
     func upIsWhoseBall() {
-        let tuning = AstroballTuning()
+        var tuning = AstroballTuning()
+        tuning.inARow = 2
         var state = astroballEngine().state
         state.ships[.cyanWing] = state.ships[.cyan]
         state.ships[.orangeWing] = state.ships[.orange]
