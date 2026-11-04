@@ -82,4 +82,14 @@ xcrun altool --upload-app --type ios \
   --apiKey "$KEY_ID" \
   --apiIssuer "$ISSUER"
 
+MARKETING_VER=$(sed -n 's/.*MARKETING_VERSION:[[:space:]]*["'\''"]*\([^"'\''"]*\)["'\''"]*/\1/p' project.yml | head -n 1)
+WIRE_VER=$(sed -n 's/.*currentVersion:[[:space:]]*UInt16[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' ASTROSPIKECore/WireProtocol.swift | head -n 1)
+cat > "$REPO/docs/version.json" <<EOF
+{
+  "version": "${MARKETING_VER:-1.0.2}",
+  "build": ${BUILD_NUM},
+  "wire": ${WIRE_VER:-0}
+}
+EOF
+
 echo "=== Successfully uploaded build $BUILD_NUM to TestFlight ==="

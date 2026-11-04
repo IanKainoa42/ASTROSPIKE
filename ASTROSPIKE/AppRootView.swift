@@ -27,6 +27,7 @@ struct AppRootView: View {
     /// Incoming invites whose banner the pilot closed. They stay in INVITES;
     /// only the banner goes.
     @State private var shelvedInvites: Set<String> = []
+    private let updateChecker = AppUpdateChecker.shared
     @Environment(\.scenePhase) private var scenePhase
     private let diagnosticsPreview: OnlineDiagnosticsSnapshot?
 
@@ -99,6 +100,8 @@ struct AppRootView: View {
             || freeForAllPilots != nil || astroballPilots != nil
             || resultsPreview
             || arguments.contains("--skip-onboarding")
+            || arguments.contains("--update-preview")
+            || arguments.contains("-updatePreview")
         _showOnboarding = State(initialValue: !bypass && !PilotProfileStore().hasCompletedOnboarding)
         // `--lobby` opens the board straight away; the simulator cannot tap it.
         _sheet = State(initialValue: lobbyMode ? .lobby : nil)
@@ -152,7 +155,13 @@ struct AppRootView: View {
                 }
                 .transition(.opacity)
             } else {
-                HomeView(online: online, profile: profile, invitesWaiting: lobby.standingInviteInbox.count, sheet: $sheet) { mode in
+                HomeView(
+                    online: online,
+                    profile: profile,
+                    updateChecker: updateChecker,
+                    invitesWaiting: lobby.standingInviteInbox.count,
+                    sheet: $sheet
+                ) { mode in
                     withAnimation(.easeOut(duration: 0.25)) { gameMode = mode }
                 }
                 .transition(.opacity)
@@ -274,6 +283,7 @@ struct AppRootView: View {
             case .active:
                 lobby.start()
                 online.cameBack()
+                Task { await updateChecker.refresh() }
             case .background:
                 // Suspended mid-match, the link goes and the others hold the
                 // chair. Keep what it takes to come back to it.
@@ -282,6 +292,7 @@ struct AppRootView: View {
             default: break
             }
         }
+        .task { await updateChecker.refresh() }
         .sheet(item: $sheet) { item in
             switch item {
             case .duel, .doubles, .freeForAll, .astroball:
@@ -1110,6 +1121,7 @@ private let narrowWindowWidth: CGFloat = 700
 private struct HomeView: View {
     let online: OnlineMatchCoordinator
     let profile: PilotProfileStore
+    var updateChecker = AppUpdateChecker.shared
     /// Asks waiting on this pilot, shown on the INVITES tile.
     var invitesWaiting = 0
     @Binding var sheet: MenuSheet?
@@ -1225,16 +1237,22 @@ private struct HomeView: View {
     }
 
     private func menu(narrow: Bool) -> some View {
-        VStack(spacing: narrow ? 10 : 12) {
+        let compactTiles = narrow || updateChecker.availableUpdate != nil
+        return VStack(spacing: compactTiles ? 10 : 12) {
+            if let update = updateChecker.availableUpdate {
+                UpdateMenuButton(update: update) {
+                    updateChecker.openUpdate()
+                }
+            }
             // Pick the game; its sheet asks who you play.
             Grid(horizontalSpacing: 10, verticalSpacing: 10) {
                 GridRow {
-                    MenuButton(title: "DUEL", subtitle: "ONE ON ONE", icon: "person.fill", narrow: narrow, tile: true) { sheet = .duel }
-                    MenuButton(title: "DOUBLES", subtitle: "TWO A SIDE", icon: "person.2.fill", narrow: narrow, tile: true) { sheet = .doubles }
+                    MenuButton(title: "DUEL", subtitle: "ONE ON ONE", icon: "person.fill", narrow: compactTiles, tile: true) { sheet = .duel }
+                    MenuButton(title: "DOUBLES", subtitle: "TWO A SIDE", icon: "person.2.fill", narrow: compactTiles, tile: true) { sheet = .doubles }
                 }
                 GridRow {
-                    MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", narrow: narrow, tile: true) { sheet = .freeForAll }
-                    MenuButton(title: "ASTROBALL", subtitle: "VOLLEYBALL", icon: "volleyball.fill", narrow: narrow, tile: true) { sheet = .astroball }
+                    MenuButton(title: "ASTROPUCK", subtitle: "3-4 PILOTS", icon: "person.3.fill", narrow: compactTiles, tile: true) { sheet = .freeForAll }
+                    MenuButton(title: "ASTROBALL", subtitle: "VOLLEYBALL", icon: "volleyball.fill", narrow: compactTiles, tile: true) { sheet = .astroball }
                 }
             }
             // Only when someone is waiting on an answer: asking lives in
@@ -1281,6 +1299,46 @@ private struct HomeView: View {
         if names.isEmpty { return "RE-INVITE LAST OPPONENT" }
         if names.count == 1 { return "DUEL \(names[0].uppercased()) AGAIN" }
         return "PLAY \(names.joined(separator: ", ").uppercased()) AGAIN"
+    }
+}
+
+private struct UpdateMenuButton: View {
+    let update: AvailableAppUpdate
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(update.buttonTitle)
+                        .font(.subheadline.weight(.black))
+                        .tracking(0.8)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text(update.subtitle)
+                        .font(.caption2.monospaced().weight(.bold))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.forward.app.fill")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.orange)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(minHeight: 46)
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .background(.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(.orange.opacity(0.75), lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("update-app")
     }
 }
 

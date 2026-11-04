@@ -30,6 +30,8 @@ public enum PilotActivity: String, Codable, Equatable, Sendable, CaseIterable {
 /// `LobbySnapshot.staleAfter` as offline, so a pilot who force-quits simply
 /// fades out; nothing has to tear it down.
 public struct PilotPresence: Codable, Equatable, Sendable, Identifiable {
+    public static let buildTagPrefix = "build:"
+
     /// Game Center `gamePlayerID`, stable per player per game.
     public var id: String
     public var name: String
@@ -38,6 +40,8 @@ public struct PilotPresence: Codable, Equatable, Sendable, Identifiable {
     /// The `LiveMatch.id` being flown, while `activity` is `.playing`.
     public var matchID: String?
     public var updatedAt: Date
+    /// The pilot's app build number (`CFBundleVersion`), if published.
+    public var build: Int?
 
     public init(
         id: String,
@@ -45,7 +49,8 @@ public struct PilotPresence: Codable, Equatable, Sendable, Identifiable {
         hull: Hull,
         activity: PilotActivity,
         matchID: String? = nil,
-        updatedAt: Date
+        updatedAt: Date,
+        build: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -53,6 +58,27 @@ public struct PilotPresence: Codable, Equatable, Sendable, Identifiable {
         self.activity = activity
         self.matchID = matchID
         self.updatedAt = updatedAt
+        self.build = build
+    }
+
+    /// Encodes `build` into the existing CloudKit `matchID` field when no match
+    /// or rendezvous tag is active, avoiding a Production schema migration while
+    /// keeping live match/rendezvous tags untouched for older builds.
+    public static func encodeMatchID(matchID: String?, build: Int?) -> String? {
+        if let matchID, !matchID.isEmpty {
+            return matchID
+        }
+        guard let build, build > 0 else { return nil }
+        return "\(buildTagPrefix)\(build)"
+    }
+
+    public static func decodeMatchID(_ raw: String?) -> (matchID: String?, build: Int?) {
+        guard let raw, !raw.isEmpty else { return (nil, nil) }
+        if raw.hasPrefix(buildTagPrefix) {
+            let number = Int(raw.dropFirst(buildTagPrefix.count))
+            return (nil, number)
+        }
+        return (raw, nil)
     }
 }
 

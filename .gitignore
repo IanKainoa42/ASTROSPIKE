@@ -13,3 +13,4 @@ actions-runner/
 # App Store screenshot automation output — reviewed by hand, never committed
 AppStoreScreenshots/auto/
 .appstore/__pycache__/
+flightfilter/
