@@ -1,6 +1,5 @@
 import ASTROSPIKECore
 import SpriteKit
-import UIKit
 import simd
 
 /// The circuit, drawn. It shares the arena's screen box so the track fills the
