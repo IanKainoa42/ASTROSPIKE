@@ -1994,6 +1994,9 @@ final class OnlineMatchCoordinator: NSObject,
         } catch WireProtocolError.unsupportedVersion(let version) {
             // A pilot on another TestFlight build. Every packet they send is
             // useless to us, so say so once instead of silently sitting still.
+            if version > WireEnvelope.currentVersion {
+                AppUpdateChecker.shared.noteRemoteWireVersion(version)
+            }
             if mismatchedPeers.insert(playerID).inserted {
                 let name = seatedPilotNames[playerID] ?? "PILOT"
                 note("WIRE MISMATCH: \(name) IS ON WIRE \(version), WE ARE \(WireEnvelope.currentVersion)")

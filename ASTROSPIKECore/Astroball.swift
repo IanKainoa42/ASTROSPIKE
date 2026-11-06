@@ -11,10 +11,10 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     /// three.
     public var soloTouches = 3
     public static let soloTouchesRange: ClosedRange<Int> = 1 ... 3
-    /// How many times running one pilot may play the ball: 2 lets a pilot
-    /// press it twice, and the third is a triple hit. Holds for a pilot
-    /// alone on a side too.
-    public var inARow = 2
+    /// How many times running one pilot may play the ball: 3 (the default)
+    /// is just the side's three touches, 2 lets a pilot press it twice and
+    /// the third is a triple hit. Holds for a pilot alone on a side too.
+    public var inARow = 3
     public static let inARowRange: ClosedRange<Int> = 1 ... 3
     /// The scoring zone, as a stretch of each half's wall path: 0 is the
     /// foot of the net, 1 the roof at the side wall. The path runs along the
@@ -27,13 +27,13 @@ public struct AstroballTuning: Equatable, Sendable, Codable {
     public var zone2End = AstroballTuning.defaultZone2End
     /// How much speed the ball keeps off the walls, roof and corners. The
     /// duel's are 0.82; lower soaks a spike up instead of firing it back.
-    public var wallBounce = 0.5
+    public var wallBounce = 0.6
     public static let wallBounceRange: ClosedRange<Double> = 0.2 ... 0.82
     /// How much speed the ball keeps off the floor. Deader than the walls,
     /// so a spike that lands stays down and a wall rebound is still live;
     /// never livelier than the walls, whatever the slider says (see
     /// `clampedFloorBounce`). The duel's floor is 0.78.
-    public var floorBounce = 0.3
+    public var floorBounce = 0.5
     public static let floorBounceRange: ClosedRange<Double> = 0.1 ... 0.82
     /// The MAX CROSS line stands on the net and leans over the far half:
     /// this is how far over it reaches at the roof, as a share of a half's

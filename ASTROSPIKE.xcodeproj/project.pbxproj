@@ -9,7 +9,9 @@
 /* Begin PBXBuildFile section */
 		00CE7C3F2A55C45FFA7D6D66 /* StatsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781BD009F12739EA0ADD6072 /* StatsViews.swift */; };
 		03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */; };
+		05EB0D47C5F6372D9729051A /* AppUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05BB6955DF02A35FFC8C6804 /* AppUpdateChecker.swift */; };
 		077E31AEAA3268F71CF606CB /* Hulls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 828D26A07A966607CF8F1287 /* Hulls.swift */; };
+		09E818A0C9C2C4C19DA6EC58 /* AppUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 333FD145D0ED43A75FA88E7C /* AppUpdateTests.swift */; };
 		0B193428AC54E680033CB925 /* thrusterOrange.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */; };
 		0E4F35B9E15BE39946916228 /* HullCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E740EBB8FA29E6C035D7C6 /* HullCatalogTests.swift */; };
 		0FA5A63811D847767D8E184E /* MatchRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A9A985F85AD1BD3C6E85120 /* MatchRulesTests.swift */; };
@@ -33,6 +35,7 @@
 		3B74ECFE606D2D88E040D2E4 /* WarmupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4405102C04B2CE798F18AD89 /* WarmupTests.swift */; };
 		3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */; };
 		422A72D578214B36CEB54667 /* WireProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4EF5ECF3BE454FA85E66BB /* WireProtocolTests.swift */; };
+		43B3F91AA54AB07BF9957E4C /* AppUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A4D710D0080378863A24464 /* AppUpdate.swift */; };
 		44C4C481489A9951E0515F09 /* tractorHum.wav in Resources */ = {isa = PBXBuildFile; fileRef = 84352B3F6DCACAAA90DCD3BF /* tractorHum.wav */; };
 		4531AFF3E344E822E5BBEEDE /* Soundscape.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85F7067A0FF1B4269F53702 /* Soundscape.swift */; };
 		4764E0AEAE9D5025E9E6E9F9 /* StatsReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C302876D4085238255061DF4 /* StatsReporter.swift */; };
@@ -185,10 +188,12 @@
 		0229900C8172E2E47EE8513F /* TrackTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackTuning.swift; sourceTree = "<group>"; };
 		047B8F3E27B70FB19C1A1089 /* KeyboardControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardControls.swift; sourceTree = "<group>"; };
 		056582DB470999C16355D1FE /* HullStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HullStore.swift; sourceTree = "<group>"; };
+		05BB6955DF02A35FFC8C6804 /* AppUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateChecker.swift; sourceTree = "<group>"; };
 		066C28FFAB465B80E473D5B2 /* saberSwoosh.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = saberSwoosh.wav; sourceTree = "<group>"; };
 		07221F436E712100C50841C1 /* LobbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LobbyTests.swift; sourceTree = "<group>"; };
 		079CCF7AC69C59071ECFE20A /* PlayerNetworkCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerNetworkCopy.swift; sourceTree = "<group>"; };
 		088700D916D7C71D0559E240 /* TrackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackEngine.swift; sourceTree = "<group>"; };
+		0A4D710D0080378863A24464 /* AppUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdate.swift; sourceTree = "<group>"; };
 		0B581A251E3DC103CDFB31F3 /* TrackScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackScene.swift; sourceTree = "<group>"; };
 		11F13BD35800AABC6A36A9B6 /* Ships.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Ships.json; sourceTree = "<group>"; };
 		1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnlineFailureReasonTests.swift; sourceTree = "<group>"; };
@@ -213,6 +218,7 @@
 		2CD95C0514B3196435647AEC /* WireProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocol.swift; sourceTree = "<group>"; };
 		2FA25F731B27167B3E88595B /* FlightControlMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlightControlMappingTests.swift; sourceTree = "<group>"; };
 		3121E085F54B95A626A7D456 /* PerformanceAndSoakTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceAndSoakTests.swift; sourceTree = "<group>"; };
+		333FD145D0ED43A75FA88E7C /* AppUpdateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateTests.swift; sourceTree = "<group>"; };
 		34C5F0CE3719AD824007A03E /* offsideOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = offsideOrange.mp3; sourceTree = "<group>"; };
 		3642C970AB86552313466CC5 /* thrusterCyan.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterCyan.mp3; sourceTree = "<group>"; };
 		376C1A839A814C88BB56E8E0 /* ASTROSPIKEUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEUITests.swift; sourceTree = "<group>"; };
@@ -358,6 +364,7 @@
 			isa = PBXGroup;
 			children = (
 				A3A9B354B5E4A268F1331755 /* AIController.swift */,
+				0A4D710D0080378863A24464 /* AppUpdate.swift */,
 				2BD135DB8D2CB37461B958FB /* ArenaGeometry.swift */,
 				9889197C7F993ABB89039F0E /* ArenaLayout.swift */,
 				D6C6A2F3C222DA16B79BBD16 /* Astroball.swift */,
@@ -419,6 +426,7 @@
 			isa = PBXGroup;
 			children = (
 				5488DBEBDCDC52A967D49F5A /* AppRootView.swift */,
+				05BB6955DF02A35FFC8C6804 /* AppUpdateChecker.swift */,
 				26AED5437E5592EACB25579F /* ArenaScene.swift */,
 				2CD4F97738D5A2F620398EBF /* Assets.xcassets */,
 				519F4C9FF2ECF7C45C38DC7B /* ASTROSPIKE.entitlements */,
@@ -467,6 +475,7 @@
 			isa = PBXGroup;
 			children = (
 				A8BE98FFB275BC4EC266AF45 /* AIControllerTests.swift */,
+				333FD145D0ED43A75FA88E7C /* AppUpdateTests.swift */,
 				B4719289BA07891CDC9CFD53 /* ArenaLayoutTests.swift */,
 				213F6320EB5AA67FFEEE80C3 /* ArenaPhysicsTests.swift */,
 				43A0370D4E4DBEB15FC2F045 /* AstroballTests.swift */,
@@ -683,6 +692,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EAE0C28F449DC33CD7A0E413 /* AIController.swift in Sources */,
+				43B3F91AA54AB07BF9957E4C /* AppUpdate.swift in Sources */,
 				1EE82BCB769CAC46730E05A4 /* ArenaGeometry.swift in Sources */,
 				A12CC34BF17A32569673F600 /* ArenaLayout.swift in Sources */,
 				23C5362B8CC3686EED574F4F /* Astroball.swift in Sources */,
@@ -725,6 +735,7 @@
 			files = (
 				3A4D0B7ACDA79D239BD06DDB /* ASTROSPIKEApp.swift in Sources */,
 				CDD252CC3DA480651328B3DB /* AppRootView.swift in Sources */,
+				05EB0D47C5F6372D9729051A /* AppUpdateChecker.swift in Sources */,
 				D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */,
 				F2C8BB37A65E160CE546421E /* FeedbackCenter.swift in Sources */,
 				F321F83E24A51A85C1A0A9BD /* GameCenterDiagnosticsPanel.swift in Sources */,
@@ -755,6 +766,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				90EA031BA207D0135CFA4229 /* AIControllerTests.swift in Sources */,
+				09E818A0C9C2C4C19DA6EC58 /* AppUpdateTests.swift in Sources */,
 				48720106053A8B5076C1A1F6 /* ArenaLayoutTests.swift in Sources */,
 				03406B0A694AA7C4EB21F260 /* ArenaPhysicsTests.swift in Sources */,
 				74A9C735946912E3E9F9587F /* AstroballTests.swift in Sources */,
@@ -894,6 +906,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.iankainoa.ASTROSPIKE.core;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
 			};
@@ -905,6 +918,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ASTROSPIKE/ASTROSPIKE.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DERIVE_MACS_CATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = ASTROSPIKE/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -914,6 +928,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.iankainoa.ASTROSPIKE;
 				PRODUCT_NAME = ASTROSPIKE;
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -953,7 +968,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 184;
+				CURRENT_PROJECT_VERSION = 186;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1013,7 +1028,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 184;
+				CURRENT_PROJECT_VERSION = 186;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = WC46K49VFA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1051,6 +1066,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ASTROSPIKE/ASTROSPIKE.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DERIVE_MACS_CATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_FILE = ASTROSPIKE/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1060,6 +1076,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.iankainoa.ASTROSPIKE;
 				PRODUCT_NAME = ASTROSPIKE;
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -1082,6 +1099,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.iankainoa.ASTROSPIKE.core;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
 			};

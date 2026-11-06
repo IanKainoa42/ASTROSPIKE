@@ -88,6 +88,31 @@ struct LobbyView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .accessibilityIdentifier("lobby-invite-notice")
             }
+            if let update = AppUpdateChecker.shared.availableUpdate {
+                Button {
+                    AppUpdateChecker.shared.openUpdate()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(update.buttonTitle)
+                                .font(.caption.monospaced().weight(.black))
+                                .foregroundStyle(.orange)
+                            Text(update.subtitle)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.forward.app.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.orange)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("lobby-update-app")
+            }
         }
     }
 

@@ -78,6 +78,9 @@ public enum Saber {
     /// Blade samples per step, so a spinning tip cannot pass through the
     /// smallest ball between two steps.
     public static let samples = 6
+    /// How much of the swing's own speed the blade puts into a ball (and
+    /// the hull takes back). Ian: a full swing makes the hull jump, half it.
+    public static let swingPower = 0.5
 
     public static func duration(of move: SaberMove) -> Double {
         switch move {

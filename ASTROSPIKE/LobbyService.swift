@@ -254,7 +254,9 @@ final class LobbyService {
         if availability == .checking { await checkAccount() }
         let now = Date.now
         do {
-            async let pilots = records(ofType: Records.pilot, since: now.addingTimeInterval(-LobbySnapshot.staleAfter * 2))
+            // Read a week of pilot records so any pilot who has launched a newer
+            // build surfaces an update notice even after their live heartbeat ages out.
+            async let pilots = records(ofType: Records.pilot, since: now.addingTimeInterval(-7 * 86_400))
             async let duels = records(ofType: Records.duel, since: now.addingTimeInterval(-3600))
             // A standing invite outlives every other record here, so its
             // window is its own lifetime plus a margin rather than the hour
@@ -281,8 +283,11 @@ final class LobbyService {
             sentAsks = sentAsks.filter { id, ask in
                 ask.expiresAt > now && !book.invites.contains { $0.id == id }
             }
+            let decodedPilots = try await pilots.compactMap(Records.pilot(from:))
+            AppUpdateChecker.shared.noteLobbyBuilds(decodedPilots.compactMap(\.build))
+            let recentCutoff = now.addingTimeInterval(-LobbySnapshot.staleAfter * 2)
             snapshot = LobbySnapshot(
-                pilots: try await pilots.compactMap(Records.pilot(from:)),
+                pilots: decodedPilots.filter { $0.updatedAt > recentCutoff },
                 matches: try await duels.compactMap(Records.duel(from:)),
                 tournaments: tournaments
             )
@@ -342,7 +347,8 @@ final class LobbyService {
         let record = presenceRecord ?? CKRecord(recordType: Records.pilot, recordID: CKRecord.ID(recordName: localID))
         let presence = PilotPresence(
             id: localID, name: localName, hull: localHull,
-            activity: activity, matchID: currentMatchID, updatedAt: .now
+            activity: activity, matchID: currentMatchID, updatedAt: .now,
+            build: AppUpdateChecker.installedBuild
         )
         Records.write(presence, into: record)
         do {
@@ -964,7 +970,7 @@ private enum Records {
         record["name"] = presence.name as NSString
         record["hull"] = presence.hull.rawValue as NSString
         record["activity"] = presence.activity.rawValue as NSString
-        record["matchID"] = presence.matchID.map { $0 as NSString }
+        record["matchID"] = PilotPresence.encodeMatchID(matchID: presence.matchID, build: presence.build).map { $0 as NSString }
         record[updatedAt] = presence.updatedAt as NSDate
     }
 
@@ -973,9 +979,11 @@ private enum Records {
               let hull = (record["hull"] as? String).flatMap(Hull.init(rawValue:)),
               let activity = (record["activity"] as? String).flatMap(PilotActivity.init(rawValue:)),
               let updated = record[updatedAt] as? Date else { return nil }
+        let decodedMatch = PilotPresence.decodeMatchID(record["matchID"] as? String)
         return PilotPresence(
             id: record.recordID.recordName, name: name, hull: hull,
-            activity: activity, matchID: record["matchID"] as? String, updatedAt: updated
+            activity: activity, matchID: decodedMatch.matchID, updatedAt: updated,
+            build: decodedMatch.build
         )
     }
 

@@ -46,6 +46,52 @@ struct AstroballTests {
         #expect(pointReason(rules.resolve([.ballPlayed(seat: .cyanWing)])) == .touchLimit)
     }
 
+    @Test("A guest's touch lights the meter and does not award the point")
+    func guestNotesTheTouchWithoutScoring() {
+        var rules = rules(solo: 1)
+        rules.noteRally([.ballPlayed(seat: .cyan)])
+        #expect(rules.state.shipTouches.cyan == 1)
+        #expect(rules.state.lastTouch == .cyan)
+        #expect(rules.state.phase == .playing)
+        #expect(rules.state.score == Score())
+        // The touch that spends the allowance still shows, and the rally stays.
+        rules.noteRally([.ballPlayed(seat: .cyan)])
+        #expect(rules.state.shipTouches.cyan == 2)
+        #expect(rules.state.phase == .playing)
+        #expect(rules.state.score == Score())
+        rules.noteRally([.ballTouchedFloor(side: .orange)])
+        #expect(rules.state.floorContacts.orange == 1)
+        rules.noteRally([.ballTouchedFloor(side: .orange)])
+        #expect(rules.state.floorContacts.orange == 2)
+        #expect(rules.state.phase == .playing)
+        // A goal is the host's. The touch beside it is not booked either:
+        // the host returns before the touch loop.
+        var clean = self.rules(solo: 3)
+        clean.noteRally([.ballEnteredGoal(defending: .cyan), .ballPlayed(seat: .orange)])
+        #expect(clean.state.shipTouches == SideCounts())
+        #expect(clean.state.score == Score())
+    }
+
+    @Test("A guest engine counts the touch it played and does not take the point")
+    func guestEngineCountsItsOwnTouch() {
+        var guest = astroballEngine()
+        guest.followsHost = true
+        let home = SIMD2(-0.4, 0.2)
+        guest.state.ball = BallState(position: home + SIMD2(0, 0.16), velocity: .init(0, -2))
+        var waited = 0
+        while guest.state.match.shipTouches.cyan == 0, waited < 40 {
+            guest.state.ships[.cyan]!.position = home
+            guest.state.ships[.cyan]!.velocity = .zero
+            let tick = guest.state.tick
+            guest.step(inputs: [.cyan: .idle(tick: tick), .orange: .idle(tick: tick)])
+            waited += 1
+        }
+        #expect(guest.state.match.shipTouches.cyan == 1)
+        #expect(guest.state.match.lastTouch == .cyan)
+        #expect(guest.state.match.phase == .playing)
+        #expect(guest.state.match.score == Score())
+    }
+
     @Test("Two in a row is fine by default; a triple gives the point away")
     func noTriples() {
         var rules = rules(cyanPilots: 2)
@@ -59,6 +105,12 @@ struct AstroballTests {
         _ = solo.resolve([.ballPlayed(seat: .orange)])
         _ = solo.resolve([.ballPlayed(seat: .orange)])
         #expect(pointReason(solo.resolve([.ballPlayed(seat: .orange)])) == .doubleTouch)
+    }
+
+    @Test("By default a pilot may play the ball all three of the side's touches")
+    func defaultIsThreeInARow() {
+        #expect(AstroballTuning().inARow == 3)
+        #expect(Saber.swingPower == 0.5)
     }
 
     @Test("In a row is a setting: one is the old no-doubles rule, three lets a pilot play the side's three")
@@ -323,7 +375,7 @@ struct AstroballTests {
             return .nan
         }
         let standard = kept(AstroballTuning())
-        #expect(abs(standard - 0.3) < 0.06, "kept \(standard)")
+        #expect(abs(standard - 0.5) < 0.06, "kept \(standard)")
         #expect(standard < AstroballTuning().clampedWallBounce)
         var lively = AstroballTuning()
         lively.floorBounce = 0.8
@@ -523,7 +575,8 @@ struct AstroballTests {
 
     @Test("The ring marks whose ball it is: the side under it, less a pilot whose run is spent")
     func upIsWhoseBall() {
-        let tuning = AstroballTuning()
+        var tuning = AstroballTuning()
+        tuning.inARow = 2
         var state = astroballEngine().state
         state.ships[.cyanWing] = state.ships[.cyan]
         state.ships[.orangeWing] = state.ships[.orange]

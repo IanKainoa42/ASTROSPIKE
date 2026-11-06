@@ -1262,9 +1262,24 @@ public struct SimulationEngine: Sendable {
         }
 
         if followsHost {
-            // The host keeps the book. The guest only flies the physics
-            // until the next snapshot lands, and the effects are the one
-            // thing it may show on its own.
+            // The host keeps the score. The guest still keeps the running
+            // count -- touches, bounces, the same-pilot run -- because that
+            // is what it plays from, and what its bots play from. A rally it
+            // thinks has ended does not: the phase and the ball stay until
+            // the host's snapshot says otherwise. The effects are shown here
+            // too, rather than waiting on a reliable copy of them.
+            if !isFreeForAll, arena.hoop == nil, !configuration.sandbox {
+                rules.volley = configuration.astroball.map { tuning in
+                    var pilots = SideCounts()
+                    for seat in state.ships.keys { pilots[seat.team] += 1 }
+                    return VolleyRules(tuning: tuning, pilots: pilots)
+                }
+                rules.noteRally(contacts)
+                state.match.shipTouches = rules.state.shipTouches
+                state.match.floorContacts = rules.state.floorContacts
+                state.match.lastTouch = rules.state.lastTouch
+                state.match.lastTouchRun = rules.state.lastTouchRun
+            }
             lastEvents = collisionEffects
             state.tick += 1
             return
@@ -3467,8 +3482,8 @@ public struct SimulationEngine: Sendable {
         let axis = SIMD2(cos(ship.angle), sin(ship.angle))
         let lever = point - ship.position
         let bladeVelocity = ship.velocity
-            + ship.angularVelocity * SIMD2(-lever.y, lever.x)
-            + axis * Saber.reachRate(ship.saber) * Saber.length * hit.along
+            + (ship.angularVelocity * SIMD2(-lever.y, lever.x)
+                + axis * Saber.reachRate(ship.saber) * Saber.length * hit.along) * Saber.swingPower
         let inward = simd_dot(state.balls[ballIndex].velocity - bladeVelocity, normal)
         guard inward < 0 else { return }
         // The blade is flown, not knocked: its swing does not slow. The hull
