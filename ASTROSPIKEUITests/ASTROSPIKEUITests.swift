@@ -28,7 +28,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["Tune the Ring"].tap()
         reveal(bumper, in: app.scrollViews.firstMatch)
         XCTAssertEqual(bumper.value as? String, "0")
-        let reset = app.buttons["Reset ring to default"]
+        let reset = app.buttons["reset-ring-default"]
         reveal(reset, in: app.scrollViews.firstMatch)
         reset.tap()
         XCTAssertEqual(bumper.value as? String, "1")
@@ -75,19 +75,16 @@ final class ASTROSPIKEUITests: XCTestCase {
 
         app.buttons["SETTINGS"].tap()
         // The one flight preference a pilot keeps: steering feel, per device.
-        XCTAssertTrue(app.sliders["Turning sensitivity"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.switches["Large controls"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.switches["Swap controls for left-handed play"].exists)
         let settingsForm = app.collectionViews.firstMatch
-        XCTAssertTrue(settingsForm.exists)
-        let bounceIncrement = app.buttons.matching(
-            NSPredicate(
-                format: "label BEGINSWITH %@ AND label CONTAINS %@",
-                "Bounces per hit:",
-                "Increment"
-            )
-        ).firstMatch
-        reveal(bounceIncrement, in: settingsForm)
+        XCTAssertTrue(settingsForm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sliders["Turning sensitivity"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.switches["large-controls"].waitForExistence(timeout: 3))
+        let leftHanded = app.switches["left-handed"]
+        reveal(leftHanded, in: settingsForm)
+        XCTAssertTrue(leftHanded.exists)
+        let bouncesPerHit = app.steppers["bounces-per-hit"]
+        reveal(bouncesPerHit, in: settingsForm)
+        XCTAssertTrue(bouncesPerHit.exists)
         // The developer sliders are gone from the shipped app: no Flight
         // Tuning page, and no ball or tractor slider on the Settings form.
         XCTAssertFalse(app.buttons["Flight Tuning"].exists)

@@ -2596,8 +2596,11 @@ private struct SettingsView: View {
                     Text("Higher turns harder the moment you press the steering pad and needs less slide to reach a full turn. Top turning speed is the same at every setting.")
                 }
                 Toggle("Large controls", isOn: $largeControls)
+                    .accessibilityIdentifier("large-controls")
                 Toggle("Swap controls for left-handed play", isOn: $leftHanded)
+                    .accessibilityIdentifier("left-handed")
                 Toggle("Cluster controls to thumb side", isOn: $clusterControls)
+                    .accessibilityIdentifier("cluster-controls")
                 Picker("Engine pads", selection: $padLayout) {
                     Text("Diamond").tag(PadLayout.diamond)
                     Text("Classic").tag(PadLayout.classic)
@@ -2624,6 +2627,7 @@ private struct SettingsView: View {
                         value: $tuning.allowedBouncesPerHit,
                         in: 1 ... 5
                     )
+                    .accessibilityIdentifier("bounces-per-hit")
                     Picker("Match length", selection: $tuning.setsToWin) {
                         Text("Single game").tag(1)
                         Text("Best of 3").tag(2)
@@ -2864,46 +2868,52 @@ struct RingTuningControls: View {
     static let footer = "Thrust and hull drag set how the ring flies: speed builds toward thrust / drag, and lower drag glides further. MAX CROSS push and brake are how hard a rival's line shoves you back and how much speed it steals; the line is how far out each rival's arc stands. Goal pull is a separate loose spring on your hull only, back toward your own goal, harder the farther you fly; zero leaves it off and the puck is never pulled. Bump height is how far each goal's bump rises off the rim, as a share of the ring's radius (0 puts the goals flush in a plain round rim); bump width is how broad its bell is. Fire rate is the seconds between your bolts on the ring, apart from the duel's. The centre bumper stands in the middle when it is on, and the face-off drops just clear of it. Goal guards stand a round bumper in front of every goal; sliding, it rides a track across the mouth and stays wherever a hull, the beam or a bolt shoves it, and starts each point where Guard across puts it; stood still, Guard distance and Guard across are where it stays. Two balls puts a second one in play; a goal re-drops only the one that went in. Gravity tilts the table out to the rim. All of it applies the moment you resume."
 
     var body: some View {
-        ForEach(RingTuning.knobs.filter { !RingTuning.guardKnobKeys.contains($0.key) }) { knob in
-            slider(knob)
-            if knob.keyPath == \RingTuning.hullDrag {
-                let top = thrust * tuning.speed / max(0.01, tuning.hullDrag)
-                let half = log(2) / max(0.01, tuning.hullDrag)
-                Text("Top speed \(top.formatted(.number.precision(.fractionLength(2)))), half of it in \(half.formatted(.number.precision(.fractionLength(1)))) s")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        Toggle("Centre bumper", isOn: Binding(
-            get: { tuning.centreBumper },
-            set: { tuning.centreBumper = $0 }
-        ))
-        .accessibilityIdentifier(RingTuning.centreBumperKey)
-        Toggle("Two balls", isOn: Binding(
-            get: { tuning.twoBalls },
-            set: { tuning.twoBalls = $0 }
-        ))
-        .accessibilityIdentifier(RingTuning.twoBallsKey)
-        Toggle("Goal guards", isOn: Binding(
-            get: { tuning.goalGuards },
-            set: { tuning.goalGuards = $0 }
-        ))
-        .accessibilityIdentifier(RingTuning.goalGuardsKey)
-        if tuning.goalGuards {
-            Toggle("Guards slide", isOn: Binding(
-                get: { tuning.guardsSlide },
-                set: { tuning.guardsSlide = $0 }
+        Group {
+            Toggle("Centre bumper", isOn: Binding(
+                get: { tuning.centreBumper },
+                set: { tuning.centreBumper = $0 }
             ))
-            .accessibilityIdentifier(RingTuning.guardsSlideKey)
-            ForEach(RingTuning.knobs.filter { RingTuning.guardKnobKeys.contains($0.key) }) { knob in
+            .accessibilityLabel("Centre bumper")
+            .accessibilityIdentifier(RingTuning.centreBumperKey)
+            Toggle("Two balls", isOn: Binding(
+                get: { tuning.twoBalls },
+                set: { tuning.twoBalls = $0 }
+            ))
+            .accessibilityIdentifier(RingTuning.twoBallsKey)
+            Toggle("Goal guards", isOn: Binding(
+                get: { tuning.goalGuards },
+                set: { tuning.goalGuards = $0 }
+            ))
+            .accessibilityIdentifier(RingTuning.goalGuardsKey)
+            if tuning.goalGuards {
+                Toggle("Guards slide", isOn: Binding(
+                    get: { tuning.guardsSlide },
+                    set: { tuning.guardsSlide = $0 }
+                ))
+                .accessibilityIdentifier(RingTuning.guardsSlideKey)
+            }
+            Button("Reset ring to default") { tuning = RingTuning() }
+                .disabled(tuning == RingTuning())
+                .accessibilityIdentifier("reset-ring-default")
+            ForEach(RingTuning.knobs.filter { !RingTuning.guardKnobKeys.contains($0.key) }) { knob in
                 slider(knob)
+                if knob.keyPath == \RingTuning.hullDrag {
+                    let top = thrust * tuning.speed / max(0.01, tuning.hullDrag)
+                    let half = log(2) / max(0.01, tuning.hullDrag)
+                    Text("Top speed \(top.formatted(.number.precision(.fractionLength(2)))), half of it in \(half.formatted(.number.precision(.fractionLength(1)))) s")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if tuning.goalGuards {
+                ForEach(RingTuning.knobs.filter { RingTuning.guardKnobKeys.contains($0.key) }) { knob in
+                    slider(knob)
+                }
             }
         }
-        Button("Reset ring to default") { tuning = RingTuning() }
-            .disabled(tuning == RingTuning())
-            .onChange(of: tuning) { _, tuning in
-                tuning.store()
-                changed(tuning)
-            }
+        .onChange(of: tuning) { _, tuning in
+            tuning.store()
+            changed(tuning)
+        }
     }
 
     private func slider(_ knob: RingTuning.Knob) -> some View {

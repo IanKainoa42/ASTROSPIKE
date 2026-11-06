@@ -77,6 +77,10 @@ struct TouchControls: View {
     /// offset is applied. A drag is committed against this, so a pad can
     /// never be flung somewhere the pilot cannot reach it again.
     @State private var padFrames: [String: CGRect] = [:]
+    /// The controls view's frame on the glass. Pad drags clamp here, not to
+    /// the expanded window frame steering uses -- that frame reaches into the
+    /// safe-area padding UI tests do not count as on-screen.
+    @State private var clampFrame: CGRect = .zero
 
     /// A margin narrower than this cannot hold a pad; the old full-bleed
     /// split (steer left, engine right) takes over, as on a portrait phone.
@@ -115,6 +119,14 @@ struct TouchControls: View {
         }
         .accessibilityElement(children: .contain)
         .onDisappear { clearInput() }
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .onChange(of: geometry.frame(in: .global), initial: true) { _, frame in
+                        clampFrame = frame
+                    }
+            }
+        }
     }
 
     // MARK: Margin layout
@@ -365,17 +377,18 @@ struct TouchControls: View {
     /// window (the steering strip on a small phone) is held covering it
     /// rather than squeezed inside it.
     private func onGlass(_ proposed: CGSize, id: String, baked: CGSize) -> CGSize {
-        guard let measured = padFrames[id], !windowFrame.isEmpty else { return proposed }
+        let bounds = !clampFrame.isEmpty ? clampFrame : windowFrame
+        guard let measured = padFrames[id], !bounds.isEmpty else { return proposed }
         let anchor = CGPoint(x: measured.minX, y: measured.minY)
-        let lowX = windowFrame.maxX - measured.width
-        let lowY = windowFrame.maxY - measured.height
+        let lowX = bounds.maxX - measured.width
+        let lowY = bounds.maxY - measured.height
         let x = min(
-            max(anchor.x + baked.width + proposed.width, min(windowFrame.minX, lowX)),
-            max(windowFrame.minX, lowX)
+            max(anchor.x + baked.width + proposed.width, min(bounds.minX, lowX)),
+            max(bounds.minX, lowX)
         )
         let y = min(
-            max(anchor.y + baked.height + proposed.height, min(windowFrame.minY, lowY)),
-            max(windowFrame.minY, lowY)
+            max(anchor.y + baked.height + proposed.height, min(bounds.minY, lowY)),
+            max(bounds.minY, lowY)
         )
         return CGSize(width: x - anchor.x - baked.width, height: y - anchor.y - baked.height)
     }

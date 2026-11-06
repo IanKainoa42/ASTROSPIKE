@@ -57,6 +57,7 @@ final class AppUpdateChecker {
 
     /// Checks the published version manifest and App Store lookup for updates.
     func refresh() async {
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
         guard !isChecking else { return }
         isChecking = true
         defer { isChecking = false }
