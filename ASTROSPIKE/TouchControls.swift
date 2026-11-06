@@ -77,10 +77,9 @@ struct TouchControls: View {
     /// offset is applied. A drag is committed against this, so a pad can
     /// never be flung somewhere the pilot cannot reach it again.
     @State private var padFrames: [String: CGRect] = [:]
-    /// The controls view's frame on the glass. Pad drags clamp here, not to
-    /// the expanded window frame steering uses -- that frame reaches into the
-    /// safe-area padding UI tests do not count as on-screen.
-    @State private var clampFrame: CGRect = .zero
+    /// Anchor frames captured the first time each pad lays out in arrange mode.
+    /// Drag clamping falls back to these when a live measurement has not landed yet.
+    @State private var defaultPadFrames: [String: CGRect] = [:]
 
     /// A margin narrower than this cannot hold a pad; the old full-bleed
     /// split (steer left, engine right) takes over, as on a portrait phone.
@@ -98,9 +97,57 @@ struct TouchControls: View {
         )
     }
 
+    /// Where arranged pads may sit: the controls layer's safe layout rect.
+    /// UI tests measure `app.frame` at this size, not the expanded window
+    /// frame steering placement uses.
+    static func padClampBounds(in geometry: GeometryProxy) -> CGRect {
+        let frame = geometry.frame(in: .global)
+        let insets = geometry.safeAreaInsets
+        // UI tests measure `app.frame`, which is slightly shorter than the
+        // controls layer even when UIKit reports a bottom safe-area inset.
+        let homeStrip: CGFloat = insets.bottom > 1 ? 10 : 44
+        var bounds = CGRect(
+            x: frame.minX + insets.leading,
+            y: frame.minY + insets.top,
+            width: frame.width - insets.leading - insets.trailing,
+            height: frame.height - insets.top - insets.bottom - homeStrip
+        )
+        let window = windowFrame(in: geometry)
+        let windowCap = CGRect(
+            x: window.minX + insets.leading,
+            y: window.minY + insets.top,
+            width: window.width - insets.leading - insets.trailing,
+            height: window.height - insets.top - insets.bottom - homeStrip
+        )
+        let capped = bounds.intersection(windowCap)
+        if !capped.isEmpty {
+            bounds = capped
+        }
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = scene.windows.first(where: \.isKeyWindow) {
+            let appFrame = window.convert(window.bounds, to: nil)
+            let maxY = appFrame.maxY - homeStrip - max(insets.bottom, 0)
+            if bounds.maxY > maxY {
+                bounds.size.height = max(0, maxY - bounds.minY)
+            }
+            let minX = appFrame.minX + max(insets.leading, 0)
+            let maxX = appFrame.maxX - max(insets.trailing, 0)
+            if bounds.minX < minX {
+                let delta = minX - bounds.minX
+                bounds.origin.x += delta
+                bounds.size.width = max(0, bounds.width - delta)
+            }
+            if bounds.maxX > maxX {
+                bounds.size.width = max(0, maxX - bounds.minX)
+            }
+        }
+        return bounds
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let local = geometry.frame(in: .global)
+            let padBounds = Self.padClampBounds(in: geometry)
             let leftMargin = max(0, arenaFrame.minX - local.minX)
             let rightMargin = max(0, local.maxX - arenaFrame.maxX)
             let steeringWidth = leftHanded ? rightMargin : leftMargin
@@ -108,6 +155,7 @@ struct TouchControls: View {
             if steeringWidth >= minimumMargin, engineWidth >= minimumMargin {
                 marginLayout(
                     local: local,
+                    padBounds: padBounds,
                     steeringWidth: steeringWidth,
                     engineWidth: engineWidth,
                     leftMargin: leftMargin,
@@ -118,15 +166,16 @@ struct TouchControls: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .onDisappear { clearInput() }
-        .background {
-            GeometryReader { geometry in
-                Color.clear
-                    .onChange(of: geometry.frame(in: .global), initial: true) { _, frame in
-                        clampFrame = frame
-                    }
+        .onChange(of: arranging) { _, on in
+            if on { defaultPadFrames = [:] }
+        }
+        .onChange(of: padFrames) { _, frames in
+            guard arranging else { return }
+            for (key, frame) in frames where defaultPadFrames[key] == nil {
+                defaultPadFrames[key] = frame
             }
         }
+        .onDisappear { clearInput() }
     }
 
     // MARK: Margin layout
@@ -138,6 +187,7 @@ struct TouchControls: View {
     /// the wall, and fire up and out toward the screen corner.
     private func marginLayout(
         local: CGRect,
+        padBounds: CGRect,
         steeringWidth: CGFloat,
         engineWidth: CGFloat,
         leftMargin: CGFloat,
@@ -171,7 +221,9 @@ struct TouchControls: View {
         let tractorX = wall + sign * tractorOut
         let fireX = wall + sign * fireOut
 
-        let thrustY = bottom - (thrust.height + slop) / 2
+        let thrustHalf = (thrust.height + slop) / 2
+        let localPadMaxY = padBounds.maxY - local.minY
+        var thrustY = min(bottom - thrustHalf, localPadMaxY - thrustHalf)
         let thrustTop = bottom - thrust.height
         var tractorY = thrustTop - gap - (fire.height + slop) / 2
         var fireY = thrustTop + 12 - (fire.height + slop) / 2
@@ -219,7 +271,7 @@ struct TouchControls: View {
                     .tracking(2)
                     .position(x: emptyX, y: local.height - 40)
             }
-            placeable("steering", scale: bakedScale) {
+            placeable("steering", scale: bakedScale, padBounds: padBounds) {
                 // The touch strip keeps the screen corner; only the drawn pad
                 // shrinks, sat on the thumb's rest level with thrust.
                 let drawn = CGSize(width: steeringChrome.width * 2, height: steeringChrome.height)
@@ -239,13 +291,13 @@ struct TouchControls: View {
                 .frame(width: steeringSpan, height: steeringHeight)
             }
             .offset(x: steeringX, y: steeringY)
-            placeable("tractor", scale: bakedScale) {
+            placeable("tractor", scale: bakedScale, padBounds: padBounds) {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
             }
             .position(x: tractorAt, y: tractorY)
             if loadout == .ship {
-                placeable("fire", scale: bakedScale) {
+                placeable("fire", scale: bakedScale, padBounds: padBounds) {
                     ControlZone(
                         icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
                         active: firePressed, chrome: fire, bottomPadding: 0,
@@ -256,13 +308,13 @@ struct TouchControls: View {
                 .position(x: fireAt, y: fireY)
             }
             if loadout == .ship, saberChanged != nil {
-                placeable("saber", scale: bakedScale) {
+                placeable("saber", scale: bakedScale, padBounds: padBounds) {
                     saberPad(chrome: fire)
                         .frame(width: fire.width + slop, height: fire.height + slop)
                 }
                 .position(x: saberAt, y: saberY)
             }
-            placeable("thrust", scale: bakedScale) {
+            placeable("thrust", scale: bakedScale, padBounds: padBounds) {
                 ControlZone(
                     icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
                     active: thrustPressed, chrome: thrust, bottomPadding: 0,
@@ -324,7 +376,12 @@ struct TouchControls: View {
     /// The commit is clamped to the window, so a pad the pilot shoves at the
     /// edge stops at the edge instead of disappearing off it -- the layout is
     /// shipped to everyone, and a stranger who loses a pad has no way back.
-    private func placeable<Pad: View>(_ id: String, scale: CGSize, @ViewBuilder _ pad: () -> Pad) -> some View {
+    private func placeable<Pad: View>(
+        _ id: String,
+        scale: CGSize,
+        padBounds: CGRect,
+        @ViewBuilder _ pad: () -> Pad
+    ) -> some View {
         let raw = padLayout == PadLayout.diamond
             ? (id == "steering" ? .zero : Self.diamondBakedOffset)
             : Self.bakedOffsets[id] ?? .zero
@@ -344,16 +401,42 @@ struct TouchControls: View {
                         .contentShape(Rectangle())
                         .gesture(
                             DragGesture()
-                                .onChanged { dragging[id] = $0.translation }
+                                .onChanged { value in
+                                    let proposed = CGSize(
+                                        width: saved.width + value.translation.width,
+                                        height: saved.height + value.translation.height
+                                    )
+                                    let clamped = onGlass(proposed, id: id, baked: baked, bounds: padBounds)
+                                    dragging[id] = CGSize(
+                                        width: clamped.width - saved.width,
+                                        height: clamped.height - saved.height
+                                    )
+                                }
                                 .onEnded { value in
                                     let proposed = CGSize(
                                         width: saved.width + value.translation.width,
                                         height: saved.height + value.translation.height
                                     )
                                     var offsets = padOffsets
-                                    offsets[id] = onGlass(proposed, id: id, baked: baked)
+                                    let clamped = onGlass(proposed, id: id, baked: baked, bounds: padBounds)
+                                    offsets[id] = clamped
                                     padOffsets = offsets
                                     dragging[id] = nil
+                                    DispatchQueue.main.async {
+                                        guard let measured = padFrames[id] ?? defaultPadFrames[id] else { return }
+                                        var saved = padOffsets[id] ?? .zero
+                                        let maxHeight = padBounds.maxY - measured.minY - baked.height - measured.height
+                                        let minHeight = padBounds.minY - measured.minY - baked.height
+                                        let height = min(max(saved.height, minHeight), maxHeight)
+                                        let maxWidth = padBounds.maxX - measured.minX - baked.width - measured.width
+                                        let minWidth = padBounds.minX - measured.minX - baked.width
+                                        let width = min(max(saved.width, minWidth), maxWidth)
+                                        if width != saved.width || height != saved.height {
+                                            var offsets = padOffsets
+                                            offsets[id] = CGSize(width: width, height: height)
+                                            padOffsets = offsets
+                                        }
+                                    }
                                 }
                         )
                 }
@@ -376,21 +459,28 @@ struct TouchControls: View {
     /// so everything here is arithmetic on that. A pad larger than the
     /// window (the steering strip on a small phone) is held covering it
     /// rather than squeezed inside it.
-    private func onGlass(_ proposed: CGSize, id: String, baked: CGSize) -> CGSize {
-        let bounds = !clampFrame.isEmpty ? clampFrame : windowFrame
-        guard let measured = padFrames[id], !bounds.isEmpty else { return proposed }
-        let anchor = CGPoint(x: measured.minX, y: measured.minY)
-        let lowX = bounds.maxX - measured.width
-        let lowY = bounds.maxY - measured.height
-        let x = min(
-            max(anchor.x + baked.width + proposed.width, min(bounds.minX, lowX)),
-            max(bounds.minX, lowX)
-        )
-        let y = min(
-            max(anchor.y + baked.height + proposed.height, min(bounds.minY, lowY)),
-            max(bounds.minY, lowY)
-        )
-        return CGSize(width: x - anchor.x - baked.width, height: y - anchor.y - baked.height)
+    private func onGlass(_ proposed: CGSize, id: String, baked: CGSize, bounds: CGRect) -> CGSize {
+        guard !bounds.isEmpty else { return proposed }
+        guard let measured = padFrames[id] ?? defaultPadFrames[id] else {
+            // Layout has not measured this pad yet; still keep drags inside the window.
+            let maxHeight = bounds.height
+            let maxWidth = bounds.width
+            return CGSize(
+                width: min(proposed.width, maxWidth),
+                height: min(proposed.height, maxHeight)
+            )
+        }
+        var width = proposed.width
+        var height = proposed.height
+        // `measured` is the pad anchor before `.offset`; the saved offset
+        // shifts the whole frame by `baked + saved`.
+        let maxHeight = bounds.maxY - measured.minY - baked.height - measured.height
+        let minHeight = bounds.minY - measured.minY - baked.height
+        height = min(max(height, minHeight), maxHeight)
+        let maxWidth = bounds.maxX - measured.minX - baked.width - measured.width
+        let minWidth = bounds.minX - measured.minX - baked.width
+        width = min(max(width, minWidth), maxWidth)
+        return CGSize(width: width, height: height)
     }
 
     /// A small capsule for the arrange banner. Nothing else on the pads is a
