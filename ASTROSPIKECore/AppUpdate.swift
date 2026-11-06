@@ -102,7 +102,14 @@ public enum AppUpdatePolicy {
     ) -> AvailableAppUpdate? {
         let source: AvailableAppUpdate.Source = isTestFlightOrSandbox ? .testFlight : .appStore
         let remoteBuild = max(manifest?.build ?? 0, highestLobbyBuild ?? 0)
-        let remoteWire = max(manifest?.wire ?? 0, highestPeerWire ?? 0)
+        // App Store installs ignore TestFlight-published manifest wire/build signals;
+        // only a live peer wire mismatch (or App Store marketing version) should nudge them.
+        let remoteWire: UInt16 = {
+            if isTestFlightOrSandbox {
+                return max(manifest?.wire ?? 0, highestPeerWire ?? 0)
+            }
+            return highestPeerWire ?? 0
+        }()
 
         // 1. On TestFlight/sandbox installs, a higher build number from the manifest
         //    or from another pilot in the CloudKit lobby means a newer build is out.
@@ -115,7 +122,7 @@ public enum AppUpdatePolicy {
             )
         }
 
-        // 2. A newer wire protocol version (from manifest or live Game Center peer)
+        // 2. A newer wire protocol version (TestFlight: manifest or peer; App Store: peer only)
         //    means this build cannot duel the latest field until updated.
         if remoteWire > installedWire {
             return AvailableAppUpdate(

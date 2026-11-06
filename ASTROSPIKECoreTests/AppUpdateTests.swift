@@ -92,7 +92,6 @@ struct AppUpdateTests {
         #expect(liveDecoded.matchID == "return:abc")
         #expect(liveDecoded.build == nil)
     }
-}
 
     @Test func appStoreInstallFailsToDetectUpdateFromTestFlightWire() {
         let update = AppUpdatePolicy.evaluate(
@@ -104,3 +103,4 @@ struct AppUpdateTests {
         )
         #expect(update == nil)
     }
+}
