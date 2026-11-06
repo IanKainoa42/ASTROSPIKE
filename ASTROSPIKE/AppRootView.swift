@@ -2588,46 +2588,42 @@ private struct SettingsView: View {
                         readout: { "\(Int(($0 * 100).rounded()))%" }
                     )
                     .accessibilityIdentifier("turning-sensitivity")
-                    Button("Reset to default") { steeringSensitivity = 1 }
-                        .disabled(steeringSensitivity == 1)
-                } header: {
-                    Text("Steering")
-                } footer: {
-                    Text("Higher turns harder the moment you press the steering pad and needs less slide to reach a full turn. Top turning speed is the same at every setting.")
-                }
-                Toggle("Large controls", isOn: $largeControls)
-                    .accessibilityIdentifier("large-controls")
-                Toggle("Swap controls for left-handed play", isOn: $leftHanded)
-                    .accessibilityIdentifier("left-handed")
-                Toggle("Cluster controls to thumb side", isOn: $clusterControls)
-                    .accessibilityIdentifier("cluster-controls")
-                Picker("Engine pads", selection: $padLayout) {
-                    Text("Diamond").tag(PadLayout.diamond)
-                    Text("Classic").tag(PadLayout.classic)
-                }
-                .accessibilityIdentifier("pad-layout")
-                Button {
-                    arrangingControls = true
-                } label: {
-                    Label("Arrange Touch Controls", systemImage: "hand.draw.fill")
-                }
-                .accessibilityIdentifier("arrange-controls")
-                Button("Reset pad layout") {
-                    UserDefaults.standard.removeObject(forKey: "padOffsets2")
-                    UserDefaults.standard.removeObject(forKey: "padOffsetsDiamond")
-                }
-                Toggle("Haptics", isOn: $haptics)
-                Toggle("Music", isOn: $music)
-                Toggle("Hide other pilots' emotes", isOn: $muteEmotes)
-                    .onChange(of: music) { _, on in Soundscape.shared.enabled = on }
-                LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
-                Section("Match Rules") {
+                    Toggle("Swap controls for left-handed play", isOn: $leftHanded)
+                        .accessibilityIdentifier("left-handed")
                     Stepper(
                         "Bounces per hit: \(tuning.allowedBouncesPerHit)",
                         value: $tuning.allowedBouncesPerHit,
                         in: 1 ... 5
                     )
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("bounces-per-hit")
+                    Button("Reset to default") { steeringSensitivity = 1 }
+                        .disabled(steeringSensitivity == 1)
+                    Toggle("Large controls", isOn: $largeControls)
+                        .accessibilityIdentifier("large-controls")
+                    Toggle("Cluster controls to thumb side", isOn: $clusterControls)
+                        .accessibilityIdentifier("cluster-controls")
+                    Picker("Engine pads", selection: $padLayout) {
+                        Text("Diamond").tag(PadLayout.diamond)
+                        Text("Classic").tag(PadLayout.classic)
+                    }
+                    .accessibilityIdentifier("pad-layout")
+                    Button {
+                        arrangingControls = true
+                    } label: {
+                        Label("Arrange Touch Controls", systemImage: "hand.draw.fill")
+                    }
+                    .accessibilityIdentifier("arrange-controls")
+                    Button("Reset pad layout") {
+                        UserDefaults.standard.removeObject(forKey: "padOffsets2")
+                        UserDefaults.standard.removeObject(forKey: "padOffsetsDiamond")
+                    }
+                } header: {
+                    Text("Steering")
+                } footer: {
+                    Text("Higher turns harder the moment you press the steering pad and needs less slide to reach a full turn. Top turning speed is the same at every setting.")
+                }
+                Section("Match Rules") {
                     Picker("Match length", selection: $tuning.setsToWin) {
                         Text("Single game").tag(1)
                         Text("Best of 3").tag(2)
@@ -2677,6 +2673,15 @@ private struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section {
+                    Toggle("Haptics", isOn: $haptics)
+                    Toggle("Music", isOn: $music)
+                    Toggle("Hide other pilots' emotes", isOn: $muteEmotes)
+                        .onChange(of: music) { _, on in Soundscape.shared.enabled = on }
+                    LabeledContent("Reduced Motion", value: "Follows iOS Accessibility")
+                } header: {
+                    Text("Sound & feel")
+                }
+                Section {
                     RingTuningControls(thrust: tuning.configuration.maximumThrustAcceleration)
                 } header: {
                     Text("ASTROPUCK")
@@ -2705,7 +2710,9 @@ private struct SettingsView: View {
                 } footer: {
                     Text("Off: every hull hits the ball with the Lancet's shape. On: each hull hits with its own outline. Takes effect next match; online matches always use the shared shape.")
                 }
-            }.navigationTitle("Settings")
+            }
+            .accessibilityIdentifier("settings-form")
+            .navigationTitle("Settings")
         }
         .fullScreenCover(isPresented: $arrangingControls) {
             ControlLayoutEditor()

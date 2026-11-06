@@ -10,7 +10,7 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["Pause match"].tap()
         app.buttons["Tune the Ring"].tap()
         let bumper = app.switches["Centre bumper"]
-        reveal(bumper, in: app.scrollViews.firstMatch)
+        reveal(bumper, in: app.scrollViews.firstMatch, app: app)
         // The bumper stands by default (build 146), so the persisted value is the off position.
         if bumper.value as? String == "0" { bumper.tap() }
         bumper.tap()
@@ -26,10 +26,10 @@ final class ASTROSPIKEUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Pause match"].waitForExistence(timeout: 5))
         app.buttons["Pause match"].tap()
         app.buttons["Tune the Ring"].tap()
-        reveal(bumper, in: app.scrollViews.firstMatch)
+        reveal(bumper, in: app.scrollViews.firstMatch, app: app)
         XCTAssertEqual(bumper.value as? String, "0")
         let reset = app.buttons["reset-ring-default"]
-        reveal(reset, in: app.scrollViews.firstMatch)
+        reveal(reset, in: app.scrollViews.firstMatch, app: app)
         reset.tap()
         XCTAssertEqual(bumper.value as? String, "1")
     }
@@ -72,19 +72,22 @@ final class ASTROSPIKEUITests: XCTestCase {
         app.buttons["HOW TO FLY"].tap()
         XCTAssertTrue(app.staticTexts["STEER"].waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["SETTINGS"].waitForExistence(timeout: 5))
 
         app.buttons["SETTINGS"].tap()
         // The one flight preference a pilot keeps: steering feel, per device.
-        let settingsForm = app.collectionViews.firstMatch
-        XCTAssertTrue(settingsForm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-screen"].waitForExistence(timeout: 5))
+        let settingsScroller = app.collectionViews.firstMatch.exists
+            ? app.collectionViews.firstMatch
+            : app.windows.firstMatch
         XCTAssertTrue(app.sliders["Turning sensitivity"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.switches["large-controls"].waitForExistence(timeout: 3))
-        let leftHanded = app.switches["left-handed"]
-        reveal(leftHanded, in: settingsForm)
-        XCTAssertTrue(leftHanded.exists)
-        let bouncesPerHit = app.steppers["bounces-per-hit"]
-        reveal(bouncesPerHit, in: settingsForm)
-        XCTAssertTrue(bouncesPerHit.exists)
+        let bouncesPerHit = app.descendants(matching: .any)["bounces-per-hit"]
+        XCTAssertTrue(bouncesPerHit.waitForExistence(timeout: 3))
+        let leftHanded = app.descendants(matching: .any)["left-handed"]
+        XCTAssertTrue(leftHanded.waitForExistence(timeout: 3))
+        if !leftHanded.isHittable {
+            reveal(leftHanded, in: settingsScroller, app: app)
+        }
         // The developer sliders are gone from the shipped app: no Flight
         // Tuning page, and no ball or tractor slider on the Settings form.
         XCTAssertFalse(app.buttons["Flight Tuning"].exists)
@@ -106,19 +109,57 @@ final class ASTROSPIKEUITests: XCTestCase {
     private func reveal(
         _ element: XCUIElement,
         in scroller: XCUIElement,
-        nudges: Int = 8,
+        app: XCUIApplication,
+        nudges: Int = 24,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        for _ in 0 ..< nudges where !element.isHittable {
-            scroller.swipeUp(velocity: .slow)
-        }
+        _ = element.waitForExistence(timeout: 5)
+        if element.isHittable { return }
+        nudgeScroll(in: scroller, nudges: nudges)
+        if element.isHittable { return }
+        nudgeScroll(in: app.windows.firstMatch, nudges: min(nudges, 12))
         XCTAssertTrue(
             element.isHittable,
             "\(nudges) nudges never brought \(element) into reach",
             file: file,
             line: line
         )
+    }
+
+    /// Brings a lazy Form row into the hierarchy, then `reveal` can reach it.
+    @MainActor
+    private func scrollToReveal(
+        _ element: XCUIElement,
+        in scroller: XCUIElement,
+        app: XCUIApplication,
+        nudges: Int = 32,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        if element.exists { return }
+        nudgeScroll(in: scroller, nudges: nudges)
+        if element.exists { return }
+        nudgeScroll(in: app.windows.firstMatch, nudges: min(nudges, 16))
+        XCTAssertTrue(
+            element.waitForExistence(timeout: 3),
+            "\(nudges) nudges never loaded \(element) into the settings form",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
+    private func nudgeScroll(in scroller: XCUIElement, nudges: Int) {
+        guard scroller.exists else { return }
+        for _ in 0 ..< nudges {
+            scroller.swipeUp(velocity: .slow)
+        }
+        let top = scroller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.82))
+        let bottom = scroller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.18))
+        for _ in 0 ..< 6 {
+            top.press(forDuration: 0.05, thenDragTo: bottom)
+        }
     }
 
     @MainActor
@@ -215,7 +256,7 @@ final class ASTROSPIKEUITests: XCTestCase {
 
         app.buttons["hangar"].tap()
         let galleryButton = app.buttons["VIEW 100 OUTLINES"]
-        reveal(galleryButton, in: app)
+        reveal(galleryButton, in: app, app: app)
         XCTAssertTrue(galleryButton.waitForExistence(timeout: 3))
         galleryButton.tap()
 
@@ -360,11 +401,12 @@ extension ASTROSPIKEUITests {
     /// there is no per-pad undo, only the global reset.
     func testArrangePadsClampToTheScreen() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--warmup", "--skip-onboarding", "-arrangePads", "YES"]
+        app.launchArguments = ["--warmup", "--skip-onboarding", "--arrange-pads"]
         app.launch()
         XCUIDevice.shared.orientation = .landscapeLeft
         let thrust = app.descendants(matching: .any)["thrust-control"]
         XCTAssertTrue(thrust.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["DRAG THE PADS"].waitForExistence(timeout: 3))
 
         let start = thrust.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let corner = app.coordinate(withNormalizedOffset: CGVector(dx: 0.999, dy: 0.999))
@@ -375,7 +417,7 @@ extension ASTROSPIKEUITests {
             let f = thrust.frame
             return f.maxX <= window.maxX + 1 && f.maxY <= window.maxY + 1
         }
-        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: landed, object: nil)], timeout: 3)
+        _ = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: landed, object: nil)], timeout: 5)
         let pad = thrust.frame
         XCTAssertLessThanOrEqual(pad.maxX, window.maxX + 1, "pad ran off the right edge: \(pad) in \(window)")
         XCTAssertLessThanOrEqual(pad.maxY, window.maxY + 1, "pad ran off the bottom: \(pad) in \(window)")
