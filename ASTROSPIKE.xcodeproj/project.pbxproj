@@ -113,6 +113,7 @@
 		CF7B90FF2F85CCA1DDC8A807 /* OnlineDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2111933AC99AB57B12590ABC /* OnlineDiagnosticsTests.swift */; };
 		D343550F6721FC69002DF79B /* ArenaScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26AED5437E5592EACB25579F /* ArenaScene.swift */; };
 		D63984183D2118FC583DE76C /* ballHit.wav in Resources */ = {isa = PBXBuildFile; fileRef = 4F3090E5C1DDC5465B014444 /* ballHit.wav */; };
+		D77058070158B0ACD24D8753 /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96172D355A7C4DACF6D4CBFF /* SettingsViews.swift */; };
 		D8E93E5AE303267C6C6AF27D /* volleySuspense.m4a in Resources */ = {isa = PBXBuildFile; fileRef = BE59B8B356F6882B1E3B31EF /* volleySuspense.m4a */; };
 		DC6201369B4C58B4F1EE74FA /* OnlineFailureReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1382515D3A0FF77E881D9A66 /* OnlineFailureReasonTests.swift */; };
 		DD5795F1FD155CE5E5E8C4CD /* saberHum.wav in Resources */ = {isa = PBXBuildFile; fileRef = E18FA91B3D949378F5214B6D /* saberHum.wav */; };
@@ -268,6 +269,7 @@
 		90F416FF0A117E0EB90680DD /* ASTROSPIKECoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ASTROSPIKECoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		91124817DA6DEAB943374124 /* ASTROSPIKEApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTROSPIKEApp.swift; sourceTree = "<group>"; };
 		94A4E9C6DEAEA5EC8BF8780B /* HangarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HangarView.swift; sourceTree = "<group>"; };
+		96172D355A7C4DACF6D4CBFF /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
 		9739AF060E01614EDB007C1C /* LegalLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalLinks.swift; sourceTree = "<group>"; };
 		9889197C7F993ABB89039F0E /* ArenaLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArenaLayout.swift; sourceTree = "<group>"; };
 		998E28FE156CD107D158B232 /* LinkLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkLogView.swift; sourceTree = "<group>"; };
@@ -446,6 +448,7 @@
 				83B5B036B05BB77B56B2A866 /* OnlineMatchCoordinator.swift */,
 				AAC1A1BF4A8A6B0C913CF262 /* PrivacyInfo.xcprivacy */,
 				E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */,
+				96172D355A7C4DACF6D4CBFF /* SettingsViews.swift */,
 				38A34F8A0F4853AB40D1C40B /* SoundBank.swift */,
 				A85F7067A0FF1B4269F53702 /* Soundscape.swift */,
 				B5E03658924A884667E880B8 /* SpatialAudioCenter.swift */,
@@ -749,6 +752,7 @@
 				73ECD5295A9B6852F5D33D9A /* OnboardingFlow.swift in Sources */,
 				C7CD4F027A936D1A9BE5A247 /* OnlineMatchCoordinator.swift in Sources */,
 				9D240A566AA6F14812EB8F8C /* RaceTuningView.swift in Sources */,
+				D77058070158B0ACD24D8753 /* SettingsViews.swift in Sources */,
 				7B0A96B4A21AAAFDED620A63 /* SoundBank.swift in Sources */,
 				4531AFF3E344E822E5BBEEDE /* Soundscape.swift in Sources */,
 				3E1C9D1F1C160209339E81BD /* SpatialAudioCenter.swift in Sources */,
