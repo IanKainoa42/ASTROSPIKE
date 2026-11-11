@@ -81,6 +81,7 @@
 		9D240A566AA6F14812EB8F8C /* RaceTuningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D4B5BBD01C71011C029700 /* RaceTuningView.swift */; };
 		9D8DA4EF2624796117169BDC /* OnlineSessionStateMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8FA1FFDE2557CC4E1D6BFD /* OnlineSessionStateMachine.swift */; };
 		9F0420F20EFDD1130698D2B1 /* OnlineSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A13985871428AAA08F59FF4 /* OnlineSessionTests.swift */; };
+		9F3A200B992463161B15016A /* GuestIngressStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 794C985F3FD47734171DEA80 /* GuestIngressStats.swift */; };
 		A066040B06FC2311BADC3D11 /* StandingInviteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D871F54459735F6332B8CFC /* StandingInviteTests.swift */; };
 		A12CC34BF17A32569673F600 /* ArenaLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9889197C7F993ABB89039F0E /* ArenaLayout.swift */; };
 		A37FEFF2493C017CFD72DCFA /* Saber.swift in Sources */ = {isa = PBXBuildFile; fileRef = F43CC360ED9D3AB505A68DDA /* Saber.swift */; };
@@ -255,6 +256,7 @@
 		6E6C209D8015028776DDD2A2 /* MatchRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchRules.swift; sourceTree = "<group>"; };
 		74D566EA36DAAD4C2B0EC296 /* thrusterOrange.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thrusterOrange.mp3; sourceTree = "<group>"; };
 		781BD009F12739EA0ADD6072 /* StatsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsViews.swift; sourceTree = "<group>"; };
+		794C985F3FD47734171DEA80 /* GuestIngressStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestIngressStats.swift; sourceTree = "<group>"; };
 		802352F1AA68EB59F987CC4C /* GuestSmoothingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestSmoothingTests.swift; sourceTree = "<group>"; };
 		812DA8BCF34310AA45FBF347 /* TrackGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackGeometry.swift; sourceTree = "<group>"; };
 		828D26A07A966607CF8F1287 /* Hulls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hulls.swift; sourceTree = "<group>"; };
@@ -373,6 +375,7 @@
 				9E7824A8B02D40366234B000 /* Emotes.swift */,
 				4033BD3492F8C74CE390EB56 /* FlightTuning.swift */,
 				42CF56D00F48564D9FCECE1C /* FreeForAll.swift */,
+				794C985F3FD47734171DEA80 /* GuestIngressStats.swift */,
 				D2E0D253FE310DD9B613C53A /* GuestPrediction.swift */,
 				A482DBC953EDB4759DA2F709 /* GuestSmoothing.swift */,
 				C1E68E2EF5231AB8C2B67D4E /* HullLook.swift */,
@@ -702,6 +705,7 @@
 				80AAF95DAC953B7A45D6D7ED /* Emotes.swift in Sources */,
 				8580A53B5E1B448AD23343DB /* FlightTuning.swift in Sources */,
 				AA0D5D73FC62AF90F2EA35DE /* FreeForAll.swift in Sources */,
+				9F3A200B992463161B15016A /* GuestIngressStats.swift in Sources */,
 				BBAB0DC9D3E3338A97BB6A15 /* GuestPrediction.swift in Sources */,
 				A9B82953F46539981C424E8E /* GuestSmoothing.swift in Sources */,
 				C1DFB7334876A3696F09B9C1 /* HullLook.swift in Sources */,
