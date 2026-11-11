@@ -653,6 +653,21 @@ final class GameSession {
         Soundscape.shared.update(match: state.match, paused: isPaused)
         guard !isPaused else { return }
 
+        if mode == .online, let online, !online.isAuthoritative, !isSpectator,
+           let authoritative = online.drainPendingSnapshot(guestTick: engine.state.tick) {
+            applyAuthoritativeSnapshot(authoritative)
+        } else if mode == .online, let online, isSpectator,
+                  let authoritative = online.drainPendingSnapshot(guestTick: engine.state.tick) {
+            engine = SimulationEngine(
+                state: authoritative,
+                configuration: engine.configuration,
+                arena: engine.arena
+            )
+            engine.followsHost = true
+            state = authoritative
+            announceStakes()
+        }
+
         switch state.match.phase {
         case .countdown:
             countdownAccumulator += elapsed
@@ -799,10 +814,13 @@ final class GameSession {
             // Every other pilot on the input they sent for this very tick:
             // the host flies a guest exactly as the guest flew itself.
             for seat in engine.state.ships.keys where seat != flownSeat && inputs[seat] == nil {
-                inputs[seat] = online.remoteInput(for: seat, tick: tick) ?? .idle(tick: tick)
+                let remote = online.isAuthoritative
+                    ? online.remoteInput(for: seat, tick: tick)
+                    : online.remoteInputForGuestSimulation(for: seat, guestTick: tick)
+                inputs[seat] = remote ?? .idle(tick: tick)
             }
             engine.step(inputs: inputs)
-            if online.isAuthoritative, tick.isMultiple(of: 6) {
+            if online.isAuthoritative, tick.isMultiple(of: 4) {
                 online.sendSnapshot(engine.state)
             }
         }
@@ -1138,57 +1156,6 @@ final class GameSession {
 
     private func installOnlineCallbacks() {
         guard let online else { return }
-        online.onSnapshot = { [weak self] authoritative in
-            guard let self, !online.isAuthoritative else { return }
-            let displayed = self.smoothing.apply(to: self.state)
-            let predicted = self.engine.state
-            // The snapshot left the host half a round trip ago. Re-run the
-            // ticks since, with the inputs this board really sent, up to where
-            // its clock should be: a round trip ahead of the snapshot, so what
-            // it sends lands before the host plays that tick. With the host
-            // playing each input on its own tick, the two then agree and this
-            // board's own ship does not move under the pilot. See
-            // `GuestClock` and `GuestRollForward`, and the latency tests that
-            // measure it.
-            let target = GuestClock.target(
-                predicted: predicted.tick,
-                authoritative: authoritative.tick,
-                roundTripTicks: online.roundTripTicks
-            )
-            let history = self.localInputHistory
-            let latest = self.latestLocalInput
-            let resolution = GuestRollForward.resolve(
-                authoritative: authoritative,
-                predicted: predicted,
-                target: target,
-                // Keep the online physics and court: a rebuilt engine
-                // defaults to the solo tuning and the nominal goal mouth.
-                configuration: self.engine.configuration,
-                arena: self.engine.arena,
-                flownSeat: self.flownSeat,
-                bots: self.pilots,
-                fieldBots: self.fieldPilots,
-                localInput: { history[$0] ?? latest ?? .idle(tick: $0) },
-                remoteInput: { seat, tick in online.remoteInput(for: seat, tick: tick) ?? .idle(tick: tick) }
-            )
-            self.pilots = resolution.bots
-            self.fieldPilots = resolution.fieldBots
-            let resolved = resolution.state
-            self.engine = SimulationEngine(
-                state: resolved,
-                configuration: self.engine.configuration,
-                arena: self.engine.arena
-            )
-            self.engine.followsHost = true
-            // Only a clock thrown well back -- a snapshot too old to roll
-            // forward -- makes the inputs kept under its old tick numbers
-            // wrong. A tick's easing back re-flies those numbers, which is
-            // exactly what they are kept for.
-            if resolved.tick + 1 < predicted.tick { self.localInputHistory = [:] }
-            self.smoothing.capture(displayed: displayed, corrected: resolved, excluding: self.flownSeat)
-            self.state = resolved
-            self.announceStakes()
-        }
         online.onResync = { [weak self] authoritative in
             guard let self else { return }
             self.engine = SimulationEngine(
@@ -1207,8 +1174,6 @@ final class GameSession {
         }
         online.onEvent = { [weak self] event in
             guard let self, !online.isAuthoritative else { return }
-            // Already shown from this board's own step. A late copy stacks
-            // a second spark on the contact and buzzes twice.
             switch event {
             case .collisionEffect, .shipZapped: return
             default: break
@@ -1290,6 +1255,54 @@ final class GameSession {
                 online.sendFullResync(self.engine.state)
             }
         }
+    }
+
+    private func applyAuthoritativeSnapshot(_ authoritative: WorldState) {
+        guard let online else { return }
+        let displayed = smoothing.apply(to: state)
+        let predicted = engine.state
+            // The snapshot left the host half a round trip ago. Re-run the
+            // ticks since, with the inputs this board really sent, up to where
+            // its clock should be: a round trip ahead of the snapshot, so what
+            // it sends lands before the host plays that tick. With the host
+            // playing each input on its own tick, the two then agree and this
+            // board's own ship does not move under the pilot. See
+            // `GuestClock` and `GuestRollForward`, and the latency tests that
+            // measure it.
+        let target = GuestClock.target(
+            predicted: predicted.tick,
+            authoritative: authoritative.tick,
+            roundTripTicks: online.roundTripTicks
+        )
+        let history = localInputHistory
+        let latest = latestLocalInput
+        let resolution = GuestRollForward.resolve(
+            authoritative: authoritative,
+            predicted: predicted,
+            target: target,
+            configuration: engine.configuration,
+            arena: engine.arena,
+            flownSeat: flownSeat,
+            bots: pilots,
+            fieldBots: fieldPilots,
+            localInput: { history[$0] ?? latest ?? .idle(tick: $0) },
+            remoteInput: { seat, tick in
+                online.remoteInputForGuestSimulation(for: seat, guestTick: tick) ?? .idle(tick: tick)
+            }
+        )
+        pilots = resolution.bots
+        fieldPilots = resolution.fieldBots
+        let resolved = resolution.state
+        engine = SimulationEngine(
+            state: resolved,
+            configuration: engine.configuration,
+            arena: engine.arena
+        )
+        engine.followsHost = true
+        if resolved.tick + 1 < predicted.tick { localInputHistory = [:] }
+        smoothing.capture(displayed: displayed, corrected: resolved, excluding: flownSeat)
+        state = resolved
+        announceStakes()
     }
 }
 

@@ -45,6 +45,32 @@ struct GameCenterDiagnosticsPanel: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
 
+                #if DEBUG
+                if let guest = diagnostics.guestLink {
+                    HStack(spacing: 7) {
+                        metric(
+                            "LEAD",
+                            guest.leadTicks.map { "\($0) T" } ?? "—",
+                            width: 54,
+                            identifier: "diagnostics-guest-lead"
+                        )
+                        metric(
+                            "SNAP",
+                            guest.snapshotRateHz.map { String(format: "%.0f HZ", $0) } ?? "—",
+                            width: 54,
+                            identifier: "diagnostics-guest-snap-hz"
+                        )
+                        metric(
+                            "BUF",
+                            guest.bufferDepthTicks.map { "\($0) T" } ?? "—",
+                            width: 54,
+                            identifier: "diagnostics-guest-buffer"
+                        )
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                #endif
+
                 VStack(alignment: .leading, spacing: 1) {
                     Text("EVENTS")
                         .font(.system(size: 7, weight: .bold, design: .monospaced))

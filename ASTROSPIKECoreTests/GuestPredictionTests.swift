@@ -251,6 +251,12 @@ struct GuestPredictionTests {
         #expect(buffer.input(forTick: 13, at: 0, expiringAfter: 0.5)?.tick == 12)
     }
 
+    @Test("Remote inputs are read on the host tick the guest is simulating against")
+    func remoteTickAlignsGuestClock() {
+        #expect(GuestClock.remoteTick(guestTick: 128, roundTripTicks: 24) == 100)
+        #expect(GuestClock.remoteTick(guestTick: 10, roundTripTicks: 24) == 0)
+    }
+
     @Test("The guest leads a snapshot by a whole round trip")
     func guestLeadsByARoundTrip() {
         #expect(GuestClock.lead(roundTripTicks: 24) == 24 + GuestClock.margin)
@@ -267,7 +273,8 @@ struct GuestPredictionTests {
     @Test("One slow ping does not swing the round trip")
     func roundTripIsSteadied() {
         var estimator = RoundTripEstimator()
-        #expect(estimator.ticks() == 0)
+        #expect(estimator.milliseconds == nil)
+        #expect(estimator.ticks() == 22) // bootstrap 180 ms
         estimator.record(200)
         #expect(estimator.ticks() == 24)
         estimator.record(1000)
@@ -304,6 +311,17 @@ struct GuestPredictionTests {
         #expect(kept?.saber.move == .spike)
         #expect(kept?.saber.moveTime == 0.08)
         #expect(kept?.saber.flickCount == 2)
+    }
+
+    @Test("Guest ingress counters estimate snapshot rate and buffer depth")
+    func ingressCounters() {
+        var stats = GuestIngressStats()
+        stats.recordSnapshot(authoritativeTick: 100, guestTick: 120, at: 0)
+        stats.recordSnapshot(authoritativeTick: 104, guestTick: 128, at: 0.05)
+        stats.recordSnapshot(authoritativeTick: 108, guestTick: 136, at: 0.10)
+        #expect(stats.snapshotsReceived == 3)
+        #expect(stats.bufferDepthTicks == 28)
+        #expect(stats.snapshotRateHz > 15)
     }
 
     @Test("A batch of inputs survives the wire")
