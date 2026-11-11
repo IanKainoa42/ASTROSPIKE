@@ -17,6 +17,9 @@ import Foundation
 public struct RoundTripEstimator: Equatable, Sendable {
     /// How much of each new sample is taken in.
     public static let weight = 0.2
+    /// Until the first ping lands, assume a typical Game Center cellular RTT
+    /// so the guest does not fly with only `GuestClock.margin` of lead.
+    public static let bootstrapMilliseconds: Double = 180
 
     public private(set) var milliseconds: Double?
 
@@ -27,11 +30,11 @@ public struct RoundTripEstimator: Equatable, Sendable {
         milliseconds = milliseconds.map { $0 + (sample - $0) * Self.weight } ?? sample
     }
 
-    /// The round trip in simulation ticks, rounded up. Zero before the first
-    /// sample: the guest then leads by the margin alone.
+    /// The round trip in simulation ticks, rounded up. Before the first ping
+    /// the bootstrap RTT is used, not zero.
     public func ticks(stepsPerSecond: Double = 120) -> UInt64 {
-        guard let milliseconds else { return 0 }
-        return UInt64((milliseconds * stepsPerSecond / 1000).rounded(.up))
+        let sample = milliseconds ?? Self.bootstrapMilliseconds
+        return UInt64((sample * stepsPerSecond / 1000).rounded(.up))
     }
 
     public mutating func reset() { milliseconds = nil }
@@ -55,6 +58,13 @@ public enum GuestClock {
     /// late and every snapshot dragged its ship back.
     public static func lead(roundTripTicks: UInt64) -> UInt64 {
         min(roundTripTicks + margin, maximumLead)
+    }
+
+    /// Maps a guest simulation tick to the remote tick whose input should
+    /// be applied. The guest runs `lead` ticks ahead of the host.
+    public static func remoteTick(guestTick: UInt64, roundTripTicks: UInt64) -> UInt64 {
+        let offset = lead(roundTripTicks: roundTripTicks)
+        return guestTick > offset ? guestTick - offset : 0
     }
 
     /// The tick the guest carries on from after this snapshot.

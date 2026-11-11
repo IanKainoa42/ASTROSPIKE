@@ -80,7 +80,7 @@ Three or four pilots round one ring, a net each cut flush into the rim, rounded 
 - `GKMatchmakerViewController` provides automatic matching and friend invitations.
 - Hosting is role-based: the inviter hosts; an invitee never hosts; in automatch the lowest `gamePlayerID` hosts.
 - Inputs are sent unreliably every two simulation ticks (~60 Hz at 120 Hz sim), each packet repeating the two before it so a lost packet costs nothing. The thumb is read on the ticks it is sent and held between them, which is exactly what the host plays.
-- Host snapshots are sent unreliably every six ticks (~20 Hz).
+- Host snapshots are sent unreliably every four ticks (~30 Hz).
 - Lifecycle and scoring events are sent reliably.
 - Guests run a full round trip ahead of each snapshot (`GuestClock`), so their inputs reach the host before it plays those ticks, and the host flies every input on the tick it was sent for. On a snapshot the guest re-runs the ticks since with the inputs it really sent (`GuestRollForward`), so on a working link its own ship is never corrected; anything left over reconciles by blend-or-snap. `GuestPredictionTests` measures this over a simulated slow and lossy link.
 - A disconnect opens a 120-second seat-hold window. Reconnection triggers a reliable full resync; expiry finishes the match by forfeit.

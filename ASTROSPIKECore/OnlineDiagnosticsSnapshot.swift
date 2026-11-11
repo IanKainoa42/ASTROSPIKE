@@ -24,6 +24,19 @@ public enum OnlineMatchmakingState: Equatable, Sendable {
 }
 
 public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
+    /// DEBUG guest overlay: RTT-derived lead, snapshot rate, buffer depth.
+    public struct GuestLink: Equatable, Sendable {
+        public let leadTicks: UInt64?
+        public let snapshotRateHz: Double?
+        public let bufferDepthTicks: UInt64?
+
+        public init(leadTicks: UInt64?, snapshotRateHz: Double?, bufferDepthTicks: UInt64?) {
+            self.leadTicks = leadTicks
+            self.snapshotRateHz = snapshotRateHz
+            self.bufferDepthTicks = bufferDepthTicks
+        }
+    }
+
     public let playerName: String?
     public let localTeam: Team?
     public let authority: OnlineAuthority
@@ -34,6 +47,7 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
     /// Most recent Game Center events, oldest first. Surfaced verbatim in the
     /// diagnostics panel so invite and matchmaking failures can be read on-device.
     public let eventLog: [String]
+    public let guestLink: GuestLink?
 
     public init(
         playerName: String?,
@@ -43,7 +57,8 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
         linkState: OnlineLinkState,
         matchmakingState: OnlineMatchmakingState,
         reconnectSeconds: Int?,
-        eventLog: [String] = []
+        eventLog: [String] = [],
+        guestLink: GuestLink? = nil
     ) {
         self.playerName = playerName
         self.localTeam = localTeam
@@ -53,6 +68,7 @@ public struct OnlineDiagnosticsSnapshot: Equatable, Sendable {
         self.matchmakingState = matchmakingState
         self.reconnectSeconds = reconnectSeconds
         self.eventLog = eventLog
+        self.guestLink = guestLink
     }
 
     public var playerLabel: String {

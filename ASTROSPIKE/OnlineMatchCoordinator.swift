@@ -203,6 +203,13 @@ final class OnlineMatchCoordinator: NSObject,
     private var roundTrip = RoundTripEstimator()
     /// The round trip in simulation ticks, for the guest's clock.
     var roundTripTicks: UInt64 { roundTrip.ticks() }
+    #if DEBUG
+    /// Guest-side link counters for the diagnostics overlay.
+    private(set) var guestIngress = GuestIngressStats()
+    #endif
+    /// The newest authoritative snapshot, drained once per display frame so
+    /// PropertyList decode and roll-forward do not run inside `didReceive`.
+    private var pendingAuthoritativeSnapshot: WorldState?
     /// The last few inputs this board sent, resent with each new one so a
     /// lost packet costs nothing.
     private var sentInputs: [PlayerInput] = []
@@ -270,6 +277,21 @@ final class OnlineMatchCoordinator: NSObject,
         default: GKLocalPlayer.local.isAuthenticated ? GKLocalPlayer.local.displayName : nil
         }
 
+        #if DEBUG
+        let guestDebug: OnlineDiagnosticsSnapshot.GuestLink?
+        if authority == .guest, lifecycle.acceptsGameplayData {
+            guestDebug = OnlineDiagnosticsSnapshot.GuestLink(
+                leadTicks: roundTripTicks > 0 ? GuestClock.lead(roundTripTicks: roundTripTicks) : nil,
+                snapshotRateHz: guestIngress.snapshotRateHz > 0 ? guestIngress.snapshotRateHz : nil,
+                bufferDepthTicks: guestIngress.bufferDepthTicks > 0 ? guestIngress.bufferDepthTicks : nil
+            )
+        } else {
+            guestDebug = nil
+        }
+        #else
+        let guestDebug: OnlineDiagnosticsSnapshot.GuestLink? = nil
+        #endif
+
         return OnlineDiagnosticsSnapshot(
             playerName: playerName,
             localTeam: localTeam,
@@ -278,7 +300,8 @@ final class OnlineMatchCoordinator: NSObject,
             linkState: linkState,
             matchmakingState: matchmakingState,
             reconnectSeconds: reconnectSeconds,
-            eventLog: eventLog
+            eventLog: eventLog,
+            guestLink: guestDebug
         )
     }
 
@@ -385,7 +408,6 @@ final class OnlineMatchCoordinator: NSObject,
         return kind
     }
 
-    var onSnapshot: ((WorldState) -> Void)?
     var onResync: ((WorldState) -> Void)? {
         didSet {
             // A resync that beat the arena onto the screen is delivered the
@@ -1329,6 +1351,30 @@ final class OnlineMatchCoordinator: NSObject,
         inputBuffers[seat]?.input(forTick: tick, at: Self.now, expiringAfter: Self.inputExpirySeconds)
     }
 
+    /// On a guest board the clock runs ahead of the host; remote inputs are
+    /// keyed to the host's tick, not the guest's.
+    func remoteInputForGuestSimulation(for seat: Seat, guestTick: UInt64) -> PlayerInput? {
+        let remoteTick = GuestClock.remoteTick(guestTick: guestTick, roundTripTicks: roundTripTicks)
+        return remoteInput(for: seat, tick: remoteTick)
+    }
+
+    /// Returns the latest queued snapshot, if any. Coalesces to one apply per
+    /// frame when several unreliable packets arrive together.
+    func drainPendingSnapshot(guestTick: UInt64) -> WorldState? {
+        guard let state = pendingAuthoritativeSnapshot else { return nil }
+        pendingAuthoritativeSnapshot = nil
+        #if DEBUG
+        if !isAuthoritative {
+            guestIngress.recordSnapshot(
+                authoritativeTick: state.tick,
+                guestTick: guestTick,
+                at: Self.now
+            )
+        }
+        #endif
+        return state
+    }
+
     func sendSnapshot(_ state: WorldState) {
         guard isAuthoritative else { return }
         lastAuthoritativeState = state
@@ -1649,6 +1695,10 @@ final class OnlineMatchCoordinator: NSObject,
         lifecycle.beginMatch()
         snapshotGate.reset()
         eventGate.reset()
+        pendingAuthoritativeSnapshot = nil
+        #if DEBUG
+        guestIngress.reset()
+        #endif
         // The last duel's inputs belong to whoever sat in those chairs, and
         // every duel counts its ticks from zero.
         inputBuffers = [:]
@@ -2121,7 +2171,7 @@ final class OnlineMatchCoordinator: NSObject,
             }
         case let .snapshot(state):
             if lifecycle.acceptsGameplayData, runsTheRules(playerID), snapshotGate.accept(tick: state.tick) {
-                onSnapshot?(state)
+                pendingAuthoritativeSnapshot = state
             }
         case let .event(event):
             if lifecycle.acceptsGameplayData, runsTheRules(playerID), eventGate.accept(sequence: envelope.sequence) {
@@ -3036,6 +3086,10 @@ final class OnlineMatchCoordinator: NSObject,
         format = .duel
         pingMilliseconds = nil
         roundTrip.reset()
+        pendingAuthoritativeSnapshot = nil
+        #if DEBUG
+        guestIngress.reset()
+        #endif
         sentInputs = []
         pendingPing = nil
         ownPings = []
@@ -3057,7 +3111,6 @@ final class OnlineMatchCoordinator: NSObject,
         knownPlayers = [:]
         resumingAfterDrop = false
         matchmakingHeadlineText = nil
-        onSnapshot = nil
         onResync = nil
         onEvent = nil
         onEmote = nil
