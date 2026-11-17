@@ -3,6 +3,8 @@ import SwiftUI
 
 struct GameCenterDiagnosticsPanel: View {
     let diagnostics: OnlineDiagnosticsSnapshot
+    /// Measured display refresh; DEBUG only in live matches.
+    var displayFramesPerSecond: Double? = nil
 
     @State private var isExpanded = false
 
@@ -44,6 +46,20 @@ struct GameCenterDiagnosticsPanel: View {
                     metric("RETRY", diagnostics.reconnectLabel, width: 54, identifier: "diagnostics-reconnect-value")
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
+
+                #if DEBUG
+                if let displayFramesPerSecond {
+                    HStack(spacing: 7) {
+                        metric(
+                            "FPS",
+                            String(format: "%.0f", displayFramesPerSecond.rounded()),
+                            width: 54,
+                            identifier: "diagnostics-display-fps"
+                        )
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                #endif
 
                 #if DEBUG
                 if let guest = diagnostics.guestLink {

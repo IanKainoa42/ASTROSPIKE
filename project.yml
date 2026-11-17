@@ -55,6 +55,7 @@ targets:
     info:
       path: ASTROSPIKE/Info.plist
       properties:
+        CADisableMinimumFrameDurationOnPhone: true
         CFBundleDisplayName: ASTROSPIKE
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"

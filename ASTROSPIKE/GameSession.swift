@@ -193,7 +193,12 @@ final class GameSession {
     private weak var lobby: LobbyService?
     private var frameDriver: FrameDriver?
     private var accumulator = 0.0
+    /// The world as of the last fixed step, for display interpolation.
+    private var renderPrevious: WorldState?
     private var previousTimestamp: CFTimeInterval?
+    private var fpsWindowStart: CFTimeInterval?
+    private var fpsWindowFrames = 0
+    private(set) var displayFramesPerSecond: Double = 0
     private var countdownAccumulator = 0.0
     /// The guest's own recent inputs by tick, so a snapshot that lands behind
     /// the local clock can be rolled forward through what the thumb did since.
@@ -412,13 +417,18 @@ final class GameSession {
             self?.frame(timestamp: timestamp)
         }
         frameDriver = driver
+        renderPrevious = state
         driver.start()
+        syncFrameDriverProfile()
     }
 
     func stop() {
         frameDriver?.stop()
         frameDriver = nil
         previousTimestamp = nil
+        fpsWindowStart = nil
+        fpsWindowFrames = 0
+        displayFramesPerSecond = 0
         // The thruster bed loops. Leaving the arena with the throttle down
         // must not leave it droning under the menu.
         SoundBank.shared.stopEverything()
@@ -445,10 +455,12 @@ final class GameSession {
     func togglePause() {
         guard state.match.phase != .finished else { return }
         isPaused.toggle()
+        syncFrameDriverProfile()
     }
 
     func resume() {
         isPaused = false
+        syncFrameDriverProfile()
     }
 
     /// Leaving the app pauses a local match; coming back does not resume it.
@@ -457,6 +469,7 @@ final class GameSession {
     func pauseForBackground() {
         guard mode != .online, state.match.phase != .finished else { return }
         isPaused = true
+        syncFrameDriverProfile()
     }
 
     /// The limit on each side's touches this possession in ASTROBALL, for
@@ -691,15 +704,30 @@ final class GameSession {
                 simulateOneTick()
             }
         case .paused, .finished:
+            syncFrameDriverProfile()
             break
         }
 
+        let shown: WorldState
+        if UIAccessibility.isReduceMotionEnabled {
+            shown = state
+        } else if let renderPrevious,
+                  state.match.phase == .playing || state.match.phase == .serve {
+            let step = engine.configuration.stepDuration
+            let alpha = step > 0 ? accumulator / step : 0
+            shown = DisplayInterpolation.between(renderPrevious, state, alpha: alpha)
+        } else {
+            shown = state
+        }
+
         smoothing.decay(dt: elapsed)
-        scene.snapshot = smoothing.apply(to: state)
+        scene.snapshot = smoothing.apply(to: shown)
         scene.reduceMotion = UIAccessibility.isReduceMotionEnabled
+        recordFramesPerSecond(at: timestamp)
     }
 
     private func simulateOneTick() {
+        renderPrevious = state
         let tick = engine.state.tick
         var localInput = PlayerInput(
             tick: tick, torque: torque, thrust: thrust, fire: fire || fireLatched, tractor: tractor,
@@ -1302,7 +1330,27 @@ final class GameSession {
         if resolved.tick + 1 < predicted.tick { localInputHistory = [:] }
         smoothing.capture(displayed: displayed, corrected: resolved, excluding: flownSeat)
         state = resolved
+        renderPrevious = resolved
         announceStakes()
+    }
+
+    private func syncFrameDriverProfile() {
+        let highMotion = !isPaused && (state.match.phase == .playing || state.match.phase == .serve || state.match.phase == .countdown)
+        frameDriver?.profile = highMotion ? .gameplay : .conserved
+    }
+
+    private func recordFramesPerSecond(at timestamp: CFTimeInterval) {
+        fpsWindowFrames += 1
+        if let fpsWindowStart {
+            let elapsed = timestamp - fpsWindowStart
+            if elapsed >= 0.5 {
+                displayFramesPerSecond = Double(fpsWindowFrames) / elapsed
+                fpsWindowFrames = 0
+                self.fpsWindowStart = timestamp
+            }
+        } else {
+            fpsWindowStart = timestamp
+        }
     }
 }
 
@@ -1310,8 +1358,16 @@ final class GameSession {
 /// A display link that hands its timestamp back on the main actor. Shared by
 /// the arena and the circuit -- both want the same fixed-step pump.
 final class FrameDriver: NSObject {
+    enum Profile {
+        /// ProMotion gameplay: cap at the panel's top refresh.
+        case gameplay
+        /// Pause cards and finished rallies: stay smooth, save power.
+        case conserved
+    }
+
     private let onFrame: @MainActor (CFTimeInterval) -> Void
     private var displayLink: CADisplayLink?
+    var profile: Profile = .gameplay { didSet { applyProfile() } }
 
     init(onFrame: @escaping @MainActor (CFTimeInterval) -> Void) {
         self.onFrame = onFrame
@@ -1319,14 +1375,24 @@ final class FrameDriver: NSObject {
 
     func start() {
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         link.add(to: .main, forMode: .common)
         displayLink = link
+        applyProfile()
     }
 
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
+    }
+
+    private func applyProfile() {
+        guard let link = displayLink else { return }
+        switch profile {
+        case .gameplay:
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        case .conserved:
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        }
     }
 
     @objc private func tick(_ link: CADisplayLink) {

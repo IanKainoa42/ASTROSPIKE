@@ -1490,7 +1490,8 @@ private struct GameView: View {
                 }
                 if mode == .online, showsConnectionDiagnostics {
                     GameCenterDiagnosticsPanel(
-                        diagnostics: diagnosticsOverride ?? online.diagnosticsSnapshot
+                        diagnostics: diagnosticsOverride ?? online.diagnosticsSnapshot,
+                        displayFramesPerSecond: diagnosticsOverride == nil ? session.displayFramesPerSecond : nil
                     )
                     .padding(.top, 4)
                 }
