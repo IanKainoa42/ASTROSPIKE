@@ -260,6 +260,9 @@ struct TouchControls: View {
             ? ((thumbSideIsLeft ? window.minX : window.maxX - steeringSpan) - local.minX)
             : ((leftHanded ? window.maxX - steeringSpan : window.minX) - local.minX)
         let steeringY = window.maxY - local.minY - steeringHeight
+        // Decoded once for the whole layout pass: `padOffsets` runs a JSON
+        // decode on every read, and each pad below used to read it again.
+        let savedOffsets = padOffsets
 
         return ZStack(alignment: .topLeading) {
             if clusterControls {
@@ -271,7 +274,7 @@ struct TouchControls: View {
                     .tracking(2)
                     .position(x: emptyX, y: local.height - 40)
             }
-            placeable("steering", scale: bakedScale, padBounds: padBounds) {
+            placeable("steering", scale: bakedScale, saved: savedOffsets["steering"] ?? .zero, padBounds: padBounds) {
                 // The touch strip keeps the screen corner; only the drawn pad
                 // shrinks, sat on the thumb's rest level with thrust.
                 let drawn = CGSize(width: steeringChrome.width * 2, height: steeringChrome.height)
@@ -291,13 +294,13 @@ struct TouchControls: View {
                 .frame(width: steeringSpan, height: steeringHeight)
             }
             .offset(x: steeringX, y: steeringY)
-            placeable("tractor", scale: bakedScale, padBounds: padBounds) {
+            placeable("tractor", scale: bakedScale, saved: savedOffsets["tractor"] ?? .zero, padBounds: padBounds) {
                 tractorPad(chrome: fire)
                     .frame(width: fire.width + slop, height: fire.height + slop)
             }
             .position(x: tractorAt, y: tractorY)
             if loadout == .ship {
-                placeable("fire", scale: bakedScale, padBounds: padBounds) {
+                placeable("fire", scale: bakedScale, saved: savedOffsets["fire"] ?? .zero, padBounds: padBounds) {
                     ControlZone(
                         icon: "bolt.fill", label: "Fire", identifier: "fire-control", tint: .yellow,
                         active: firePressed, chrome: fire, bottomPadding: 0,
@@ -308,13 +311,13 @@ struct TouchControls: View {
                 .position(x: fireAt, y: fireY)
             }
             if loadout == .ship, saberChanged != nil {
-                placeable("saber", scale: bakedScale, padBounds: padBounds) {
+                placeable("saber", scale: bakedScale, saved: savedOffsets["saber"] ?? .zero, padBounds: padBounds) {
                     saberPad(chrome: fire)
                         .frame(width: fire.width + slop, height: fire.height + slop)
                 }
                 .position(x: saberAt, y: saberY)
             }
-            placeable("thrust", scale: bakedScale, padBounds: padBounds) {
+            placeable("thrust", scale: bakedScale, saved: savedOffsets["thrust"] ?? .zero, padBounds: padBounds) {
                 ControlZone(
                     icon: "flame.fill", label: "Thrust", identifier: "thrust-control", tint: playerTint,
                     active: thrustPressed, chrome: thrust, bottomPadding: 0,
@@ -379,6 +382,7 @@ struct TouchControls: View {
     private func placeable<Pad: View>(
         _ id: String,
         scale: CGSize,
+        saved: CGSize,
         padBounds: CGRect,
         @ViewBuilder _ pad: () -> Pad
     ) -> some View {
@@ -386,7 +390,6 @@ struct TouchControls: View {
             ? (id == "steering" ? .zero : Self.diamondBakedOffset)
             : Self.bakedOffsets[id] ?? .zero
         let baked = CGSize(width: raw.width * scale.width, height: raw.height * scale.height)
-        let saved = padOffsets[id] ?? .zero
         let live = dragging[id] ?? .zero
         let applied = CGSize(
             width: baked.width + saved.width + live.width,
