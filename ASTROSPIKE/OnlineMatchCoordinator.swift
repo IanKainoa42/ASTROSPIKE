@@ -2242,6 +2242,12 @@ final class OnlineMatchCoordinator: NSObject,
         case let .resync(state):
             if lifecycle.acceptsGameplayData, runsTheRules(playerID) {
                 snapshotGate.reset(to: state.tick)
+                // A snapshot that landed earlier this frame is still waiting
+                // to be drained. The gate would refuse it now; applied after
+                // the resync it would put the older board back on top of it.
+                if let pending = pendingAuthoritativeSnapshot, pending.tick <= state.tick {
+                    pendingAuthoritativeSnapshot = nil
+                }
                 if let onResync { onResync(state) } else { pendingResync = state }
             }
         }
