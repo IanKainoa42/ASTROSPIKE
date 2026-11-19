@@ -75,3 +75,27 @@ enum StatsReporter {
         }
     }
 }
+
+/// The pilot's running record against each online opponent, kept on this
+/// device by Game Center player ID.
+@MainActor
+enum HeadToHeadStore {
+    private static let key = "headToHeadLedger"
+
+    static var ledger: HeadToHeadLedger {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let ledger = try? JSONDecoder().decode(HeadToHeadLedger.self, from: data) else { return HeadToHeadLedger() }
+        return ledger
+    }
+
+    /// Books one finished online match against each opponent and returns
+    /// their updated records.
+    static func record(opponents: [(id: String, name: String)], won: Bool) -> [RivalRecord] {
+        var ledger = ledger
+        let updated = opponents.map { ledger.record(opponentID: $0.id, name: $0.name, won: won) }
+        if let data = try? JSONEncoder().encode(ledger) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+        return updated
+    }
+}
