@@ -12,9 +12,9 @@ Zero-G Volleyball Arena
 
 ## Promotional Text (170 char max, can be updated without a new build)
 ```
-Free arena game. Two ships, one ball, zero gravity. Spike it through the net to score. Solo AI, local pass-and-play, or online duels via Game Center. Four cosmetic hulls on sale.
+Free arena game. Two ships, one ball, zero gravity. Spike it through the net to score. Solo AI, pass-and-play, or online duels with friends. Four cosmetic hulls.
 ```
-*(170 chars — adjust "on sale" to "available" if hulls aren't live yet)*
+*(161 characters. Can be changed in App Store Connect without a new build.)*
 
 ## Description (4000 char max)
 
@@ -51,10 +51,10 @@ REQUIREMENTS
 ## Keywords (100 char max, comma-separated)
 
 ```
-volleyball,zero gravity,arena,spike,multiplayer,game center,physics,lander,duel,indie
+multiplayer,game center,physics,lander,duel,indie,1v1,ship,local,friends,rocket,couch,party,ai,space
 ```
 
-*(100 chars exactly. Avoid repeating words from the title/subtitle — Apple already indexes those.)*
+*(100 characters. The name and subtitle already index ASTROSPIKE, zero, gravity, volleyball, and arena, so those words are left out of this field.)*
 
 ## Categories
 

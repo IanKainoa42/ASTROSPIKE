@@ -738,7 +738,7 @@ final class GameSession {
         )
         // Online only every other tick goes out. A tap that landed on an odd
         // tick and was cleared there never reached the host.
-        if mode != .online || tick.isMultiple(of: 2) { fireLatched = false }
+        if mode != .online || tick.isMultiple(of: SyncPolicy.inputFrequency) { fireLatched = false }
         if var demoAI {
             localInput = demoAI.input(for: engine.state, seat: localSeat, tick: tick)
             self.demoAI = demoAI
@@ -758,7 +758,7 @@ final class GameSession {
             // each input until the next arrives. Reading it every tick here
             // meant any change on an odd tick was a guaranteed disagreement
             // with the host, and a correction on the next snapshot.
-            if tick.isMultiple(of: 2) {
+            if tick.isMultiple(of: SyncPolicy.inputFrequency) {
                 heldOnlineInput = localInput
             } else if let held = heldOnlineInput {
                 localInput = PlayerInput(
@@ -834,7 +834,7 @@ final class GameSession {
             engine.step(inputs: inputs)
         case .online:
             guard let online else { return }
-            if tick.isMultiple(of: 2), !isSpectator {
+            if tick.isMultiple(of: SyncPolicy.inputFrequency), !isSpectator {
                 online.sendInput(localInput)
             }
             if !online.isAuthoritative, !isSpectator {
@@ -851,7 +851,7 @@ final class GameSession {
                 inputs[seat] = remote ?? .idle(tick: tick)
             }
             engine.step(inputs: inputs)
-            if online.isAuthoritative, tick.isMultiple(of: 4) {
+            if online.isAuthoritative, tick.isMultiple(of: SyncPolicy.snapshotCadence) {
                 online.sendSnapshot(engine.state)
             }
         }
