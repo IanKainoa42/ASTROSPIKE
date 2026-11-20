@@ -61,6 +61,24 @@ struct AstroSPIKESettingsView: View {
                 } footer: {
                     Text("Higher turns harder the moment you press the steering pad and needs less slide to reach a full turn. Top turning speed is the same at every setting.")
                 }
+                let rivals = HeadToHeadStore.ledger.sorted
+                if !rivals.isEmpty {
+                    Section {
+                        ForEach(rivals) { rival in
+                            HStack {
+                                Text(rival.name)
+                                Spacer()
+                                Text(rival.scoreText).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("\(rival.name): \(rival.wins) wins, \(rival.losses) losses")
+                        }
+                    } header: {
+                        Text("Rivals")
+                    } footer: {
+                        Text("Your online record against each pilot: your wins, then theirs.")
+                    }
+                }
                 Section("Match Rules") {
                     Picker("Match length", selection: $tuning.setsToWin) {
                         Text("Single game").tag(1)

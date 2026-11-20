@@ -104,6 +104,9 @@ final class GameSession {
     /// The boards the local pilot set a personal best on in the match just
     /// finished. Empty until it finishes.
     private(set) var newBests: Set<StatBoard> = []
+    /// "VS BILLY BOB  6–4" for each human opponent of the match just played:
+    /// the running record, this match included. Online only.
+    private(set) var rivalLines: [String] = []
     /// `--results-win` / `--results-lose`: a staged finish whose sample book
     /// must not be recorded as the pilot's bests or sent to Game Center.
     private var isResultsPreview = false
@@ -954,7 +957,7 @@ final class GameSession {
     /// warm-up bay, the parked side modes, or the bench.
     private func reportStatsIfFinished(previous: MatchPhase) {
         if state.match.phase != .finished {
-            if previous == .finished { newBests = [] }
+            if previous == .finished { newBests = []; rivalLines = [] }
             return
         }
         // A duel's winner is a team; the ring's is its last pilot. A forfeit
@@ -962,6 +965,21 @@ final class GameSession {
         guard previous != .finished, state.match.winner != nil || state.freeForAll?.winner != nil,
               keepsStats, !isResultsPreview else { return }
         newBests = StatsReporter.report(state.stats, for: localSeat)
+        reportHeadToHead()
+    }
+
+    /// Books an online duel or doubles result against every human on the
+    /// other side, once per finished match.
+    private func reportHeadToHead() {
+        guard case .online = mode, let online, !isFreeForAll, let winner = state.match.winner else { return }
+        let localID = online.localPlayerID
+        let opponents = online.seating
+            .filter { $0.key != localID && $0.value.team != localSeat.team }
+            .map { (id: $0.key, name: online.pilotName($0.key)) }
+        guard !opponents.isEmpty else { return }
+        rivalLines = HeadToHeadStore
+            .record(opponents: opponents, won: winner == localSeat.team)
+            .map { "VS \($0.name.uppercased())  \($0.scoreText)" }
     }
 
     /// The name a call goes out under: the pilot's Game Center name online,

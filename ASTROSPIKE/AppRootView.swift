@@ -1640,6 +1640,7 @@ private struct GameView: View {
                     rematchOpponentNames: online.lastMatchOpponents.map(\.displayName),
                     statSeat: session.keepsStats ? session.localSeat : nil,
                     newBests: session.newBests,
+                    rivalLines: session.rivalLines,
                     playAgain: playAgain,
                     challenge: challengeNext,
                     rematch: rematchOpponent,
@@ -2703,6 +2704,8 @@ private struct ResultsOverlay: View {
     var statSeat: Seat? = nil
     /// Boards this match set a personal best on.
     var newBests: Set<StatBoard> = []
+    /// Running record against each online opponent, this match included.
+    var rivalLines: [String] = []
     let playAgain: () -> Void
     let challenge: () -> Void
     var rematch: () -> Void = {}
@@ -2739,6 +2742,13 @@ private struct ResultsOverlay: View {
             }
             if let statSeat {
                 MatchStatLine(stats: state.stats, seat: statSeat, newBests: newBests)
+            }
+            ForEach(rivalLines, id: \.self) { line in
+                Text(line)
+                    .font(.caption.monospaced().weight(.bold)).tracking(1)
+                    .foregroundStyle(.yellow)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .accessibilityLabel("Record " + line.lowercased())
             }
             if let notice {
                 Text(notice.uppercased())
