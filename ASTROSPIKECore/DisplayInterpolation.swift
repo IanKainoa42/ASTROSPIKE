@@ -36,14 +36,20 @@ public enum DisplayInterpolation {
             }
         }
 
-        shown.bolts = zip(earlier.bolts, later.bolts).enumerated().map { index, pair in
-            var bolt = pair.1
-            bolt.position = simd_mix(pair.0.position, bolt.position, t)
-            bolt.velocity = simd_mix(pair.0.velocity, bolt.velocity, t)
+        // Paired by id, not by slot. A bolt that died this tick moves every
+        // bolt behind it down a place, and slot against slot would draw each
+        // of those part-way back toward a different bolt for a frame. Both
+        // arrays keep firing order, so one forward pass finds every pair; a
+        // bolt with no earlier self (just fired) is shown where it is.
+        var cursor = earlier.bolts.startIndex
+        shown.bolts = later.bolts.map { bolt in
+            guard let match = earlier.bolts[cursor...].firstIndex(where: { $0.id == bolt.id }) else { return bolt }
+            cursor = match + 1
+            var bolt = bolt
+            let before = earlier.bolts[match]
+            bolt.position = simd_mix(before.position, bolt.position, t)
+            bolt.velocity = simd_mix(before.velocity, bolt.velocity, t)
             return bolt
-        }
-        if later.bolts.count > earlier.bolts.count {
-            shown.bolts.append(contentsOf: later.bolts.suffix(later.bolts.count - earlier.bolts.count))
         }
 
         let bumperCount = max(earlier.bumpers.count, later.bumpers.count)
